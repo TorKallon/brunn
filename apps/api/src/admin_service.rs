@@ -68,12 +68,12 @@ pub async fn provision_user(
 
     let token = generate_token();
     let token_hash = hex::encode(Sha256::digest(token.as_bytes()));
-    let empty_manifest_hash = hex::encode(Sha256::digest(b"straylight:empty-corpus@v1"));
+    let empty_manifest_hash = hex::encode(Sha256::digest(b"brunn:empty-corpus@v1"));
     let mut tx = state.begin_write(auth).await?;
     let row = sqlx::query(
         r#"
         SELECT *
-        FROM straylight_auth.admin_provision_user($1,$2,$3,$4,$5)
+        FROM brunn_auth.admin_provision_user($1,$2,$3,$4,$5)
         "#,
     )
     .bind(request.external_ref.trim())
@@ -120,7 +120,7 @@ pub async fn recover_credential(
     let token_hash = hex::encode(Sha256::digest(token.as_bytes()));
     let mut tx = state.begin_write(auth).await?;
     let scope_refs = sqlx::query_scalar::<_, String>(
-        "SELECT scope_ref FROM straylight.scopes WHERE user_id=$1 ORDER BY scope_ref",
+        "SELECT scope_ref FROM brunn.scopes WHERE user_id=$1 ORDER BY scope_ref",
     )
     .bind(user_id)
     .fetch_all(&mut *tx)
@@ -128,17 +128,16 @@ pub async fn recover_credential(
     if scope_refs.is_empty() {
         return Err(ApiError::not_found("user_not_found", user_ref));
     }
-    let credential_id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT straylight_auth.admin_issue_credential($1,$2,$3,$4,$5)",
-    )
-    .bind(user_id)
-    .bind(request.credential_name.trim())
-    .bind(token_hash)
-    .bind(OWNER_CAPABILITIES)
-    .bind(&scope_refs)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(map_admin_database_error)?;
+    let credential_id =
+        sqlx::query_scalar::<_, Uuid>("SELECT brunn_auth.admin_issue_credential($1,$2,$3,$4,$5)")
+            .bind(user_id)
+            .bind(request.credential_name.trim())
+            .bind(token_hash)
+            .bind(OWNER_CAPABILITIES)
+            .bind(&scope_refs)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(map_admin_database_error)?;
     tx.commit().await?;
 
     Ok(json!({

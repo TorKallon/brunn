@@ -26,7 +26,7 @@ pub async fn run(state: AppState) -> ApiResult<()> {
         let provider =
             notification_service::configured_apns_provider(&state)?.ok_or_else(|| {
                 ApiError::configuration(
-                    "STRAYLIGHT_APNS_DELIVERY_ENABLED requires complete APNs provider credentials",
+                    "BRUNN_APNS_DELIVERY_ENABLED requires complete APNs provider credentials",
                 )
             })?;
         tracing::info!("APNs notification delivery enabled");
@@ -35,7 +35,7 @@ pub async fn run(state: AppState) -> ApiResult<()> {
         tracing::info!("APNs notification delivery disabled");
         None
     };
-    tracing::info!("Straylight background worker started");
+    tracing::info!("Brunn background worker started");
     // A PID is commonly reused as 1 across overlapping container revisions.
     // A boot-unique suffix is part of the durable lease fence, so a stale pull
     // can never finalize after a replacement worker reclaims the row.

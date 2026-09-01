@@ -10,10 +10,10 @@ import {
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import { pathToFileURL } from "node:url";
 
-import { StraylightApiClient } from "./api-client.js";
-import { createStraylightMcpServer } from "./index.js";
+import { BrunnApiClient } from "./api-client.js";
+import { createBrunnMcpServer } from "./index.js";
 import {
-  StraylightOAuthProvider,
+  BrunnOAuthProvider,
   UPSTREAM_TOKEN_EXTRA_KEY,
 } from "./oauth-provider.js";
 
@@ -54,7 +54,7 @@ export function createRemoteMcpApp(options: RemoteMcpAppOptions): Express {
   app.use(securityHeaders);
 
   app.get("/healthz", (_request, response) => {
-    response.status(200).json({ status: "ok", service: "straylight-remote-mcp" });
+    response.status(200).json({ status: "ok", service: "brunn-remote-mcp" });
   });
 
   app.options("/.well-known/oauth-protected-resource", publicMetadataCors);
@@ -63,7 +63,7 @@ export function createRemoteMcpApp(options: RemoteMcpAppOptions): Express {
       resource: resourceUrl.href,
       authorization_servers: [publicUrl.href],
       scopes_supported: [REMOTE_SCOPE],
-      resource_name: "Straylight",
+      resource_name: "Brunn",
     });
   });
 
@@ -73,7 +73,7 @@ export function createRemoteMcpApp(options: RemoteMcpAppOptions): Express {
     resourceServerUrl: resourceUrl,
     serviceDocumentationUrl: publicUrl,
     scopesSupported: [REMOTE_SCOPE],
-    resourceName: "Straylight",
+    resourceName: "Brunn",
     clientRegistrationOptions: {
       clientIdGeneration: false,
       clientSecretExpirySeconds: 365 * 24 * 60 * 60,
@@ -93,8 +93,8 @@ export function createRemoteMcpApp(options: RemoteMcpAppOptions): Express {
       return;
     }
 
-    const client = new StraylightApiClient(options.apiUrl, upstreamToken, fetchImpl);
-    const server = createStraylightMcpServer(client, {
+    const client = new BrunnApiClient(options.apiUrl, upstreamToken, fetchImpl);
+    const server = createBrunnMcpServer(client, {
       surface: "remote",
       includeStructuredContent: true,
     });
@@ -168,7 +168,7 @@ export async function verifyRemoteCredential(
   });
   if (!response.ok) {
     await response.body?.cancel().catch(() => undefined);
-    throw new Error("That Straylight credential is invalid or revoked.");
+    throw new Error("That Brunn credential is invalid or revoked.");
   }
   const value: unknown = await response.json();
   const body = unwrapData(value);
@@ -195,20 +195,20 @@ export function decodeSealingKey(value: string): Uint8Array {
   const encoded = trimmed.startsWith("base64:") ? trimmed.slice(7) : trimmed;
   const bytes = Buffer.from(encoded, "base64");
   if (bytes.byteLength !== 32 || bytes.toString("base64").replace(/=+$/, "") !== encoded.replace(/=+$/, "")) {
-    throw new Error("STRAYLIGHT_MCP_SEALING_KEY must be base64 for exactly 32 bytes");
+    throw new Error("BRUNN_MCP_SEALING_KEY must be base64 for exactly 32 bytes");
   }
   return bytes;
 }
 
 async function runRemoteServer(): Promise<void> {
-  const publicUrl = new URL(requiredEnvironment("STRAYLIGHT_MCP_PUBLIC_URL"));
-  const apiUrl = requiredEnvironment("STRAYLIGHT_API_URL").replace(/\/$/, "");
-  const secret = decodeSealingKey(requiredEnvironment("STRAYLIGHT_MCP_SEALING_KEY"));
+  const publicUrl = new URL(requiredEnvironment("BRUNN_MCP_PUBLIC_URL"));
+  const apiUrl = requiredEnvironment("BRUNN_API_URL").replace(/\/$/, "");
+  const secret = decodeSealingKey(requiredEnvironment("BRUNN_MCP_SEALING_KEY"));
   const allowedOrigins = parseAllowedOrigins(
-    requiredEnvironment("STRAYLIGHT_MCP_ALLOWED_ORIGINS"),
+    requiredEnvironment("BRUNN_MCP_ALLOWED_ORIGINS"),
   );
   const resourceUrl = new URL("/mcp", canonicalPublicUrl(publicUrl));
-  const provider = new StraylightOAuthProvider({
+  const provider = new BrunnOAuthProvider({
     secret,
     resourceUrl,
     scopesSupported: [REMOTE_SCOPE],
@@ -223,7 +223,7 @@ async function runRemoteServer(): Promise<void> {
       process.exitCode = 1;
       return;
     }
-    process.stderr.write(`Straylight remote MCP listening on port ${port}\n`);
+    process.stderr.write(`Brunn remote MCP listening on port ${port}\n`);
   });
 }
 
@@ -294,13 +294,13 @@ function normalizeAllowedOrigins(values: readonly string[]): string[] {
   for (const value of values) {
     const candidate = value.trim();
     if (candidate.length === 0 || candidate === "*") {
-      throw new Error("STRAYLIGHT_MCP_ALLOWED_ORIGINS requires explicit HTTPS origins");
+      throw new Error("BRUNN_MCP_ALLOWED_ORIGINS requires explicit HTTPS origins");
     }
     let parsed: URL;
     try {
       parsed = new URL(candidate);
     } catch {
-      throw new Error("STRAYLIGHT_MCP_ALLOWED_ORIGINS contains an invalid URL");
+      throw new Error("BRUNN_MCP_ALLOWED_ORIGINS contains an invalid URL");
     }
     if (
       parsed.protocol !== "https:"
@@ -310,19 +310,19 @@ function normalizeAllowedOrigins(values: readonly string[]): string[] {
       || parsed.search.length > 0
       || parsed.hash.length > 0
     ) {
-      throw new Error("STRAYLIGHT_MCP_ALLOWED_ORIGINS requires exact credential-free HTTPS origins");
+      throw new Error("BRUNN_MCP_ALLOWED_ORIGINS requires exact credential-free HTTPS origins");
     }
     origins.add(parsed.origin);
   }
   if (origins.size === 0) {
-    throw new Error("STRAYLIGHT_MCP_ALLOWED_ORIGINS requires at least one origin");
+    throw new Error("BRUNN_MCP_ALLOWED_ORIGINS requires at least one origin");
   }
   return [...origins];
 }
 
 function canonicalPublicUrl(value: URL): URL {
   if (value.protocol !== "https:" || value.username || value.password || value.search || value.hash) {
-    throw new Error("STRAYLIGHT_MCP_PUBLIC_URL must be a credential-free HTTPS origin");
+    throw new Error("BRUNN_MCP_PUBLIC_URL must be a credential-free HTTPS origin");
   }
   const canonical = new URL(value.origin);
   canonical.pathname = "/";

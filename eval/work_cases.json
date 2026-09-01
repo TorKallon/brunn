@@ -1,6 +1,6 @@
 {
   "benchmark_version": "0.2",
-  "name": "Straylight agent-work evaluation",
+  "name": "Brunn agent-work evaluation",
   "grading_mode": "concept_tokens_v1",
   "corpus_root": "eval/corpus-v0.2",
   "model": "gpt-5.6-sol",
@@ -677,10 +677,10 @@
       "forbidden": ["family flights are booked", "hotel is booked"]
     },
     {
-      "id": "straylight-product-resume",
-      "workload": "Straylight",
+      "id": "brunn-product-resume",
+      "workload": "Brunn",
       "capability": "project_continuation",
-      "task": "Resume Straylight after the product-framing correction. State what the product is, what durable state it must preserve beyond learned memory, why Obsidian is not the product boundary, why the first benchmark was too narrow, and what the expanded evaluation must now prove.",
+      "task": "Resume Brunn after the product-framing correction. State what the product is, what durable state it must preserve beyond learned memory, why Obsidian is not the product boundary, why the first benchmark was too narrow, and what the expanded evaluation must now prove.",
       "claim_slots": {
         "c1": "correct product category",
         "c2": "durable work state",
@@ -696,8 +696,8 @@
             {"any": ["learn", "continue", "advance", "continuity"]}
           ],
           "sources_any": [
-            "Projects/Straylight/Straylight.md",
-            "Projects/Straylight/Decisions.md"
+            "Projects/Brunn/Brunn.md",
+            "Projects/Brunn/Decisions.md"
           ]
         },
         {
@@ -709,8 +709,8 @@
             {"any": ["open questions", "rejected", "checkpoints", "next actions"]}
           ],
           "sources_any": [
-            "Projects/Straylight/Straylight.md",
-            "Projects/Straylight/Decisions.md"
+            "Projects/Brunn/Brunn.md",
+            "Projects/Brunn/Decisions.md"
           ]
         },
         {
@@ -721,8 +721,8 @@
             {"any": ["Markdown", "Obsidian"]}
           ],
           "sources_any": [
-            "Projects/Straylight/Straylight.md",
-            "Projects/Straylight/Decisions.md"
+            "Projects/Brunn/Brunn.md",
+            "Projects/Brunn/Decisions.md"
           ]
         },
         {
@@ -734,20 +734,20 @@
             {"any": ["Warmind", "StarRupture", "Switzerland"]}
           ],
           "sources_any": [
-            "Projects/Straylight/Straylight.md",
-            "Projects/Straylight/Decisions.md"
+            "Projects/Brunn/Brunn.md",
+            "Projects/Brunn/Decisions.md"
           ]
         }
       ],
       "forbidden": []
     },
     {
-      "id": "straylight-trust-handoff",
+      "id": "brunn-trust-handoff",
       "active": false,
       "retired_reason": "The separate personal/work instance and one-way bridge premise was removed from the product design.",
-      "workload": "Straylight",
+      "workload": "Brunn",
       "capability": "trust_aware_workspace_design",
-      "task": "Create a safe implementation checkpoint for connecting personal Straylight context to a work agent. State the physical trust boundary, allowed automated direction, prohibited return data, and the only allowed path for a work-generated recommendation to enter personal context. Preserve the distinction between a read interface and versioned workspace writes.",
+      "task": "Create a safe implementation checkpoint for connecting personal Brunn context to a work agent. State the physical trust boundary, allowed automated direction, prohibited return data, and the only allowed path for a work-generated recommendation to enter personal context. Preserve the distinction between a read interface and versioned workspace writes.",
       "claim_slots": {
         "c1": "physical trust boundary",
         "c2": "allowed automated direction",
@@ -763,8 +763,8 @@
             {"any": ["not namespace", "separate instance", "trust domain"]}
           ],
           "sources_any": [
-            "Projects/Straylight/Straylight.md",
-            "Projects/Straylight/Decisions.md"
+            "Projects/Brunn/Brunn.md",
+            "Projects/Brunn/Decisions.md"
           ]
         },
         {
@@ -775,8 +775,8 @@
             {"any": ["snapshot", "delta", "importer"]}
           ],
           "sources_any": [
-            "Projects/Straylight/Straylight.md",
-            "Projects/Straylight/Decisions.md"
+            "Projects/Brunn/Brunn.md",
+            "Projects/Brunn/Decisions.md"
           ]
         },
         {
@@ -787,8 +787,8 @@
             {"any": ["must never", "no flow back", "prohibited", "no work-generated", "cannot flow"]}
           ],
           "sources_any": [
-            "Projects/Straylight/Straylight.md",
-            "Projects/Straylight/Decisions.md"
+            "Projects/Brunn/Brunn.md",
+            "Projects/Brunn/Decisions.md"
           ]
         },
         {
@@ -798,7 +798,7 @@
             {"any": ["declassification"]},
             {"any": ["versioned", "checkpoint", "revision"]}
           ],
-          "sources_any": ["Projects/Straylight/Decisions.md"]
+          "sources_any": ["Projects/Brunn/Decisions.md"]
         }
       ],
       "forbidden": ["bidirectional sync", "work telemetry returns"]

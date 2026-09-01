@@ -20,7 +20,7 @@ export function candidate(
     version: 1,
     title: `Task ${index}`,
     status: "open",
-    project: "straylight",
+    project: "brunn",
     required_contexts: ["online"],
     tier: index <= 2 ? index : 5,
     reason: index === 1 ? "hard deadline in 2 days (est.)" : "ready since Aug 20",
@@ -136,12 +136,12 @@ export const taskGuardStatus: TaskGuardStatusData = {
 export const taskProjects: TaskProjectListData = {
   projects: [
     {
-      slug: "straylight",
-      title: "Straylight",
+      slug: "brunn",
+      title: "Brunn",
       description: "Durable memory",
       aliases: ["memory"],
-      hub_path: "sources/Projects/Straylight/Straylight.md",
-      repo_path: "/Volumes/NyxFastData/dev/projects/straylight",
+      hub_path: "sources/Projects/Brunn/Brunn.md",
+      repo_path: "/Volumes/NyxFastData/dev/projects/brunn",
       interest: "hot",
       interest_override: "hot",
       interest_set_by: "owner",
@@ -197,7 +197,7 @@ export const taskDetail = {
       id: nextCandidates[0].task_ref,
       title: nextCandidates[0].title,
       project: {
-        value: "straylight",
+        value: "brunn",
         source: "owner",
         set_at: "2026-08-20T00:00:00Z",
       },
@@ -223,8 +223,8 @@ export const taskDetail = {
 
 export const taskProjectState = {
   project: {
-    slug: "straylight",
-    title: "Straylight",
+    slug: "brunn",
+    title: "Brunn",
     interest: "hot" as const,
     last_activity_at: "2026-08-27T11:00:00Z",
     version: 2,

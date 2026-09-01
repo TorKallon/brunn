@@ -4,12 +4,12 @@ Status: Production services live — source `21bd90f` deployed gate-on; final Ga
 Date: 2026-08-27
 Depends on: D12, D13, D15 shared capability and surface registration, notifications, documents, and the existing worker
 Gated by: all twelve gates in the owner-approved 2026-08-26 agent-messaging specification
-Runtime flag: `STRAYLIGHT_MESSAGING_ENABLED` (default `false`) and the existing APNs delivery flag
+Runtime flag: `BRUNN_MESSAGING_ENABLED` (default `false`) and the existing APNs delivery flag
 
 ## Decision and measured spike
 
 The canonical record is one versioned workspace entry per conversation at
-`.straylight/conversations/<conversation-id>.md`, with `kind: conversation`,
+`.brunn/conversations/<conversation-id>.md`, with `kind: conversation`,
 schema `conversation.v1`, deterministic readable Markdown, and lossless typed
 metadata. A send appends a message by writing a new entry version and updating
 one transactional `messaging_message_index` projection. The projection serves
@@ -170,12 +170,12 @@ not cursor-bearing. Pull fetches advance the bound principal's read position.
 maximum. It renews the caller's lease before polling, returns immediately when
 data already exists, and returns `{status:"timeout", resume_cursor}` without
 inventing an event. There is no LISTEN dependency, streaming response, socket,
-or resident process inside Straylight.
+or resident process inside Brunn.
 
 ## MCP surface: exactly five gated tools
 
 The hosted and local profiles register the following tools only when
-`STRAYLIGHT_MESSAGING_ENABLED` is true. Existing tool names and descriptions
+`BRUNN_MESSAGING_ENABLED` is true. Existing tool names and descriptions
 remain byte-for-byte unchanged. These strings are the exact v1 descriptions:
 
 1. `message.send`
@@ -210,7 +210,7 @@ HTTP transport retry.
 The existing notification service gains the typed versioned target
 `conversation { conversation_id, seq }` and an internal in-transaction publish
 helper. The deep link is
-`straylight://conversation/<conversation-id>?seq=<seq>`, the APNs collapse id
+`brunn://conversation/<conversation-id>?seq=<seq>`, the APNs collapse id
 is the conversation UUID, and the same generic payload sets
 `content-available: 1`. The title/body contain no message text. Existing inbox,
 outbox, attempt, receipt, and quiet-hours behavior is reused unchanged.

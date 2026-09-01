@@ -1,5 +1,5 @@
 CREATE INDEX document_revisions_native_path_idx
-  ON straylight.document_revisions (
+  ON brunn.document_revisions (
     user_id,
     ((native_locator ->> 'path')),
     document_id,
@@ -8,14 +8,14 @@ CREATE INDEX document_revisions_native_path_idx
   WHERE native_locator ? 'path';
 
 CREATE INDEX source_episodes_source_ref_lower_idx
-  ON straylight.source_episodes (
+  ON brunn.source_episodes (
     user_id,
     scope_id,
     lower(source_ref)
   );
 
 CREATE INDEX object_handles_handle_lower_current_idx
-  ON straylight.object_handles (
+  ON brunn.object_handles (
     user_id,
     scope_id,
     lower(handle)
@@ -23,7 +23,7 @@ CREATE INDEX object_handles_handle_lower_current_idx
   WHERE valid_to IS NULL;
 
 CREATE INDEX object_revisions_label_lower_idx
-  ON straylight.object_revisions (
+  ON brunn.object_revisions (
     user_id,
     lower(label),
     object_id,
@@ -31,4 +31,4 @@ CREATE INDEX object_revisions_label_lower_idx
   );
 
 CREATE UNIQUE INDEX checkpoints_session_once_idx
-  ON straylight.checkpoints (user_id, session_id);
+  ON brunn.checkpoints (user_id, session_id);

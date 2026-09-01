@@ -1,4 +1,4 @@
-CREATE TABLE straylight.write_operations (
+CREATE TABLE brunn.write_operations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
@@ -6,8 +6,8 @@ CREATE TABLE straylight.write_operations (
   operation_kind text NOT NULL CHECK (operation_kind IN (
     'save', 'checkpoint', 'stage', 'correct', 'delete', 'import_promotion'
   )),
-  intent straylight.nonempty_text NOT NULL,
-  request_hash straylight.sha256_hex NOT NULL,
+  intent brunn.nonempty_text NOT NULL,
+  request_hash brunn.sha256_hex NOT NULL,
   base_corpus_revision_id uuid NOT NULL,
   result_corpus_revision_id uuid,
   status text NOT NULL CHECK (status IN (
@@ -19,39 +19,39 @@ CREATE TABLE straylight.write_operations (
   completed_at timestamptz,
   UNIQUE (user_id, id),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, credential_id)
-    REFERENCES straylight.api_credentials(user_id, id),
+    REFERENCES brunn.api_credentials(user_id, id),
   FOREIGN KEY (user_id, base_corpus_revision_id)
-    REFERENCES straylight.corpus_revisions(user_id, id),
+    REFERENCES brunn.corpus_revisions(user_id, id),
   FOREIGN KEY (user_id, result_corpus_revision_id)
-    REFERENCES straylight.corpus_revisions(user_id, id),
+    REFERENCES brunn.corpus_revisions(user_id, id),
   CHECK (completed_at IS NULL OR completed_at >= created_at),
   CHECK ((status = 'pending') = (completed_at IS NULL))
 );
 
-CREATE TABLE straylight.idempotency_keys (
+CREATE TABLE brunn.idempotency_keys (
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
-  idempotency_key straylight.nonempty_text NOT NULL,
-  request_hash straylight.sha256_hex NOT NULL,
+  idempotency_key brunn.nonempty_text NOT NULL,
+  request_hash brunn.sha256_hex NOT NULL,
   operation_id uuid NOT NULL,
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   PRIMARY KEY (user_id, scope_id, idempotency_key),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, operation_id)
-    REFERENCES straylight.write_operations(user_id, id)
+    REFERENCES brunn.write_operations(user_id, id)
 );
 
-CREATE TABLE straylight.write_operation_items (
+CREATE TABLE brunn.write_operation_items (
   user_id uuid NOT NULL,
   operation_id uuid NOT NULL,
   item_order integer NOT NULL CHECK (item_order >= 0),
   action text NOT NULL CHECK (action IN (
     'create', 'revise', 'supersede', 'retract', 'relate', 'tombstone'
   )),
-  item_kind straylight.nonempty_text NOT NULL,
+  item_kind brunn.nonempty_text NOT NULL,
   target_record_id uuid,
   prior_version integer,
   resulting_version integer,
@@ -62,22 +62,22 @@ CREATE TABLE straylight.write_operation_items (
   details jsonb NOT NULL DEFAULT '{}'::jsonb,
   PRIMARY KEY (user_id, operation_id, item_order),
   FOREIGN KEY (user_id, operation_id)
-    REFERENCES straylight.write_operations(user_id, id),
+    REFERENCES brunn.write_operations(user_id, id),
   FOREIGN KEY (user_id, target_record_id)
-    REFERENCES straylight.record_keys(user_id, record_id),
+    REFERENCES brunn.record_keys(user_id, record_id),
   CHECK (prior_version IS NULL OR prior_version > 0),
   CHECK (resulting_version IS NULL OR resulting_version > 0)
 );
 
-CREATE TABLE straylight.stages (
+CREATE TABLE brunn.stages (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
   credential_id uuid NOT NULL,
   stable_import_id text,
   base_corpus_revision_id uuid NOT NULL,
-  input_hash straylight.sha256_hex NOT NULL,
-  inventory_hash straylight.sha256_hex,
+  input_hash brunn.sha256_hex NOT NULL,
+  inventory_hash brunn.sha256_hex,
   status text NOT NULL CHECK (status IN (
     'uploading', 'inspecting', 'ready', 'quarantined', 'expired', 'promoted', 'failed'
   )),
@@ -87,32 +87,32 @@ CREATE TABLE straylight.stages (
   expires_at timestamptz NOT NULL,
   UNIQUE (user_id, id),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, credential_id)
-    REFERENCES straylight.api_credentials(user_id, id),
+    REFERENCES brunn.api_credentials(user_id, id),
   FOREIGN KEY (user_id, base_corpus_revision_id)
-    REFERENCES straylight.corpus_revisions(user_id, id),
+    REFERENCES brunn.corpus_revisions(user_id, id),
   FOREIGN KEY (user_id, policy_id, policy_version)
-    REFERENCES straylight.policy_revisions(user_id, policy_id, version),
+    REFERENCES brunn.policy_revisions(user_id, policy_id, version),
   CHECK (expires_at > created_at)
 );
 
 CREATE TRIGGER stages_register_record
-BEFORE INSERT ON straylight.stages
-FOR EACH ROW EXECUTE FUNCTION straylight.register_record_key('stage');
+BEFORE INSERT ON brunn.stages
+FOR EACH ROW EXECUTE FUNCTION brunn.register_record_key('stage');
 
-CREATE TABLE straylight.staged_entries (
+CREATE TABLE brunn.staged_entries (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
   stage_id uuid NOT NULL,
-  path straylight.nonempty_text NOT NULL,
+  path brunn.nonempty_text NOT NULL,
   entry_kind text NOT NULL CHECK (entry_kind IN (
     'file', 'directory', 'archive', 'symlink', 'unreadable'
   )),
   media_type text,
   size_bytes bigint NOT NULL CHECK (size_bytes >= 0),
-  content_hash straylight.sha256_hex,
+  content_hash brunn.sha256_hex,
   asset_id uuid,
   asset_version integer,
   readability text NOT NULL CHECK (readability IN (
@@ -123,24 +123,24 @@ CREATE TABLE straylight.staged_entries (
   UNIQUE (user_id, id),
   UNIQUE (user_id, stage_id, path),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, stage_id)
-    REFERENCES straylight.stages(user_id, id),
+    REFERENCES brunn.stages(user_id, id),
   FOREIGN KEY (user_id, asset_id, asset_version)
-    REFERENCES straylight.asset_versions(user_id, asset_id, version),
+    REFERENCES brunn.asset_versions(user_id, asset_id, version),
   CHECK ((asset_id IS NULL) = (asset_version IS NULL)),
   CHECK (path !~ '(^|/)\.\.(/|$)' AND left(path, 1) <> '/')
 );
 
-CREATE TABLE straylight.import_receipts (
+CREATE TABLE brunn.import_receipts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
-  stable_import_id straylight.nonempty_text NOT NULL,
+  stable_import_id brunn.nonempty_text NOT NULL,
   stage_id uuid NOT NULL,
-  input_hash straylight.sha256_hex NOT NULL,
-  inventory_hash straylight.sha256_hex NOT NULL,
-  manifest_hash straylight.sha256_hex NOT NULL,
+  input_hash brunn.sha256_hex NOT NULL,
+  inventory_hash brunn.sha256_hex NOT NULL,
+  manifest_hash brunn.sha256_hex NOT NULL,
   base_corpus_revision_id uuid NOT NULL,
   result_corpus_revision_id uuid NOT NULL,
   replay_outcome text NOT NULL CHECK (replay_outcome IN (
@@ -156,18 +156,18 @@ CREATE TABLE straylight.import_receipts (
     user_id, scope_id, stable_import_id, input_hash, base_corpus_revision_id
   ),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, stage_id)
-    REFERENCES straylight.stages(user_id, id),
+    REFERENCES brunn.stages(user_id, id),
   FOREIGN KEY (user_id, base_corpus_revision_id)
-    REFERENCES straylight.corpus_revisions(user_id, id),
+    REFERENCES brunn.corpus_revisions(user_id, id),
   FOREIGN KEY (user_id, result_corpus_revision_id)
-    REFERENCES straylight.corpus_revisions(user_id, id),
+    REFERENCES brunn.corpus_revisions(user_id, id),
   FOREIGN KEY (user_id, policy_id, policy_version)
-    REFERENCES straylight.policy_revisions(user_id, policy_id, version)
+    REFERENCES brunn.policy_revisions(user_id, policy_id, version)
 );
 
-CREATE TABLE straylight.import_entry_dispositions (
+CREATE TABLE brunn.import_entry_dispositions (
   user_id uuid NOT NULL,
   import_receipt_id uuid NOT NULL,
   staged_entry_id uuid NOT NULL,
@@ -180,18 +180,18 @@ CREATE TABLE straylight.import_entry_dispositions (
   details jsonb NOT NULL DEFAULT '{}'::jsonb,
   PRIMARY KEY (user_id, import_receipt_id, staged_entry_id),
   FOREIGN KEY (user_id, import_receipt_id)
-    REFERENCES straylight.import_receipts(user_id, id),
+    REFERENCES brunn.import_receipts(user_id, id),
   FOREIGN KEY (user_id, staged_entry_id)
-    REFERENCES straylight.staged_entries(user_id, id),
+    REFERENCES brunn.staged_entries(user_id, id),
   FOREIGN KEY (user_id, resulting_record_id)
-    REFERENCES straylight.record_keys(user_id, record_id)
+    REFERENCES brunn.record_keys(user_id, record_id)
 );
 
-CREATE TABLE straylight.background_jobs (
+CREATE TABLE brunn.background_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
-  job_kind straylight.nonempty_text NOT NULL,
+  job_kind brunn.nonempty_text NOT NULL,
   status text NOT NULL CHECK (status IN (
     'queued', 'running', 'retry_wait', 'succeeded', 'failed', 'canceled'
   )),
@@ -206,16 +206,16 @@ CREATE TABLE straylight.background_jobs (
   completed_at timestamptz,
   UNIQUE (user_id, id),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   CHECK (attempts <= max_attempts),
   CHECK (completed_at IS NULL OR completed_at >= created_at)
 );
 
 CREATE INDEX background_jobs_claim_idx
-  ON straylight.background_jobs (status, available_at, created_at)
+  ON brunn.background_jobs (status, available_at, created_at)
   WHERE status IN ('queued', 'retry_wait');
 
-CREATE TABLE straylight.tombstones (
+CREATE TABLE brunn.tombstones (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
@@ -223,27 +223,27 @@ CREATE TABLE straylight.tombstones (
   source_episode_id uuid NOT NULL,
   evidence_id uuid NOT NULL,
   authorized_credential_id uuid NOT NULL,
-  reason straylight.nonempty_text NOT NULL,
+  reason brunn.nonempty_text NOT NULL,
   requested_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   UNIQUE (user_id, id),
   UNIQUE (user_id, target_record_id),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, target_record_id)
-    REFERENCES straylight.record_keys(user_id, record_id),
+    REFERENCES brunn.record_keys(user_id, record_id),
   FOREIGN KEY (user_id, source_episode_id)
-    REFERENCES straylight.source_episodes(user_id, id),
+    REFERENCES brunn.source_episodes(user_id, id),
   FOREIGN KEY (user_id, evidence_id)
-    REFERENCES straylight.evidence_items(user_id, id),
+    REFERENCES brunn.evidence_items(user_id, id),
   FOREIGN KEY (user_id, authorized_credential_id)
-    REFERENCES straylight.api_credentials(user_id, id)
+    REFERENCES brunn.api_credentials(user_id, id)
 );
 
 CREATE TRIGGER tombstones_register_record
-BEFORE INSERT ON straylight.tombstones
-FOR EACH ROW EXECUTE FUNCTION straylight.register_record_key('tombstone');
+BEFORE INSERT ON brunn.tombstones
+FOR EACH ROW EXECUTE FUNCTION brunn.register_record_key('tombstone');
 
-CREATE TABLE straylight.deletion_jobs (
+CREATE TABLE brunn.deletion_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
@@ -258,13 +258,13 @@ CREATE TABLE straylight.deletion_jobs (
   UNIQUE (user_id, id),
   UNIQUE (user_id, tombstone_id),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, tombstone_id)
-    REFERENCES straylight.tombstones(user_id, id),
+    REFERENCES brunn.tombstones(user_id, id),
   CHECK (completed_at IS NULL OR completed_at >= coalesce(started_at, created_at))
 );
 
-CREATE TABLE straylight.derivative_cleanup_targets (
+CREATE TABLE brunn.derivative_cleanup_targets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
@@ -273,7 +273,7 @@ CREATE TABLE straylight.derivative_cleanup_targets (
     'source', 'chunk', 'lexical_index', 'embedding', 'cache', 'export',
     'replica', 'asset', 'derived_view'
   )),
-  target_ref straylight.nonempty_text NOT NULL,
+  target_ref brunn.nonempty_text NOT NULL,
   status text NOT NULL CHECK (status IN (
     'pending', 'running', 'removed', 'retained_by_policy', 'failed'
   )),
@@ -283,39 +283,39 @@ CREATE TABLE straylight.derivative_cleanup_targets (
   UNIQUE (user_id, id),
   UNIQUE (user_id, deletion_job_id, target_kind, target_ref),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, deletion_job_id)
-    REFERENCES straylight.deletion_jobs(user_id, id)
+    REFERENCES brunn.deletion_jobs(user_id, id)
 );
 
-CREATE TABLE straylight.deletion_job_events (
+CREATE TABLE brunn.deletion_job_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
   deletion_job_id uuid NOT NULL,
-  event_kind straylight.nonempty_text NOT NULL,
+  event_kind brunn.nonempty_text NOT NULL,
   details jsonb NOT NULL DEFAULT '{}'::jsonb,
   recorded_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   UNIQUE (user_id, id),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, deletion_job_id)
-    REFERENCES straylight.deletion_jobs(user_id, id)
+    REFERENCES brunn.deletion_jobs(user_id, id)
 );
 
 CREATE TRIGGER import_receipts_immutable
-BEFORE UPDATE OR DELETE ON straylight.import_receipts
-FOR EACH ROW EXECUTE FUNCTION straylight.prevent_immutable_mutation();
+BEFORE UPDATE OR DELETE ON brunn.import_receipts
+FOR EACH ROW EXECUTE FUNCTION brunn.prevent_immutable_mutation();
 
 CREATE TRIGGER import_entry_dispositions_immutable
-BEFORE UPDATE OR DELETE ON straylight.import_entry_dispositions
-FOR EACH ROW EXECUTE FUNCTION straylight.prevent_immutable_mutation();
+BEFORE UPDATE OR DELETE ON brunn.import_entry_dispositions
+FOR EACH ROW EXECUTE FUNCTION brunn.prevent_immutable_mutation();
 
 CREATE TRIGGER tombstones_immutable
-BEFORE UPDATE OR DELETE ON straylight.tombstones
-FOR EACH ROW EXECUTE FUNCTION straylight.prevent_immutable_mutation();
+BEFORE UPDATE OR DELETE ON brunn.tombstones
+FOR EACH ROW EXECUTE FUNCTION brunn.prevent_immutable_mutation();
 
 CREATE TRIGGER deletion_job_events_immutable
-BEFORE UPDATE OR DELETE ON straylight.deletion_job_events
-FOR EACH ROW EXECUTE FUNCTION straylight.prevent_immutable_mutation();
+BEFORE UPDATE OR DELETE ON brunn.deletion_job_events
+FOR EACH ROW EXECUTE FUNCTION brunn.prevent_immutable_mutation();
 

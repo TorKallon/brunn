@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use sqlx::{PgPool, Row, Transaction, postgres::PgPoolOptions};
 use uuid::Uuid;
 
-use straylight::{
+use brunn::{
     auth::AuthContext,
     db::set_context,
     models::{CredentialId, UserId},
@@ -17,11 +17,11 @@ struct Principal {
 }
 
 async fn connect_test_pool() -> Option<PgPool> {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping secret database test");
+        eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping secret database test");
         return None;
     };
     let pool = PgPoolOptions::new()
@@ -32,7 +32,7 @@ async fn connect_test_pool() -> Option<PgPool> {
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .expect("apply Straylight migrations");
+        .expect("apply Brunn migrations");
     Some(pool)
 }
 
@@ -45,14 +45,14 @@ async fn insert_principal(pool: &PgPool, label: &str, capabilities: &[&str]) -> 
         .iter()
         .map(|value| (*value).to_owned())
         .collect();
-    sqlx::query("INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
         .bind(user_id)
         .bind(format!("secret-test:{label}:{user_id}"))
         .bind(format!("Secret test {label}"))
         .execute(pool)
         .await
         .expect("insert secret test user");
-    sqlx::query("INSERT INTO straylight.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO brunn.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)")
         .bind(scope_id)
         .bind(user_id)
         .bind(&scope_ref)
@@ -62,7 +62,7 @@ async fn insert_principal(pool: &PgPool, label: &str, capabilities: &[&str]) -> 
         .expect("insert secret test scope");
     sqlx::query(
         r#"
-        INSERT INTO straylight.api_credentials (
+        INSERT INTO brunn.api_credentials (
           id,user_id,label,token_hash,capabilities
         ) VALUES ($1,$2,$3,$4,$5)
         "#,
@@ -77,7 +77,7 @@ async fn insert_principal(pool: &PgPool, label: &str, capabilities: &[&str]) -> 
     .expect("insert secret test credential");
     sqlx::query(
         r#"
-        INSERT INTO straylight.credential_scope_grants (
+        INSERT INTO brunn.credential_scope_grants (
           credential_id,user_id,scope_id
         ) VALUES ($1,$2,$3)
         "#,
@@ -134,7 +134,7 @@ async fn insert_secret(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
-        INSERT INTO straylight.secrets (
+        INSERT INTO brunn.secrets (
           id,user_id,name,description,value_ciphertext,value_nonce,
           version,created_by_credential_id,updated_by_credential_id
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)
@@ -168,7 +168,7 @@ async fn secret_schema_enforces_rls_capabilities_and_tenancy() {
         SELECT class.relname,class.relrowsecurity,class.relforcerowsecurity
         FROM pg_class AS class
         JOIN pg_namespace AS namespace ON namespace.oid=class.relnamespace
-        WHERE namespace.nspname='straylight'
+        WHERE namespace.nspname='brunn'
           AND class.relname=ANY($1)
         ORDER BY class.relname
         "#,
@@ -209,7 +209,7 @@ async fn secret_schema_enforces_rls_capabilities_and_tenancy() {
     .expect("insert secret through secret:write RLS");
     sqlx::query(
         r#"
-        INSERT INTO straylight.secret_access_log (
+        INSERT INTO brunn.secret_access_log (
           user_id,secret_id,credential_id,operation
         ) VALUES ($1,$2,$3,'put')
         "#,
@@ -224,7 +224,7 @@ async fn secret_schema_enforces_rls_capabilities_and_tenancy() {
 
     let mut tx = begin_as_app_rw(&pool, &vault.auth).await;
     let row = sqlx::query(
-        "SELECT value_ciphertext,value_nonce,version FROM straylight.secrets \
+        "SELECT value_ciphertext,value_nonce,version FROM brunn.secrets \
          WHERE user_id=$1 AND name=$2",
     )
     .bind(vault.user_id)
@@ -249,7 +249,7 @@ async fn secret_schema_enforces_rls_capabilities_and_tenancy() {
     // An ordinary memory credential sees no rows and cannot write.
     let mut tx = begin_as_app_rw(&pool, &memory.auth).await;
     let visible =
-        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM straylight.secrets WHERE user_id=$1")
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM brunn.secrets WHERE user_id=$1")
             .bind(memory.user_id)
             .fetch_one(&mut *tx)
             .await
@@ -271,7 +271,7 @@ async fn secret_schema_enforces_rls_capabilities_and_tenancy() {
 
     // Same-capability neighbor in another tenant sees nothing, even unbounded.
     let mut tx = begin_as_app_rw(&pool, &neighbor.auth).await;
-    let visible = sqlx::query_scalar::<_, i64>("SELECT count(*) FROM straylight.secrets")
+    let visible = sqlx::query_scalar::<_, i64>("SELECT count(*) FROM brunn.secrets")
         .fetch_one(&mut *tx)
         .await
         .expect("count all visible secrets as neighbor");
@@ -280,12 +280,11 @@ async fn secret_schema_enforces_rls_capabilities_and_tenancy() {
 
     // The access log is immutable.
     let mut tx = begin_as_app_rw(&pool, &vault.auth).await;
-    let frozen =
-        sqlx::query("UPDATE straylight.secret_access_log SET operation='get' WHERE user_id=$1")
-            .bind(vault.user_id)
-            .execute(&mut *tx)
-            .await
-            .expect_err("access log rows cannot be rewritten");
+    let frozen = sqlx::query("UPDATE brunn.secret_access_log SET operation='get' WHERE user_id=$1")
+        .bind(vault.user_id)
+        .execute(&mut *tx)
+        .await
+        .expect_err("access log rows cannot be rewritten");
     assert!(database_code(&frozen).is_some());
     tx.rollback().await.ok();
 
@@ -329,9 +328,9 @@ async fn secret_capabilities_are_constrained_and_owner_credentials_carry_them() 
     // Unknown capabilities remain rejected by the allowlist.
     let unknown = sqlx::query(
         r#"
-        INSERT INTO straylight.api_credentials (id,user_id,label,token_hash,capabilities)
+        INSERT INTO brunn.api_credentials (id,user_id,label,token_hash,capabilities)
         SELECT $1,users.id,'bad caps',$2,ARRAY['secret:everything']
-        FROM straylight.users LIMIT 1
+        FROM brunn.users LIMIT 1
         "#,
     )
     .bind(Uuid::now_v7())
@@ -346,7 +345,7 @@ async fn secret_capabilities_are_constrained_and_owner_credentials_carry_them() 
     let principal = insert_principal(&pool, "owner-check", &["read"]).await;
     let partial_owner = sqlx::query(
         r#"
-        INSERT INTO straylight.api_credentials (id,user_id,label,token_hash,capabilities)
+        INSERT INTO brunn.api_credentials (id,user_id,label,token_hash,capabilities)
         VALUES ($1,$2,'partial owner',$3,ARRAY[
           'open','query','read','compute','verify','status',
           'checkpoint','save','stage','correct','delete','dream',
@@ -364,7 +363,7 @@ async fn secret_capabilities_are_constrained_and_owner_credentials_carry_them() 
 
     let full_owner = sqlx::query(
         r#"
-        INSERT INTO straylight.api_credentials (id,user_id,label,token_hash,capabilities)
+        INSERT INTO brunn.api_credentials (id,user_id,label,token_hash,capabilities)
         VALUES ($1,$2,'full owner',$3,ARRAY[
           'open','query','read','compute','verify','status',
           'checkpoint','save','stage','correct','delete','dream',

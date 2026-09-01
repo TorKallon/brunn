@@ -26,3 +26,14 @@ describe("Night Signal task contracts", () => {
     expect(toneForStatus("success")).toBe("success");
   });
 });
+
+describe("Brunn wordmark contract", () => {
+  it("uses the lowercase serif wordmark without introducing color literals", () => {
+    const wordmarkRule = css.match(/\.brand strong\s*\{([^}]*)\}/u)?.[1] ?? "";
+    expect(wordmarkRule).toContain("font-family: var(--font-display)");
+    expect(wordmarkRule).toContain("font-weight: 500");
+    expect(wordmarkRule).toContain("letter-spacing: -0.03em");
+    expect(wordmarkRule).not.toMatch(/#[0-9a-f]{3,8}\b/iu);
+    expect(wordmarkRule).not.toMatch(/\b(?:rgb|hsl)a?\(/iu);
+  });
+});

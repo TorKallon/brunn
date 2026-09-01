@@ -3,7 +3,7 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 env_file=${ENV_FILE:-"$root/production.env"}
-project=${COMPOSE_PROJECT_NAME:-straylight}
+project=${COMPOSE_PROJECT_NAME:-brunn}
 
 [ -f "$env_file" ] || {
   echo "rollback environment file does not exist: $env_file" >&2
@@ -22,10 +22,10 @@ read_value() {
   ' "$env_file"
 }
 
-target_image=$(read_value STRAYLIGHT_API_IMAGE)
-target_revision=$(read_value STRAYLIGHT_RELEASE_REVISION)
-host=$(read_value STRAYLIGHT_PUBLIC_HOST)
-object_store_mode=$(read_value STRAYLIGHT_OBJECT_STORE_MODE)
+target_image=$(read_value BRUNN_API_IMAGE)
+target_revision=$(read_value BRUNN_RELEASE_REVISION)
+host=$(read_value BRUNN_PUBLIC_HOST)
+object_store_mode=$(read_value BRUNN_OBJECT_STORE_MODE)
 object_store_mode=${object_store_mode:-self-hosted-minio}
 managed_overlay=
 if [ "$object_store_mode" = "managed-s3" ]; then

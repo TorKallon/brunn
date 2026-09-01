@@ -2,7 +2,7 @@
 -- the latest object. Every new immutable asset and every newly published
 -- upload/export must name one exact provider object version.
 
-CREATE FUNCTION straylight.valid_object_version_id(p_value text)
+CREATE FUNCTION brunn.valid_object_version_id(p_value text)
 RETURNS boolean
 LANGUAGE sql
 IMMUTABLE
@@ -14,18 +14,18 @@ AS $$
      AND p_value <> 'null'
 $$;
 
-REVOKE ALL ON FUNCTION straylight.valid_object_version_id(text)
+REVOKE ALL ON FUNCTION brunn.valid_object_version_id(text)
 FROM PUBLIC,app_rw,app_ro;
-GRANT EXECUTE ON FUNCTION straylight.valid_object_version_id(text)
+GRANT EXECUTE ON FUNCTION brunn.valid_object_version_id(text)
 TO app_rw,app_ro;
 
-CREATE FUNCTION straylight.enforce_exact_asset_object_version()
+CREATE FUNCTION brunn.enforce_exact_asset_object_version()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY INVOKER
 AS $$
 BEGIN
-  IF NOT straylight.valid_object_version_id(NEW.object_version_id) THEN
+  IF NOT brunn.valid_object_version_id(NEW.object_version_id) THEN
     RAISE EXCEPTION 'new asset versions require an exact provider object version ID'
       USING ERRCODE = '23514';
   END IF;
@@ -34,10 +34,10 @@ END;
 $$;
 
 CREATE TRIGGER asset_versions_require_exact_object_version
-BEFORE INSERT ON straylight.asset_versions
-FOR EACH ROW EXECUTE FUNCTION straylight.enforce_exact_asset_object_version();
+BEFORE INSERT ON brunn.asset_versions
+FOR EACH ROW EXECUTE FUNCTION brunn.enforce_exact_asset_object_version();
 
-CREATE FUNCTION straylight.enforce_published_object_versions()
+CREATE FUNCTION brunn.enforce_published_object_versions()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY INVOKER
@@ -46,12 +46,12 @@ DECLARE
   publication_requires_check boolean := false;
 BEGIN
   IF NEW.temporary_object_version_id IS NOT NULL
-     AND NOT straylight.valid_object_version_id(NEW.temporary_object_version_id) THEN
+     AND NOT brunn.valid_object_version_id(NEW.temporary_object_version_id) THEN
     RAISE EXCEPTION 'temporary object version ID is not exact'
       USING ERRCODE = '23514';
   END IF;
   IF NEW.canonical_object_version_id IS NOT NULL
-     AND NOT straylight.valid_object_version_id(NEW.canonical_object_version_id) THEN
+     AND NOT brunn.valid_object_version_id(NEW.canonical_object_version_id) THEN
     RAISE EXCEPTION 'canonical object version ID is not exact'
       USING ERRCODE = '23514';
   END IF;
@@ -69,7 +69,7 @@ BEGIN
   IF publication_requires_check
      AND (
        NEW.canonical_object_key IS NULL
-       OR NOT straylight.valid_object_version_id(
+       OR NOT brunn.valid_object_version_id(
          NEW.canonical_object_version_id
        )
      ) THEN
@@ -81,10 +81,10 @@ END;
 $$;
 
 CREATE TRIGGER asset_uploads_require_published_object_versions
-BEFORE INSERT OR UPDATE ON straylight.asset_uploads
-FOR EACH ROW EXECUTE FUNCTION straylight.enforce_published_object_versions();
+BEFORE INSERT OR UPDATE ON brunn.asset_uploads
+FOR EACH ROW EXECUTE FUNCTION brunn.enforce_published_object_versions();
 
-CREATE FUNCTION straylight.enforce_ready_export_object_version()
+CREATE FUNCTION brunn.enforce_ready_export_object_version()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY INVOKER
@@ -93,7 +93,7 @@ DECLARE
   publication_requires_check boolean := false;
 BEGIN
   IF NEW.object_version_id IS NOT NULL
-     AND NOT straylight.valid_object_version_id(NEW.object_version_id) THEN
+     AND NOT brunn.valid_object_version_id(NEW.object_version_id) THEN
     RAISE EXCEPTION 'account export object version ID is not exact'
       USING ERRCODE = '23514';
   END IF;
@@ -110,7 +110,7 @@ BEGIN
   IF publication_requires_check
      AND (
        NEW.object_key IS NULL
-       OR NOT straylight.valid_object_version_id(NEW.object_version_id)
+       OR NOT brunn.valid_object_version_id(NEW.object_version_id)
      ) THEN
     RAISE EXCEPTION 'ready account exports require an exact object version ID'
       USING ERRCODE = '23514';
@@ -120,5 +120,5 @@ END;
 $$;
 
 CREATE TRIGGER account_exports_require_exact_object_version
-BEFORE INSERT OR UPDATE ON straylight.account_exports
-FOR EACH ROW EXECUTE FUNCTION straylight.enforce_ready_export_object_version();
+BEFORE INSERT OR UPDATE ON brunn.account_exports
+FOR EACH ROW EXECUTE FUNCTION brunn.enforce_ready_export_object_version();

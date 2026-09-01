@@ -203,9 +203,9 @@ const RESUME_DELTA_TOTAL_CHARS: usize = 6_000;
 const RESUME_DELTA_SOURCE_CHARS: usize = 2_000;
 const RESUME_DELTA_WHOLE_PAIR_CHARS: usize = 2_400;
 const MAX_STREAMED_BINARY_BYTES: u64 = 4 * 1024 * 1024 * 1024;
-const WORKSPACE_IMPORT_FORMAT: &str = "straylight-workspace-import-manifest@v1";
-const TIER_A_PORTABLE_COMPANION_FORMAT: &str = "straylight-tier-a-portable-companion@v1";
-const TIER_A_HISTORY_STAGE_FORMAT: &str = "straylight-tier-a-history-stage@v1";
+const WORKSPACE_IMPORT_FORMAT: &str = "brunn-workspace-import-manifest@v1";
+const TIER_A_PORTABLE_COMPANION_FORMAT: &str = "brunn-tier-a-portable-companion@v1";
+const TIER_A_HISTORY_STAGE_FORMAT: &str = "brunn-tier-a-history-stage@v1";
 const TIER_A_ORDINARY_HISTORY_SEMANTICS: &str = "ordinary_content_transition";
 const TIER_A_EXACT_HISTORY_SEMANTICS: &str = "preserve_intentional_exact_bytes_version";
 const RETRIEVAL_LANE_TIMEOUT: Duration = Duration::from_millis(2_500);
@@ -1473,7 +1473,7 @@ pub async fn checkpoint(
     let (idempotency_key, request_hash) = validate_checkpoint_request(&request)?;
     let checkpoint_uuid = checkpoint_entry_id_for_new_write(&request);
     let checkpoint_ref = format!("checkpoint:{checkpoint_uuid}");
-    let path = format!(".straylight/checkpoints/{checkpoint_uuid}.md");
+    let path = format!(".brunn/checkpoints/{checkpoint_uuid}.md");
     let mut tx = state.begin_write(&auth).await?;
     lock_checkpoint_idempotency(&mut tx, auth.user_id.0, &idempotency_key).await?;
     if let Some(receipt) =
@@ -1628,8 +1628,8 @@ pub async fn delete_entry(
         r#"
         SELECT entry.path,entry.kind,entry.current_version,entry.deleted_at,
                version.content_sha256,version.metadata
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
@@ -1669,14 +1669,14 @@ pub async fn delete_entry(
         envelope.status = ResponseStatus::NoOp;
         return Ok(Json(envelope));
     }
-    sqlx::query("DELETE FROM straylight.search_chunks WHERE user_id=$1 AND entry_id=$2")
+    sqlx::query("DELETE FROM brunn.search_chunks WHERE user_id=$1 AND entry_id=$2")
         .bind(auth.user_id.0)
         .bind(entry_id)
         .execute(&mut *tx)
         .await?;
     sqlx::query(
         r#"
-        UPDATE straylight.entries
+        UPDATE brunn.entries
         SET deleted_at=clock_timestamp(),updated_at=clock_timestamp()
         WHERE user_id=$1 AND id=$2
         "#,
@@ -1687,7 +1687,7 @@ pub async fn delete_entry(
     .await?;
     let mut generation = sqlx::query_scalar::<_, i64>(
         r#"
-        INSERT INTO straylight.workspace_changes (
+        INSERT INTO brunn.workspace_changes (
           user_id,entry_id,entry_version,operation,path,content_sha256
         ) VALUES ($1,$2,$3,'delete',$4,$5)
         RETURNING generation
@@ -1707,8 +1707,8 @@ pub async fn delete_entry(
         let companion = sqlx::query(
             r#"
             SELECT entry.id,entry.current_version,version.content_sha256
-            FROM straylight.entries AS entry
-            JOIN straylight.entry_versions AS version
+            FROM brunn.entries AS entry
+            JOIN brunn.entry_versions AS version
               ON version.user_id=entry.user_id
              AND version.entry_id=entry.id
              AND version.version=entry.current_version
@@ -1725,14 +1725,14 @@ pub async fn delete_entry(
         if let Some(companion) = companion {
             let companion_id: Uuid = companion.get("id");
             let companion_version: i64 = companion.get("current_version");
-            sqlx::query("DELETE FROM straylight.search_chunks WHERE user_id=$1 AND entry_id=$2")
+            sqlx::query("DELETE FROM brunn.search_chunks WHERE user_id=$1 AND entry_id=$2")
                 .bind(auth.user_id.0)
                 .bind(companion_id)
                 .execute(&mut *tx)
                 .await?;
             sqlx::query(
                 r#"
-                UPDATE straylight.entries
+                UPDATE brunn.entries
                 SET deleted_at=clock_timestamp(),updated_at=clock_timestamp()
                 WHERE user_id=$1 AND id=$2
                 "#,
@@ -1743,7 +1743,7 @@ pub async fn delete_entry(
             .await?;
             let companion_generation = sqlx::query_scalar::<_, i64>(
                 r#"
-                INSERT INTO straylight.workspace_changes (
+                INSERT INTO brunn.workspace_changes (
                   user_id,entry_id,entry_version,operation,path,content_sha256
                 ) VALUES ($1,$2,$3,'delete',$4,$5)
                 RETURNING generation
@@ -1792,7 +1792,7 @@ pub async fn list_jobs(
         r#"
         SELECT id,kind,status,payload,watermark,attempts,available_at,
                started_at,finished_at,last_error,created_at
-        FROM straylight.jobs
+        FROM brunn.jobs
         WHERE user_id=$1
           AND ($2::text IS NULL OR status=$2)
         ORDER BY created_at DESC,id DESC
@@ -1848,18 +1848,18 @@ pub async fn list_binaries(
                entry.current_version,version.content_sha256,
                version.size_bytes,version.metadata,entry.updated_at,
                companion_version.metadata AS companion_metadata
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
-        LEFT JOIN straylight.entries AS companion
+        LEFT JOIN brunn.entries AS companion
           ON companion.user_id=entry.user_id
          AND lower(normalize(companion.path, NFC))
              =lower(normalize(version.metadata->>'companion_path', NFC))
          AND companion.kind='markdown'
          AND companion.deleted_at IS NULL
-        LEFT JOIN straylight.entry_versions AS companion_version
+        LEFT JOIN brunn.entry_versions AS companion_version
           ON companion_version.user_id=companion.user_id
          AND companion_version.entry_id=companion.id
          AND companion_version.version=companion.current_version
@@ -1960,8 +1960,8 @@ pub async fn manifest(
                    version.id AS version_id,version.version AS version_number,
                    version.content_sha256,version.size_bytes,version.metadata,
                    version.created_at AS version_created_at
-            FROM straylight.entries AS entry
-            JOIN straylight.entry_versions AS version
+            FROM brunn.entries AS entry
+            JOIN brunn.entry_versions AS version
               ON version.user_id=entry.user_id
              AND version.entry_id=entry.id
             WHERE entry.user_id=
@@ -1975,8 +1975,8 @@ pub async fn manifest(
                    version.id AS version_id,version.version AS version_number,
                    version.content_sha256,version.size_bytes,version.metadata,
                    version.created_at AS version_created_at
-            FROM straylight.entries AS entry
-            JOIN straylight.entry_versions AS version
+            FROM brunn.entries AS entry
+            JOIN brunn.entry_versions AS version
               ON version.user_id=entry.user_id
              AND version.entry_id=entry.id
              AND version.version=entry.current_version
@@ -2017,7 +2017,7 @@ pub async fn manifest(
     }
     let mut rows = statement.build().fetch_all(&mut *tx).await?;
     let generation =
-        sqlx::query_scalar::<_, Option<i64>>("SELECT straylight_auth.workspace_generation($1)")
+        sqlx::query_scalar::<_, Option<i64>>("SELECT brunn_auth.workspace_generation($1)")
             .bind(auth.user_id.0)
             .fetch_one(&mut *tx)
             .await?
@@ -2118,8 +2118,8 @@ pub async fn usage(
                coalesce(usage.search_count,0) AS search_count,
                usage.first_used_at,usage.last_used_at,
                usage.last_read_at,usage.last_search_at
-        FROM straylight.entries AS entry
-        LEFT JOIN straylight.entry_usage AS usage
+        FROM brunn.entries AS entry
+        LEFT JOIN brunn.entry_usage AS usage
           ON usage.user_id=entry.user_id AND usage.entry_id=entry.id
         WHERE entry.user_id=
         "#,
@@ -2385,7 +2385,7 @@ pub async fn upload_binary_stream(
         ));
     }
     let temporary_path =
-        std::env::temp_dir().join(format!("straylight-binary-upload-{}", Uuid::now_v7()));
+        std::env::temp_dir().join(format!("brunn-binary-upload-{}", Uuid::now_v7()));
     let transfer = async {
         let mut file = OpenOptions::new()
             .write(true)
@@ -2517,22 +2517,22 @@ pub async fn fetch_binary(
             .map_err(|error| ApiError::Internal(error.to_string()))?,
     );
     response.headers_mut().insert(
-        "x-carrystate-sha256",
+        "x-brunn-state-sha256",
         HeaderValue::from_str(&format!("sha256:{}", entry.content_sha256))
             .map_err(|error| ApiError::Internal(error.to_string()))?,
     );
     response.headers_mut().insert(
-        "x-carrystate-asset-ref",
+        "x-brunn-state-asset-ref",
         HeaderValue::from_str(&format!("entry:{}", entry.id))
             .map_err(|error| ApiError::Internal(error.to_string()))?,
     );
     response.headers_mut().insert(
-        "x-carrystate-asset-version",
+        "x-brunn-state-asset-version",
         HeaderValue::from_str(&entry.version.to_string())
             .map_err(|error| ApiError::Internal(error.to_string()))?,
     );
     response.headers_mut().insert(
-        "x-carrystate-integrity",
+        "x-brunn-state-integrity",
         HeaderValue::from_static("client-verify-sha256"),
     );
     response.headers_mut().insert(
@@ -2591,8 +2591,8 @@ async fn load_binary_description_metadata(
     let companion_metadata = sqlx::query_scalar::<_, Value>(
         r#"
         SELECT version.metadata
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
@@ -2729,7 +2729,7 @@ async fn commit_binary_with_companion(
     let content_sha256 = stored_hash.trim_start_matches("sha256:").to_owned();
     let companion_key = hex::encode(Sha256::digest(portable_path_key(path).as_bytes()));
     let companion_path = portable_companion.as_ref().map_or_else(
-        || format!(".straylight/binaries/{}.md", &companion_key[..32]),
+        || format!(".brunn/binaries/{}.md", &companion_key[..32]),
         |companion| companion.path.clone(),
     );
     validate_path(&companion_path)?;
@@ -2749,7 +2749,7 @@ async fn commit_binary_with_companion(
     let provenance_text = provenance
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .unwrap_or("Uploaded through the Straylight workspace binary API.");
+        .unwrap_or("Uploaded through the Brunn workspace binary API.");
     let limitations_text = limitations
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -2759,7 +2759,7 @@ async fn commit_binary_with_companion(
     let companion_content = portable_companion.as_ref().map_or_else(
         || {
             Ok::<_, ApiError>(format!(
-                "---\nstraylight_kind: binary_description\nbinary_path: {}\n\
+                "---\nbrunn_kind: binary_description\nbinary_path: {}\n\
                  content_hash: {}\nmedia_type: {}\nsize_bytes: {}\n\
                  description_status: {}\n---\n\n# Binary: {}\n\n\
                  ## Description\n\n{}\n\n## Provenance\n\n{}\n\n\
@@ -2811,7 +2811,7 @@ async fn commit_binary_with_companion(
                 "content_hash": format!("sha256:{content_sha256}"),
                 "portable": companion_portable_metadata,
                 "description_status": description_status,
-                "_straylight_import": portable_companion.as_ref().map(|companion| json!({
+                "_brunn_import": portable_companion.as_ref().map(|companion| json!({
                     "format": WORKSPACE_IMPORT_FORMAT,
                     "portable_companion_format": TIER_A_PORTABLE_COMPANION_FORMAT,
                     "content_sha256": format!("sha256:{}", companion.content_sha256)
@@ -2837,8 +2837,8 @@ async fn commit_binary_with_companion(
         r#"
         SELECT entry.id,entry.kind,entry.media_type,entry.current_version,entry.deleted_at,
                version.content_sha256,version.metadata
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
@@ -2921,7 +2921,7 @@ async fn commit_binary_with_companion(
         let generation = if binary_annotation_changed {
             sqlx::query(
                 r#"
-                UPDATE straylight.entry_versions
+                UPDATE brunn.entry_versions
                 SET metadata=$4
                 WHERE user_id=$1 AND entry_id=$2 AND version=$3
                 "#,
@@ -2934,7 +2934,7 @@ async fn commit_binary_with_companion(
             .await?;
             sqlx::query(
                 r#"
-                UPDATE straylight.entries
+                UPDATE brunn.entries
                 SET path=$3,media_type=$4,deleted_at=NULL,
                     updated_at=clock_timestamp()
                 WHERE user_id=$1 AND id=$2
@@ -2949,7 +2949,7 @@ async fn commit_binary_with_companion(
             Some(
                 sqlx::query_scalar::<_, i64>(
                     r#"
-                    INSERT INTO straylight.workspace_changes (
+                    INSERT INTO brunn.workspace_changes (
                       user_id,entry_id,entry_version,operation,path,content_sha256
                     ) VALUES ($1,$2,$3,'update',$4,$5)
                     RETURNING generation
@@ -2983,7 +2983,7 @@ async fn commit_binary_with_companion(
         if operation == "create" {
             sqlx::query(
                 r#"
-                INSERT INTO straylight.entries (
+                INSERT INTO brunn.entries (
                   id,user_id,path,title,kind,media_type,current_version
                 ) VALUES ($1,$2,$3,$4,'binary',$5,0)
                 "#,
@@ -2999,7 +2999,7 @@ async fn commit_binary_with_companion(
         let version_id = Uuid::now_v7();
         sqlx::query(
             r#"
-            INSERT INTO straylight.entry_versions (
+            INSERT INTO brunn.entry_versions (
               id,user_id,entry_id,version,content_sha256,object_key,
               object_version_id,size_bytes,metadata,created_by_credential_id
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
@@ -3025,7 +3025,7 @@ async fn commit_binary_with_companion(
         .await?;
         sqlx::query(
             r#"
-            UPDATE straylight.entries
+            UPDATE brunn.entries
             SET path=$3,title=$4,media_type=$5,current_version=$6,
                 updated_at=clock_timestamp(),deleted_at=NULL
             WHERE user_id=$1 AND id=$2
@@ -3041,7 +3041,7 @@ async fn commit_binary_with_companion(
         .await?;
         let generation = sqlx::query_scalar::<_, i64>(
             r#"
-            INSERT INTO straylight.workspace_changes (
+            INSERT INTO brunn.workspace_changes (
               user_id,entry_id,entry_version,operation,path,content_sha256
             ) VALUES ($1,$2,$3,$4,$5,$6)
             RETURNING generation
@@ -3063,8 +3063,8 @@ async fn commit_binary_with_companion(
             sqlx::query(
                 r#"
             SELECT entry.id,entry.current_version,version.id AS version_id
-            FROM straylight.entries AS entry
-            JOIN straylight.entry_versions AS version
+            FROM brunn.entries AS entry
+            JOIN brunn.entry_versions AS version
               ON version.user_id=entry.user_id
              AND version.entry_id=entry.id
              AND version.version=entry.current_version
@@ -3107,7 +3107,7 @@ async fn commit_binary_with_companion(
     if should_queue_description {
         sqlx::query(
             r#"
-            INSERT INTO straylight.jobs (user_id,kind,payload)
+            INSERT INTO brunn.jobs (user_id,kind,payload)
             VALUES ($1,'describe_binary',$2)
             "#,
         )
@@ -3193,7 +3193,7 @@ pub async fn import_evaluation(
         hex::encode(Sha256::digest(evaluation_identity.as_bytes()))
     );
     let display_name = format!(
-        "Straylight evaluation: {}",
+        "Brunn evaluation: {}",
         request.case_id.chars().take(160).collect::<String>()
     );
     let token = derive_eval_token(
@@ -3228,7 +3228,7 @@ pub async fn import_evaluation(
     let row = sqlx::query(
         r#"
         SELECT *
-        FROM straylight_auth.bootstrap_evaluation_user($1,$2,$3,$4,$5)
+        FROM brunn_auth.bootstrap_evaluation_user($1,$2,$3,$4,$5)
         "#,
     )
     .bind(&external_ref)
@@ -3253,7 +3253,7 @@ pub async fn import_evaluation(
     };
     set_context(&mut tx, &provisioning_auth).await?;
     let existing = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM straylight.entries WHERE user_id=$1)",
+        "SELECT EXISTS(SELECT 1 FROM brunn.entries WHERE user_id=$1)",
     )
     .bind(user_id)
     .fetch_one(&mut *tx)
@@ -3280,7 +3280,7 @@ pub async fn import_evaluation(
     let base_generation = max_generation_in_tx(&mut tx, user_id).await?;
     let checkpoint_id = if let Some(seed) = &request.seed_checkpoint {
         let checkpoint_id = Uuid::now_v7();
-        let checkpoint_path = format!(".straylight/checkpoints/{checkpoint_id}.md");
+        let checkpoint_path = format!(".brunn/checkpoints/{checkpoint_id}.md");
         let source_rows = sqlx::query(
             r#"
             WITH requested AS (
@@ -3289,11 +3289,11 @@ pub async fn import_evaluation(
             )
             SELECT entry.id,entry.path,entry.current_version,version.content_sha256
             FROM requested
-            JOIN straylight.entries AS entry
+            JOIN brunn.entries AS entry
               ON entry.user_id=$1
              AND lower(normalize(entry.path,NFC))=lower(normalize(requested.path,NFC))
              AND entry.deleted_at IS NULL
-            JOIN straylight.entry_versions AS version
+            JOIN brunn.entry_versions AS version
               ON version.user_id=entry.user_id
              AND version.entry_id=entry.id
              AND version.version=entry.current_version
@@ -3358,7 +3358,7 @@ pub async fn import_evaluation(
     let _ = sqlx::query(
         r#"
         SELECT *
-        FROM straylight_auth.bootstrap_evaluation_user($1,$2,$3,$4,$5)
+        FROM brunn_auth.bootstrap_evaluation_user($1,$2,$3,$4,$5)
         "#,
     )
     .bind(&external_ref)
@@ -3460,8 +3460,8 @@ pub async fn evaluation_status(
         SELECT
           count(*) FILTER (WHERE status IN ('queued','running')) AS pending_jobs,
           count(*) FILTER (WHERE status='failed') AS failed_jobs,
-          straylight_auth.workspace_generation($1) AS generation
-        FROM straylight.jobs
+          brunn_auth.workspace_generation($1) AS generation
+        FROM brunn.jobs
         WHERE user_id=$1 AND kind='embed_entry'
         "#,
     )
@@ -3515,7 +3515,7 @@ pub async fn cleanup_evaluation(
     let row = sqlx::query(
         r#"
         SELECT *
-        FROM straylight_auth.cleanup_evaluation_user($1,$2)
+        FROM brunn_auth.cleanup_evaluation_user($1,$2)
         "#,
     )
     .bind(user_id)
@@ -3538,7 +3538,7 @@ pub async fn cleanup_evaluation(
 async fn current_generation(state: &AppState, auth: &AuthContext) -> ApiResult<i64> {
     let mut tx = state.begin_read(auth).await?;
     let generation =
-        sqlx::query_scalar::<_, Option<i64>>("SELECT straylight_auth.workspace_generation($1)")
+        sqlx::query_scalar::<_, Option<i64>>("SELECT brunn_auth.workspace_generation($1)")
             .bind(auth.user_id.0)
             .fetch_one(&mut *tx)
             .await?
@@ -3566,8 +3566,8 @@ async fn feature_snapshot(
     let rows = sqlx::query(
         r#"
         SELECT entry.id,entry.path,entry.title,coalesce(version.content,'') AS content
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
@@ -3795,7 +3795,7 @@ async fn semantic_search_allowed(state: &AppState, auth: &AuthContext) -> ApiRes
         r#"
         SELECT EXISTS (
           SELECT 1
-          FROM straylight.search_chunks
+          FROM brunn.search_chunks
           WHERE user_id=$1 AND embedding IS NOT NULL
           LIMIT 1
         )
@@ -4321,8 +4321,8 @@ async fn exact_candidates(
                  WHEN $3 THEN coalesce(version.content,'')
                  ELSE left(coalesce(version.content,''),2400)
                END AS content
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
@@ -4591,9 +4591,9 @@ async fn semantic_candidates(
 }
 
 fn derived_penalty(path: &str) -> f64 {
-    if path.starts_with(".straylight/proposals/") {
+    if path.starts_with(".brunn/proposals/") {
         2.0
-    } else if path.starts_with(".straylight/derived/") || path.starts_with(".straylight/dreams/") {
+    } else if path.starts_with(".brunn/derived/") || path.starts_with(".brunn/dreams/") {
         1.0
     } else {
         0.0
@@ -4738,8 +4738,8 @@ async fn fetch_search_top1_hydration(
         r#"
         SELECT entry.id,version.size_bytes,
                CASE WHEN version.size_bytes <= $3 THEN version.content ELSE NULL END AS content
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
@@ -5306,11 +5306,11 @@ async fn hydrate_candidates(
         sqlx::query(
             r#"
             WITH generation AS (
-              SELECT straylight_auth.workspace_generation($1) AS workspace_generation
+              SELECT brunn_auth.workspace_generation($1) AS workspace_generation
             ), documents AS MATERIALIZED (
               SELECT entry.id,version.size_bytes,version.content
-              FROM straylight.entries AS entry
-              JOIN straylight.entry_versions AS version
+              FROM brunn.entries AS entry
+              JOIN brunn.entry_versions AS version
                 ON version.user_id=entry.user_id
                AND version.entry_id=entry.id
                AND version.version=entry.current_version
@@ -5333,8 +5333,8 @@ async fn hydrate_candidates(
             r#"
             SELECT NULL::bigint AS workspace_generation,
                    entry.id,version.size_bytes,NULL::text AS content
-            FROM straylight.entries AS entry
-            JOIN straylight.entry_versions AS version
+            FROM brunn.entries AS entry
+            JOIN brunn.entry_versions AS version
               ON version.user_id=entry.user_id
              AND version.entry_id=entry.id
              AND version.version=entry.current_version
@@ -5397,8 +5397,8 @@ async fn hydrate_candidates(
         let complete_rows = sqlx::query(
             r#"
             SELECT entry.id,version.content
-            FROM straylight.entries AS entry
-            JOIN straylight.entry_versions AS version
+            FROM brunn.entries AS entry
+            JOIN brunn.entry_versions AS version
               ON version.user_id=entry.user_id
              AND version.entry_id=entry.id
              AND version.version=entry.current_version
@@ -5557,7 +5557,7 @@ async fn fetch_entry_lookup(
     if include_generation {
         statement.push(
             r#"
-               straylight_auth.workspace_generation(entry.user_id) AS workspace_generation
+               brunn_auth.workspace_generation(entry.user_id) AS workspace_generation
             "#,
         );
     } else {
@@ -5565,8 +5565,8 @@ async fn fetch_entry_lookup(
     }
     statement.push(
         r#"
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
         WHERE entry.user_id=
@@ -5610,7 +5610,7 @@ async fn resolve_entry_version(
     let checkpoint_path = reference
         .and_then(|value| value.strip_prefix("checkpoint:"))
         .and_then(|value| Uuid::parse_str(value).ok())
-        .map(|checkpoint_id| format!(".straylight/checkpoints/{checkpoint_id}.md"));
+        .map(|checkpoint_id| format!(".brunn/checkpoints/{checkpoint_id}.md"));
     let effective_path = path.or(checkpoint_path.as_deref());
     let entry_id = reference
         .and_then(|value| value.strip_prefix("entry:").or(Some(value)))
@@ -5632,22 +5632,21 @@ async fn resolve_entry_version(
         state.config.read_path_roundtrip_v1,
     )
     .await?;
-    let row =
-        if row.is_none() && effective_path.is_some_and(|path| !path.starts_with(".straylight/")) {
-            fetch_entry_lookup(
-                &mut tx,
-                auth.user_id.0,
-                requested_version,
-                effective_path,
-                entry_id,
-                true,
-                true,
-                state.config.read_path_roundtrip_v1,
-            )
-            .await?
-        } else {
-            row
-        };
+    let row = if row.is_none() && effective_path.is_some_and(|path| !path.starts_with(".brunn/")) {
+        fetch_entry_lookup(
+            &mut tx,
+            auth.user_id.0,
+            requested_version,
+            effective_path,
+            entry_id,
+            true,
+            true,
+            state.config.read_path_roundtrip_v1,
+        )
+        .await?
+    } else {
+        row
+    };
     let row = row.ok_or_else(|| {
         ApiError::not_found("entry_not_found", path.or(reference).unwrap_or("entry"))
     })?;
@@ -5740,7 +5739,7 @@ async fn resolve_entry_summary(
     let checkpoint_path = reference
         .and_then(|value| value.strip_prefix("checkpoint:"))
         .and_then(|value| Uuid::parse_str(value).ok())
-        .map(|checkpoint_id| format!(".straylight/checkpoints/{checkpoint_id}.md"));
+        .map(|checkpoint_id| format!(".brunn/checkpoints/{checkpoint_id}.md"));
     let effective_path = path.or(checkpoint_path.as_deref());
     let entry_id = reference
         .and_then(|value| value.strip_prefix("entry:").or(Some(value)))
@@ -5762,22 +5761,21 @@ async fn resolve_entry_summary(
         false,
     )
     .await?;
-    let row =
-        if row.is_none() && effective_path.is_some_and(|path| !path.starts_with(".straylight/")) {
-            fetch_entry_lookup(
-                &mut tx,
-                auth.user_id.0,
-                None,
-                effective_path,
-                entry_id,
-                true,
-                false,
-                false,
-            )
-            .await?
-        } else {
-            row
-        };
+    let row = if row.is_none() && effective_path.is_some_and(|path| !path.starts_with(".brunn/")) {
+        fetch_entry_lookup(
+            &mut tx,
+            auth.user_id.0,
+            None,
+            effective_path,
+            entry_id,
+            true,
+            false,
+            false,
+        )
+        .await?
+    } else {
+        row
+    };
     let row = row.ok_or_else(|| {
         ApiError::not_found(
             "entry_not_found",
@@ -5863,7 +5861,7 @@ fn render_read(entry: &EntryRow, request: &ReadItem, max_chars: usize) -> ApiRes
 }
 
 fn parse_tier_a_history_stage(metadata: &Value) -> ApiResult<Option<TierAHistoryStage>> {
-    let Some(value) = metadata.get("_straylight_tier_a_history") else {
+    let Some(value) = metadata.get("_brunn_tier_a_history") else {
         return Ok(None);
     };
     if value.get("format").and_then(Value::as_str) != Some(TIER_A_HISTORY_STAGE_FORMAT) {
@@ -5910,7 +5908,7 @@ fn validate_tier_a_history_request(
         return Ok(None);
     };
     if metadata
-        .get("_straylight_import")
+        .get("_brunn_import")
         .and_then(|value| value.get("format"))
         .and_then(Value::as_str)
         != Some(WORKSPACE_IMPORT_FORMAT)
@@ -5938,7 +5936,7 @@ fn validate_tier_a_history_request(
                 "intentional exact-byte history preservation requires an evaluation-only stack",
             ));
         }
-        if path.starts_with(".straylight/") {
+        if path.starts_with(".brunn/") {
             return Err(ApiError::invalid(
                 "intentional exact-byte history preservation is not supported for managed paths",
             ));
@@ -6044,7 +6042,7 @@ pub(crate) async fn prepare_markdown(
     if let Some(idempotency_key) = request.idempotency_key {
         validate_idempotency_key(&idempotency_key)?;
         metadata.insert(
-            "_straylight_idempotency_hash".to_owned(),
+            "_brunn_idempotency_hash".to_owned(),
             Value::String(hex::encode(Sha256::digest(idempotency_key.as_bytes()))),
         );
     }
@@ -6276,7 +6274,7 @@ pub(crate) async fn write_markdown_as_worker(
         let current_entry_version = sqlx::query_scalar::<_, Option<i64>>(
             r#"
             SELECT current_version
-            FROM straylight.entries
+            FROM brunn.entries
             WHERE user_id=$1 AND id=$2 AND deleted_at IS NULL
             FOR SHARE
             "#,
@@ -6319,8 +6317,8 @@ pub(crate) async fn fetch_locked_markdown_entry(
         r#"
         SELECT entry.id,entry.kind,entry.current_version,entry.deleted_at,
                version.id AS version_id,version.content_sha256,version.metadata
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
@@ -6377,7 +6375,7 @@ pub(crate) async fn upsert_markdown_in_tx(
     let proposed_entry_id = prepared.entry_id_hint.unwrap_or_else(Uuid::now_v7);
     let inserted_entry_id = sqlx::query_scalar::<_, Uuid>(
         r#"
-        INSERT INTO straylight.entries (
+        INSERT INTO brunn.entries (
           id,user_id,path,title,kind,media_type,current_version
         ) VALUES ($1,$2,$3,$4,'markdown',$5,0)
         ON CONFLICT (user_id,(lower(normalize(path, NFC)))) DO NOTHING
@@ -6482,13 +6480,13 @@ pub(crate) async fn upsert_markdown_in_tx(
     {
         let was_deleted = row.get::<Option<DateTime<Utc>>, _>("deleted_at").is_some();
         let current_metadata = row.get::<Value, _>("metadata");
-        let metadata_only = (prepared.metadata.get("_straylight_import").is_some()
+        let metadata_only = (prepared.metadata.get("_brunn_import").is_some()
             || prepared.metadata.get("portable").is_some())
             && current_metadata != prepared.metadata;
         if metadata_only {
             sqlx::query(
                 r#"
-                UPDATE straylight.entry_versions
+                UPDATE brunn.entry_versions
                 SET metadata=$4
                 WHERE user_id=$1 AND entry_id=$2 AND version=$3
                 "#,
@@ -6503,7 +6501,7 @@ pub(crate) async fn upsert_markdown_in_tx(
         if was_deleted {
             sqlx::query(
                 r#"
-                UPDATE straylight.entries
+                UPDATE brunn.entries
                 SET path=$3,title=$4,media_type=$5,deleted_at=NULL,
                     updated_at=clock_timestamp()
                 WHERE user_id=$1 AND id=$2
@@ -6516,7 +6514,7 @@ pub(crate) async fn upsert_markdown_in_tx(
             .bind(&prepared.media_type)
             .execute(&mut **tx)
             .await?;
-            sqlx::query("DELETE FROM straylight.search_chunks WHERE user_id=$1 AND entry_id=$2")
+            sqlx::query("DELETE FROM brunn.search_chunks WHERE user_id=$1 AND entry_id=$2")
                 .bind(user_id)
                 .bind(row.get::<Uuid, _>("id"))
                 .execute(&mut **tx)
@@ -6534,7 +6532,7 @@ pub(crate) async fn upsert_markdown_in_tx(
             if prepared.embeddings.iter().any(Option::is_none) {
                 sqlx::query(
                     r#"
-                    INSERT INTO straylight.jobs (user_id,kind,payload)
+                    INSERT INTO brunn.jobs (user_id,kind,payload)
                     VALUES ($1,'embed_entry',$2)
                     "#,
                 )
@@ -6549,7 +6547,7 @@ pub(crate) async fn upsert_markdown_in_tx(
         } else if metadata_only {
             sqlx::query(
                 r#"
-                UPDATE straylight.entries
+                UPDATE brunn.entries
                 SET updated_at=clock_timestamp()
                 WHERE user_id=$1 AND id=$2
                 "#,
@@ -6564,7 +6562,7 @@ pub(crate) async fn upsert_markdown_in_tx(
             Some(
                 sqlx::query_scalar::<_, i64>(
                     r#"
-                    INSERT INTO straylight.workspace_changes (
+                    INSERT INTO brunn.workspace_changes (
                       user_id,entry_id,entry_version,operation,path,content_sha256
                     ) VALUES ($1,$2,$3,'update',$4,$5)
                     RETURNING generation
@@ -6635,7 +6633,7 @@ pub(crate) async fn upsert_markdown_in_tx(
     let version_id = Uuid::now_v7();
     sqlx::query(
         r#"
-        INSERT INTO straylight.entry_versions (
+        INSERT INTO brunn.entry_versions (
           id,user_id,entry_id,version,content_sha256,content,size_bytes,
           metadata,created_by_credential_id
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
@@ -6654,7 +6652,7 @@ pub(crate) async fn upsert_markdown_in_tx(
     .await?;
     sqlx::query(
         r#"
-        UPDATE straylight.entries
+        UPDATE brunn.entries
         SET path=$3,title=$4,media_type=$5,current_version=$6,
             updated_at=clock_timestamp(),deleted_at=NULL
         WHERE user_id=$1 AND id=$2
@@ -6668,7 +6666,7 @@ pub(crate) async fn upsert_markdown_in_tx(
     .bind(version)
     .execute(&mut **tx)
     .await?;
-    sqlx::query("DELETE FROM straylight.search_chunks WHERE user_id=$1 AND entry_id=$2")
+    sqlx::query("DELETE FROM brunn.search_chunks WHERE user_id=$1 AND entry_id=$2")
         .bind(user_id)
         .bind(entry_id)
         .execute(&mut **tx)
@@ -6685,7 +6683,7 @@ pub(crate) async fn upsert_markdown_in_tx(
     .await?;
     let generation = sqlx::query_scalar::<_, i64>(
         r#"
-        INSERT INTO straylight.workspace_changes (
+        INSERT INTO brunn.workspace_changes (
           user_id,entry_id,entry_version,operation,path,content_sha256
         ) VALUES ($1,$2,$3,$4,$5,$6)
         RETURNING generation
@@ -6703,7 +6701,7 @@ pub(crate) async fn upsert_markdown_in_tx(
         let metadata = rebase_imported_checkpoint_metadata(prepared.metadata.clone(), generation);
         sqlx::query(
             r#"
-            UPDATE straylight.entry_versions
+            UPDATE brunn.entry_versions
             SET metadata=$4
             WHERE user_id=$1 AND entry_id=$2 AND version=$3
             "#,
@@ -6730,7 +6728,7 @@ pub(crate) async fn upsert_markdown_in_tx(
     if prepared.embeddings.iter().any(Option::is_none) {
         sqlx::query(
             r#"
-            INSERT INTO straylight.jobs (user_id,kind,payload)
+            INSERT INTO brunn.jobs (user_id,kind,payload)
             VALUES ($1,'embed_entry',$2)
             "#,
         )
@@ -6764,7 +6762,7 @@ async fn insert_chunks(
     let pairs = chunks.iter().zip(embeddings).collect::<Vec<_>>();
     for batch in pairs.chunks(CHUNK_INSERT_BATCH_SIZE) {
         let mut builder = QueryBuilder::<Postgres>::new(
-            "INSERT INTO straylight.search_chunks \
+            "INSERT INTO brunn.search_chunks \
              (id,user_id,entry_id,entry_version_id,chunk_index,path,heading,content,token_estimate,embedding) ",
         );
         builder.push_values(batch.iter().copied(), |mut row, (chunk, embedding)| {
@@ -6796,12 +6794,12 @@ async fn changes_since(
             r#"
             WITH generation AS (
               SELECT coalesce(max(change.generation),0) AS workspace_generation
-              FROM straylight.workspace_changes AS change
+              FROM brunn.workspace_changes AS change
               WHERE change.user_id=$1
             ), page AS MATERIALIZED (
               SELECT change.generation,change.operation,change.path,
                      change.entry_version,change.content_sha256,change.recorded_at
-              FROM straylight.workspace_changes AS change
+              FROM brunn.workspace_changes AS change
               WHERE change.user_id=$1 AND change.generation>$2
               ORDER BY change.generation
               LIMIT $3
@@ -6827,7 +6825,7 @@ async fn changes_since(
         let rows = sqlx::query(
             r#"
             SELECT generation,operation,path,entry_version,content_sha256,recorded_at
-            FROM straylight.workspace_changes
+            FROM brunn.workspace_changes
             WHERE user_id=$1 AND generation>$2
             ORDER BY generation
             LIMIT $3
@@ -7081,13 +7079,13 @@ async fn load_resume_version_pairs(
                pinned.content_sha256 AS pinned_sha256,pinned.content AS before,
                current.content_sha256 AS current_sha256,current.content AS after
         FROM requested
-        LEFT JOIN straylight.entries AS entry
+        LEFT JOIN brunn.entries AS entry
           ON entry.user_id=$1 AND entry.id=requested.entry_id
-        LEFT JOIN straylight.entry_versions AS pinned
+        LEFT JOIN brunn.entry_versions AS pinned
           ON pinned.user_id=$1
          AND pinned.entry_id=requested.entry_id
          AND pinned.version=requested.pinned_version
-        LEFT JOIN straylight.entry_versions AS current
+        LEFT JOIN brunn.entry_versions AS current
           ON current.user_id=entry.user_id
          AND current.entry_id=entry.id
          AND current.version=entry.current_version
@@ -7341,7 +7339,7 @@ async fn resolve_checkpoint_sources_in_tx(
     paths.dedup();
     let normalized_path_keys = paths
         .iter()
-        .filter(|path| !path.starts_with(".straylight/"))
+        .filter(|path| !path.starts_with(".brunn/"))
         .map(|path| portable_path_key(path))
         .collect::<Vec<_>>();
 
@@ -7352,7 +7350,7 @@ async fn resolve_checkpoint_sources_in_tx(
     let mut candidate_ids = entry_ids.clone();
     if !paths.is_empty() || !normalized_path_keys.is_empty() {
         let resolved: Vec<Uuid> =
-            sqlx::query_scalar("SELECT straylight_auth.resolve_entry_ids_by_path($1,$2,$3)")
+            sqlx::query_scalar("SELECT brunn_auth.resolve_entry_ids_by_path($1,$2,$3)")
                 .bind(user_id)
                 .bind(&paths)
                 .bind(&normalized_path_keys)
@@ -7372,9 +7370,9 @@ async fn resolve_checkpoint_sources_in_tx(
                version.id AS version_id,version.content_sha256,
                NULL::text AS content,version.object_key,version.object_version_id,
                version.size_bytes,version.metadata,
-               straylight_auth.workspace_generation($1) AS pinned_workspace_generation
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+               brunn_auth.workspace_generation($1) AS pinned_workspace_generation
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
@@ -7427,7 +7425,7 @@ async fn resolve_checkpoint_sources_in_tx(
 
     let lookup_path = |path: &str| {
         by_exact_path.get(path).cloned().or_else(|| {
-            (!path.starts_with(".straylight/"))
+            (!path.starts_with(".brunn/"))
                 .then(|| by_normalized_path.get(&portable_path_key(path)).cloned())
                 .flatten()
         })
@@ -7498,7 +7496,7 @@ fn render_checkpoint_markdown(
         crate::task_service::validate_project_slug(project)?;
     }
     let mut output = format!(
-        "---\nstraylight_kind: checkpoint\ncheckpoint_id: {checkpoint_id}\n\
+        "---\nbrunn_kind: checkpoint\ncheckpoint_id: {checkpoint_id}\n\
          workspace_generation: {generation}\nsession_id: {}\nparent_checkpoint_id: {}\nproject: {}\n---\n\n\
          # Checkpoint: {}\n\n",
         request.session_id,
@@ -7641,7 +7639,7 @@ fn validate_checkpoint_request(request: &CheckpointRequest) -> ApiResult<(String
         ));
     }
     let identity = json!({
-        "schema": "straylight-simple-checkpoint-request@v1",
+        "schema": "brunn-simple-checkpoint-request@v1",
         "parent_checkpoint_id": request.parent_checkpoint_id,
         "state": request.state,
         "source_refs": request.source_refs
@@ -7712,7 +7710,7 @@ async fn replay_checkpoint_receipt_in_tx(
     let row = sqlx::query(
         r#"
         SELECT request_hash,receipt
-        FROM straylight.workspace_idempotency_receipts
+        FROM brunn.workspace_idempotency_receipts
         WHERE user_id=$1 AND operation_kind='checkpoint' AND idempotency_key=$2
         "#,
     )
@@ -7755,7 +7753,7 @@ async fn persist_checkpoint_receipt_in_tx(
 ) -> ApiResult<()> {
     sqlx::query(
         r#"
-        INSERT INTO straylight.workspace_idempotency_receipts (
+        INSERT INTO brunn.workspace_idempotency_receipts (
           user_id,operation_kind,idempotency_key,request_hash,
           checkpoint_entry_id,pinned_workspace_generation,
           resulting_workspace_generation,receipt,created_by_credential_id
@@ -7868,7 +7866,7 @@ async fn commit_checkpoint_in_tx(
         None => sqlx::query_scalar::<_, Option<i64>>(
             r#"
             SELECT max(generation)
-            FROM straylight.workspace_changes
+            FROM brunn.workspace_changes
             WHERE user_id=$1 AND entry_id=$2 AND entry_version=$3
             "#,
         )
@@ -7893,7 +7891,7 @@ async fn commit_checkpoint_in_tx(
     );
     sqlx::query(
         r#"
-        UPDATE straylight.entry_versions
+        UPDATE brunn.entry_versions
         SET metadata=$4
         WHERE user_id=$1 AND entry_id=$2 AND version=$3
         "#,
@@ -7947,7 +7945,7 @@ async fn adopt_legacy_checkpoint_receipt_in_tx(
         .as_ref()
         .map(|_| hex::encode(Sha256::digest(idempotency_key.as_bytes())));
     let implicit_path = format!(
-        ".straylight/checkpoints/{}.md",
+        ".brunn/checkpoints/{}.md",
         deterministic_checkpoint_id(request)
     );
     // LIKE and the metadata hash expression cannot reach their indexes
@@ -7955,7 +7953,7 @@ async fn adopt_legacy_checkpoint_receipt_in_tx(
     // candidate set by id first; every original predicate is re-checked on
     // that bounded set.
     let adoption_ids: Vec<Uuid> =
-        sqlx::query_scalar("SELECT straylight_auth.resolve_checkpoint_adoption_ids($1,$2,$3)")
+        sqlx::query_scalar("SELECT brunn_auth.resolve_checkpoint_adoption_ids($1,$2,$3)")
             .bind(user_id)
             .bind(idempotency_hash.as_deref())
             .bind(&implicit_path)
@@ -7968,19 +7966,19 @@ async fn adopt_legacy_checkpoint_receipt_in_tx(
         r#"
         SELECT entry.id,entry.path,entry.current_version,
                version.id AS version_id,version.content_sha256,version.metadata
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
         WHERE entry.user_id=$1
           AND entry.id=ANY($4)
           AND entry.deleted_at IS NULL
-          AND entry.path LIKE '.straylight/checkpoints/%'
+          AND entry.path LIKE '.brunn/checkpoints/%'
           AND version.metadata->>'kind'='checkpoint'
           AND (
             ($2::text IS NOT NULL
-             AND version.metadata->>'_straylight_idempotency_hash'=$2)
+             AND version.metadata->>'_brunn_idempotency_hash'=$2)
             OR ($2::text IS NULL AND entry.path=$3)
           )
         ORDER BY entry.created_at,entry.id
@@ -8016,7 +8014,7 @@ async fn adopt_legacy_checkpoint_receipt_in_tx(
         let mut legacy_request = request.clone();
         legacy_request.session_id = legacy_session_id.to_owned();
         let expected_checkpoint_id = deterministic_checkpoint_id(&legacy_request);
-        let expected_path = format!(".straylight/checkpoints/{expected_checkpoint_id}.md");
+        let expected_path = format!(".brunn/checkpoints/{expected_checkpoint_id}.md");
         if row.get::<String, _>("path") != expected_path {
             return Err(checkpoint_idempotency_conflict(idempotency_key));
         }
@@ -8047,7 +8045,7 @@ async fn adopt_legacy_checkpoint_receipt_in_tx(
     let resulting_generation = sqlx::query_scalar::<_, Option<i64>>(
         r#"
         SELECT max(generation)
-        FROM straylight.workspace_changes
+        FROM brunn.workspace_changes
         WHERE user_id=$1 AND entry_id=$2 AND entry_version=$3
         "#,
     )
@@ -8102,7 +8100,7 @@ async fn validate_checkpoint_parent_in_tx(
     let checkpoint_path = checkpoint_ref
         .strip_prefix("checkpoint:")
         .and_then(|value| Uuid::parse_str(value).ok())
-        .map(|checkpoint_id| format!(".straylight/checkpoints/{checkpoint_id}.md"));
+        .map(|checkpoint_id| format!(".brunn/checkpoints/{checkpoint_id}.md"));
     let entry_id = checkpoint_ref
         .strip_prefix("entry:")
         .or(Some(checkpoint_ref))
@@ -8479,7 +8477,7 @@ fn continuation_paths(
         .rev()
         .filter_map(|change| change.get("path").and_then(Value::as_str))
     {
-        if path.starts_with(".straylight/") {
+        if path.starts_with(".brunn/") {
             continue;
         }
         let key = portable_path_key(path);
@@ -8499,7 +8497,7 @@ fn continuation_paths(
             .iter()
             .filter_map(|entry| entry.get("path").and_then(Value::as_str))
         {
-            if path.starts_with(".straylight/") {
+            if path.starts_with(".brunn/") {
                 continue;
             }
             let key = portable_path_key(path);
@@ -8541,9 +8539,9 @@ fn validate_path(path: &str) -> ApiResult<()> {
 
 fn validate_public_path(path: &str) -> ApiResult<()> {
     validate_path(path)?;
-    if path.starts_with(".straylight/") {
+    if path.starts_with(".brunn/") {
         return Err(ApiError::invalid(
-            "the .straylight namespace is reserved for workspace-managed entries",
+            "the .brunn namespace is reserved for workspace-managed entries",
         ));
     }
     Ok(())
@@ -8573,7 +8571,7 @@ fn require_write_capabilities(auth: &AuthContext, path: &str) -> ApiResult<()> {
         }
     } else if is_checkpoint_path(path) {
         auth.require(Capability::Checkpoint)?;
-    } else if path.starts_with(".straylight/binaries/") {
+    } else if path.starts_with(".brunn/binaries/") {
         auth.require(Capability::Stage)?;
     }
     Ok(())
@@ -8594,15 +8592,15 @@ pub(crate) fn is_agent_memory_noop_summary(path: &str, content: &str) -> bool {
 
 fn validate_write_path(request: &WriteRequest) -> ApiResult<()> {
     validate_path(&request.path)?;
-    if !request.path.starts_with(".straylight/") {
+    if !request.path.starts_with(".brunn/") {
         return Ok(());
     }
     let portable_restore = request
         .metadata
-        .get("_straylight_import")
+        .get("_brunn_import")
         .and_then(|value| value.get("format"))
         .and_then(Value::as_str)
-        == Some("straylight-workspace-import-manifest@v1");
+        == Some("brunn-workspace-import-manifest@v1");
     let client_metadata = request
         .metadata
         .get("client")
@@ -8610,7 +8608,7 @@ fn validate_write_path(request: &WriteRequest) -> ApiResult<()> {
         .unwrap_or(&request.metadata);
     let checkpoint_restore = request
         .path
-        .strip_prefix(".straylight/checkpoints/")
+        .strip_prefix(".brunn/checkpoints/")
         .and_then(|value| value.strip_suffix(".md"))
         .and_then(|value| Uuid::parse_str(value).ok())
         .is_some_and(|checkpoint_id| {
@@ -8620,7 +8618,7 @@ fn validate_write_path(request: &WriteRequest) -> ApiResult<()> {
                     .and_then(Value::as_str)
                     .is_none_or(|reference| reference == format!("checkpoint:{checkpoint_id}"))
         });
-    let binary_companion_restore = request.path.starts_with(".straylight/binaries/")
+    let binary_companion_restore = request.path.starts_with(".brunn/binaries/")
         && request.path.ends_with(".md")
         && client_metadata.get("kind").and_then(Value::as_str) == Some("binary_description")
         && client_metadata
@@ -8656,12 +8654,12 @@ fn validate_write_path(request: &WriteRequest) -> ApiResult<()> {
         return Ok(());
     }
     Err(ApiError::invalid(
-        "the .straylight namespace is reserved for workspace-managed entries",
+        "the .brunn namespace is reserved for workspace-managed entries",
     ))
 }
 
 fn is_checkpoint_path(path: &str) -> bool {
-    path.strip_prefix(".straylight/checkpoints/")
+    path.strip_prefix(".brunn/checkpoints/")
         .and_then(|value| value.strip_suffix(".md"))
         .and_then(|value| Uuid::parse_str(value).ok())
         .is_some()
@@ -8670,10 +8668,10 @@ fn is_checkpoint_path(path: &str) -> bool {
 fn is_portable_checkpoint_import(path: &str, metadata: &Value) -> bool {
     if !is_checkpoint_path(path)
         || metadata
-            .get("_straylight_import")
+            .get("_brunn_import")
             .and_then(|value| value.get("format"))
             .and_then(Value::as_str)
-            != Some("straylight-workspace-import-manifest@v1")
+            != Some("brunn-workspace-import-manifest@v1")
     {
         return false;
     }
@@ -8721,7 +8719,7 @@ async fn validate_imported_checkpoint_parent_in_tx(
         return Ok(());
     };
     let child_id = child_path
-        .strip_prefix(".straylight/checkpoints/")
+        .strip_prefix(".brunn/checkpoints/")
         .and_then(|value| value.strip_suffix(".md"))
         .and_then(|value| Uuid::parse_str(value).ok())
         .ok_or_else(|| ApiError::invalid("imported checkpoint path is invalid"))?;
@@ -8732,12 +8730,12 @@ async fn validate_imported_checkpoint_parent_in_tx(
             json!({"checkpoint_ref": format!("checkpoint:{child_id}")}),
         ));
     }
-    let parent_path = format!(".straylight/checkpoints/{parent_id}.md");
+    let parent_path = format!(".brunn/checkpoints/{parent_id}.md");
     let parent_metadata = sqlx::query_scalar::<_, Value>(
         r#"
         SELECT version.metadata
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
@@ -8885,9 +8883,9 @@ fn record_product_activity(
 }
 
 fn validate_eval_import(request: &EvalImportRequest) -> ApiResult<()> {
-    if request.schema != "straylight-eval-import@v1" {
+    if request.schema != "brunn-eval-import@v1" {
         return Err(ApiError::invalid(
-            "evaluation import schema must be straylight-eval-import@v1",
+            "evaluation import schema must be brunn-eval-import@v1",
         ));
     }
     if !matches!(request.access_mode.as_str(), "read_only" | "read_write") {
@@ -9011,7 +9009,7 @@ fn derive_eval_token(secret: &str, external_ref: &str, idempotency_key: &str) ->
     mac.update(b"\0");
     mac.update(idempotency_key.as_bytes());
     Ok(format!(
-        "straylight_eval_{}",
+        "brunn_eval_{}",
         URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
     ))
 }
@@ -9082,7 +9080,7 @@ async fn insert_bulk_documents(
 ) -> ApiResult<()> {
     for batch in documents.chunks(1_000) {
         let mut entries = QueryBuilder::<Postgres>::new(
-            "INSERT INTO straylight.entries \
+            "INSERT INTO brunn.entries \
              (id,user_id,path,title,kind,media_type,current_version) ",
         );
         entries.push_values(batch, |mut row, document| {
@@ -9098,7 +9096,7 @@ async fn insert_bulk_documents(
     }
     for batch in documents.chunks(700) {
         let mut versions = QueryBuilder::<Postgres>::new(
-            "INSERT INTO straylight.entry_versions \
+            "INSERT INTO brunn.entry_versions \
              (id,user_id,entry_id,version,content_sha256,content,size_bytes,metadata,created_by_credential_id) ",
         );
         versions.push_values(batch, |mut row, document| {
@@ -9117,7 +9115,7 @@ async fn insert_bulk_documents(
     insert_bulk_chunks(tx, user_id, documents).await?;
     for batch in documents.chunks(1_000) {
         let mut changes = QueryBuilder::<Postgres>::new(
-            "INSERT INTO straylight.workspace_changes \
+            "INSERT INTO brunn.workspace_changes \
              (user_id,entry_id,entry_version,operation,path,content_sha256) ",
         );
         changes.push_values(batch, |mut row, document| {
@@ -9132,7 +9130,7 @@ async fn insert_bulk_documents(
     }
     for batch in documents.chunks(1_000) {
         let mut jobs =
-            QueryBuilder::<Postgres>::new("INSERT INTO straylight.jobs (user_id,kind,payload) ");
+            QueryBuilder::<Postgres>::new("INSERT INTO brunn.jobs (user_id,kind,payload) ");
         jobs.push_values(batch, |mut row, document| {
             row.push_bind(user_id)
                 .push_bind("embed_entry")
@@ -9163,7 +9161,7 @@ async fn insert_bulk_chunks(
         .collect::<Vec<_>>();
     for batch in rows.chunks(500) {
         let mut builder = QueryBuilder::<Postgres>::new(
-            "INSERT INTO straylight.search_chunks \
+            "INSERT INTO brunn.search_chunks \
              (id,user_id,entry_id,entry_version_id,chunk_index,path,heading,content,token_estimate,embedding) ",
         );
         builder.push_values(batch, |mut row, (document, chunk, embedding)| {
@@ -9191,7 +9189,7 @@ async fn apply_bulk_deltas(
 ) -> ApiResult<()> {
     for delta in deltas {
         let row = sqlx::query(
-            "SELECT id,current_version FROM straylight.entries \
+            "SELECT id,current_version FROM brunn.entries \
              WHERE user_id=$1 AND lower(normalize(path, NFC))=$2 FOR UPDATE",
         )
         .bind(user_id)
@@ -9213,7 +9211,7 @@ async fn apply_bulk_deltas(
         let version = row.get::<i64, _>("current_version") + 1;
         sqlx::query(
             r#"
-            INSERT INTO straylight.entry_versions (
+            INSERT INTO brunn.entry_versions (
               id,user_id,entry_id,version,content_sha256,content,size_bytes,
               metadata,created_by_credential_id
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
@@ -9232,7 +9230,7 @@ async fn apply_bulk_deltas(
         .await?;
         sqlx::query(
             r#"
-            UPDATE straylight.entries
+            UPDATE brunn.entries
             SET title=$3,media_type=$4,current_version=$5,
                 updated_at=clock_timestamp(),deleted_at=NULL
             WHERE user_id=$1 AND id=$2
@@ -9245,7 +9243,7 @@ async fn apply_bulk_deltas(
         .bind(version)
         .execute(&mut **tx)
         .await?;
-        sqlx::query("DELETE FROM straylight.search_chunks WHERE user_id=$1 AND entry_id=$2")
+        sqlx::query("DELETE FROM brunn.search_chunks WHERE user_id=$1 AND entry_id=$2")
             .bind(user_id)
             .bind(entry_id)
             .execute(&mut **tx)
@@ -9262,7 +9260,7 @@ async fn apply_bulk_deltas(
         .await?;
         sqlx::query(
             r#"
-            INSERT INTO straylight.workspace_changes (
+            INSERT INTO brunn.workspace_changes (
               user_id,entry_id,entry_version,operation,path,content_sha256
             ) VALUES ($1,$2,$3,'update',$4,$5)
             "#,
@@ -9276,7 +9274,7 @@ async fn apply_bulk_deltas(
         .await?;
         sqlx::query(
             r#"
-            INSERT INTO straylight.jobs (user_id,kind,payload)
+            INSERT INTO brunn.jobs (user_id,kind,payload)
             VALUES ($1,'embed_entry',$2)
             "#,
         )
@@ -9293,7 +9291,7 @@ pub(crate) async fn max_generation_in_tx(
     user_id: Uuid,
 ) -> ApiResult<i64> {
     Ok(sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT max(generation) FROM straylight.workspace_changes WHERE user_id=$1",
+        "SELECT max(generation) FROM brunn.workspace_changes WHERE user_id=$1",
     )
     .bind(user_id)
     .fetch_one(&mut **tx)
@@ -9308,7 +9306,7 @@ fn render_seed_checkpoint(
     source_refs: &[String],
 ) -> String {
     format!(
-        "---\nstraylight_kind: checkpoint\ncheckpoint_id: {checkpoint_id}\n\
+        "---\nbrunn_kind: checkpoint\ncheckpoint_id: {checkpoint_id}\n\
          workspace_generation: {generation}\n---\n\n\
          # Seed checkpoint\n\n## State\n\n```json\n{}\n```\n\n\
          ## Source references\n\n{}\n",
@@ -9963,7 +9961,7 @@ mod tests {
         );
         let generic = lexical_candidate_bonus(
             task,
-            "Projects/Straylight/Portable Personal Context Layer.md",
+            "Projects/Brunn/Portable Personal Context Layer.md",
             "Portable Personal Context Layer",
             "Durable agent work",
             "Resume durable work from a checkpoint and preserve an operating model.",
@@ -9990,7 +9988,7 @@ mod tests {
         });
         let changes = vec![
             json!({"path": "Projects/Warmind/Rules.md"}),
-            json!({"path": ".straylight/checkpoints/ignored.md"}),
+            json!({"path": ".brunn/checkpoints/ignored.md"}),
             json!({"path": "Projects/Warmind/New evidence.md"}),
         ];
         let (paths, changed) = continuation_paths(Some(&checkpoint), &changes);
@@ -10025,10 +10023,10 @@ mod tests {
 
     fn tier_a_history_metadata(target: i64, semantics: &str) -> Value {
         json!({
-            "_straylight_import": {
+            "_brunn_import": {
                 "format": WORKSPACE_IMPORT_FORMAT
             },
-            "_straylight_tier_a_history": {
+            "_brunn_tier_a_history": {
                 "format": TIER_A_HISTORY_STAGE_FORMAT,
                 "target_lineage_ordinal": target,
                 "semantics": semantics
@@ -10101,7 +10099,7 @@ mod tests {
     #[test]
     fn ordinary_writes_cannot_mutate_workspace_managed_paths() {
         let ordinary = WriteRequest {
-            path: ".straylight/checkpoints/not-a-checkpoint.md".to_owned(),
+            path: ".brunn/checkpoints/not-a-checkpoint.md".to_owned(),
             content: "no".to_owned(),
             media_type: markdown_media_type(),
             expected_version: None,
@@ -10112,7 +10110,7 @@ mod tests {
 
         let checkpoint_id = Uuid::now_v7();
         let portable_restore = WriteRequest {
-            path: format!(".straylight/checkpoints/{checkpoint_id}.md"),
+            path: format!(".brunn/checkpoints/{checkpoint_id}.md"),
             content: "checkpoint".to_owned(),
             media_type: markdown_media_type(),
             expected_version: Some(0),
@@ -10120,8 +10118,8 @@ mod tests {
             metadata: json!({
                 "kind": "checkpoint",
                 "checkpoint_ref": format!("checkpoint:{checkpoint_id}"),
-                "_straylight_import": {
-                    "format": "straylight-workspace-import-manifest@v1"
+                "_brunn_import": {
+                    "format": "brunn-workspace-import-manifest@v1"
                 }
             }),
         };
@@ -10136,7 +10134,7 @@ mod tests {
             idempotency_key: None,
             metadata: json!({
                 "client": crate::messaging_protocol::conversation_metadata(&conversation),
-                "_straylight_import": {
+                "_brunn_import": {
                     "format": crate::messaging_protocol::WORKSPACE_IMPORT_FORMAT
                 }
             }),
@@ -10178,11 +10176,11 @@ mod tests {
         assert!(
             require_write_capabilities(
                 &save_only,
-                &format!(".straylight/checkpoints/{checkpoint_id}.md")
+                &format!(".brunn/checkpoints/{checkpoint_id}.md")
             )
             .is_err()
         );
-        assert!(require_write_capabilities(&save_only, ".straylight/binaries/receipt.md").is_err());
+        assert!(require_write_capabilities(&save_only, ".brunn/binaries/receipt.md").is_err());
         let conversation_path = crate::messaging_protocol::conversation_path(Uuid::now_v7());
         assert!(require_write_capabilities(&save_only, &conversation_path).is_err());
         assert!(
@@ -10205,7 +10203,7 @@ mod tests {
             .is_ok()
         );
         let task_id = Uuid::now_v7();
-        let task_path = format!(".straylight/tasks/{task_id}.md");
+        let task_path = format!(".brunn/tasks/{task_id}.md");
         assert!(require_write_capabilities(&save_only, &task_path).is_err());
         assert!(
             require_write_capabilities(
@@ -10235,21 +10233,21 @@ mod tests {
         assert!(
             require_write_capabilities(
                 &auth(&[Capability::Save, Capability::TaskWrite, Capability::Admin]),
-                ".straylight/tasks/550e8400-e29b-41d4-a716-446655440000.md"
+                ".brunn/tasks/550e8400-e29b-41d4-a716-446655440000.md"
             )
             .is_err()
         );
         assert!(
             require_write_capabilities(
                 &auth(&[Capability::Save, Capability::Checkpoint]),
-                &format!(".straylight/checkpoints/{checkpoint_id}.md")
+                &format!(".brunn/checkpoints/{checkpoint_id}.md")
             )
             .is_ok()
         );
         assert!(
             require_write_capabilities(
                 &auth(&[Capability::Save, Capability::Stage]),
-                ".straylight/binaries/receipt.md"
+                ".brunn/binaries/receipt.md"
             )
             .is_ok()
         );
@@ -10315,7 +10313,7 @@ mod tests {
     fn imported_checkpoint_parent_references_are_strict() {
         let parent = Uuid::now_v7();
         let metadata = json!({
-            "_straylight_import": {"format": WORKSPACE_IMPORT_FORMAT},
+            "_brunn_import": {"format": WORKSPACE_IMPORT_FORMAT},
             "client": {
                 "kind": "checkpoint",
                 "parent_checkpoint_ref": format!("checkpoint:{parent}")
@@ -10370,8 +10368,8 @@ mod tests {
             "rolling deploys and rollbacks must agree on checkpoint entry identity"
         );
         assert_eq!(
-            format!(".straylight/checkpoints/{newly_created_id}.md"),
-            format!(".straylight/checkpoints/{legacy_binary_id}.md"),
+            format!(".brunn/checkpoints/{newly_created_id}.md"),
+            format!(".brunn/checkpoints/{legacy_binary_id}.md"),
             "the new writer must publish at the path recognized by the legacy binary"
         );
         assert_eq!(
@@ -10964,8 +10962,8 @@ mod tests {
     #[test]
     fn imported_checkpoint_metadata_rebases_and_drops_origin_entry_ids() {
         let metadata = json!({
-            "_straylight_import": {
-                "format": "straylight-workspace-import-manifest@v1"
+            "_brunn_import": {
+                "format": "brunn-workspace-import-manifest@v1"
             },
             "client": {
                 "kind": "checkpoint",
@@ -10996,7 +10994,7 @@ mod tests {
             media_type: markdown_media_type(),
         };
         let mut request = EvalImportRequest {
-            schema: "straylight-eval-import@v1".to_owned(),
+            schema: "brunn-eval-import@v1".to_owned(),
             run_id: "run".to_owned(),
             case_id: "case".to_owned(),
             authorization_scope: "eval:run/case".to_owned(),
@@ -11051,7 +11049,7 @@ mod tests {
         metadata: Value,
         expected_version: Option<i64>,
     ) -> PreparedMarkdown {
-        let path = format!(".straylight/tasks/{task_id}.md");
+        let path = format!(".brunn/tasks/{task_id}.md");
         let normalized = normalize_document(&path, content);
         PreparedMarkdown {
             entry_id_hint: None,
@@ -11109,7 +11107,7 @@ mod tests {
         pinned_generation: i64,
     ) -> (String, String, PreparedMarkdown) {
         let checkpoint_ref = format!("checkpoint:{checkpoint_id}");
-        let path = format!(".straylight/checkpoints/{checkpoint_id}.md");
+        let path = format!(".brunn/checkpoints/{checkpoint_id}.md");
         let content =
             render_checkpoint_markdown(checkpoint_id, pinned_generation, request, &[]).unwrap();
         let normalized = normalize_document(&path, &content);
@@ -11131,7 +11129,7 @@ mod tests {
                 .as_object_mut()
                 .expect("checkpoint fixture metadata is an object")
                 .insert(
-                    "_straylight_idempotency_hash".to_owned(),
+                    "_brunn_idempotency_hash".to_owned(),
                     json!(hex::encode(Sha256::digest(idempotency_key.as_bytes()))),
                 );
         }
@@ -11242,11 +11240,11 @@ mod tests {
 
     #[tokio::test]
     async fn checkpoint_receipts_are_atomic_replay_exact_and_concurrency_safe() {
-        let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+        let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
             .ok()
             .filter(|value| !value.trim().is_empty())
         else {
-            eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping checkpoint receipt test");
+            eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping checkpoint receipt test");
             return;
         };
         let pool = sqlx::postgres::PgPoolOptions::new()
@@ -11257,17 +11255,15 @@ mod tests {
         sqlx::migrate!("./migrations")
             .run(&pool)
             .await
-            .expect("apply Straylight migrations");
+            .expect("apply Brunn migrations");
         let user_id = Uuid::now_v7();
-        sqlx::query(
-            "INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)",
-        )
-        .bind(user_id)
-        .bind(format!("checkpoint-receipt-test:{user_id}"))
-        .bind("Checkpoint receipt test")
-        .execute(&pool)
-        .await
-        .expect("insert checkpoint test user");
+        sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+            .bind(user_id)
+            .bind(format!("checkpoint-receipt-test:{user_id}"))
+            .bind("Checkpoint receipt test")
+            .execute(&pool)
+            .await
+            .expect("insert checkpoint test user");
 
         let request = CheckpointRequest {
             session_id: "session:correlation-only".to_owned(),
@@ -11346,27 +11342,27 @@ mod tests {
         for (table, query, count) in [
             (
                 "entries",
-                "SELECT count(*) FROM straylight.entries WHERE user_id=$1",
+                "SELECT count(*) FROM brunn.entries WHERE user_id=$1",
                 1_i64,
             ),
             (
                 "entry_versions",
-                "SELECT count(*) FROM straylight.entry_versions WHERE user_id=$1",
+                "SELECT count(*) FROM brunn.entry_versions WHERE user_id=$1",
                 1,
             ),
             (
                 "workspace_changes",
-                "SELECT count(*) FROM straylight.workspace_changes WHERE user_id=$1",
+                "SELECT count(*) FROM brunn.workspace_changes WHERE user_id=$1",
                 1,
             ),
             (
                 "jobs",
-                "SELECT count(*) FROM straylight.jobs WHERE user_id=$1",
+                "SELECT count(*) FROM brunn.jobs WHERE user_id=$1",
                 1,
             ),
             (
                 "workspace_idempotency_receipts",
-                "SELECT count(*) FROM straylight.workspace_idempotency_receipts WHERE user_id=$1",
+                "SELECT count(*) FROM brunn.workspace_idempotency_receipts WHERE user_id=$1",
                 1,
             ),
         ] {
@@ -11417,7 +11413,7 @@ mod tests {
         // immutable session stored on the row, while binding the receipt to
         // the new session-independent canonical request hash.
         let legacy_pinned_generation = sqlx::query_scalar::<_, Option<i64>>(
-            "SELECT max(generation) FROM straylight.workspace_changes WHERE user_id=$1",
+            "SELECT max(generation) FROM brunn.workspace_changes WHERE user_id=$1",
         )
         .bind(user_id)
         .fetch_one(&pool)
@@ -11528,7 +11524,7 @@ mod tests {
         // receipt, so an exact retry succeeds without changing the public
         // optional field contract.
         let implicit_pinned_generation = sqlx::query_scalar::<_, Option<i64>>(
-            "SELECT max(generation) FROM straylight.workspace_changes WHERE user_id=$1",
+            "SELECT max(generation) FROM brunn.workspace_changes WHERE user_id=$1",
         )
         .bind(user_id)
         .fetch_one(&pool)
@@ -11589,7 +11585,7 @@ mod tests {
         // Adopt them by their exact deterministic path for the same session;
         // another session remains a distinct historical operation.
         let implicit_legacy_pinned = sqlx::query_scalar::<_, Option<i64>>(
-            "SELECT max(generation) FROM straylight.workspace_changes WHERE user_id=$1",
+            "SELECT max(generation) FROM brunn.workspace_changes WHERE user_id=$1",
         )
         .bind(user_id)
         .fetch_one(&pool)
@@ -11671,7 +11667,7 @@ mod tests {
         // second checkpoint using the same session correlation ID. The two
         // generation meanings stay explicit and replay-stable.
         let pinned_before_interleaved = sqlx::query_scalar::<_, Option<i64>>(
-            "SELECT max(generation) FROM straylight.workspace_changes WHERE user_id=$1",
+            "SELECT max(generation) FROM brunn.workspace_changes WHERE user_id=$1",
         )
         .bind(user_id)
         .fetch_one(&pool)
@@ -11739,7 +11735,7 @@ mod tests {
         assert_eq!(interleaved, interleaved_replay);
 
         let checkpoint_count = sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.entries WHERE user_id=$1 AND path LIKE '.straylight/checkpoints/%'",
+            "SELECT count(*) FROM brunn.entries WHERE user_id=$1 AND path LIKE '.brunn/checkpoints/%'",
         )
         .bind(user_id)
         .fetch_one(&pool)
@@ -11756,7 +11752,7 @@ mod tests {
         // and its referenced entry rows are removed without weakening normal
         // immutability.
         let immutable_delete =
-            sqlx::query("DELETE FROM straylight.workspace_idempotency_receipts WHERE user_id=$1")
+            sqlx::query("DELETE FROM brunn.workspace_idempotency_receipts WHERE user_id=$1")
                 .bind(user_id)
                 .execute(&pool)
                 .await
@@ -11769,7 +11765,7 @@ mod tests {
         let purge_credential_id = Uuid::now_v7();
         sqlx::query(
             r#"
-            INSERT INTO straylight.api_credentials (
+            INSERT INTO brunn.api_credentials (
               id,user_id,label,token_hash,capabilities
             ) VALUES ($1,$2,'Checkpoint purge test',$3,ARRAY['checkpoint','status'])
             "#,
@@ -11785,7 +11781,7 @@ mod tests {
         let deletion_request_id = Uuid::now_v7();
         sqlx::query(
             r#"
-            INSERT INTO straylight.account_deletion_requests (
+            INSERT INTO brunn.account_deletion_requests (
               id,user_id,requested_by_credential_id,status,confirmation_hash,
               reason,backup_expiry_due_at
             ) VALUES (
@@ -11803,7 +11799,7 @@ mod tests {
         .unwrap();
         sqlx::query(
             r#"
-            UPDATE straylight.users
+            UPDATE brunn.users
             SET account_status='deleting',deletion_requested_at=clock_timestamp()
             WHERE id=$1
             "#,
@@ -11813,7 +11809,7 @@ mod tests {
         .await
         .expect("activate account deletion fence");
         let purge_result =
-            sqlx::query_scalar::<_, Value>("SELECT straylight.purge_account_user_rows($1)")
+            sqlx::query_scalar::<_, Value>("SELECT brunn.purge_account_user_rows($1)")
                 .bind(user_id)
                 .fetch_one(&pool)
                 .await
@@ -11825,11 +11821,11 @@ mod tests {
         for (table, query) in [
             (
                 "workspace_idempotency_receipts",
-                "SELECT count(*) FROM straylight.workspace_idempotency_receipts WHERE user_id=$1",
+                "SELECT count(*) FROM brunn.workspace_idempotency_receipts WHERE user_id=$1",
             ),
             (
                 "entries",
-                "SELECT count(*) FROM straylight.entries WHERE user_id=$1",
+                "SELECT count(*) FROM brunn.entries WHERE user_id=$1",
             ),
         ] {
             let survivors = sqlx::query_scalar::<_, i64>(query)
@@ -11843,11 +11839,11 @@ mod tests {
 
     #[tokio::test]
     async fn task_entries_rebuild_projection_version_metadata_and_link_checkpoint_projects() {
-        let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+        let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
             .ok()
             .filter(|value| !value.trim().is_empty())
         else {
-            eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping task storage test");
+            eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping task storage test");
             return;
         };
         let pool = sqlx::postgres::PgPoolOptions::new()
@@ -11858,21 +11854,19 @@ mod tests {
         sqlx::migrate!("./migrations")
             .run(&pool)
             .await
-            .expect("apply Straylight migrations");
+            .expect("apply Brunn migrations");
         let user_id = Uuid::now_v7();
-        sqlx::query(
-            "INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)",
-        )
-        .bind(user_id)
-        .bind(format!("task-storage-test:{user_id}"))
-        .bind("Task storage test")
-        .execute(&pool)
-        .await
-        .expect("insert task storage user");
+        sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+            .bind(user_id)
+            .bind(format!("task-storage-test:{user_id}"))
+            .bind("Task storage test")
+            .execute(&pool)
+            .await
+            .expect("insert task storage user");
         let credential_id = Uuid::now_v7();
         sqlx::query(
             r#"
-            INSERT INTO straylight.api_credentials (
+            INSERT INTO brunn.api_credentials (
               id,user_id,label,token_hash,capabilities
             ) VALUES ($1,$2,'Task storage writer',$3,ARRAY['task.read','task.write'])
             "#,
@@ -11885,11 +11879,11 @@ mod tests {
         .expect("insert task storage credential");
         sqlx::query(
             r#"
-            INSERT INTO straylight.credential_scope_grants (
+            INSERT INTO brunn.credential_scope_grants (
               credential_id,user_id,scope_id
             )
             SELECT $1,$2,id
-            FROM straylight.scopes
+            FROM brunn.scopes
             WHERE user_id=$2 AND scope_ref='scope:root'
             "#,
         )
@@ -11910,12 +11904,12 @@ mod tests {
         };
         sqlx::query(
             r#"
-            INSERT INTO straylight.task_projects (
+            INSERT INTO brunn.task_projects (
               user_id,slug,title,hub_path,repo_path,created_by
             ) VALUES (
-              $1,'straylight','Straylight',
-              'sources/Projects/Straylight/Straylight.md',
-              '/Volumes/NyxFastData/dev/projects/straylight','owner'
+              $1,'brunn','Brunn',
+              'sources/Projects/Brunn/Brunn.md',
+              '/Volumes/NyxFastData/dev/projects/brunn','owner'
             )
             "#,
         )
@@ -11940,7 +11934,7 @@ mod tests {
                 "id": task_id,
                 "title": "Downgrade Charlemagne",
                 "status": sourced(json!("open"), "owner"),
-                "project": sourced(json!("straylight"), "agent:codex"),
+                "project": sourced(json!("brunn"), "agent:codex"),
                 "soft_due": sourced(json!("2026-08-31"), "agent:codex"),
                 "cost_of_delay": sourced(json!({
                     "amount_cents": 700,
@@ -11972,7 +11966,7 @@ mod tests {
             sqlx::query_as(
                 r#"
                 SELECT entry_version,status,cost_amount_cents,cost_period,required_contexts
-                FROM straylight.task_index
+                FROM brunn.task_index
                 WHERE user_id=$1 AND task_id=$2
                 "#,
             )
@@ -11987,7 +11981,7 @@ mod tests {
         assert_eq!(stored_projection.3.as_deref(), Some("week"));
         assert_eq!(stored_projection.4, ["home", "online"]);
 
-        sqlx::query("DELETE FROM straylight.task_index WHERE user_id=$1 AND task_id=$2")
+        sqlx::query("DELETE FROM brunn.task_index WHERE user_id=$1 AND task_id=$2")
             .bind(user_id)
             .bind(task_id)
             .execute(&pool)
@@ -12003,7 +11997,7 @@ mod tests {
         assert!(rebuilt.no_op);
         assert_eq!(
             sqlx::query_scalar::<_, i64>(
-                "SELECT count(*) FROM straylight.task_index WHERE user_id=$1 AND task_id=$2",
+                "SELECT count(*) FROM brunn.task_index WHERE user_id=$1 AND task_id=$2",
             )
             .bind(user_id)
             .bind(task_id)
@@ -12014,8 +12008,8 @@ mod tests {
         );
 
         let done_task = json!({
-            "_straylight_import": {
-                "format": "straylight-workspace-import-manifest@v1"
+            "_brunn_import": {
+                "format": "brunn-workspace-import-manifest@v1"
             },
             "client": {
                 "kind": "task",
@@ -12024,7 +12018,7 @@ mod tests {
                     "id": task_id,
                     "title": "Downgrade Charlemagne",
                     "status": sourced(json!("done"), "owner"),
-                    "project": sourced(json!("straylight"), "agent:codex"),
+                    "project": sourced(json!("brunn"), "agent:codex"),
                     "soft_due": sourced(json!("2026-08-31"), "agent:codex"),
                     "cost_of_delay": sourced(json!({
                         "amount_cents": 700,
@@ -12058,7 +12052,7 @@ mod tests {
         assert_eq!(second.version, 2);
         assert!(!second.no_op);
         let projected: (i64, String, Option<DateTime<Utc>>) = sqlx::query_as(
-            "SELECT entry_version,status,done_at FROM straylight.task_index WHERE user_id=$1 AND task_id=$2",
+            "SELECT entry_version,status,done_at FROM brunn.task_index WHERE user_id=$1 AND task_id=$2",
         )
         .bind(user_id)
         .bind(task_id)
@@ -12072,14 +12066,14 @@ mod tests {
             "2026-08-27T08:00:00+00:00"
         );
         let project_activity_after_task = sqlx::query_scalar::<_, DateTime<Utc>>(
-            "SELECT last_activity_at FROM straylight.task_projects WHERE user_id=$1 AND slug='straylight'",
+            "SELECT last_activity_at FROM brunn.task_projects WHERE user_id=$1 AND slug='brunn'",
         )
         .bind(user_id)
         .fetch_one(&pool)
         .await
         .expect("task mutation advances project activity");
         let task_projection_updated_at = sqlx::query_scalar::<_, DateTime<Utc>>(
-            "SELECT updated_at FROM straylight.task_index WHERE user_id=$1 AND task_id=$2",
+            "SELECT updated_at FROM brunn.task_index WHERE user_id=$1 AND task_id=$2",
         )
         .bind(user_id)
         .bind(task_id)
@@ -12090,7 +12084,7 @@ mod tests {
 
         let task_entry_id = first.entry_id;
         let history = sqlx::query_scalar::<_, String>(
-            "SELECT content FROM straylight.entry_versions WHERE user_id=$1 AND entry_id=$2 ORDER BY version",
+            "SELECT content FROM brunn.entry_versions WHERE user_id=$1 AND entry_id=$2 ORDER BY version",
         )
         .bind(user_id)
         .bind(task_entry_id)
@@ -12098,9 +12092,9 @@ mod tests {
         .await
         .expect("read exact task entry history");
         assert_eq!(history, [content.to_owned(), content.to_owned()]);
-        let task_path = format!(".straylight/tasks/{task_id}.md");
+        let task_path = format!(".brunn/tasks/{task_id}.md");
         let changes = sqlx::query_as::<_, (String, i64, String)>(
-            "SELECT path,entry_version,operation FROM straylight.workspace_changes WHERE user_id=$1 AND entry_id=$2 ORDER BY generation",
+            "SELECT path,entry_version,operation FROM brunn.workspace_changes WHERE user_id=$1 AND entry_id=$2 ORDER BY generation",
         )
         .bind(user_id)
         .bind(task_entry_id)
@@ -12115,7 +12109,7 @@ mod tests {
             ]
         );
         let chunk_count = sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.search_chunks WHERE user_id=$1 AND entry_id=$2",
+            "SELECT count(*) FROM brunn.search_chunks WHERE user_id=$1 AND entry_id=$2",
         )
         .bind(user_id)
         .bind(task_entry_id)
@@ -12124,7 +12118,7 @@ mod tests {
         .expect("count forbidden task search chunks");
         assert_eq!(chunk_count, 0, "task entry created search chunks");
         let job_count = sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.jobs WHERE user_id=$1 AND payload->>'entry_id'=$2",
+            "SELECT count(*) FROM brunn.jobs WHERE user_id=$1 AND payload->>'entry_id'=$2",
         )
         .bind(user_id)
         .bind(task_entry_id.to_string())
@@ -12137,8 +12131,8 @@ mod tests {
             session_id: format!("session:task-explicit-project:{user_id}"),
             parent_checkpoint_id: None,
             state: json!({
-                "objective": "Resume Straylight",
-                "project": "straylight",
+                "objective": "Resume Brunn",
+                "project": "brunn",
                 "current_state": ["Task storage is durable"]
             }),
             source_refs: vec![],
@@ -12162,29 +12156,26 @@ mod tests {
         .expect("write project-explicit checkpoint");
         let explicit_id = checkpoint_entry_id_for_new_write(&explicit_request);
         let explicit_link: (String, String) = sqlx::query_as(
-            "SELECT project_slug,attribution FROM straylight.task_checkpoint_links WHERE user_id=$1 AND checkpoint_entry_id=$2",
+            "SELECT project_slug,attribution FROM brunn.task_checkpoint_links WHERE user_id=$1 AND checkpoint_entry_id=$2",
         )
         .bind(user_id)
         .bind(explicit_id)
         .fetch_one(&pool)
         .await
         .expect("read explicit checkpoint project link");
-        assert_eq!(
-            explicit_link,
-            ("straylight".to_owned(), "explicit".to_owned())
-        );
+        assert_eq!(explicit_link, ("brunn".to_owned(), "explicit".to_owned()));
         let (project_activity_after_checkpoint, checkpoint_created_at) =
             sqlx::query_as::<_, (DateTime<Utc>, DateTime<Utc>)>(
                 r#"
                 SELECT project.last_activity_at,version.created_at
-                FROM straylight.task_projects AS project
-                JOIN straylight.entries AS entry
+                FROM brunn.task_projects AS project
+                JOIN brunn.entries AS entry
                   ON entry.user_id=project.user_id AND entry.id=$2
-                JOIN straylight.entry_versions AS version
+                JOIN brunn.entry_versions AS version
                   ON version.user_id=entry.user_id
                  AND version.entry_id=entry.id
                  AND version.version=entry.current_version
-                WHERE project.user_id=$1 AND project.slug='straylight'
+                WHERE project.user_id=$1 AND project.slug='brunn'
                 "#,
             )
             .bind(user_id)
@@ -12197,7 +12188,7 @@ mod tests {
         let checkpoint_payload: (String, Value) = sqlx::query_as(
             r#"
             SELECT version.content,version.metadata
-            FROM straylight.entry_versions AS version
+            FROM brunn.entry_versions AS version
             WHERE version.user_id=$1 AND version.entry_id=$2 AND version.version=1
             "#,
         )
@@ -12206,8 +12197,8 @@ mod tests {
         .fetch_one(&pool)
         .await
         .expect("read durable checkpoint state");
-        assert!(checkpoint_payload.0.contains("project: straylight"));
-        assert_eq!(checkpoint_payload.1["project"], "straylight");
+        assert!(checkpoint_payload.0.contains("project: brunn"));
+        assert_eq!(checkpoint_payload.1["project"], "brunn");
         assert_eq!(
             checkpoint_payload.1["checkpoint_state"]["current_state"][0],
             "Task storage is durable"
@@ -12217,7 +12208,7 @@ mod tests {
             session_id: format!("session:task-path-project:{user_id}"),
             parent_checkpoint_id: None,
             state: json!({"objective": "Resume by source path"}),
-            source_refs: vec!["sources/Projects/Straylight/Agent notes.md".to_owned()],
+            source_refs: vec!["sources/Projects/Brunn/Agent notes.md".to_owned()],
             idempotency_key: Some(format!("task-path-project:{user_id}")),
         };
         let (fallback_key, fallback_hash) = validate_checkpoint_request(&fallback_request).unwrap();
@@ -12238,23 +12229,20 @@ mod tests {
         .expect("write path-fallback checkpoint");
         let fallback_id = checkpoint_entry_id_for_new_write(&fallback_request);
         let fallback_link: (String, String, Option<String>) = sqlx::query_as(
-            "SELECT project_slug,attribution,matched_path FROM straylight.task_checkpoint_links WHERE user_id=$1 AND checkpoint_entry_id=$2",
+            "SELECT project_slug,attribution,matched_path FROM brunn.task_checkpoint_links WHERE user_id=$1 AND checkpoint_entry_id=$2",
         )
         .bind(user_id)
         .bind(fallback_id)
         .fetch_one(&pool)
         .await
         .expect("read fallback checkpoint project link");
-        assert_eq!(fallback_link.0, "straylight");
+        assert_eq!(fallback_link.0, "brunn");
         assert_eq!(fallback_link.1, "path_fallback");
-        assert_eq!(
-            fallback_link.2.as_deref(),
-            Some("sources/Projects/Straylight/")
-        );
+        assert_eq!(fallback_link.2.as_deref(), Some("sources/Projects/Brunn/"));
 
         sqlx::query(
             r#"
-            INSERT INTO straylight.task_surface_defaults (user_id,surface,contexts)
+            INSERT INTO brunn.task_surface_defaults (user_id,surface,contexts)
             VALUES ($1,'test',ARRAY['home','online'])
             ON CONFLICT (user_id,surface) DO UPDATE SET contexts=EXCLUDED.contexts
             "#,
@@ -12315,7 +12303,7 @@ mod tests {
             .expect("commit context registry flow");
 
         let merged_contexts = sqlx::query_scalar::<_, Vec<String>>(
-            "SELECT required_contexts FROM straylight.task_index WHERE user_id=$1 AND task_id=$2",
+            "SELECT required_contexts FROM brunn.task_index WHERE user_id=$1 AND task_id=$2",
         )
         .bind(user_id)
         .bind(task_id)
@@ -12326,8 +12314,8 @@ mod tests {
         let canonical_contexts = sqlx::query_scalar::<_, Value>(
             r#"
             SELECT version.metadata #> '{client,task,required_contexts,value}'
-            FROM straylight.entries AS entry
-            JOIN straylight.entry_versions AS version
+            FROM brunn.entries AS entry
+            JOIN brunn.entry_versions AS version
               ON version.user_id=entry.user_id
              AND version.entry_id=entry.id
              AND version.version=entry.current_version
@@ -12343,8 +12331,8 @@ mod tests {
         let canonical_context_source = sqlx::query_scalar::<_, String>(
             r#"
             SELECT version.metadata #>> '{client,task,required_contexts,source}'
-            FROM straylight.entries AS entry
-            JOIN straylight.entry_versions AS version
+            FROM brunn.entries AS entry
+            JOIN brunn.entry_versions AS version
               ON version.user_id=entry.user_id
              AND version.entry_id=entry.id
              AND version.version=entry.current_version
@@ -12358,7 +12346,7 @@ mod tests {
         .expect("read canonical merged context source");
         assert_eq!(canonical_context_source, "owner");
         let alias_target = sqlx::query_scalar::<_, String>(
-            "SELECT context_slug FROM straylight.task_context_aliases WHERE user_id=$1 AND alias='home'",
+            "SELECT context_slug FROM brunn.task_context_aliases WHERE user_id=$1 AND alias='home'",
         )
         .bind(user_id)
         .fetch_one(&pool)
@@ -12366,7 +12354,7 @@ mod tests {
         .expect("read durable context merge alias");
         assert_eq!(alias_target, "online");
         let merged_defaults = sqlx::query_scalar::<_, Vec<String>>(
-            "SELECT contexts FROM straylight.task_surface_defaults WHERE user_id=$1 AND surface='test'",
+            "SELECT contexts FROM brunn.task_surface_defaults WHERE user_id=$1 AND surface='test'",
         )
         .bind(user_id)
         .fetch_one(&pool)
@@ -12375,7 +12363,7 @@ mod tests {
         assert_eq!(merged_defaults, ["online"]);
         assert_eq!(
             sqlx::query_scalar::<_, i64>(
-                "SELECT count(*) FROM straylight.task_corrections WHERE user_id=$1 AND task_id=$2 AND field_name='required_contexts'",
+                "SELECT count(*) FROM brunn.task_corrections WHERE user_id=$1 AND task_id=$2 AND field_name='required_contexts'",
             )
             .bind(user_id)
             .bind(task_id)
@@ -12386,7 +12374,7 @@ mod tests {
         );
         assert_eq!(
             sqlx::query_as::<_, (Option<String>, String)>(
-                "SELECT previous_source,corrected_source FROM straylight.task_corrections WHERE user_id=$1 AND task_id=$2 AND field_name='required_contexts'",
+                "SELECT previous_source,corrected_source FROM brunn.task_corrections WHERE user_id=$1 AND task_id=$2 AND field_name='required_contexts'",
             )
             .bind(user_id)
             .bind(task_id)
@@ -12397,7 +12385,7 @@ mod tests {
         );
         assert_eq!(
             sqlx::query_scalar::<_, i64>(
-                "SELECT count(*) FROM straylight.task_audit_events WHERE user_id=$1 AND action IN ('context.create','context.merge')",
+                "SELECT count(*) FROM brunn.task_audit_events WHERE user_id=$1 AND action IN ('context.create','context.merge')",
             )
             .bind(user_id)
             .fetch_one(&pool)
@@ -12409,11 +12397,11 @@ mod tests {
 
     #[tokio::test]
     async fn force_new_version_bumps_identical_content_with_new_metadata() {
-        let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+        let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
             .ok()
             .filter(|value| !value.trim().is_empty())
         else {
-            eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping force-new-version test");
+            eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping force-new-version test");
             return;
         };
         let pool = sqlx::postgres::PgPoolOptions::new()
@@ -12424,17 +12412,15 @@ mod tests {
         sqlx::migrate!("./migrations")
             .run(&pool)
             .await
-            .expect("apply Straylight migrations");
+            .expect("apply Brunn migrations");
         let user_id = Uuid::now_v7();
-        sqlx::query(
-            "INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)",
-        )
-        .bind(user_id)
-        .bind(format!("force-version-test:{user_id}"))
-        .bind("Force version test")
-        .execute(&pool)
-        .await
-        .expect("insert test user");
+        sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+            .bind(user_id)
+            .bind(format!("force-version-test:{user_id}"))
+            .bind("Force version test")
+            .execute(&pool)
+            .await
+            .expect("insert test user");
 
         let original_metadata =
             json!({"kind": "briefing_edition", "briefing": {"date": "2026-08-01"}});
@@ -12491,8 +12477,8 @@ mod tests {
         let stored: (i64, Value) = sqlx::query_as(
             r#"
             SELECT entry.current_version,version.metadata
-            FROM straylight.entries AS entry
-            JOIN straylight.entry_versions AS version
+            FROM brunn.entries AS entry
+            JOIN brunn.entry_versions AS version
               ON version.user_id=entry.user_id
              AND version.entry_id=entry.id
              AND version.version=entry.current_version

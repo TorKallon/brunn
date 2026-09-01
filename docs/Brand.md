@@ -1,16 +1,33 @@
-# Straylight brand — Night Signal
+# Brunn brand — Night Signal
 
-Status: adopted 2026-08-02. This is the authoritative design system for every
-Straylight surface (web SPA, iOS app, launch/app icons, future marketing).
+Status: adopted 2026-08-02; renamed and extended 2026-08-31. This is the
+authoritative design system for every Brunn surface (web SPA, iOS app,
+launch/app icons, future marketing).
 
 ## 1. Identity
 
+### Name, pronunciation, and casing
+
+- **brunn** comes from Old Norse *brunnr*, “well” (Mímisbrunnr, the well of
+  memory beneath Yggdrasil). Brunn is a place and a thing, never an AI.
+- Pronounce it as one syllable, **brun** (/brʊn/).
+- The wordmark and product-surface brand signature are always lowercase
+  `brunn`. Use `Brunn` only where English grammar demands a capital. Never use
+  all-uppercase or camel-case forms.
+- The descriptor is **agent-first workspace and memory**.
+- The checkpoint and interchange format is **Brunn State**; its CLI, package,
+  and filename form is `brunn-state`.
+
+### Mark
+
 The mark is a **night signal**: one incandescent point source in a midnight
 field, casting a single ice-to-cobalt beam. It is the product metaphor made
-literal — Straylight is durable memory in the dark; the point is the record,
-the beam is retrieval. The canonical master is
-`assets/brand/straylight-night-signal-1024.png` (opaque, full-bleed 1024 px,
-no baked corner mask; platforms apply their own shape).
+literal — Brunn is durable memory in the dark; the point is the record,
+the beam draws it up. Over a well, the point source is what you dropped in,
+still shining when you come back for it. The canonical master is
+`assets/brand/brunn-night-signal-1024.png` (opaque, full-bleed 1024 px,
+no baked corner mask; platforms apply their own shape). The mark is not a
+lettermark, so the rename changes no pixels.
 
 Identity rules, from the approved concept board:
 
@@ -22,6 +39,30 @@ Identity rules, from the approved concept board:
 - Dark surfaces are **chrome, not content**: navigation, hero, launch — the
   archive/void. Content lives in a light, airy workroom. Luminous gradients
   belong only on night chrome.
+
+### Wordmark
+
+Set the single lowercase word **brunn** in
+`Georgia, "Iowan Old Style", "Times New Roman", serif`, weight 500, tracking
+`-0.03em`, using the appropriate `on-night` or `ink` token. Never apply a
+gradient fill, outline, shadow, or rotation.
+
+A marketing-only variant may place one point source above the final *n* — the
+light over the well. Use it only in hero or marketing lockups on night chrome,
+never in running text or app chrome.
+
+### Lockups, clearspace, and minimums
+
+- **Horizontal, default:** mark at left; wordmark baseline-centered on the
+  mark's vertical middle; gap 40% of mark height; wordmark cap height about
+  55% of mark height.
+- **Stacked, square or launch:** mark above the centered wordmark; gap 30% of
+  mark height.
+- **Clearspace:** at least the wordmark's *b*-ascender height on every side.
+- **Minimums:** mark alone 16 px; lockup mark height 24 px; wordmark alone
+  20 px cap height. Below those floors, show the mark alone.
+- Do not put the beam gradient behind a lockup on the light workroom, and do
+  not recolor the mark outside the night and signal ramps.
 
 ## 2. Color system
 
@@ -152,15 +193,22 @@ dark `#5FB9D0`.
 
 ## 3. Typography
 
-| Role | Stack | Use |
-| --- | --- | --- |
-| Display | `Georgia, "Iowan Old Style", "Times New Roman", serif` | Wordmark, hero headline, auth headline. Weight 500–600, tight tracking (−0.02 to −0.04 em) |
-| UI | `Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif` | Everything else |
-| Mono | `ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace` | Identifiers, code, paths |
+| Role | Face | Size / weight / tracking | Use |
+| --- | --- | --- | --- |
+| Wordmark | Georgia stack | free · 500 · −0.03em | the word `brunn` only |
+| Display | Georgia stack | 2.2–3.4rem · 500–600 · −0.03em · line-height 1.1 | hero, auth, marketing |
+| Title | Georgia stack | 1.7rem · 600 · −0.02em · line-height 1.2 | page and section headings |
+| Subtitle | Georgia stack | 1.35rem · 600 · −0.02em · line-height 1.3 | brand-surface card headings |
+| Body | Inter/system sans | 1rem · 400 · line-height 1.6 | prose |
+| UI | Inter/system sans | 0.8–0.9rem · 500 | controls, tables, navigation |
+| Label | Inter/system sans | 0.66–0.7rem · 600 · +0.14–0.22em · uppercase | eyebrows and badges |
+| Caption | Inter/system sans | 0.78rem · 400 | metadata using `faint`, still ≥ 4.5:1 |
+| Mono | ui-monospace stack | 0.86em · 400 | identifiers and paths; tabular figures for data |
 
 iOS uses the system font (SF Pro); brand moments may use `.fontDesign(.serif)`.
 The serif voice is editorial and sparing — headlines and the wordmark, never
-body text or controls.
+body text or controls. Build hierarchy with size, ink tokens, and space rather
+than weight 700. Every numeric table uses tabular figures.
 
 ## 4. Shape, space, elevation
 
@@ -185,6 +233,13 @@ body text or controls.
    hero, launch, marketing. Never on the light workroom.
 4. **Night chrome** — exactly one dark orientation surface per screen
    (sidebar or hero), so the beam always has a dark sky to cross.
+5. **Waterline** — a 1 px luminous horizontal hairline marking the well's
+   surface, with the point source's reflection below at about 55% opacity and
+   2 px blur. Add at most three static ripple hairlines beneath it, with widths
+   about 1.7× apart and opacity decaying 1 → 0.6 → 0.35. Use it on night chrome
+   only, at most once per screen, and only for hero or marketing surfaces —
+   never in the workroom and never animated. The well is still; stillness is
+   the promise.
 
 ## 6. Component recipes (web)
 
@@ -220,9 +275,9 @@ the active appearance so native controls and scrollbars match. Text accents
 must reference `--link`, solid fills `--accent-fill`; neither may hard-code
 `--brand` for text on dark surfaces.
 
-### iOS (`apps/ios/Straylight/Shared/StraylightTheme.swift`)
+### iOS (`apps/ios/Brunn/Shared/BrunnTheme.swift`)
 
-`StraylightTheme` exposes light/dark-adaptive colors via dynamic providers:
+`BrunnTheme` exposes light/dark-adaptive colors via dynamic providers:
 
 | Token | Light | Dark |
 | --- | --- | --- |
@@ -248,10 +303,22 @@ source, beam), not a lettermark. `forest` is retired.
   always present, series identity survives deutan/tritan simulation.
 - Honor `prefers-reduced-motion`; the beam never animates.
 
-## 9. Asset inventory
+## 9. Voice
 
-- Master: `assets/brand/straylight-night-signal-1024.png` (SHA-256
+Brand copy uses **drops in** for capture, **draws up** for retrieval,
+**the well** for the corpus, and **holds** for durability. Avoid database
+vocabulary such as “stored” and “retrieved” in brand copy.
+
+Approved one-line directions include:
+
+- “The well your agents draw from.”
+- “Memory that holds.”
+- “Everything you've kept, still there when you come back.”
+
+## 10. Asset inventory
+
+- Master: `assets/brand/brunn-night-signal-1024.png` (SHA-256
   `d050cd7f…`). Concept board preserved in `assets/brand/reference/`.
 - Derived: iOS `AppIcon.png`, `LaunchSignal.imageset`,
   `LaunchBackground.colorset`; web `favicon.png`, `apple-touch-icon.png`,
-  `straylight-mark.png`. Regenerate via `apps/ios/Tools/generate_app_icon.swift`.
+  `brunn-mark.png`. Regenerate via `apps/ios/Tools/generate_app_icon.swift`.

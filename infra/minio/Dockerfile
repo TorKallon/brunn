@@ -11,15 +11,15 @@ RUN git clone --filter=blob:none https://github.com/minio/minio.git . \
 RUN make build
 
 FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
-ARG STRAYLIGHT_BUILD_REVISION=unknown
-LABEL org.opencontainers.image.title="Straylight MinIO" \
-      org.opencontainers.image.revision="${STRAYLIGHT_BUILD_REVISION}"
+ARG BRUNN_BUILD_REVISION=unknown
+LABEL org.opencontainers.image.title="Brunn MinIO" \
+      org.opencontainers.image.revision="${BRUNN_BUILD_REVISION}"
 RUN apk add --no-cache ca-certificates \
-    && addgroup -g 10001 -S straylight \
-    && adduser -S -D -H -u 10001 -G straylight straylight
+    && addgroup -g 10001 -S brunn \
+    && adduser -S -D -H -u 10001 -G brunn brunn
 COPY --from=build /src/minio /usr/local/bin/minio
-COPY entrypoint.sh /usr/local/bin/straylight-minio-entrypoint
+COPY entrypoint.sh /usr/local/bin/brunn-minio-entrypoint
 EXPOSE 9000 9001
 VOLUME ["/data"]
 USER 10001:10001
-ENTRYPOINT ["/usr/local/bin/straylight-minio-entrypoint"]
+ENTRYPOINT ["/usr/local/bin/brunn-minio-entrypoint"]

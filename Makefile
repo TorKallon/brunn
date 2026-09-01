@@ -55,7 +55,7 @@ mcp: config
 	$(COMPOSE) run --rm -T mcp
 
 db-shell:
-	$(COMPOSE) exec db psql -U admin -d $${POSTGRES_DB:-straylight}
+	$(COMPOSE) exec db psql -U admin -d $${POSTGRES_DB:-brunn}
 
 minio-version:
 	$(COMPOSE) run --rm --no-deps minio --version
@@ -104,7 +104,7 @@ public-health:
 
 observability-up: config
 	@grep -Eq '^DD_API_KEY=.+$$' $(ENV_FILE) || { echo "DD_API_KEY is empty in $(ENV_FILE)" >&2; exit 1; }
-	@grep -Eq '^STRAYLIGHT_METRICS_ENABLED=(true|1)$$' $(ENV_FILE) || { echo "set STRAYLIGHT_METRICS_ENABLED=true in $(ENV_FILE)" >&2; exit 1; }
+	@grep -Eq '^BRUNN_METRICS_ENABLED=(true|1)$$' $(ENV_FILE) || { echo "set BRUNN_METRICS_ENABLED=true in $(ENV_FILE)" >&2; exit 1; }
 	$(COMPOSE) --profile observability up -d --build datadog-agent api worker
 
 observability-status:

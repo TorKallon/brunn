@@ -3,13 +3,13 @@
 -- the same administrator-only transaction; all logical identity and bytes stay
 -- immutable.
 
-CREATE OR REPLACE FUNCTION straylight.guard_deletion_redaction()
+CREATE OR REPLACE FUNCTION brunn.guard_deletion_redaction()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY INVOKER
 AS $$
 DECLARE
-  deletion_job_setting text := current_setting('straylight.deletion_job_id', true);
+  deletion_job_setting text := current_setting('brunn.deletion_job_id', true);
   deletion_job_id uuid;
   row_user_id uuid;
   old_shape jsonb := to_jsonb(OLD);
@@ -19,9 +19,9 @@ DECLARE
   source_bucket text;
   restored_bucket text;
 BEGIN
-  IF TG_TABLE_SCHEMA='straylight' AND TG_TABLE_NAME='asset_versions' THEN
+  IF TG_TABLE_SCHEMA='brunn' AND TG_TABLE_NAME='asset_versions' THEN
     IF TG_OP='UPDATE'
-       AND straylight.asset_internal_operation_authorized(
+       AND brunn.asset_internal_operation_authorized(
          'restore_locator_remap',
          OLD.user_id,
          OLD.asset_id,
@@ -30,9 +30,9 @@ BEGIN
          NEW.object_version_id
        ) THEN
       source_bucket :=
-        current_setting('straylight.asset_recovery_source_bucket', true);
+        current_setting('brunn.asset_recovery_source_bucket', true);
       restored_bucket :=
-        current_setting('straylight.asset_recovery_target_bucket', true);
+        current_setting('brunn.asset_recovery_target_bucket', true);
       IF OLD.object_version_id IS NULL
          OR NEW.object_version_id IS NULL
          OR btrim(NEW.object_version_id) IN ('', 'null')
@@ -56,7 +56,7 @@ BEGIN
     END IF;
 
     IF TG_OP='DELETE'
-       AND straylight.asset_internal_operation_authorized(
+       AND brunn.asset_internal_operation_authorized(
          'stage_reclaim',
          OLD.user_id,
          OLD.asset_id,
@@ -98,7 +98,7 @@ BEGIN
      OR row_user_id IS NULL
      OR NOT EXISTS (
        SELECT 1
-       FROM straylight.deletion_jobs AS job
+       FROM brunn.deletion_jobs AS job
        WHERE job.id = deletion_job_id
          AND job.user_id = row_user_id
          AND job.status = 'propagating'
@@ -139,11 +139,11 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION straylight.remap_asset_object_versions(p_mapping jsonb)
+CREATE OR REPLACE FUNCTION brunn.remap_asset_object_versions(p_mapping jsonb)
 RETURNS bigint
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 DECLARE
@@ -152,7 +152,7 @@ DECLARE
   affected bigint;
   operation_context text;
 BEGIN
-  IF NOT straylight.database_administrator() THEN
+  IF NOT brunn.database_administrator() THEN
     RAISE EXCEPTION
       'asset locator recovery requires a database administrator'
       USING ERRCODE = '42501';
@@ -245,14 +245,14 @@ BEGIN
   END IF;
 
   PERFORM 1
-  FROM straylight.asset_versions AS version
+  FROM brunn.asset_versions AS version
   WHERE version.object_version_id IS NOT NULL
   ORDER BY version.user_id,version.asset_id,version.version
   FOR UPDATE;
 
   IF EXISTS (
     SELECT 1
-    FROM straylight.asset_versions AS version
+    FROM brunn.asset_versions AS version
     LEFT JOIN pg_temp.asset_storage_locator_recovery_map AS mapping
       ON mapping.object_key=version.object_key
      AND (
@@ -289,7 +289,7 @@ BEGIN
            mapping.restored_bucket,
            version.object_version_id AS source_version_id,
            mapping.restored_version_id
-    FROM straylight.asset_versions AS version
+    FROM brunn.asset_versions AS version
     JOIN pg_temp.asset_storage_locator_recovery_map AS mapping
       ON mapping.source_bucket=version.bucket
      AND mapping.object_key=version.object_key
@@ -312,22 +312,22 @@ BEGIN
       'hex'
     );
     PERFORM set_config(
-      'straylight.asset_internal_operation',
+      'brunn.asset_internal_operation',
       operation_context,
       true
     );
     PERFORM set_config(
-      'straylight.asset_recovery_source_bucket',
+      'brunn.asset_recovery_source_bucket',
       candidate.source_bucket,
       true
     );
     PERFORM set_config(
-      'straylight.asset_recovery_target_bucket',
+      'brunn.asset_recovery_target_bucket',
       candidate.restored_bucket,
       true
     );
 
-    UPDATE straylight.asset_versions AS version
+    UPDATE brunn.asset_versions AS version
     SET bucket=candidate.restored_bucket,
         object_version_id=candidate.restored_version_id
     WHERE version.user_id=candidate.user_id
@@ -344,14 +344,14 @@ BEGIN
         USING ERRCODE = '40001';
     END IF;
     updated_count := updated_count + affected;
-    PERFORM set_config('straylight.asset_internal_operation','',true);
+    PERFORM set_config('brunn.asset_internal_operation','',true);
     PERFORM set_config(
-      'straylight.asset_recovery_source_bucket',
+      'brunn.asset_recovery_source_bucket',
       '',
       true
     );
     PERFORM set_config(
-      'straylight.asset_recovery_target_bucket',
+      'brunn.asset_recovery_target_bucket',
       '',
       true
     );
@@ -359,7 +359,7 @@ BEGIN
 
   IF EXISTS (
     SELECT 1
-    FROM straylight.asset_versions AS version
+    FROM brunn.asset_versions AS version
     LEFT JOIN pg_temp.asset_storage_locator_recovery_map AS mapping
       ON mapping.restored_bucket=version.bucket
      AND mapping.object_key=version.object_key
@@ -374,20 +374,20 @@ BEGIN
       USING ERRCODE = '40001';
   END IF;
 
-  PERFORM set_config('straylight.asset_internal_operation','',true);
-  PERFORM set_config('straylight.asset_recovery_source_bucket','',true);
-  PERFORM set_config('straylight.asset_recovery_target_bucket','',true);
+  PERFORM set_config('brunn.asset_internal_operation','',true);
+  PERFORM set_config('brunn.asset_recovery_source_bucket','',true);
+  PERFORM set_config('brunn.asset_recovery_target_bucket','',true);
   RETURN updated_count;
 EXCEPTION WHEN OTHERS THEN
-  PERFORM set_config('straylight.asset_internal_operation','',true);
-  PERFORM set_config('straylight.asset_recovery_source_bucket','',true);
-  PERFORM set_config('straylight.asset_recovery_target_bucket','',true);
+  PERFORM set_config('brunn.asset_internal_operation','',true);
+  PERFORM set_config('brunn.asset_recovery_source_bucket','',true);
+  PERFORM set_config('brunn.asset_recovery_target_bucket','',true);
   RAISE;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION straylight.remap_asset_object_versions(jsonb)
+REVOKE ALL ON FUNCTION brunn.remap_asset_object_versions(jsonb)
 FROM PUBLIC,app_rw,app_ro;
 
-COMMENT ON FUNCTION straylight.remap_asset_object_versions(jsonb) IS
+COMMENT ON FUNCTION brunn.remap_asset_object_versions(jsonb) IS
   'Administrator-only disaster recovery remap for complete immutable asset storage locators, preserving logical identity, hash, size, and lineage.';

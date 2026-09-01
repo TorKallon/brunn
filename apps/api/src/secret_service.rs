@@ -58,7 +58,7 @@ pub(crate) async fn todoist_token_for_worker(
         r#"
         SELECT secret_id,value_ciphertext,value_nonce,version,
                producer_credential_id
-        FROM straylight.task_todoist_secret_for_worker($1)
+        FROM brunn.task_todoist_secret_for_worker($1)
         "#,
     )
     .bind(user_id)
@@ -183,7 +183,7 @@ async fn put_inner(
     let mut tx = state.begin_write(auth).await?;
     let existing = sqlx::query(
         r#"
-        SELECT id,version FROM straylight.secrets
+        SELECT id,version FROM brunn.secrets
         WHERE user_id=$1 AND name=$2
         FOR UPDATE
         "#,
@@ -208,7 +208,7 @@ async fn put_inner(
             let (ciphertext, nonce) = encrypt_secret_value(&key, &aad, &request.value)?;
             let updated_at = sqlx::query_scalar::<_, DateTime<Utc>>(
                 r#"
-                UPDATE straylight.secrets
+                UPDATE brunn.secrets
                 SET value_ciphertext=$3,value_nonce=$4,version=$5,
                     description=coalesce($6,description),
                     updated_by_credential_id=$7,updated_at=clock_timestamp()
@@ -239,7 +239,7 @@ async fn put_inner(
             let (ciphertext, nonce) = encrypt_secret_value(&key, &aad, &request.value)?;
             let updated_at = sqlx::query_scalar::<_, DateTime<Utc>>(
                 r#"
-                INSERT INTO straylight.secrets (
+                INSERT INTO brunn.secrets (
                   id,user_id,name,description,value_ciphertext,value_nonce,
                   version,created_by_credential_id,updated_by_credential_id
                 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)
@@ -294,7 +294,7 @@ async fn get_inner(
     let row = sqlx::query(
         r#"
         SELECT id,description,value_ciphertext,value_nonce,version,updated_at
-        FROM straylight.secrets
+        FROM brunn.secrets
         WHERE user_id=$1 AND name=$2
         "#,
     )
@@ -344,10 +344,10 @@ async fn list_inner(state: &AppState, auth: &AuthContext) -> ApiResult<ListRespo
         SELECT secret.id,secret.name,secret.description,secret.version,
                secret.created_at,secret.updated_at,
                last_used.recorded_at AS last_used_at
-        FROM straylight.secrets AS secret
+        FROM brunn.secrets AS secret
         LEFT JOIN LATERAL (
           SELECT log.recorded_at
-          FROM straylight.secret_access_log AS log
+          FROM brunn.secret_access_log AS log
           WHERE log.user_id=secret.user_id
             AND log.secret_id=secret.id
             AND log.operation='get'
@@ -400,7 +400,7 @@ async fn delete_inner(
     let mut tx = state.begin_write(auth).await?;
     let secret_id = sqlx::query_scalar::<_, Uuid>(
         r#"
-        DELETE FROM straylight.secrets
+        DELETE FROM brunn.secrets
         WHERE user_id=$1 AND name=$2
         RETURNING id
         "#,
@@ -427,7 +427,7 @@ async fn record_access(
 ) -> ApiResult<()> {
     sqlx::query(
         r#"
-        INSERT INTO straylight.secret_access_log (
+        INSERT INTO brunn.secret_access_log (
           user_id,secret_id,credential_id,operation
         ) VALUES ($1,$2,$3,$4)
         "#,
@@ -474,9 +474,7 @@ fn encryption_key(state: &AppState) -> ApiResult<[u8; 32]> {
         .secret_encryption_key
         .as_deref()
         .ok_or_else(|| {
-            ApiError::configuration(
-                "STRAYLIGHT_SECRET_ENCRYPTION_KEY is required for the secret vault",
-            )
+            ApiError::configuration("BRUNN_SECRET_ENCRYPTION_KEY is required for the secret vault")
         })?;
     decode_secret_encryption_key(encoded)
 }
@@ -521,7 +519,7 @@ pub fn secret_value_aad(
     secret_id: Uuid,
     version: i32,
 ) -> Vec<u8> {
-    format!("straylight.secret.v1|{environment}|{user_id}|{secret_id}|{version}").into_bytes()
+    format!("brunn.secret.v1|{environment}|{user_id}|{secret_id}|{version}").into_bytes()
 }
 
 pub fn encrypt_secret_value(
@@ -618,7 +616,7 @@ mod tests {
     #[test]
     fn encryption_round_trips_and_binds_aad() {
         let key = [7u8; 32];
-        let aad = b"straylight.secret.v1|test";
+        let aad = b"brunn.secret.v1|test";
         let value = "-----BEGIN KEY-----\nline\n-----END KEY-----\n";
         let (ciphertext, nonce) = encrypt_secret_value(&key, aad, value).unwrap();
         assert_eq!(

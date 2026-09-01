@@ -1,11 +1,11 @@
 {
-  "schema": "straylight-case-extension-plan@v1",
+  "schema": "brunn-case-extension-plan@v1",
   "experiment_id": "E04",
   "suites": [
     {
       "suite": "0.2",
       "parent_manifest": "eval/work_cases.json",
-      "parent_manifest_sha256": "6bc361cd94ec77b45b1a2525500c71710da8744d9d719acd4bfb50cee0f25112",
+      "parent_manifest_sha256": "1479abf13d157d843bdfbba9a7ccb80c7821935f1747f6bf5e1af6f92f26273d",
       "parent_case_ids": [
         "warmind-parser-learning",
         "warmind-final-validation-handoff",
@@ -19,8 +19,8 @@
         "switzerland-resume-truth",
         "switzerland-itinerary-revision",
         "switzerland-authority-and-next-actions",
-        "straylight-product-resume",
-        "straylight-trust-handoff"
+        "brunn-product-resume",
+        "brunn-trust-handoff"
       ],
       "base_case_ids": [
         "warmind-parser-learning",
@@ -35,7 +35,7 @@
         "switzerland-resume-truth",
         "switzerland-itinerary-revision",
         "switzerland-authority-and-next-actions",
-        "straylight-product-resume"
+        "brunn-product-resume"
       ],
       "extension_case_ids": [
         "warmind-parser-learning",
@@ -47,7 +47,7 @@
     {
       "suite": "rupture-ops-v0.1",
       "parent_manifest": "eval/rupture_ops_cases.json",
-      "parent_manifest_sha256": "b596519119b7d9a1b3f50bcd017ceed5a67a5557dff22baa84df095697ccf9cf",
+      "parent_manifest_sha256": "5a55ce52ba88d5fd286b22fe92a2013762789c09ee98a9ac24cdc858a08371a2",
       "parent_case_ids": [
         "ruptureops-archive-import-reconciliation",
         "ruptureops-prompt-history-reconciliation",

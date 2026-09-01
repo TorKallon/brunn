@@ -49,11 +49,11 @@ pub async fn provision_user(
 
     let pool = db::operator_pool(database_url).await?;
     let mut tx = pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('straylight.operator.provision'))")
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('brunn.operator.provision'))")
         .execute(&mut *tx)
         .await?;
     let exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS (SELECT 1 FROM straylight.users WHERE external_ref=$1)",
+        "SELECT EXISTS (SELECT 1 FROM brunn.users WHERE external_ref=$1)",
     )
     .bind(external_ref.trim())
     .fetch_one(&mut *tx)
@@ -72,7 +72,7 @@ pub async fn provision_user(
         .map(|value| (*value).to_owned())
         .collect();
     let (user_id, credential_id, scope_id, policy_id): (Uuid, Uuid, Uuid, Uuid) =
-        sqlx::query_as("SELECT * FROM straylight_auth.bootstrap_user($1,$2,$3,$4,$5)")
+        sqlx::query_as("SELECT * FROM brunn_auth.bootstrap_user($1,$2,$3,$4,$5)")
             .bind(external_ref.trim())
             .bind(display_name.trim())
             .bind(credential_name.trim())
@@ -82,7 +82,7 @@ pub async fn provision_user(
             .await?;
     sqlx::query(
         r#"
-        INSERT INTO straylight.audit_events (
+        INSERT INTO brunn.audit_events (
           user_id, actor_ref, action, details, content_free
         ) VALUES (
           $1, 'operator:local', 'operator.user.provision', $2, true
@@ -128,16 +128,15 @@ pub async fn recover_user(
     let user_id = parse_user_ref(user_ref)?;
     let pool = db::operator_pool(database_url).await?;
     let mut tx = pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('straylight.operator.recover'))")
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('brunn.operator.recover'))")
         .execute(&mut *tx)
         .await?;
-    let user = sqlx::query(
-        "SELECT display_name, account_status FROM straylight.users WHERE id=$1 FOR UPDATE",
-    )
-    .bind(user_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| ApiError::not_found("user_not_found", user_ref))?;
+    let user =
+        sqlx::query("SELECT display_name, account_status FROM brunn.users WHERE id=$1 FOR UPDATE")
+            .bind(user_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| ApiError::not_found("user_not_found", user_ref))?;
     let account_status: String = user.try_get("account_status")?;
     if account_status != "active" {
         return Err(ApiError::conflict(
@@ -148,7 +147,7 @@ pub async fn recover_user(
     }
 
     let scope_ids = sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT id, scope_ref::text FROM straylight.scopes WHERE user_id=$1 ORDER BY scope_ref",
+        "SELECT id, scope_ref::text FROM brunn.scopes WHERE user_id=$1 ORDER BY scope_ref",
     )
     .bind(user_id)
     .fetch_all(&mut *tx)
@@ -166,7 +165,7 @@ pub async fn recover_user(
         .collect();
     let credential_id = sqlx::query_scalar::<_, Uuid>(
         r#"
-        INSERT INTO straylight.api_credentials (
+        INSERT INTO brunn.api_credentials (
           user_id, label, token_hash, capabilities
         ) VALUES ($1,$2,$3,$4)
         RETURNING id
@@ -181,7 +180,7 @@ pub async fn recover_user(
     for (scope_id, _) in &scope_ids {
         sqlx::query(
             r#"
-            INSERT INTO straylight.credential_scope_grants (
+            INSERT INTO brunn.credential_scope_grants (
               credential_id, user_id, scope_id
             ) VALUES ($1,$2,$3)
             "#,
@@ -195,7 +194,7 @@ pub async fn recover_user(
     let revoked_existing_owner_credentials = if revoke_existing_owner_credentials {
         sqlx::query(
             r#"
-            UPDATE straylight.api_credentials AS credential
+            UPDATE brunn.api_credentials AS credential
             SET disabled_at = coalesce(credential.disabled_at, clock_timestamp())
             WHERE credential.user_id=$1
               AND credential.id<>$2
@@ -219,7 +218,7 @@ pub async fn recover_user(
         .collect();
     sqlx::query(
         r#"
-        INSERT INTO straylight.audit_events (
+        INSERT INTO brunn.audit_events (
           user_id, actor_ref, action, details, content_free
         ) VALUES (
           $1, 'operator:local', 'operator.credential.recover', $2, true
@@ -276,18 +275,17 @@ pub async fn configure_web_identity(
     let pool = db::operator_pool(database_url).await?;
     let mut tx = pool.begin().await?;
     sqlx::query(
-        "SELECT pg_advisory_xact_lock(hashtextextended('straylight.operator.web_identity:' || $1::text,0))",
+        "SELECT pg_advisory_xact_lock(hashtextextended('brunn.operator.web_identity:' || $1::text,0))",
     )
     .bind(user_id)
     .execute(&mut *tx)
     .await?;
-    let user = sqlx::query(
-        "SELECT display_name, account_status FROM straylight.users WHERE id=$1 FOR UPDATE",
-    )
-    .bind(user_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| ApiError::not_found("user_not_found", user_ref))?;
+    let user =
+        sqlx::query("SELECT display_name, account_status FROM brunn.users WHERE id=$1 FOR UPDATE")
+            .bind(user_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| ApiError::not_found("user_not_found", user_ref))?;
     let account_status: String = user.try_get("account_status")?;
     if account_status != "active" {
         return Err(ApiError::conflict(
@@ -300,7 +298,7 @@ pub async fn configure_web_identity(
         r#"
         SELECT EXISTS (
           SELECT 1
-          FROM straylight.web_identities
+          FROM brunn.web_identities
           WHERE user_id<>$1
             AND (username_normalized=$2 OR email_normalized=$3)
         )
@@ -320,7 +318,7 @@ pub async fn configure_web_identity(
     }
 
     let existing_credential_id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT web_credential_id FROM straylight.web_identities WHERE user_id=$1",
+        "SELECT web_credential_id FROM brunn.web_identities WHERE user_id=$1",
     )
     .bind(user_id)
     .fetch_optional(&mut *tx)
@@ -333,7 +331,7 @@ pub async fn configure_web_identity(
         Some(credential_id) => {
             let updated = sqlx::query(
                 r#"
-                UPDATE straylight.api_credentials
+                UPDATE brunn.api_credentials
                 SET label='Web UI session principal',
                     capabilities=$1,
                     disabled_at=NULL
@@ -359,7 +357,7 @@ pub async fn configure_web_identity(
             let discarded_bearer = generate_token();
             let credential_id = sqlx::query_scalar::<_, Uuid>(
                 r#"
-                INSERT INTO straylight.api_credentials (
+                INSERT INTO brunn.api_credentials (
                   user_id, label, token_hash, capabilities
                 ) VALUES ($1,'Web UI session principal',$2,$3)
                 RETURNING id
@@ -376,11 +374,11 @@ pub async fn configure_web_identity(
     };
     let scope_grants = sqlx::query(
         r#"
-        INSERT INTO straylight.credential_scope_grants (
+        INSERT INTO brunn.credential_scope_grants (
           credential_id, user_id, scope_id
         )
         SELECT $1, scope.user_id, scope.id
-        FROM straylight.scopes AS scope
+        FROM brunn.scopes AS scope
         WHERE scope.user_id=$2
         ON CONFLICT DO NOTHING
         "#,
@@ -392,7 +390,7 @@ pub async fn configure_web_identity(
     .rows_affected();
     let password_configured = sqlx::query_scalar::<_, bool>(
         r#"
-        INSERT INTO straylight.web_identities (
+        INSERT INTO brunn.web_identities (
           user_id, username, username_normalized,
           email, email_normalized, password_hash, web_credential_id
         ) VALUES ($1,$2,$2,$3,$3,NULL,$4)
@@ -414,7 +412,7 @@ pub async fn configure_web_identity(
     .await?;
     sqlx::query(
         r#"
-        INSERT INTO straylight.audit_events (
+        INSERT INTO brunn.audit_events (
           user_id, credential_id, actor_ref, action, details, content_free
         ) VALUES (
           $1, $2, 'operator:local', 'operator.web_identity.configure',
@@ -485,12 +483,12 @@ pub async fn record_backup_watermark(
 
     let pool = db::operator_pool(database_url).await?;
     let mut tx = pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('straylight.operator.backup_watermark'))")
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('brunn.operator.backup_watermark'))")
         .execute(&mut *tx)
         .await?;
     let rows = sqlx::query(
         r#"
-        UPDATE straylight.account_deletion_requests
+        UPDATE brunn.account_deletion_requests
         SET backup_erasure_verified_at=clock_timestamp(),
             backup_erasure_watermark_at=$1,
             backup_erasure_receipt_sha256=$2,
@@ -523,7 +521,7 @@ pub async fn record_backup_watermark(
         let request_id: Uuid = row.try_get("id")?;
         sqlx::query(
             r#"
-            INSERT INTO straylight.audit_events (
+            INSERT INTO brunn.audit_events (
               user_id,actor_ref,action,details,content_free
             ) VALUES (
               $1,'operator:local','operator.backup_erasure.verify',$2,true

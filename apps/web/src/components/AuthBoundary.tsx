@@ -95,7 +95,7 @@ export function AuthBoundary({ children }: PropsWithChildren) {
   }, [invalidateSession, sessionQuery.data?.data.expires_at]);
 
   if (sessionQuery.isPending) {
-    return <ConnectionState label="Checking your Straylight session" />;
+    return <ConnectionState label="Checking your Brunn session" />;
   }
   if (sessionQuery.isError) {
     if (sessionUnauthenticated) {
@@ -112,7 +112,7 @@ export function AuthBoundary({ children }: PropsWithChildren) {
     );
   }
   if (meQuery.isPending) {
-    return <ConnectionState label="Opening your Straylight workspace" />;
+    return <ConnectionState label="Opening your Brunn workspace" />;
   }
   if (meQuery.isError) {
     if (meUnauthenticated) {

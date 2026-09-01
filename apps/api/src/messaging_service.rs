@@ -487,7 +487,7 @@ async fn send_message(
                 sqlx::query_scalar::<_, bool>(
                     r#"
                     SELECT EXISTS(
-                      SELECT 1 FROM straylight.messaging_message_index
+                      SELECT 1 FROM brunn.messaging_message_index
                       WHERE user_id=$1 AND conversation_id=$2 AND seq=$3
                     )
                     "#,
@@ -680,7 +680,7 @@ async fn send_message(
         let status = if pauses { "paused_for_human" } else { "open" };
         sqlx::query(
             r#"
-            UPDATE straylight.messaging_conversations
+            UPDATE brunn.messaging_conversations
             SET last_seq=$3,last_message_at=$4,agent_streak=$5,
                 needs_human=$6,status=$7,latest_sync_cursor=$8,
                 closed_at=NULL,updated_at=$4
@@ -783,7 +783,7 @@ async fn mark_read(
     }
     let current = sqlx::query_scalar::<_, i64>(
         r#"
-        SELECT last_read_seq FROM straylight.messaging_participants
+        SELECT last_read_seq FROM brunn.messaging_participants
         WHERE user_id=$1 AND conversation_id=$2 AND agent_id=$3
         FOR UPDATE
         "#,
@@ -800,7 +800,7 @@ async fn mark_read(
         let cursor = allocate_cursor_in_tx(&mut tx, auth.user_id.0).await?;
         sqlx::query(
             r#"
-            UPDATE straylight.messaging_participants
+            UPDATE brunn.messaging_participants
             SET last_read_seq=$4,updated_at=clock_timestamp()
             WHERE user_id=$1 AND conversation_id=$2 AND agent_id=$3
             "#,
@@ -813,7 +813,7 @@ async fn mark_read(
         .await?;
         sqlx::query(
             r#"
-            UPDATE straylight.messaging_conversations
+            UPDATE brunn.messaging_conversations
             SET latest_sync_cursor=$3,updated_at=clock_timestamp()
             WHERE user_id=$1 AND conversation_id=$2
             "#,
@@ -877,7 +877,7 @@ async fn resume_conversation(
         let cursor = allocate_cursor_in_tx(&mut tx, auth.user_id.0).await?;
         sqlx::query(
             r#"
-            UPDATE straylight.messaging_conversations
+            UPDATE brunn.messaging_conversations
             SET status='open',needs_human=false,agent_streak=0,
                 latest_sync_cursor=$3,updated_at=clock_timestamp()
             WHERE user_id=$1 AND conversation_id=$2
@@ -941,7 +941,7 @@ async fn close_conversation(
         let cursor = allocate_cursor_in_tx(&mut tx, auth.user_id.0).await?;
         sqlx::query(
             r#"
-            UPDATE straylight.messaging_conversations
+            UPDATE brunn.messaging_conversations
             SET status='closed',closed_at=$3,needs_human=false,
                 latest_sync_cursor=$4,updated_at=$3
             WHERE user_id=$1 AND conversation_id=$2
@@ -1020,7 +1020,7 @@ async fn create_agent(
     require_owner(&owner)?;
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_agents (
+        INSERT INTO brunn.messaging_agents (
           user_id,agent_id,display_name,principal_kind,delivery_mode,
           created_by_credential_id
         ) VALUES ($1,$2,$3,$4,$5,$6)
@@ -1069,7 +1069,7 @@ async fn update_agent(
     let owner = resolve_principal_in_tx(&mut tx, &auth, true).await?;
     require_owner(&owner)?;
     let principal_kind = sqlx::query_scalar::<_, String>(
-        "SELECT principal_kind FROM straylight.messaging_agents WHERE user_id=$1 AND agent_id=$2 FOR UPDATE",
+        "SELECT principal_kind FROM brunn.messaging_agents WHERE user_id=$1 AND agent_id=$2 FOR UPDATE",
     )
     .bind(auth.user_id.0)
     .bind(&agent_id)
@@ -1081,7 +1081,7 @@ async fn update_agent(
     }
     sqlx::query(
         r#"
-        UPDATE straylight.messaging_agents
+        UPDATE brunn.messaging_agents
         SET display_name=coalesce($3,display_name),
             delivery_mode=coalesce($4,delivery_mode),
             archived_at=CASE
@@ -1123,7 +1123,7 @@ async fn bind_agent_credential(
     let agent_exists = sqlx::query_scalar::<_, bool>(
         r#"
         SELECT EXISTS(
-          SELECT 1 FROM straylight.messaging_agents
+          SELECT 1 FROM brunn.messaging_agents
           WHERE user_id=$1 AND agent_id=$2 AND archived_at IS NULL
         )
         "#,
@@ -1139,7 +1139,7 @@ async fn bind_agent_credential(
         let credential_exists = sqlx::query_scalar::<_, bool>(
             r#"
             SELECT EXISTS(
-              SELECT 1 FROM straylight_auth.list_credentials($1)
+              SELECT 1 FROM brunn_auth.list_credentials($1)
               WHERE id=$2 AND disabled_at IS NULL
             )
             "#,
@@ -1153,7 +1153,7 @@ async fn bind_agent_credential(
         }
         sqlx::query(
             r#"
-            INSERT INTO straylight.messaging_credential_bindings (
+            INSERT INTO brunn.messaging_credential_bindings (
               user_id,credential_id,agent_id,bound_by_credential_id
             ) VALUES ($1,$2,$3,$4)
             ON CONFLICT (user_id,credential_id) DO UPDATE
@@ -1171,7 +1171,7 @@ async fn bind_agent_credential(
         true
     } else {
         sqlx::query(
-            "DELETE FROM straylight.messaging_credential_bindings WHERE user_id=$1 AND agent_id=$2",
+            "DELETE FROM brunn.messaging_credential_bindings WHERE user_id=$1 AND agent_id=$2",
         )
         .bind(auth.user_id.0)
         .bind(&agent_id)
@@ -1325,8 +1325,8 @@ async fn resolve_principal_in_tx(
     if let Some(row) = sqlx::query(
         r#"
         SELECT agent.agent_id,agent.principal_kind
-        FROM straylight.messaging_credential_bindings AS binding
-        JOIN straylight.messaging_agents AS agent
+        FROM brunn.messaging_credential_bindings AS binding
+        JOIN brunn.messaging_agents AS agent
           ON agent.user_id=binding.user_id AND agent.agent_id=binding.agent_id
         WHERE binding.user_id=$1 AND binding.credential_id=$2
           AND agent.archived_at IS NULL
@@ -1359,7 +1359,7 @@ async fn ensure_owner_principal_in_tx(
     let rows = sqlx::query(
         r#"
         SELECT agent_id,principal_kind
-        FROM straylight.messaging_agents
+        FROM brunn.messaging_agents
         WHERE user_id=$1 AND principal_kind='owner' AND archived_at IS NULL
         ORDER BY agent_id
         LIMIT 2
@@ -1382,13 +1382,13 @@ async fn ensure_owner_principal_in_tx(
         });
     }
     let display_name =
-        sqlx::query_scalar::<_, String>("SELECT display_name FROM straylight.users WHERE id=$1")
+        sqlx::query_scalar::<_, String>("SELECT display_name FROM brunn.users WHERE id=$1")
             .bind(auth.user_id.0)
             .fetch_one(&mut **tx)
             .await?;
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_agents (
+        INSERT INTO brunn.messaging_agents (
           user_id,agent_id,display_name,principal_kind,delivery_mode,
           created_by_credential_id
         ) VALUES ($1,'owner',$2,'owner','apns',$3)
@@ -1439,7 +1439,7 @@ async fn create_conversation_in_tx(
     let rows = sqlx::query(
         r#"
         SELECT agent_id,principal_kind
-        FROM straylight.messaging_agents
+        FROM brunn.messaging_agents
         WHERE user_id=$1 AND agent_id=ANY($2) AND archived_at IS NULL
         ORDER BY agent_id
         "#,
@@ -1482,7 +1482,7 @@ async fn create_conversation_in_tx(
         && let Some(existing) = sqlx::query_scalar::<_, Uuid>(
             r#"
             SELECT conversation_id
-            FROM straylight.messaging_conversations
+            FROM brunn.messaging_conversations
             WHERE user_id=$1 AND direct_key=$2
               AND conversation_kind='direct'
               AND status IN ('open','paused_for_human')
@@ -1523,7 +1523,7 @@ async fn create_conversation_in_tx(
     let cursor = allocate_cursor_in_tx(tx, auth.user_id.0).await?;
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_conversations (
+        INSERT INTO brunn.messaging_conversations (
           user_id,conversation_id,entry_id,path,conversation_kind,direct_key,
           subject,status,created_by_agent_id,last_seq,last_message_at,
           agent_streak,needs_human,continues_from,latest_sync_cursor,
@@ -1548,7 +1548,7 @@ async fn create_conversation_in_tx(
     for participant in participants {
         sqlx::query(
             r#"
-            INSERT INTO straylight.messaging_participants (
+            INSERT INTO brunn.messaging_participants (
               user_id,conversation_id,agent_id,role,joined_at,updated_at
             ) VALUES ($1,$2,$3,$4,$5,$5)
             "#,
@@ -1590,7 +1590,7 @@ async fn active_owner_principal_in_tx(
     let rows = sqlx::query(
         r#"
         SELECT agent_id,principal_kind
-        FROM straylight.messaging_agents
+        FROM brunn.messaging_agents
         WHERE user_id=$1 AND principal_kind='owner' AND archived_at IS NULL
         ORDER BY agent_id
         LIMIT 2
@@ -1623,10 +1623,10 @@ async fn allocate_cursor_in_tx(
 ) -> ApiResult<i64> {
     Ok(sqlx::query_scalar::<_, i64>(
         r#"
-        INSERT INTO straylight.messaging_sync_state (user_id,current_cursor)
+        INSERT INTO brunn.messaging_sync_state (user_id,current_cursor)
         VALUES ($1,1)
         ON CONFLICT (user_id) DO UPDATE
-        SET current_cursor=straylight.messaging_sync_state.current_cursor+1,
+        SET current_cursor=brunn.messaging_sync_state.current_cursor+1,
             updated_at=clock_timestamp()
         RETURNING current_cursor
         "#,
@@ -1666,7 +1666,7 @@ async fn sync_once(
         metrics::counter!("messaging.presence.renew").increment(1);
     }
     let snapshot = sqlx::query_scalar::<_, i64>(
-        "SELECT current_cursor FROM straylight.messaging_sync_state WHERE user_id=$1",
+        "SELECT current_cursor FROM brunn.messaging_sync_state WHERE user_id=$1",
     )
     .bind(auth.user_id.0)
     .fetch_optional(&mut *tx)
@@ -1778,16 +1778,16 @@ async fn load_inbox_page_boundary_in_tx(
         SELECT event_cursor
         FROM (
           SELECT message.sync_cursor AS event_cursor
-          FROM straylight.messaging_message_index AS message
-          JOIN straylight.messaging_participants AS participant
+          FROM brunn.messaging_message_index AS message
+          JOIN brunn.messaging_participants AS participant
             ON participant.user_id=message.user_id
            AND participant.conversation_id=message.conversation_id
            AND participant.agent_id=$2
           WHERE message.user_id=$1
           UNION
           SELECT conversation.latest_sync_cursor AS event_cursor
-          FROM straylight.messaging_conversations AS conversation
-          JOIN straylight.messaging_participants AS participant
+          FROM brunn.messaging_conversations AS conversation
+          JOIN brunn.messaging_participants AS participant
             ON participant.user_id=conversation.user_id
            AND participant.conversation_id=conversation.conversation_id
            AND participant.agent_id=$2
@@ -1825,7 +1825,7 @@ async fn renew_presence_in_tx(
 ) -> ApiResult<()> {
     let updated = sqlx::query(
         r#"
-        UPDATE straylight.messaging_agents
+        UPDATE brunn.messaging_agents
         SET last_seen_at=$3,
             lease_expires_at=$3 + make_interval(secs => $4),
             updated_at=$3
@@ -1867,8 +1867,8 @@ async fn load_sync_messages_in_tx(
                message.in_reply_to_conversation_id,message.in_reply_to,
                message.correlation_id,message.expects_reply,message.reply_by,
                message.sync_cursor,message.created_at
-        FROM straylight.messaging_message_index AS message
-        JOIN straylight.messaging_participants AS participant
+        FROM brunn.messaging_message_index AS message
+        JOIN brunn.messaging_participants AS participant
           ON participant.user_id=message.user_id
          AND participant.conversation_id=message.conversation_id
          AND participant.agent_id=$2
@@ -1909,7 +1909,7 @@ async fn advance_pull_positions_in_tx(
     for (conversation_id, last_read_seq) in maxima {
         sqlx::query(
             r#"
-            UPDATE straylight.messaging_participants
+            UPDATE brunn.messaging_participants
             SET last_read_seq=greatest(last_read_seq,$4),updated_at=clock_timestamp()
             WHERE user_id=$1 AND conversation_id=$2 AND agent_id=$3
             "#,
@@ -1942,7 +1942,7 @@ async fn load_conversation_views_in_tx(
                conversation.latest_sync_cursor,
                (
                  SELECT child.conversation_id
-                 FROM straylight.messaging_conversations AS child
+                 FROM brunn.messaging_conversations AS child
                  WHERE child.user_id=conversation.user_id
                    AND child.continues_from=conversation.conversation_id
                  LIMIT 1
@@ -1952,12 +1952,12 @@ async fn load_conversation_views_in_tx(
                    jsonb_build_object('agent_id',member.agent_id,'role',member.role)
                    ORDER BY member.agent_id
                  )
-                 FROM straylight.messaging_participants AS member
+                 FROM brunn.messaging_participants AS member
                  WHERE member.user_id=conversation.user_id
                    AND member.conversation_id=conversation.conversation_id
                ),'[]'::jsonb) AS participants
-        FROM straylight.messaging_conversations AS conversation
-        JOIN straylight.messaging_participants AS participant
+        FROM brunn.messaging_conversations AS conversation
+        JOIN brunn.messaging_participants AS participant
           ON participant.user_id=conversation.user_id
          AND participant.conversation_id=conversation.conversation_id
          AND participant.agent_id=$2
@@ -1971,7 +1971,7 @@ async fn load_conversation_views_in_tx(
                   AND conversation.latest_sync_cursor<=$5)
                 OR EXISTS (
                   SELECT 1
-                  FROM straylight.messaging_message_index AS page_message
+                  FROM brunn.messaging_message_index AS page_message
                   WHERE page_message.user_id=conversation.user_id
                     AND page_message.conversation_id=conversation.conversation_id
                     AND page_message.sync_cursor>$4
@@ -2058,8 +2058,8 @@ async fn load_agent_views_in_tx(
         let rows = sqlx::query(
             r#"
             SELECT binding.agent_id,credential.label
-            FROM straylight.messaging_credential_bindings AS binding
-            JOIN straylight_auth.list_credentials($1) AS credential
+            FROM brunn.messaging_credential_bindings AS binding
+            JOIN brunn_auth.list_credentials($1) AS credential
               ON credential.id=binding.credential_id
             WHERE binding.user_id=$1
             ORDER BY binding.agent_id,credential.label
@@ -2083,7 +2083,7 @@ async fn load_agent_views_in_tx(
         r#"
         SELECT agent_id,display_name,principal_kind,delivery_mode,
                lease_expires_at,last_seen_at,archived_at
-        FROM straylight.messaging_agents
+        FROM brunn.messaging_agents
         WHERE user_id=$1
         ORDER BY archived_at NULLS FIRST,display_name,agent_id
         "#,
@@ -2138,7 +2138,7 @@ async fn require_membership_in_tx(
     sqlx::query_scalar::<_, String>(
         r#"
         SELECT role
-        FROM straylight.messaging_participants
+        FROM brunn.messaging_participants
         WHERE user_id=$1 AND conversation_id=$2 AND agent_id=$3
         "#,
     )
@@ -2159,8 +2159,8 @@ async fn owner_is_participant_in_tx(
         r#"
         SELECT EXISTS(
           SELECT 1
-          FROM straylight.messaging_participants AS participant
-          JOIN straylight.messaging_agents AS agent
+          FROM brunn.messaging_participants AS participant
+          JOIN brunn.messaging_agents AS agent
             ON agent.user_id=participant.user_id
            AND agent.agent_id=participant.agent_id
           WHERE participant.user_id=$1
@@ -2186,7 +2186,7 @@ async fn promote_owner_participant_in_tx(
 ) -> ApiResult<bool> {
     let promoted = sqlx::query(
         r#"
-        UPDATE straylight.messaging_participants
+        UPDATE brunn.messaging_participants
         SET role='participant',updated_at=$4
         WHERE user_id=$1 AND conversation_id=$2 AND agent_id=$3
           AND role='observer'
@@ -2203,7 +2203,7 @@ async fn promote_owner_participant_in_tx(
     }
     sqlx::query(
         r#"
-        UPDATE straylight.messaging_conversations
+        UPDATE brunn.messaging_conversations
         SET conversation_kind='group',direct_key=NULL,updated_at=$3
         WHERE user_id=$1 AND conversation_id=$2
         "#,
@@ -2226,16 +2226,16 @@ async fn cancel_reply_deadlines_for_chain_in_tx(
         r#"
         WITH RECURSIVE ancestors AS (
           SELECT conversation_id,continues_from
-          FROM straylight.messaging_conversations
+          FROM brunn.messaging_conversations
           WHERE user_id=$1 AND conversation_id=$2
           UNION
           SELECT parent.conversation_id,parent.continues_from
-          FROM straylight.messaging_conversations AS parent
+          FROM brunn.messaging_conversations AS parent
           JOIN ancestors AS child
             ON child.continues_from=parent.conversation_id
           WHERE parent.user_id=$1
         ), canceled AS (
-          UPDATE straylight.messaging_message_index AS message
+          UPDATE brunn.messaging_message_index AS message
           SET reply_by_handled_at=GREATEST($3,message.reply_by)
           FROM ancestors
           WHERE message.user_id=$1
@@ -2299,7 +2299,7 @@ async fn load_replay_in_tx(
                request_hash,kind,body_md,refs,in_reply_to_conversation_id,
                in_reply_to,correlation_id,
                expects_reply,reply_by,sync_cursor,created_at
-        FROM straylight.messaging_message_index
+        FROM brunn.messaging_message_index
         WHERE user_id=$1 AND from_agent_id=$2 AND client_key=$3
         "#,
     )
@@ -2329,7 +2329,7 @@ async fn continuation_chain_contains_in_tx(
         current = sqlx::query_scalar::<_, Option<Uuid>>(
             r#"
             SELECT continues_from
-            FROM straylight.messaging_conversations
+            FROM brunn.messaging_conversations
             WHERE user_id=$1 AND conversation_id=$2
             "#,
         )
@@ -2358,7 +2358,7 @@ async fn load_writable_conversation_for_update(
         let next = sqlx::query_scalar::<_, Uuid>(
             r#"
             SELECT conversation_id
-            FROM straylight.messaging_conversations
+            FROM brunn.messaging_conversations
             WHERE user_id=$1 AND continues_from=$2
             "#,
         )
@@ -2390,7 +2390,7 @@ async fn load_conversation_for_update(
         SELECT conversation_id,entry_id,conversation_kind,direct_key,subject,status,
                created_by_agent_id,last_seq,agent_streak,
                needs_human,continues_from,latest_sync_cursor,closed_at,created_at
-        FROM straylight.messaging_conversations
+        FROM brunn.messaging_conversations
         WHERE user_id=$1 AND conversation_id=$2
         FOR UPDATE
         "#,
@@ -2428,7 +2428,7 @@ async fn check_send_rates_in_tx(
     let sender = sqlx::query(
         r#"
         SELECT count(*)::bigint AS message_count,min(created_at) AS oldest
-        FROM straylight.messaging_message_index
+        FROM brunn.messaging_message_index
         WHERE user_id=$1 AND from_agent_id=$2
           AND created_at>$3 - interval '1 minute'
         "#,
@@ -2455,7 +2455,7 @@ async fn check_send_rates_in_tx(
     let conversation = sqlx::query(
         r#"
         SELECT count(*)::bigint AS message_count,min(created_at) AS oldest
-        FROM straylight.messaging_message_index
+        FROM brunn.messaging_message_index
         WHERE user_id=$1 AND conversation_id=$2 AND kind<>'system'
           AND created_at>$3 - interval '1 hour'
         "#,
@@ -2512,7 +2512,7 @@ async fn validate_reply_target_in_tx(
     let exists = sqlx::query_scalar::<_, bool>(
         r#"
         SELECT EXISTS(
-          SELECT 1 FROM straylight.messaging_message_index
+          SELECT 1 FROM brunn.messaging_message_index
           WHERE user_id=$1 AND conversation_id=$2 AND seq=$3
         )
         "#,
@@ -2546,7 +2546,7 @@ async fn insert_client_message_in_tx(
 ) -> ApiResult<()> {
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_message_index (
+        INSERT INTO brunn.messaging_message_index (
           user_id,conversation_id,seq,message_id,from_agent_id,client_key,
           system_key,request_hash,kind,body_md,refs,
           in_reply_to_conversation_id,in_reply_to,
@@ -2591,7 +2591,7 @@ async fn insert_system_message_in_tx(
 ) -> ApiResult<()> {
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_message_index (
+        INSERT INTO brunn.messaging_message_index (
           user_id,conversation_id,seq,message_id,from_agent_id,client_key,
           system_key,request_hash,kind,body_md,refs,
           in_reply_to_conversation_id,in_reply_to,
@@ -2638,7 +2638,7 @@ async fn load_message_by_seq_in_tx(
                request_hash,kind,body_md,refs,in_reply_to_conversation_id,
                in_reply_to,correlation_id,
                expects_reply,reply_by,sync_cursor,created_at
-        FROM straylight.messaging_message_index
+        FROM brunn.messaging_message_index
         WHERE user_id=$1 AND conversation_id=$2 AND seq=$3
         "#,
     )
@@ -2662,7 +2662,7 @@ async fn close_for_rollover_in_tx(
 ) -> ApiResult<()> {
     sqlx::query(
         r#"
-        UPDATE straylight.messaging_conversations
+        UPDATE brunn.messaging_conversations
         SET status='closed',closed_at=$4,last_seq=$3,last_message_at=$4,
             agent_streak=$5,needs_human=false,latest_sync_cursor=$6,
             updated_at=$4
@@ -2706,7 +2706,7 @@ async fn create_continuation_in_tx(
     let latest_cursor = pause_cursor.unwrap_or(continuation_cursor);
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_conversations (
+        INSERT INTO brunn.messaging_conversations (
           user_id,conversation_id,entry_id,path,conversation_kind,direct_key,
           subject,status,created_by_agent_id,last_seq,last_message_at,
           agent_streak,needs_human,continues_from,latest_sync_cursor,
@@ -2735,11 +2735,11 @@ async fn create_continuation_in_tx(
     .await?;
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_participants (
+        INSERT INTO brunn.messaging_participants (
           user_id,conversation_id,agent_id,role,last_read_seq,joined_at,updated_at
         )
         SELECT user_id,$3,agent_id,role,0,$4,$4
-        FROM straylight.messaging_participants
+        FROM brunn.messaging_participants
         WHERE user_id=$1 AND conversation_id=$2
         ORDER BY agent_id
         "#,
@@ -2799,7 +2799,7 @@ pub async fn process_due_reply_by(state: &AppState, as_of: DateTime<Utc>) -> Api
     let candidate = sqlx::query(
         r#"
         SELECT question.user_id,question.conversation_id,question.seq
-        FROM straylight.messaging_message_index AS question
+        FROM brunn.messaging_message_index AS question
         WHERE question.kind='question'
           AND question.expects_reply
           AND question.reply_by IS NOT NULL
@@ -2829,7 +2829,7 @@ pub async fn process_due_reply_by(state: &AppState, as_of: DateTime<Utc>) -> Api
     let due = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT seq
-        FROM straylight.messaging_message_index
+        FROM brunn.messaging_message_index
         WHERE user_id=$1 AND conversation_id=$2 AND seq=$3
           AND kind='question' AND expects_reply
           AND reply_by IS NOT NULL AND reply_by<=$4
@@ -2850,11 +2850,11 @@ pub async fn process_due_reply_by(state: &AppState, as_of: DateTime<Utc>) -> Api
     let producer_credential_id = sqlx::query_scalar::<_, Uuid>(
         r#"
         SELECT version.created_by_credential_id
-        FROM straylight.messaging_conversations AS conversation
-        JOIN straylight.entries AS entry
+        FROM brunn.messaging_conversations AS conversation
+        JOIN brunn.entries AS entry
           ON entry.user_id=conversation.user_id
          AND entry.id=conversation.entry_id
-        JOIN straylight.entry_versions AS version
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
@@ -2871,7 +2871,7 @@ pub async fn process_due_reply_by(state: &AppState, as_of: DateTime<Utc>) -> Api
         r#"
         SELECT EXISTS(
           SELECT 1
-          FROM straylight.messaging_message_index AS reply
+          FROM brunn.messaging_message_index AS reply
           WHERE reply.user_id=$1
             AND reply.in_reply_to_conversation_id=$2
             AND reply.in_reply_to=$3
@@ -2886,7 +2886,7 @@ pub async fn process_due_reply_by(state: &AppState, as_of: DateTime<Utc>) -> Api
 
     sqlx::query(
         r#"
-        UPDATE straylight.messaging_message_index
+        UPDATE brunn.messaging_message_index
         SET reply_by_handled_at=$4
         WHERE user_id=$1 AND conversation_id=$2 AND seq=$3
           AND reply_by_handled_at IS NULL
@@ -2955,7 +2955,7 @@ pub async fn process_due_reply_by(state: &AppState, as_of: DateTime<Utc>) -> Api
     } else {
         sqlx::query(
             r#"
-            UPDATE straylight.messaging_conversations
+            UPDATE brunn.messaging_conversations
             SET last_seq=$3,last_message_at=$4,needs_human=true,
                 latest_sync_cursor=$5,updated_at=$4
             WHERE user_id=$1 AND conversation_id=$2
@@ -3019,7 +3019,7 @@ pub(crate) async fn sync_managed_entry_in_tx(
     let content = sqlx::query_scalar::<_, Option<String>>(
         r#"
         SELECT content
-        FROM straylight.entry_versions
+        FROM brunn.entry_versions
         WHERE user_id=$1 AND entry_id=$2 AND version=$3
         "#,
     )
@@ -3051,7 +3051,7 @@ pub(crate) async fn sync_managed_entry_in_tx(
     let present_principals = sqlx::query_scalar::<_, String>(
         r#"
         SELECT agent_id
-        FROM straylight.messaging_agents
+        FROM brunn.messaging_agents
         WHERE user_id=$1 AND agent_id=ANY($2)
         ORDER BY agent_id
         "#,
@@ -3070,7 +3070,7 @@ pub(crate) async fn sync_managed_entry_in_tx(
         let parent = sqlx::query(
             r#"
             SELECT conversation_kind,direct_key,subject,status,last_seq
-            FROM straylight.messaging_conversations
+            FROM brunn.messaging_conversations
             WHERE user_id=$1 AND conversation_id=$2
             "#,
         )
@@ -3088,7 +3088,7 @@ pub(crate) async fn sync_managed_entry_in_tx(
         let parent_participants = sqlx::query(
             r#"
             SELECT agent_id,role
-            FROM straylight.messaging_participants
+            FROM brunn.messaging_participants
             WHERE user_id=$1 AND conversation_id=$2
             ORDER BY agent_id
             "#,
@@ -3142,7 +3142,7 @@ pub(crate) async fn sync_managed_entry_in_tx(
     };
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_conversations (
+        INSERT INTO brunn.messaging_conversations (
           user_id,conversation_id,entry_id,path,conversation_kind,direct_key,
           subject,status,created_by_agent_id,last_seq,last_message_at,
           agent_streak,needs_human,continues_from,latest_sync_cursor,
@@ -3185,24 +3185,22 @@ pub(crate) async fn sync_managed_entry_in_tx(
     .await?;
 
     sqlx::query(
-        "DELETE FROM straylight.messaging_message_index WHERE user_id=$1 AND conversation_id=$2",
+        "DELETE FROM brunn.messaging_message_index WHERE user_id=$1 AND conversation_id=$2",
     )
     .bind(user_id)
     .bind(header.conversation_id)
     .execute(&mut **tx)
     .await?;
-    sqlx::query(
-        "DELETE FROM straylight.messaging_participants WHERE user_id=$1 AND conversation_id=$2",
-    )
-    .bind(user_id)
-    .bind(header.conversation_id)
-    .execute(&mut **tx)
-    .await?;
+    sqlx::query("DELETE FROM brunn.messaging_participants WHERE user_id=$1 AND conversation_id=$2")
+        .bind(user_id)
+        .bind(header.conversation_id)
+        .execute(&mut **tx)
+        .await?;
 
     for participant in &header.participants {
         sqlx::query(
             r#"
-            INSERT INTO straylight.messaging_participants (
+            INSERT INTO brunn.messaging_participants (
               user_id,conversation_id,agent_id,role,last_read_seq,joined_at,updated_at
             ) VALUES ($1,$2,$3,$4,0,$5,$5)
             "#,
@@ -3232,7 +3230,7 @@ pub(crate) async fn sync_managed_entry_in_tx(
         }
         sqlx::query(
             r#"
-            INSERT INTO straylight.messaging_message_index (
+            INSERT INTO brunn.messaging_message_index (
               user_id,conversation_id,seq,message_id,from_agent_id,client_key,
               system_key,request_hash,kind,body_md,refs,
               in_reply_to_conversation_id,in_reply_to,correlation_id,
@@ -3266,11 +3264,11 @@ pub(crate) async fn sync_managed_entry_in_tx(
     }
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_sync_state (user_id,current_cursor,updated_at)
+        INSERT INTO brunn.messaging_sync_state (user_id,current_cursor,updated_at)
         VALUES ($1,$2,clock_timestamp())
         ON CONFLICT (user_id) DO UPDATE SET
           current_cursor=GREATEST(
-            straylight.messaging_sync_state.current_cursor,
+            brunn.messaging_sync_state.current_cursor,
             EXCLUDED.current_cursor
           ),
           updated_at=clock_timestamp()
@@ -3332,7 +3330,7 @@ async fn load_conversation_snapshot_in_tx(
         SELECT conversation_id,entry_id,conversation_kind,direct_key,subject,status,
                created_by_agent_id,last_seq,agent_streak,
                needs_human,continues_from,latest_sync_cursor,closed_at,created_at
-        FROM straylight.messaging_conversations
+        FROM brunn.messaging_conversations
         WHERE user_id=$1 AND conversation_id=$2
         "#,
     )
@@ -3367,7 +3365,7 @@ async fn load_canonical_participants_in_tx(
     let rows = sqlx::query(
         r#"
         SELECT agent_id,role
-        FROM straylight.messaging_participants
+        FROM brunn.messaging_participants
         WHERE user_id=$1 AND conversation_id=$2
         ORDER BY agent_id
         "#,
@@ -3398,7 +3396,7 @@ async fn load_canonical_messages_in_tx(
                kind,body_md,refs,in_reply_to_conversation_id,in_reply_to,
                correlation_id,expects_reply,
                reply_by,reply_by_handled_at,sync_cursor,created_at
-        FROM straylight.messaging_message_index
+        FROM brunn.messaging_message_index
         WHERE user_id=$1 AND conversation_id=$2
         ORDER BY seq
         "#,
@@ -3479,7 +3477,7 @@ async fn upsert_canonical_entry_in_tx(
     let existing = sqlx::query(
         r#"
         SELECT id,kind,current_version,deleted_at
-        FROM straylight.entries
+        FROM brunn.entries
         WHERE user_id=$1 AND lower(normalize(path,NFC))=lower(normalize($2,NFC))
         FOR UPDATE
         "#,
@@ -3503,7 +3501,7 @@ async fn upsert_canonical_entry_in_tx(
     } else {
         sqlx::query(
             r#"
-            INSERT INTO straylight.entries (
+            INSERT INTO brunn.entries (
               id,user_id,path,title,kind,media_type,current_version
             ) VALUES ($1,$2,$3,$4,'markdown','text/markdown',0)
             "#,
@@ -3520,7 +3518,7 @@ async fn upsert_canonical_entry_in_tx(
     let version_id = Uuid::now_v7();
     sqlx::query(
         r#"
-        INSERT INTO straylight.entry_versions (
+        INSERT INTO brunn.entry_versions (
           id,user_id,entry_id,version,content_sha256,content,size_bytes,
           metadata,created_by_credential_id
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
@@ -3539,7 +3537,7 @@ async fn upsert_canonical_entry_in_tx(
     .await?;
     sqlx::query(
         r#"
-        UPDATE straylight.entries
+        UPDATE brunn.entries
         SET title=$3,media_type='text/markdown',current_version=$4,
             deleted_at=NULL,updated_at=clock_timestamp()
         WHERE user_id=$1 AND id=$2
@@ -3553,7 +3551,7 @@ async fn upsert_canonical_entry_in_tx(
     .await?;
     let generation = sqlx::query_scalar::<_, i64>(
         r#"
-        INSERT INTO straylight.workspace_changes (
+        INSERT INTO brunn.workspace_changes (
           user_id,entry_id,entry_version,operation,path,content_sha256
         ) VALUES ($1,$2,$3,$4,$5,$6)
         RETURNING generation
@@ -3595,20 +3593,20 @@ async fn publish_conversation_notification_in_tx(
     let (title, body, importance) = if matches!(event_type, "needs-human" | "reply-by") {
         (
             "Agent reply needed",
-            "Open Straylight to continue an agent conversation.",
+            "Open Brunn to continue an agent conversation.",
             "important",
         )
     } else {
         (
             "New agent message",
-            "Open Straylight to view the conversation.",
+            "Open Brunn to view the conversation.",
             "normal",
         )
     };
     let settings = sqlx::query(
         r#"
         SELECT timezone,quiet_hours_start,quiet_hours_end
-        FROM straylight.task_settings
+        FROM brunn.task_settings
         WHERE user_id=$1
         "#,
     )

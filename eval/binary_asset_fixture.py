@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic mixed Markdown/binary fixtures for CarryState evaluation.
+"""Deterministic mixed Markdown/binary fixtures for Brunn State evaluation.
 
 The fixture is intentionally synthetic. It is safe to publish, has no external
 dependencies, and gives both the service and filesystem baselines identical
@@ -32,10 +32,10 @@ from typing import Any, Iterable, Mapping, Sequence
 from PIL import Image, ImageDraw, ImageFont
 
 
-FORMAT_VERSION = "carrystate-binary-fixture-v1"
+FORMAT_VERSION = "brunn-state-binary-fixture-v1"
 FIXTURE_EPOCH_NS = 1_783_468_800_000_000_000
 ASSET_NAMESPACE = uuid.UUID("f30b647c-e502-4fc5-a0e7-359762a33e21")
-GENERATED_DESCRIPTION_ROOT = ".carrystate/generated/descriptions"
+GENERATED_DESCRIPTION_ROOT = ".brunn-state/generated/descriptions"
 READ_ACTIONS = frozenset({"asset:list", "asset:metadata", "asset:download", "export:read"})
 WRITE_ACTIONS = frozenset({"asset:import", "asset:delete"})
 
@@ -482,7 +482,7 @@ def make_sqlite(revision: int) -> bytes:
     ]
     if revision == 2:
         routes.append(("Grand Basin", "Oil Mesa", "rail", "blocked", 0))
-    with tempfile.TemporaryDirectory(prefix="carrystate-sqlite-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="brunn-state-sqlite-") as temporary:
         path = Path(temporary) / "factory.sqlite"
         database = sqlite3.connect(path)
         try:
@@ -550,7 +550,7 @@ def render_generated_description(
         "> Generated, non-authoritative description of a losslessly retained native file.",
         "> Treat the native bytes and source-backed Markdown as authority.",
         "",
-        "```json carrystate-asset-description",
+        "```json brunn-state-asset-description",
         json.dumps(metadata, indent=2, sort_keys=True, ensure_ascii=True),
         "```",
         "",
@@ -570,7 +570,7 @@ def render_generated_description(
 
 def parse_generated_description(content: bytes) -> dict[str, Any]:
     text = content.decode("utf-8")
-    marker = "```json carrystate-asset-description\n"
+    marker = "```json brunn-state-asset-description\n"
     start = text.find(marker)
     if start < 0:
         raise ValueError("generated description lacks metadata block")
@@ -863,8 +863,8 @@ def fixture_specs() -> tuple[
     def work(_: int) -> list[FileSpec]:
         files = [
             _text(
-                "Projects/CarryState/Alpha Checklist.md",
-                "# CarryState Alpha Checklist\n\n"
+                "Projects/Brunn State/Alpha Checklist.md",
+                "# Brunn State Alpha Checklist\n\n"
                 "Candidate build: cs-alpha-17 at commit 0123456789abcdef.\n\n"
                 "Asset retrieval passed. The off-host restore gate is still pending, "
                 "so the candidate is not launch-ready.\n",
@@ -874,11 +874,11 @@ def fixture_specs() -> tuple[
         ]
         files.extend(
             _binary_with_description(
-                path="Projects/CarryState/Artifacts/cs-alpha-17.zip",
+                path="Projects/Brunn State/Artifacts/cs-alpha-17.zip",
                 content=release_zip,
                 media_type="application/zip",
                 asset_version=1,
-                title="CarryState Alpha 17 Artifact",
+                title="Brunn State Alpha 17 Artifact",
                 summary="Deterministic release archive for the owner-alpha candidate.",
                 facts=(
                     "Build: cs-alpha-17.",

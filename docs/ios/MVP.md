@@ -1,4 +1,4 @@
-# Straylight iOS briefing, tasks, and notifications MVP
+# Brunn iOS briefing, tasks, and notifications MVP
 
 Status: briefing/account-session baseline installed as build 4; bounded Tasks
 navigation and actions implemented in the current source; notification
@@ -6,7 +6,7 @@ production rollout and signed-device canaries pending, 2026-08-28
 
 ## Product outcome
 
-The iOS MVP is a focused native client for content published by Straylight's
+The iOS MVP is a focused native client for content published by Brunn's
 briefing agents, bounded agent-first task action, and durable alerts. It is not
 a WebView, general assistant shell, unbounded task manager, or second notes
 database.
@@ -31,7 +31,7 @@ Type, VoiceOver, selection, Reduce Motion, and safe web links are preserved.
 
 Tasks has its own direct bottom-tab destination; it does not occupy Today.
 Native tab overflow may place secondary destinations under More without moving
-Tasks behind overflow. The connected app uses hosted Straylight as the source
+Tasks behind overflow. The connected app uses hosted Brunn as the source
 of truth. The latest edition and bounded task surface are cached as disposable,
 account-bound, data-protected snapshots, never as an offline task database or
 mutation queue. Alert state remains server-backed and independent of APNs
@@ -40,7 +40,7 @@ durable record.
 
 ## Current client contract
 
-The production API base is `https://straylight.rourkem.com/api/v1`.
+The production API base is `https://brunn.ai/api/v1`.
 
 | Client job | Endpoint |
 | --- | --- |
@@ -77,7 +77,7 @@ version, and modification time used by the reader; relevance scores remain a
 server-side ranking detail. Opening a result pins that version. The reader
 defaults to formatted Markdown and can reveal the raw source without another
 network read. HTTP(S) links open externally; relative
-Markdown links and `[[wiki links]]` resolve inside Straylight through canonical
+Markdown links and `[[wiki links]]` resolve inside Brunn through canonical
 paths, hosted `sources/` vault-root expansion, and a server-confirmed unique
 basename lookup for bare wiki links. Ambiguous links and other URL schemes fail
 closed.
@@ -97,7 +97,7 @@ and an error code—never a token, task text, or external identifier.
 
 The app signs in with the same email and password as the web UI. The password
 is sent only to `POST /auth/login` and is never stored by the app. Hosted
-Straylight returns the same revocable, 30-day `HttpOnly` session used by the
+Brunn returns the same revocable, 30-day `HttpOnly` session used by the
 web app; iOS persists that cookie across launches and sends the readable CSRF
 cookie as `X-CSRF-Token` on unsafe methods. Logout clears both server and local
 session state. “Disconnect this iPhone” first revokes its notification
@@ -118,24 +118,24 @@ Briefing item actions remain outside this narrow task-write contract.
 
 ## Push boundary
 
-Straylight now has a durable inbox, installation registration, APNs outbox and
+Brunn now has a durable inbox, installation registration, APNs outbox and
 attempt state, and open/acknowledgement receipts. iOS asks permission only from
 the contextual setup flow, obtains the current APNs token each launch, keeps it
 in memory, and upserts it through the account session with CSRF protection.
 
-The strict `straylight-push@v1` payload contains a bounded preview of an
+The strict `brunn-push@v1` payload contains a bounded preview of an
 operational alert's body. Briefing, material-news, and correction pushes retain
 generic APS prose. Every payload otherwise contains only opaque
 notification/delivery references and a matching typed route; paths, semantic
 item identifiers, source URLs, and user identifiers stay out of APNs. APNs
 `accepted_by_apns` is displayed honestly and never called device delivery.
 
-The `STRAYLIGHT_APNS_ENVIRONMENT` build setting expands into the
+The `BRUNN_APNS_ENVIRONMENT` build setting expands into the
 `aps-environment` entitlement and the installation request. Debug builds use
 Apple's sandbox and Release builds resolve to `production`; every signed
 archive must still be checked against its provisioning profile. Device tokens
 cannot cross those environments. The server's
-configured app topic must remain `com.rourkem.straylight` for this target.
+configured app topic must remain `com.rourkem.brunn` for this target.
 
 Production remote delivery remains gated on provider credentials and
 signed-device canaries for morning, intraday, correction, retry, invalid token,
@@ -146,18 +146,18 @@ delivery until those canaries pass.
 
 ```sh
 swift test \
-  --package-path /Users/Shared/projects/straylight/apps/ios \
-  --scratch-path /tmp/straylight-ios-spm
+  --package-path /Users/Shared/projects/brunn/apps/ios \
+  --scratch-path /tmp/brunn-ios-spm
 
 xcodebuild \
-  -project /Users/Shared/projects/straylight/apps/ios/Straylight.xcodeproj \
-  -scheme Straylight \
+  -project /Users/Shared/projects/brunn/apps/ios/Brunn.xcodeproj \
+  -scheme Brunn \
   -destination 'platform=iOS Simulator,name=RuptureOps iPhone 14' \
   test
 
 xcodebuild \
-  -project /Users/Shared/projects/straylight/apps/ios/Straylight.xcodeproj \
-  -scheme Straylight \
+  -project /Users/Shared/projects/brunn/apps/ios/Brunn.xcodeproj \
+  -scheme Brunn \
   -sdk iphoneos \
   -destination 'generic/platform=iOS' \
   CODE_SIGNING_ALLOWED=NO \

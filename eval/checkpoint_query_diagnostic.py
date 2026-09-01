@@ -39,8 +39,8 @@ from native_eval import (  # noqa: E402
 )
 
 
-RUN_SCHEMA = "straylight-checkpoint-query-diagnostic@v1"
-CORRELATION_SCHEMA = "straylight-checkpoint-query-log-correlation@v1"
+RUN_SCHEMA = "brunn-checkpoint-query-diagnostic@v1"
+CORRELATION_SCHEMA = "brunn-checkpoint-query-log-correlation@v1"
 MIN_SAMPLES = 30
 MAX_SAMPLES = 1_000
 READY_VALUES = frozenset({"ready", "complete", "completed", "current"})
@@ -190,7 +190,7 @@ def runtime_snapshot(
             (
                 runtime_posture == "mode1-pending"
                 and provider == "hashing"
-                and model == "straylight-hashing-v1"
+                and model == "brunn-hashing-v1"
                 and embedding_status == "degraded"
             )
             or (
@@ -590,7 +590,7 @@ def run_diagnostic(
             "status": "pending",
             "request_id_header": "x-request-id",
             "required_runtime_filter": (
-                "RUST_LOG=info,straylight=debug,sqlx::query=debug"
+                "RUST_LOG=info,brunn=debug,sqlx::query=debug"
             ),
             "bindings_logged": False,
             "next_command": (

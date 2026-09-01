@@ -39,25 +39,25 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 
-COMPOSITE_SCHEMA = "straylight-tier-a-legacy-composite@v1"
-AUDIT_SCHEMA = "straylight-tier-a-legacy-audit@v1"
-CHECKPOINT_IMPORT_SCHEMA = "straylight-tier-a-checkpoint-import@v1"
-CREDENTIAL_SCHEMA = "straylight-tier-a-isolated-credential@v1"
-LEGACY_MANIFEST_FORMAT = "carrystate-vault-manifest@v1"
-LEGACY_CURRENT_FORMAT = "carrystate-portable-vault@v1"
-LEGACY_DELTA_FORMAT = "straylight-legacy-vault-delta@v1"
-LEGACY_NATIVE_FORMAT = "straylight-legacy-native-record-export@v1"
-WORKSPACE_EXPORT_FORMAT = "straylight-workspace-export@v1"
-WORKSPACE_IMPORT_FORMAT = "straylight-workspace-import-manifest@v1"
-PORTABLE_COMPANION_FORMAT = "straylight-tier-a-portable-companion@v1"
-TIER_A_HISTORY_STAGE_FORMAT = "straylight-tier-a-history-stage@v1"
+COMPOSITE_SCHEMA = "brunn-tier-a-legacy-composite@v1"
+AUDIT_SCHEMA = "brunn-tier-a-legacy-audit@v1"
+CHECKPOINT_IMPORT_SCHEMA = "brunn-tier-a-checkpoint-import@v1"
+CREDENTIAL_SCHEMA = "brunn-tier-a-isolated-credential@v1"
+LEGACY_MANIFEST_FORMAT = "brunn-state-vault-manifest@v1"
+LEGACY_CURRENT_FORMAT = "brunn-state-portable-vault@v1"
+LEGACY_DELTA_FORMAT = "brunn-legacy-vault-delta@v1"
+LEGACY_NATIVE_FORMAT = "brunn-legacy-native-record-export@v1"
+WORKSPACE_EXPORT_FORMAT = "brunn-workspace-export@v1"
+WORKSPACE_IMPORT_FORMAT = "brunn-workspace-import-manifest@v1"
+PORTABLE_COMPANION_FORMAT = "brunn-tier-a-portable-companion@v1"
+TIER_A_HISTORY_STAGE_FORMAT = "brunn-tier-a-history-stage@v1"
 ORDINARY_HISTORY_SEMANTICS = "ordinary_content_transition"
 EXACT_HISTORY_SEMANTICS = "preserve_intentional_exact_bytes_version"
 
-NATIVE_ARCHIVE_PATH = "Straylight Migration/Native/legacy-native-records.json"
-NATIVE_INDEX_PATH = "Straylight Migration/Native/legacy-native-records.index.json"
+NATIVE_ARCHIVE_PATH = "Brunn Migration/Native/legacy-native-records.json"
+NATIVE_INDEX_PATH = "Brunn Migration/Native/legacy-native-records.index.json"
 NATIVE_DESCRIPTION_PATH = (
-    "Straylight Migration/Native/legacy-native-records.description.md"
+    "Brunn Migration/Native/legacy-native-records.description.md"
 )
 NATIVE_MATERIALIZED_ARCHIVE_PREFIX = "native/materialized"
 
@@ -450,7 +450,7 @@ def validate_content(path: Path, entry: Mapping[str, Any]) -> None:
 
 
 def importer_kind(path: str, source: Path, size_bytes: int) -> str:
-    """Mirror carrystate_import's bounded UTF-8/binary classification."""
+    """Mirror brunn_state_import's bounded UTF-8/binary classification."""
 
     if size_bytes > 4 * 1024 * 1024:
         return "binary"
@@ -511,7 +511,7 @@ def native_checkpoint_plan(record: Mapping[str, Any]) -> dict[str, Any]:
             source_refs.append(source_ref)
     content = (
         "---\n"
-        "straylight_kind: checkpoint\n"
+        "brunn_kind: checkpoint\n"
         f"checkpoint_id: checkpoint:{checkpoint_uuid}\n"
         f"parent_checkpoint_id: {parent_ref or ''}\n"
         f"legacy_corpus_revision: {checkpoint.get('corpus_revision_id') or ''}\n"
@@ -531,13 +531,13 @@ def native_checkpoint_plan(record: Mapping[str, Any]) -> dict[str, Any]:
         "legacy_source_refs": source_refs,
         "source_entries": [],
         "workspace_generation": 0,
-        "_straylight_import": {"format": WORKSPACE_IMPORT_FORMAT},
+        "_brunn_import": {"format": WORKSPACE_IMPORT_FORMAT},
     }
     return {
         "record_ref": record_ref,
         "checkpoint_ref": f"checkpoint:{checkpoint_uuid}",
         "parent_checkpoint_ref": parent_ref,
-        "path": f".straylight/checkpoints/{checkpoint_uuid}.md",
+        "path": f".brunn/checkpoints/{checkpoint_uuid}.md",
         "content": content,
         "content_hash": sha256_value(content.encode("utf-8")),
         "size_bytes": len(content.encode("utf-8")),
@@ -617,14 +617,14 @@ def render_native_record(
     version_text = "null" if version is None else str(version)
     return (
         "---\n"
-        "carrystate_format: native-record@v1\n"
+        "brunn_state_format: native-record@v1\n"
         f'record_ref: "{record["record_ref"]}"\n'
         f'record_kind: "{record["record_kind"]}"\n'
         f"record_version: {version_text}\n"
         f'corpus_revision: "{corpus_revision}"\n'
         "---\n"
         f"# {title or 'Untitled record'}\n\n"
-        "This is a deterministic export of the complete structured CarryState "
+        "This is a deterministic export of the complete structured Brunn State "
         "record at the pinned corpus revision.\n\n"
         f"{fence}json\n{payload_text}\n{fence}\n"
     ).encode("utf-8")
@@ -702,7 +702,7 @@ def native_materialization(
     archive_destination = output_root.joinpath(*PurePosixPath(NATIVE_ARCHIVE_PATH).parts)
     hardlink_new(native_path, archive_destination)
     index = {
-        "schema": "straylight-tier-a-native-record-index@v1",
+        "schema": "brunn-tier-a-native-record-index@v1",
         "source_schema": LEGACY_NATIVE_FORMAT,
         "source_sha256": archive_hash,
         "stable_import_id": value["stable_import_id"],
@@ -1115,7 +1115,7 @@ def portable_metadata_for_entry(
         }
     }
     if history_semantics is not None:
-        metadata["_straylight_tier_a_history"] = {
+        metadata["_brunn_tier_a_history"] = {
             "format": TIER_A_HISTORY_STAGE_FORMAT,
             "target_lineage_ordinal": entry["lineage_ordinal"],
             "semantics": history_semantics,
@@ -1128,7 +1128,7 @@ def portable_metadata_for_entry(
                 "binary_path": binary_path,
                 "description_status": entry.get("description_status"),
                 "description_method": entry.get("description_method"),
-                "_straylight_tier_a": {
+                "_brunn_tier_a": {
                     "format": PORTABLE_COMPANION_FORMAT,
                     "copy_method": "exact_legacy_bytes",
                 },
@@ -1139,7 +1139,7 @@ def portable_metadata_for_entry(
         description = descriptions.get(description_path)
         if description is None:
             raise TierAError("binary description metadata target is absent")
-        metadata["_straylight_tier_a"] = {
+        metadata["_brunn_tier_a"] = {
             "format": PORTABLE_COMPANION_FORMAT,
             "binary_description_path": description_path,
             "binary_description_hash": description["content_hash"],
@@ -1296,7 +1296,7 @@ def materialize_stage(
                 "native_record_count": native["records"]["count"],
             }
             if item is archive:
-                metadata["_straylight_tier_a"] = {
+                metadata["_brunn_tier_a"] = {
                     "format": PORTABLE_COMPANION_FORMAT,
                     "binary_description_path": archive["description_path"],
                     "binary_description_hash": archive["description_hash"],
@@ -1341,7 +1341,7 @@ def materialize_stage(
                 "metadata": {
                     "kind": "binary_description",
                     "binary_path": archive["path"],
-                    "_straylight_tier_a": {
+                    "_brunn_tier_a": {
                         "format": PORTABLE_COMPANION_FORMAT,
                         "copy_method": "deterministic_materialization",
                     },
@@ -2146,7 +2146,7 @@ def parser() -> argparse.ArgumentParser:
     checkpoint_parser.add_argument("--root", type=Path, required=True)
     checkpoint_parser.add_argument("--api-url", required=True)
     checkpoint_parser.add_argument(
-        "--token-env", default="STRAYLIGHT_TIER_A_TOKEN"
+        "--token-env", default="BRUNN_TIER_A_TOKEN"
     )
     checkpoint_parser.add_argument("--out", type=Path, required=True)
 
@@ -2155,7 +2155,7 @@ def parser() -> argparse.ArgumentParser:
         help="provision an empty isolated owner and save its token privately",
     )
     provision_parser.add_argument("--api-url", required=True)
-    provision_parser.add_argument("--token-env", default="STRAYLIGHT_TIER_A_ADMIN_TOKEN")
+    provision_parser.add_argument("--token-env", default="BRUNN_TIER_A_ADMIN_TOKEN")
     provision_parser.add_argument("--external-ref", required=True)
     provision_parser.add_argument("--credential-out", type=Path, required=True)
 
@@ -2164,7 +2164,7 @@ def parser() -> argparse.ArgumentParser:
     )
     service_parser.add_argument("--root", type=Path, required=True)
     service_parser.add_argument("--api-url", required=True)
-    service_parser.add_argument("--token-env", default="STRAYLIGHT_TIER_A_TOKEN")
+    service_parser.add_argument("--token-env", default="BRUNN_TIER_A_TOKEN")
     service_parser.add_argument("--out", type=Path, required=True)
 
     roundtrip_parser = commands.add_parser(

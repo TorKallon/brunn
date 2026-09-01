@@ -197,7 +197,7 @@ async fn describe_with_model(
         "text": {
             "format": {
                 "type": "json_schema",
-                "name": "carrystate_asset_description",
+                "name": "brunn_state_asset_description",
                 "strict": true,
                 "schema": description_schema()
             }
@@ -301,7 +301,7 @@ fn fallback_description(native: &StagedNative, bytes: &[u8], reason: &str) -> De
 fn render_workspace_markdown(native: &StagedNative, version: i64, run: &DescriptionRun) -> String {
     let filename = native.path.rsplit('/').next().unwrap_or(&native.path);
     let mut output = format!(
-        "---\nstraylight_kind: binary_description\nbinary_path: {}\n\
+        "---\nbrunn_kind: binary_description\nbinary_path: {}\n\
          binary_entry_ref: {}\nbinary_version: {}\ncontent_hash: {}\n\
          media_type: {}\nsize_bytes: {}\ndescription_status: {}\n\
          description_method: {}\n---\n\n# Binary: {}\n\n\
@@ -452,7 +452,7 @@ fn safety_identifier(secret: &str, user_id: Uuid) -> String {
         .expect("HMAC accepts arbitrary key lengths");
     mac.update(user_id.as_bytes());
     format!(
-        "carrystate-{}",
+        "brunn-state-{}",
         &hex::encode(mac.finalize().into_bytes())[..32]
     )
 }

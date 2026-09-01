@@ -245,7 +245,7 @@ MM-DD is the run date.
    API image ID, and exact DB image ID for all arms. Modes 2 and 3 require the
    worker image ID to equal the API image ID.
 2. Run Mode 1 with no worker and
-   `STRAYLIGHT_EMBEDDING_PROVIDER=hashing`:
+   `BRUNN_EMBEDDING_PROVIDER=hashing`:
    `python3 eval/e03_mode1.py --label e03-mode1-64k --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-api-image-id "$API_IMAGE_ID" --expect-db-image-id "$DB_IMAGE_ID" --scales 64000 --samples 30 --out results/2026-MM-DD-e03-mode1-64k.json`.
 3. Configure Mode 2 API and worker with the exact run-unique local mock `/v1`
    URL and a `mock-`, `dummy-`, or `test-` inline key, then run:

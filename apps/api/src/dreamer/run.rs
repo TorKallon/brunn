@@ -600,9 +600,9 @@ impl Dreamer {
         let mut env = env.clone();
         // The MCP server codex spawns needs the workspace credential; it is
         // forwarded by name through the codex MCP config.
-        env.insert("STRAYLIGHT_API_URL".into(), self.config.api_url.clone());
+        env.insert("BRUNN_API_URL".into(), self.config.api_url.clone());
         env.insert(
-            "STRAYLIGHT_API_TOKEN".into(),
+            "BRUNN_API_TOKEN".into(),
             self.config.workspace_token.clone(),
         );
         let argv = codex::exec_command(&ExecSpec {

@@ -26,9 +26,9 @@ done
 
 format=$(jq -r '.format' "$backup_dir/manifest.json")
 case "$format" in
-  straylight-coordinated-backup@v1)
+  brunn-coordinated-backup@v1)
     ;;
-  straylight-coordinated-backup@v2)
+  brunn-coordinated-backup@v2)
     jq -e '
       (.backup_id | type == "string" and length > 0)
       and (.created_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T"))

@@ -1,7 +1,7 @@
 services:
   db:
     build: !reset null
-    image: ${STRAYLIGHT_DATABASE_IMAGE:?set STRAYLIGHT_DATABASE_IMAGE}
+    image: ${BRUNN_DATABASE_IMAGE:?set BRUNN_DATABASE_IMAGE}
     ports: !reset []
     environment:
       POSTGRES_PASSWORD: ""
@@ -17,7 +17,7 @@ services:
 
   minio:
     build: !reset null
-    image: ${STRAYLIGHT_OBJECT_STORE_IMAGE:-straylight-object-store:release-blocked}
+    image: ${BRUNN_OBJECT_STORE_IMAGE:-brunn-object-store:release-blocked}
     ports: !reset []
     environment:
       MINIO_ROOT_USER: ""
@@ -30,16 +30,16 @@ services:
 
   minio-init:
     build: !reset null
-    image: ${STRAYLIGHT_OBJECT_STORE_CLIENT_IMAGE:-straylight-object-store-client:release-blocked}
+    image: ${BRUNN_OBJECT_STORE_CLIENT_IMAGE:-brunn-object-store-client:release-blocked}
     environment:
       MINIO_ROOT_USER: ""
       MINIO_ROOT_USER_FILE: /run/secrets/minio_root_user
       MINIO_ROOT_PASSWORD: ""
       MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_root_password
-      STRAYLIGHT_MINIO_ACCESS_KEY: ""
-      STRAYLIGHT_MINIO_ACCESS_KEY_FILE: /run/secrets/minio_app_access_key
-      STRAYLIGHT_MINIO_SECRET_KEY: ""
-      STRAYLIGHT_MINIO_SECRET_KEY_FILE: /run/secrets/minio_app_secret_key
+      BRUNN_MINIO_ACCESS_KEY: ""
+      BRUNN_MINIO_ACCESS_KEY_FILE: /run/secrets/minio_app_access_key
+      BRUNN_MINIO_SECRET_KEY: ""
+      BRUNN_MINIO_SECRET_KEY_FILE: /run/secrets/minio_app_secret_key
     secrets:
       - minio_root_user
       - minio_root_password
@@ -48,36 +48,36 @@ services:
 
   migrate:
     build: !reset null
-    image: ${STRAYLIGHT_API_IMAGE:-straylight-api:release-blocked}
+    image: ${BRUNN_API_IMAGE:-brunn-api:release-blocked}
     environment: &production-app-environment
-      STRAYLIGHT_ENV: production
-      STRAYLIGHT_LEGACY_API_ENABLED: ${STRAYLIGHT_LEGACY_API_ENABLED:-false}
-      STRAYLIGHT_EVALUATION_API_ENABLED: "false"
-      STRAYLIGHT_MESSAGING_ENABLED: ${STRAYLIGHT_MESSAGING_ENABLED:-false}
+      BRUNN_ENV: production
+      BRUNN_LEGACY_API_ENABLED: ${BRUNN_LEGACY_API_ENABLED:-false}
+      BRUNN_EVALUATION_API_ENABLED: "false"
+      BRUNN_MESSAGING_ENABLED: ${BRUNN_MESSAGING_ENABLED:-false}
       DD_ENV: production
-      DD_VERSION: ${STRAYLIGHT_RELEASE_REVISION:-unreleased}
+      DD_VERSION: ${BRUNN_RELEASE_REVISION:-unreleased}
       DATABASE_URL_RW: ""
-      STRAYLIGHT_DATABASE_URL: ""
+      BRUNN_DATABASE_URL: ""
       DATABASE_URL_RW_FILE: /run/secrets/database_url_rw
       DATABASE_URL_RO: ""
-      STRAYLIGHT_READ_ONLY_DATABASE_URL: ""
+      BRUNN_READ_ONLY_DATABASE_URL: ""
       DATABASE_URL_RO_FILE: /run/secrets/database_url_ro
       DATABASE_URL_ADMIN: ""
-      STRAYLIGHT_ADMIN_DATABASE_URL: ""
+      BRUNN_ADMIN_DATABASE_URL: ""
       DATABASE_URL_ADMIN_FILE: /run/secrets/database_url_admin
-      STRAYLIGHT_S3_ACCESS_KEY: ""
-      STRAYLIGHT_MINIO_ACCESS_KEY: ""
-      STRAYLIGHT_S3_ACCESS_KEY_FILE: /run/secrets/minio_app_access_key
-      STRAYLIGHT_S3_SECRET_KEY: ""
-      STRAYLIGHT_MINIO_SECRET_KEY: ""
-      STRAYLIGHT_S3_SECRET_KEY_FILE: /run/secrets/minio_app_secret_key
-      STRAYLIGHT_CONTINUATION_SECRET: ""
-      STRAYLIGHT_CONTINUATION_SIGNING_KEY: ""
-      STRAYLIGHT_CONTINUATION_SECRET_FILE: /run/secrets/continuation_signing_key
+      BRUNN_S3_ACCESS_KEY: ""
+      BRUNN_MINIO_ACCESS_KEY: ""
+      BRUNN_S3_ACCESS_KEY_FILE: /run/secrets/minio_app_access_key
+      BRUNN_S3_SECRET_KEY: ""
+      BRUNN_MINIO_SECRET_KEY: ""
+      BRUNN_S3_SECRET_KEY_FILE: /run/secrets/minio_app_secret_key
+      BRUNN_CONTINUATION_SECRET: ""
+      BRUNN_CONTINUATION_SIGNING_KEY: ""
+      BRUNN_CONTINUATION_SECRET_FILE: /run/secrets/continuation_signing_key
       OPENAI_API_KEY: ""
       OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
-      STRAYLIGHT_DEV_READ_WRITE_TOKEN: ""
-      STRAYLIGHT_DEV_READ_ONLY_TOKEN: ""
+      BRUNN_DEV_READ_WRITE_TOKEN: ""
+      BRUNN_DEV_READ_ONLY_TOKEN: ""
     secrets: &production-app-secrets
       - database_url_rw
       - database_url_ro
@@ -89,7 +89,7 @@ services:
 
   api:
     build: !reset null
-    image: ${STRAYLIGHT_API_IMAGE:-straylight-api:release-blocked}
+    image: ${BRUNN_API_IMAGE:-brunn-api:release-blocked}
     ports: !reset []
     environment:
       <<: *production-app-environment
@@ -98,21 +98,21 @@ services:
       RESEND_API_KEY_FILE: /run/secrets/resend_api_key
       AUTH_EMAIL_FROM: ${AUTH_EMAIL_FROM:?set AUTH_EMAIL_FROM}
       AUTH_EMAIL_REPLY_TO: ${AUTH_EMAIL_REPLY_TO:-}
-      STRAYLIGHT_PUBLIC_URL: ${STRAYLIGHT_PUBLIC_URL:?set STRAYLIGHT_PUBLIC_URL}
-      STRAYLIGHT_APNS_APP_ID: ${STRAYLIGHT_APNS_APP_ID:?set STRAYLIGHT_APNS_APP_ID}
-      STRAYLIGHT_APNS_DELIVERY_ENABLED: ${STRAYLIGHT_APNS_DELIVERY_ENABLED:-false}
-      STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY: ""
-      STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE: /run/secrets/notification_token_encryption_key
-      STRAYLIGHT_SECRET_ENCRYPTION_KEY: ""
-      STRAYLIGHT_SECRET_ENCRYPTION_KEY_FILE: /run/secrets/secret_encryption_key
-      STRAYLIGHT_TODOIST_SYNC_ENABLED: ${STRAYLIGHT_TODOIST_SYNC_ENABLED:-false}
+      BRUNN_PUBLIC_URL: ${BRUNN_PUBLIC_URL:?set BRUNN_PUBLIC_URL}
+      BRUNN_APNS_APP_ID: ${BRUNN_APNS_APP_ID:?set BRUNN_APNS_APP_ID}
+      BRUNN_APNS_DELIVERY_ENABLED: ${BRUNN_APNS_DELIVERY_ENABLED:-false}
+      BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY: ""
+      BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE: /run/secrets/notification_token_encryption_key
+      BRUNN_SECRET_ENCRYPTION_KEY: ""
+      BRUNN_SECRET_ENCRYPTION_KEY_FILE: /run/secrets/secret_encryption_key
+      BRUNN_TODOIST_SYNC_ENABLED: ${BRUNN_TODOIST_SYNC_ENABLED:-false}
     labels:
       com.datadoghq.tags.env: production
-      com.datadoghq.tags.service: ${DD_SERVICE:-straylight}
-      com.datadoghq.tags.version: ${STRAYLIGHT_RELEASE_REVISION:-unreleased}
-      com.straylight.component: api
+      com.datadoghq.tags.service: ${DD_SERVICE:-brunn}
+      com.datadoghq.tags.version: ${BRUNN_RELEASE_REVISION:-unreleased}
+      com.brunn.component: api
       com.datadoghq.ad.logs: >-
-        [{"source":"rust","service":"straylight"}]
+        [{"source":"rust","service":"brunn"}]
     secrets:
       - database_url_rw
       - database_url_ro
@@ -126,20 +126,20 @@ services:
 
   worker:
     build: !reset null
-    image: ${STRAYLIGHT_API_IMAGE:-straylight-api:release-blocked}
+    image: ${BRUNN_API_IMAGE:-brunn-api:release-blocked}
     environment:
       <<: *production-app-environment
-      STRAYLIGHT_APNS_APP_ID: ${STRAYLIGHT_APNS_APP_ID:?set STRAYLIGHT_APNS_APP_ID}
-      STRAYLIGHT_APNS_DELIVERY_ENABLED: ${STRAYLIGHT_APNS_DELIVERY_ENABLED:-false}
-      STRAYLIGHT_APNS_TEAM_ID: ${STRAYLIGHT_APNS_TEAM_ID:?set STRAYLIGHT_APNS_TEAM_ID}
-      STRAYLIGHT_APNS_KEY_ID: ${STRAYLIGHT_APNS_KEY_ID:?set STRAYLIGHT_APNS_KEY_ID}
-      STRAYLIGHT_APNS_PRIVATE_KEY: ""
-      STRAYLIGHT_APNS_PRIVATE_KEY_FILE: /run/secrets/apns_private_key
-      STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY: ""
-      STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE: /run/secrets/notification_token_encryption_key
-      STRAYLIGHT_SECRET_ENCRYPTION_KEY: ""
-      STRAYLIGHT_SECRET_ENCRYPTION_KEY_FILE: /run/secrets/secret_encryption_key
-      STRAYLIGHT_TODOIST_SYNC_ENABLED: ${STRAYLIGHT_TODOIST_SYNC_ENABLED:-false}
+      BRUNN_APNS_APP_ID: ${BRUNN_APNS_APP_ID:?set BRUNN_APNS_APP_ID}
+      BRUNN_APNS_DELIVERY_ENABLED: ${BRUNN_APNS_DELIVERY_ENABLED:-false}
+      BRUNN_APNS_TEAM_ID: ${BRUNN_APNS_TEAM_ID:?set BRUNN_APNS_TEAM_ID}
+      BRUNN_APNS_KEY_ID: ${BRUNN_APNS_KEY_ID:?set BRUNN_APNS_KEY_ID}
+      BRUNN_APNS_PRIVATE_KEY: ""
+      BRUNN_APNS_PRIVATE_KEY_FILE: /run/secrets/apns_private_key
+      BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY: ""
+      BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE: /run/secrets/notification_token_encryption_key
+      BRUNN_SECRET_ENCRYPTION_KEY: ""
+      BRUNN_SECRET_ENCRYPTION_KEY_FILE: /run/secrets/secret_encryption_key
+      BRUNN_TODOIST_SYNC_ENABLED: ${BRUNN_TODOIST_SYNC_ENABLED:-false}
     secrets:
       - database_url_rw
       - database_url_ro
@@ -153,22 +153,22 @@ services:
       - apns_private_key
     labels:
       com.datadoghq.tags.env: production
-      com.datadoghq.tags.service: ${DD_SERVICE:-straylight}
-      com.datadoghq.tags.version: ${STRAYLIGHT_RELEASE_REVISION:-unreleased}
-      com.straylight.component: worker
+      com.datadoghq.tags.service: ${DD_SERVICE:-brunn}
+      com.datadoghq.tags.version: ${BRUNN_RELEASE_REVISION:-unreleased}
+      com.brunn.component: worker
       com.datadoghq.ad.logs: >-
-        [{"source":"rust","service":"straylight"}]
+        [{"source":"rust","service":"brunn"}]
 
   web:
     build: !reset null
-    image: ${STRAYLIGHT_WEB_IMAGE:-straylight-web:release-blocked}
+    image: ${BRUNN_WEB_IMAGE:-brunn-web:release-blocked}
     ports: !reset []
 
   mcp:
     build: !reset null
-    image: ${STRAYLIGHT_MCP_IMAGE:-straylight-mcp:release-blocked}
+    image: ${BRUNN_MCP_IMAGE:-brunn-mcp:release-blocked}
     environment:
-      STRAYLIGHT_MESSAGING_ENABLED: ${STRAYLIGHT_MESSAGING_ENABLED:-false}
+      BRUNN_MESSAGING_ENABLED: ${BRUNN_MESSAGING_ENABLED:-false}
 
   datadog-agent:
     environment:
@@ -189,7 +189,7 @@ services:
       - -ec
       - |
         for directory in /data /config; do
-          marker="$${directory}/.straylight-owner-10001"
+          marker="$${directory}/.brunn-owner-10001"
           if [ ! -e "$${marker}" ]; then
             chown -R 10001:10001 "$${directory}"
             : > "$${marker}"
@@ -216,10 +216,10 @@ services:
       - FOWNER
 
   edge:
-    image: ${STRAYLIGHT_EDGE_IMAGE:-straylight-caddy:release-blocked}
+    image: ${BRUNN_EDGE_IMAGE:-brunn-caddy:release-blocked}
     environment:
-      STRAYLIGHT_PUBLIC_HOST: ${STRAYLIGHT_PUBLIC_HOST:?set STRAYLIGHT_PUBLIC_HOST}
-      STRAYLIGHT_ACME_EMAIL: ${STRAYLIGHT_ACME_EMAIL:?set STRAYLIGHT_ACME_EMAIL}
+      BRUNN_PUBLIC_HOST: ${BRUNN_PUBLIC_HOST:?set BRUNN_PUBLIC_HOST}
+      BRUNN_ACME_EMAIL: ${BRUNN_ACME_EMAIL:?set BRUNN_ACME_EMAIL}
     ports:
       - "80:80"
       - "443:443"
@@ -258,36 +258,36 @@ volumes:
 
 secrets:
   postgres_admin_password:
-    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/postgres_admin_password
+    file: ${BRUNN_SECRETS_DIR:-./secrets}/postgres_admin_password
   postgres_app_rw_password:
-    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/postgres_app_rw_password
+    file: ${BRUNN_SECRETS_DIR:-./secrets}/postgres_app_rw_password
   postgres_app_ro_password:
-    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/postgres_app_ro_password
+    file: ${BRUNN_SECRETS_DIR:-./secrets}/postgres_app_ro_password
   database_url_rw:
-    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/database_url_rw
+    file: ${BRUNN_SECRETS_DIR:-./secrets}/database_url_rw
   database_url_ro:
-    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/database_url_ro
+    file: ${BRUNN_SECRETS_DIR:-./secrets}/database_url_ro
   database_url_admin:
-    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/database_url_admin
+    file: ${BRUNN_SECRETS_DIR:-./secrets}/database_url_admin
   minio_root_user:
-    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/minio_root_user
+    file: ${BRUNN_SECRETS_DIR:-./secrets}/minio_root_user
   minio_root_password:
-    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/minio_root_password
+    file: ${BRUNN_SECRETS_DIR:-./secrets}/minio_root_password
   minio_app_access_key:
-    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/minio_app_access_key
+    file: ${BRUNN_SECRETS_DIR:-./secrets}/minio_app_access_key
   minio_app_secret_key:
-    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/minio_app_secret_key
+    file: ${BRUNN_SECRETS_DIR:-./secrets}/minio_app_secret_key
   continuation_signing_key:
-    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/continuation_signing_key
+    file: ${BRUNN_SECRETS_DIR:-./secrets}/continuation_signing_key
   notification_token_encryption_key:
-    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/notification_token_encryption_key
+    file: ${BRUNN_SECRETS_DIR:-./secrets}/notification_token_encryption_key
   secret_encryption_key:
-    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/secret_encryption_key
+    file: ${BRUNN_SECRETS_DIR:-./secrets}/secret_encryption_key
   apns_private_key:
-    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/apns_private_key
+    file: ${BRUNN_SECRETS_DIR:-./secrets}/apns_private_key
   openai_api_key:
-    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/openai_api_key
+    file: ${BRUNN_SECRETS_DIR:-./secrets}/openai_api_key
   resend_api_key:
-    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/resend_api_key
+    file: ${BRUNN_SECRETS_DIR:-./secrets}/resend_api_key
   dd_api_key:
-    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/dd_api_key
+    file: ${BRUNN_SECRETS_DIR:-./secrets}/dd_api_key

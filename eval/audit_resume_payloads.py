@@ -24,7 +24,7 @@ from eval.aggregate_draws import (  # noqa: E402
 )
 
 
-SCHEMA = "straylight-e06-resume-payload-comparison@v1"
+SCHEMA = "brunn-e06-resume-payload-comparison@v1"
 CONTROL_ARM = "e06-A"
 TREATMENT_ARM = "e06-B"
 EXPECTED_ARMS = (CONTROL_ARM, TREATMENT_ARM)
@@ -34,7 +34,7 @@ EXPECTED_CASE_IDS = (
     "charlemagne-storage-observation-transition",
     "star-rupture-second-facturer-transition",
     "switzerland-reservation-transition",
-    "straylight-api-gate-transition",
+    "brunn-api-gate-transition",
 )
 EXPECTED_MODES = ("exact", "lexical")
 EXPECTED_CONDITION = "service_api_resume"

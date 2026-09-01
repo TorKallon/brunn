@@ -4,7 +4,7 @@ use serde_json::json;
 use sqlx::{PgPool, Row, Transaction, postgres::PgPoolOptions};
 use uuid::Uuid;
 
-use straylight::{
+use brunn::{
     auth::AuthContext,
     db::set_context,
     models::{CredentialId, UserId},
@@ -17,11 +17,11 @@ struct Principal {
 }
 
 async fn connect_test_pool() -> Option<PgPool> {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping notification database test");
+        eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping notification database test");
         return None;
     };
     let pool = PgPoolOptions::new()
@@ -32,7 +32,7 @@ async fn connect_test_pool() -> Option<PgPool> {
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .expect("apply Straylight migrations");
+        .expect("apply Brunn migrations");
     Some(pool)
 }
 
@@ -46,14 +46,14 @@ async fn insert_principal(pool: &PgPool, label: &str) -> Principal {
         "notification:publish".to_owned(),
         "notification:manage".to_owned(),
     ];
-    sqlx::query("INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
         .bind(user_id)
         .bind(format!("notification-test:{label}:{user_id}"))
         .bind(format!("Notification test {label}"))
         .execute(pool)
         .await
         .expect("insert notification test user");
-    sqlx::query("INSERT INTO straylight.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO brunn.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)")
         .bind(scope_id)
         .bind(user_id)
         .bind(&scope_ref)
@@ -63,7 +63,7 @@ async fn insert_principal(pool: &PgPool, label: &str) -> Principal {
         .expect("insert notification test scope");
     sqlx::query(
         r#"
-        INSERT INTO straylight.api_credentials (
+        INSERT INTO brunn.api_credentials (
           id,user_id,label,token_hash,capabilities
         ) VALUES ($1,$2,$3,$4,$5)
         "#,
@@ -78,7 +78,7 @@ async fn insert_principal(pool: &PgPool, label: &str) -> Principal {
     .expect("insert notification test credential");
     sqlx::query(
         r#"
-        INSERT INTO straylight.credential_scope_grants (
+        INSERT INTO brunn.credential_scope_grants (
           credential_id,user_id,scope_id
         ) VALUES ($1,$2,$3)
         "#,
@@ -107,7 +107,7 @@ async fn insert_manage_credential(pool: &PgPool, principal: &Principal, label: &
     let capabilities = vec!["read".to_owned(), "notification:manage".to_owned()];
     let scope_ref = principal.auth.scope_refs[0].clone();
     let scope_id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM straylight.scopes WHERE user_id=$1 AND scope_ref=$2",
+        "SELECT id FROM brunn.scopes WHERE user_id=$1 AND scope_ref=$2",
     )
     .bind(principal.user_id)
     .bind(&scope_ref)
@@ -116,7 +116,7 @@ async fn insert_manage_credential(pool: &PgPool, principal: &Principal, label: &
     .expect("read notification test scope");
     sqlx::query(
         r#"
-        INSERT INTO straylight.api_credentials (
+        INSERT INTO brunn.api_credentials (
           id,user_id,label,token_hash,capabilities
         ) VALUES ($1,$2,$3,$4,$5)
         "#,
@@ -131,7 +131,7 @@ async fn insert_manage_credential(pool: &PgPool, principal: &Principal, label: &
     .expect("insert notification manage credential");
     sqlx::query(
         r#"
-        INSERT INTO straylight.credential_scope_grants (
+        INSERT INTO brunn.credential_scope_grants (
           credential_id,user_id,scope_id
         ) VALUES ($1,$2,$3)
         "#,
@@ -185,7 +185,7 @@ async fn insert_notification(
 ) {
     sqlx::query(
         r#"
-        INSERT INTO straylight.notifications (
+        INSERT INTO brunn.notifications (
           id,user_id,producer_credential_id,event_key,request_hash,
           correlation_id,kind,importance,title,body,target,occurred_at,expires_at
         ) VALUES (
@@ -218,12 +218,12 @@ async fn insert_installation(
 ) -> Uuid {
     sqlx::query_scalar::<_, Uuid>(
         r#"
-        INSERT INTO straylight.notification_installations (
+        INSERT INTO brunn.notification_installations (
           user_id,client_installation_id,registered_by_credential_id,
           platform,environment,app_id,
           token_ciphertext,token_nonce,token_hash,preview
         ) VALUES (
-          $1,$2,$3,'ios','development','com.example.Straylight',$4,$5,$6,'generic'
+          $1,$2,$3,'ios','development','com.rourkem.brunn',$4,$5,$6,'generic'
         )
         RETURNING id
         "#,
@@ -252,7 +252,7 @@ async fn notification_schema_enforces_tenancy_transport_truth_and_receipt_attrib
         SELECT class.relname,class.relrowsecurity,class.relforcerowsecurity
         FROM pg_class AS class
         JOIN pg_namespace AS namespace ON namespace.oid=class.relnamespace
-        WHERE namespace.nspname='straylight'
+        WHERE namespace.nspname='brunn'
           AND class.relname=ANY($1)
         ORDER BY class.relname
         "#,
@@ -283,7 +283,7 @@ async fn notification_schema_enforces_tenancy_transport_truth_and_receipt_attrib
             SELECT pg_get_functiondef(procedure.oid)
             FROM pg_proc AS procedure
             JOIN pg_namespace AS namespace ON namespace.oid=procedure.pronamespace
-            WHERE namespace.nspname='straylight_auth'
+            WHERE namespace.nspname='brunn_auth'
               AND procedure.proname=$1
             "#,
         )
@@ -329,7 +329,7 @@ async fn notification_schema_enforces_tenancy_transport_truth_and_receipt_attrib
     .await;
     sqlx::query(
         r#"
-        INSERT INTO straylight.notification_deliveries (
+        INSERT INTO brunn.notification_deliveries (
           id,user_id,notification_id,installation_id
         ) VALUES ($1,$2,$3,$4)
         "#,
@@ -348,7 +348,7 @@ async fn notification_schema_enforces_tenancy_transport_truth_and_receipt_attrib
 
     sqlx::query(
         r#"
-        UPDATE straylight.notification_deliveries
+        UPDATE brunn.notification_deliveries
         SET provider_block_count=provider_block_count+1,
             available_at=clock_timestamp()+interval '1 minute',
             updated_at=clock_timestamp()
@@ -363,7 +363,7 @@ async fn notification_schema_enforces_tenancy_transport_truth_and_receipt_attrib
     let retry_accounting = sqlx::query(
         r#"
         SELECT attempt_count,provider_block_count
-        FROM straylight.notification_deliveries
+        FROM brunn.notification_deliveries
         WHERE user_id=$1 AND id=$2
         "#,
     )
@@ -394,7 +394,7 @@ async fn notification_schema_enforces_tenancy_transport_truth_and_receipt_attrib
     .await;
     sqlx::query(
         r#"
-        INSERT INTO straylight.notification_deliveries (
+        INSERT INTO brunn.notification_deliveries (
           id,user_id,notification_id,installation_id
         ) VALUES ($1,$2,$3,$4)
         "#,
@@ -413,7 +413,7 @@ async fn notification_schema_enforces_tenancy_transport_truth_and_receipt_attrib
 
     let mut isolation_tx = begin_as_app_rw(&pool, &first.auth).await;
     let visible_second = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM straylight.notifications WHERE id=$1)",
+        "SELECT EXISTS(SELECT 1 FROM brunn.notifications WHERE id=$1)",
     )
     .bind(second_notification)
     .fetch_one(&mut *isolation_tx)
@@ -428,7 +428,7 @@ async fn notification_schema_enforces_tenancy_transport_truth_and_receipt_attrib
     let mut cross_account_write_tx = begin_as_app_rw(&pool, &first.auth).await;
     let cross_account_write = sqlx::query(
         r#"
-        INSERT INTO straylight.notifications (
+        INSERT INTO brunn.notifications (
           id,user_id,producer_credential_id,event_key,request_hash,
           correlation_id,kind,importance,title,body,target,occurred_at,expires_at
         ) VALUES (
@@ -458,7 +458,7 @@ async fn notification_schema_enforces_tenancy_transport_truth_and_receipt_attrib
 
     let mut invalid_transport_tx = begin_as_app_rw(&pool, &first.auth).await;
     let invalid_transport =
-        sqlx::query("UPDATE straylight.notification_deliveries SET state='opened' WHERE id=$1")
+        sqlx::query("UPDATE brunn.notification_deliveries SET state='opened' WHERE id=$1")
             .bind(first_delivery)
             .execute(&mut *invalid_transport_tx)
             .await
@@ -472,7 +472,7 @@ async fn notification_schema_enforces_tenancy_transport_truth_and_receipt_attrib
     let mut mismatched_receipt_tx = begin_as_app_rw(&pool, &first.auth).await;
     let mismatched_receipt = sqlx::query(
         r#"
-        INSERT INTO straylight.notification_receipts (
+        INSERT INTO brunn.notification_receipts (
           user_id,notification_id,delivery_id,kind,recorded_by_credential_id
         ) VALUES ($1,$2,$3,'opened',$4)
         "#,
@@ -493,7 +493,7 @@ async fn notification_schema_enforces_tenancy_transport_truth_and_receipt_attrib
     let mut valid_receipt_tx = begin_as_app_rw(&pool, &first.auth).await;
     let valid_receipt = sqlx::query(
         r#"
-        INSERT INTO straylight.notification_receipts (
+        INSERT INTO brunn.notification_receipts (
           user_id,notification_id,delivery_id,kind,recorded_by_credential_id
         ) VALUES ($1,$2,$3,'opened',$4)
         "#,
@@ -511,7 +511,7 @@ async fn notification_schema_enforces_tenancy_transport_truth_and_receipt_attrib
         .await
         .expect("commit valid receipt");
 
-    sqlx::query("UPDATE straylight.api_credentials SET disabled_at=clock_timestamp() WHERE id=$1")
+    sqlx::query("UPDATE brunn.api_credentials SET disabled_at=clock_timestamp() WHERE id=$1")
         .bind(first.credential_id)
         .execute(&pool)
         .await
@@ -521,8 +521,8 @@ async fn notification_schema_enforces_tenancy_transport_truth_and_receipt_attrib
         SELECT installation.enabled,installation.revoked_at,
                installation.token_ciphertext,installation.token_nonce,
                installation.token_hash,delivery.state,delivery.last_error_code
-        FROM straylight.notification_installations AS installation
-        JOIN straylight.notification_deliveries AS delivery
+        FROM brunn.notification_installations AS installation
+        JOIN brunn.notification_deliveries AS delivery
           ON delivery.user_id=installation.user_id
          AND delivery.installation_id=installation.id
         WHERE installation.user_id=$1 AND installation.id=$2 AND delivery.id=$3
@@ -584,7 +584,7 @@ async fn installation_claims_support_account_switch_and_same_user_management() {
     .await;
     sqlx::query(
         r#"
-        INSERT INTO straylight.notification_deliveries (
+        INSERT INTO brunn.notification_deliveries (
           id,user_id,notification_id,installation_id
         ) VALUES ($1,$2,$3,$4)
         "#,
@@ -601,12 +601,12 @@ async fn installation_claims_support_account_switch_and_same_user_management() {
     let mut duplicate_token_tx = begin_as_app_rw(&pool, &second.auth).await;
     let duplicate_token = sqlx::query(
         r#"
-        INSERT INTO straylight.notification_installations (
+        INSERT INTO brunn.notification_installations (
           user_id,client_installation_id,registered_by_credential_id,
           platform,environment,app_id,
           token_ciphertext,token_nonce,token_hash,preview
         ) VALUES (
-          $1,$2,$3,'ios','development','com.example.Straylight',$4,$5,$6,'generic'
+          $1,$2,$3,'ios','development','com.rourkem.brunn',$4,$5,$6,'generic'
         )
         "#,
     )
@@ -626,16 +626,15 @@ async fn installation_claims_support_account_switch_and_same_user_management() {
         .expect("rollback duplicate live token");
 
     let mut switch_tx = begin_as_app_rw(&pool, &second.auth).await;
-    let reassigned = sqlx::query_scalar::<_, i64>(
-        "SELECT straylight.claim_notification_device_token($1,$2,$3,$4)",
-    )
-    .bind(client_installation_id)
-    .bind("development")
-    .bind("com.example.Straylight")
-    .bind(&shared_token_hash)
-    .fetch_one(&mut *switch_tx)
-    .await
-    .expect("claim live token for the newly authenticated account");
+    let reassigned =
+        sqlx::query_scalar::<_, i64>("SELECT brunn.claim_notification_device_token($1,$2,$3,$4)")
+            .bind(client_installation_id)
+            .bind("development")
+            .bind("com.rourkem.brunn")
+            .bind(&shared_token_hash)
+            .fetch_one(&mut *switch_tx)
+            .await
+            .expect("claim live token for the newly authenticated account");
     assert_eq!(reassigned, 1);
     let second_installation = insert_installation(
         &mut switch_tx,
@@ -650,7 +649,7 @@ async fn installation_claims_support_account_switch_and_same_user_management() {
 
     assert_ne!(first_installation, second_installation);
     let installation_rows = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM straylight.notification_installations WHERE client_installation_id=$1",
+        "SELECT count(*) FROM brunn.notification_installations WHERE client_installation_id=$1",
     )
     .bind(client_installation_id)
     .fetch_one(&pool)
@@ -659,8 +658,8 @@ async fn installation_claims_support_account_switch_and_same_user_management() {
     assert_eq!(installation_rows, 2);
     let live_token_rows = sqlx::query_scalar::<_, i64>(
         r#"
-        SELECT count(*) FROM straylight.notification_installations
-        WHERE environment='development' AND app_id='com.example.Straylight'
+        SELECT count(*) FROM brunn.notification_installations
+        WHERE environment='development' AND app_id='com.rourkem.brunn'
           AND token_hash=$1 AND enabled
         "#,
     )
@@ -675,8 +674,8 @@ async fn installation_claims_support_account_switch_and_same_user_management() {
         SELECT installation.enabled,installation.revoked_at,
                installation.token_ciphertext,installation.token_nonce,
                installation.token_hash,delivery.state,delivery.last_error_code
-        FROM straylight.notification_installations AS installation
-        JOIN straylight.notification_deliveries AS delivery
+        FROM brunn.notification_installations AS installation
+        JOIN brunn.notification_deliveries AS delivery
           ON delivery.user_id=installation.user_id
          AND delivery.installation_id=installation.id
         WHERE installation.user_id=$1 AND installation.id=$2 AND delivery.id=$3
@@ -716,7 +715,7 @@ async fn installation_claims_support_account_switch_and_same_user_management() {
         let visible = sqlx::query_scalar::<_, Vec<Uuid>>(
             r#"
             SELECT coalesce(array_agg(id ORDER BY id),'{}'::uuid[])
-            FROM straylight.notification_installations
+            FROM brunn.notification_installations
             WHERE client_installation_id=$1
             "#,
         )
@@ -730,7 +729,7 @@ async fn installation_claims_support_account_switch_and_same_user_management() {
 
     let mut cross_account_update_tx = begin_as_app_rw(&pool, &first.auth).await;
     let cross_account_updated = sqlx::query(
-        "UPDATE straylight.notification_installations SET last_seen_at=clock_timestamp() WHERE id=$1",
+        "UPDATE brunn.notification_installations SET last_seen_at=clock_timestamp() WHERE id=$1",
     )
     .bind(second_installation)
     .execute(&mut *cross_account_update_tx)
@@ -747,7 +746,7 @@ async fn installation_claims_support_account_switch_and_same_user_management() {
     let mut manage_tx = begin_as_app_rw(&pool, &second_manager.auth).await;
     let updated_installation = sqlx::query_scalar::<_, Uuid>(
         r#"
-        UPDATE straylight.notification_installations
+        UPDATE brunn.notification_installations
         SET registered_by_credential_id=$1,token_ciphertext=$2,token_nonce=$3,
             token_hash=$4,last_seen_at=clock_timestamp(),updated_at=clock_timestamp()
         WHERE user_id=$5 AND client_installation_id=$6
@@ -765,7 +764,7 @@ async fn installation_claims_support_account_switch_and_same_user_management() {
     .expect("same-user notification:manage credential updates installation");
     assert_eq!(updated_installation, second_installation);
     let manager_visible = sqlx::query_scalar::<_, String>(
-        "SELECT token_hash FROM straylight.notification_installations WHERE id=$1",
+        "SELECT token_hash FROM brunn.notification_installations WHERE id=$1",
     )
     .bind(second_installation)
     .fetch_one(&mut *manage_tx)
@@ -774,7 +773,7 @@ async fn installation_claims_support_account_switch_and_same_user_management() {
     assert_eq!(manager_visible, replacement_token_hash);
     let revoked_installation = sqlx::query_scalar::<_, Uuid>(
         r#"
-        UPDATE straylight.notification_installations
+        UPDATE brunn.notification_installations
         SET enabled=false,revoked_at=clock_timestamp(),
             token_ciphertext=NULL,token_nonce=NULL,token_hash=NULL,
             updated_at=clock_timestamp()
@@ -796,7 +795,7 @@ async fn installation_claims_support_account_switch_and_same_user_management() {
     let revoked = sqlx::query(
         r#"
         SELECT enabled,revoked_at,token_ciphertext,token_nonce,token_hash
-        FROM straylight.notification_installations
+        FROM brunn.notification_installations
         WHERE user_id=$1 AND id=$2
         "#,
     )

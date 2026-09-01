@@ -2,10 +2,10 @@
 -- workspace entries; the messaging tables are principals, bindings, compact
 -- coordination state, and one rebuildable message projection.
 
-ALTER TABLE straylight.api_credentials
+ALTER TABLE brunn.api_credentials
   DROP CONSTRAINT IF EXISTS api_credentials_capabilities_check2;
 
-ALTER TABLE straylight.api_credentials
+ALTER TABLE brunn.api_credentials
   ADD CONSTRAINT api_credentials_capabilities_check2 CHECK (
     capabilities <@ ARRAY[
       'open', 'query', 'read', 'compute', 'verify', 'status',
@@ -18,10 +18,10 @@ ALTER TABLE straylight.api_credentials
     ]::text[]
   );
 
-ALTER TABLE straylight.api_credentials
+ALTER TABLE brunn.api_credentials
   DROP CONSTRAINT IF EXISTS api_credentials_owner_full_capabilities_check;
 
-ALTER TABLE straylight.api_credentials
+ALTER TABLE brunn.api_credentials
   ADD CONSTRAINT api_credentials_owner_full_capabilities_check CHECK (
     NOT capabilities @> ARRAY['credential:manage']::text[]
     OR capabilities @> ARRAY[
@@ -36,7 +36,7 @@ ALTER TABLE straylight.api_credentials
 
 -- These replacements are the 0071 task-aware definitions with only the two
 -- messaging capabilities added. Keep task capability issuance intact.
-CREATE OR REPLACE FUNCTION straylight_auth.admin_issue_credential(
+CREATE OR REPLACE FUNCTION brunn_auth.admin_issue_credential(
   p_user_id uuid,
   p_label text,
   p_token_hash text,
@@ -46,7 +46,7 @@ CREATE OR REPLACE FUNCTION straylight_auth.admin_issue_credential(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
@@ -62,7 +62,7 @@ DECLARE
   created_credential_id uuid;
   matched_scope_count integer;
 BEGIN
-  PERFORM straylight_auth.require_admin();
+  PERFORM brunn_auth.require_admin();
   IF p_capabilities IS NULL
      OR cardinality(p_capabilities) = 0
      OR array_position(p_capabilities, NULL) IS NOT NULL
@@ -85,35 +85,35 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
   IF NOT EXISTS (
-    SELECT 1 FROM straylight.users
+    SELECT 1 FROM brunn.users
     WHERE id = p_user_id AND account_status = 'active'
   ) THEN
     RAISE EXCEPTION 'active recovery user not found' USING ERRCODE = 'P0002';
   END IF;
   SELECT count(*) INTO matched_scope_count
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = p_user_id
     AND scope_row.scope_ref::text = ANY(p_scope_refs);
   IF matched_scope_count <> cardinality(p_scope_refs) THEN
     RAISE EXCEPTION 'one or more recovery scopes do not belong to the user'
       USING ERRCODE = '22023';
   END IF;
-  INSERT INTO straylight.api_credentials (
+  INSERT INTO brunn.api_credentials (
     user_id, label, token_hash, capabilities
   ) VALUES (p_user_id, p_label, p_token_hash, p_capabilities)
   RETURNING id INTO created_credential_id;
-  INSERT INTO straylight.credential_scope_grants (
+  INSERT INTO brunn.credential_scope_grants (
     credential_id, user_id, scope_id
   )
   SELECT created_credential_id, p_user_id, scope_row.id
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = p_user_id
     AND scope_row.scope_ref::text = ANY(p_scope_refs);
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, credential_id, action, details, content_free
   ) VALUES (
-    straylight_auth.current_user_id(),
-    straylight_auth.current_credential_id(),
+    brunn_auth.current_user_id(),
+    brunn_auth.current_credential_id(),
     'admin.credential.recover',
     jsonb_build_object(
       'target_user_id', p_user_id,
@@ -126,7 +126,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION straylight_auth.issue_credential(
+CREATE OR REPLACE FUNCTION brunn_auth.issue_credential(
   p_user_id uuid,
   p_label text,
   p_token_hash text,
@@ -136,7 +136,7 @@ CREATE OR REPLACE FUNCTION straylight_auth.issue_credential(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
@@ -152,12 +152,12 @@ DECLARE
   created_credential_id uuid;
   matched_scope_count integer;
 BEGIN
-  PERFORM straylight_auth.require_credential_control(p_user_id);
+  PERFORM brunn_auth.require_credential_control(p_user_id);
   IF p_capabilities IS NULL
      OR cardinality(p_capabilities) = 0
      OR array_position(p_capabilities, NULL) IS NOT NULL
      OR NOT p_capabilities <@ allowed_capabilities
-     OR NOT p_capabilities <@ straylight_auth.current_capabilities()
+     OR NOT p_capabilities <@ brunn_auth.current_capabilities()
      OR cardinality(p_capabilities) <> (
        SELECT count(DISTINCT capability)
        FROM unnest(p_capabilities) AS capability
@@ -168,7 +168,7 @@ BEGIN
   IF p_scope_refs IS NULL
      OR cardinality(p_scope_refs) = 0
      OR array_position(p_scope_refs, NULL) IS NOT NULL
-     OR NOT p_scope_refs <@ straylight_auth.current_scope_refs()
+     OR NOT p_scope_refs <@ brunn_auth.current_scope_refs()
      OR cardinality(p_scope_refs) <> (
        SELECT count(DISTINCT scope_ref)
        FROM unnest(p_scope_refs) AS scope_ref
@@ -177,31 +177,31 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
   SELECT count(*) INTO matched_scope_count
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = p_user_id
     AND scope_row.scope_ref::text = ANY(p_scope_refs);
   IF matched_scope_count <> cardinality(p_scope_refs) THEN
     RAISE EXCEPTION 'one or more scope_refs do not belong to the user'
       USING ERRCODE = '22023';
   END IF;
-  INSERT INTO straylight.api_credentials (
+  INSERT INTO brunn.api_credentials (
     user_id, label, token_hash, capabilities
   ) VALUES (
     p_user_id, p_label, p_token_hash, p_capabilities
   ) RETURNING id INTO created_credential_id;
-  INSERT INTO straylight.credential_scope_grants (
+  INSERT INTO brunn.credential_scope_grants (
     credential_id, user_id, scope_id
   )
   SELECT created_credential_id, p_user_id, scope_row.id
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = p_user_id
     AND scope_row.scope_ref::text = ANY(p_scope_refs);
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, scope_id, credential_id, action, details, content_free
   ) VALUES (
     p_user_id,
     NULL,
-    straylight_auth.current_credential_id(),
+    brunn_auth.current_credential_id(),
     'auth.credential.issue',
     jsonb_build_object(
       'credential_id', created_credential_id,
@@ -214,7 +214,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION straylight_auth.admin_provision_user(
+CREATE OR REPLACE FUNCTION brunn_auth.admin_provision_user(
   p_external_ref text,
   p_display_name text,
   p_credential_label text,
@@ -230,7 +230,7 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
@@ -250,7 +250,7 @@ DECLARE
   initial_revision_id uuid := gen_random_uuid();
   manifest_id uuid := gen_random_uuid();
 BEGIN
-  PERFORM straylight_auth.require_admin();
+  PERFORM brunn_auth.require_admin();
   IF p_external_ref IS NULL OR btrim(p_external_ref) = ''
      OR length(p_external_ref) > 200
      OR p_display_name IS NULL OR btrim(p_display_name) = ''
@@ -260,53 +260,53 @@ BEGIN
     RAISE EXCEPTION 'provisioning names are invalid' USING ERRCODE = '22023';
   END IF;
   IF EXISTS (
-    SELECT 1 FROM straylight.users AS existing_user
+    SELECT 1 FROM brunn.users AS existing_user
     WHERE existing_user.external_ref = p_external_ref
   ) THEN
     RAISE EXCEPTION 'external_ref already exists' USING ERRCODE = '23505';
   END IF;
-  INSERT INTO straylight.users (external_ref, display_name)
+  INSERT INTO brunn.users (external_ref, display_name)
   VALUES (p_external_ref, p_display_name)
   RETURNING users.id INTO created_user_id;
   SELECT scope_row.id INTO root_scope_id
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = created_user_id
     AND scope_row.scope_ref = 'scope:root';
   SELECT policy_row.id INTO default_policy_id
-  FROM straylight.policies AS policy_row
+  FROM brunn.policies AS policy_row
   WHERE policy_row.user_id = created_user_id
     AND policy_row.is_default;
-  INSERT INTO straylight.api_credentials (
+  INSERT INTO brunn.api_credentials (
     user_id, label, token_hash, capabilities
   ) VALUES (
     created_user_id, p_credential_label, p_token_hash, owner_capabilities
   ) RETURNING api_credentials.id INTO created_credential_id;
-  INSERT INTO straylight.credential_scope_grants (
+  INSERT INTO brunn.credential_scope_grants (
     credential_id, user_id, scope_id
   ) VALUES (created_credential_id, created_user_id, root_scope_id);
-  INSERT INTO straylight.corpus_revisions (
+  INSERT INTO brunn.corpus_revisions (
     id, user_id, scope_id, parent_revision_id, revision_number, manifest_hash
   ) VALUES (
     initial_revision_id, created_user_id, root_scope_id, NULL, 1, p_empty_manifest_hash
   );
-  INSERT INTO straylight.active_manifests (
+  INSERT INTO brunn.active_manifests (
     id, user_id, scope_id, active_corpus_revision_id, manifest_hash, generation
   ) VALUES (
     manifest_id, created_user_id, root_scope_id,
     initial_revision_id, p_empty_manifest_hash, 1
   );
-  INSERT INTO straylight.active_manifest_history (
+  INSERT INTO brunn.active_manifest_history (
     id, user_id, scope_id, manifest_id, generation, corpus_revision_id,
     manifest_hash, change_kind
   ) VALUES (
     gen_random_uuid(), created_user_id, root_scope_id, manifest_id, 1,
     initial_revision_id, p_empty_manifest_hash, 'initial'
   );
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, credential_id, action, details, content_free
   ) VALUES (
-    straylight_auth.current_user_id(),
-    straylight_auth.current_credential_id(),
+    brunn_auth.current_user_id(),
+    brunn_auth.current_credential_id(),
     'admin.user.provision',
     jsonb_build_object('target_user_id', created_user_id),
     true
@@ -317,8 +317,8 @@ BEGIN
 END;
 $$;
 
-CREATE TABLE straylight.messaging_agents (
-  user_id uuid NOT NULL REFERENCES straylight.users(id) ON DELETE CASCADE,
+CREATE TABLE brunn.messaging_agents (
+  user_id uuid NOT NULL REFERENCES brunn.users(id) ON DELETE CASCADE,
   agent_id text NOT NULL CHECK (
     length(agent_id) BETWEEN 1 AND 80
     AND agent_id ~ '^[a-z0-9]+([._-][a-z0-9]+)*$'
@@ -338,13 +338,13 @@ CREATE TABLE straylight.messaging_agents (
   updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   PRIMARY KEY (user_id, agent_id),
   FOREIGN KEY (user_id, created_by_credential_id)
-    REFERENCES straylight.api_credentials(user_id, id),
+    REFERENCES brunn.api_credentials(user_id, id),
   CHECK (lease_expires_at IS NULL OR last_seen_at IS NOT NULL),
   CHECK (last_seen_at IS NULL OR lease_expires_at IS NULL OR lease_expires_at >= last_seen_at)
 );
 
-CREATE TABLE straylight.messaging_credential_bindings (
-  user_id uuid NOT NULL REFERENCES straylight.users(id) ON DELETE CASCADE,
+CREATE TABLE brunn.messaging_credential_bindings (
+  user_id uuid NOT NULL REFERENCES brunn.users(id) ON DELETE CASCADE,
   credential_id uuid NOT NULL,
   agent_id text NOT NULL,
   bound_by_credential_id uuid NOT NULL,
@@ -352,24 +352,24 @@ CREATE TABLE straylight.messaging_credential_bindings (
   updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   PRIMARY KEY (user_id, credential_id),
   FOREIGN KEY (user_id, credential_id)
-    REFERENCES straylight.api_credentials(user_id, id) ON DELETE CASCADE,
+    REFERENCES brunn.api_credentials(user_id, id) ON DELETE CASCADE,
   FOREIGN KEY (user_id, agent_id)
-    REFERENCES straylight.messaging_agents(user_id, agent_id) ON DELETE CASCADE,
+    REFERENCES brunn.messaging_agents(user_id, agent_id) ON DELETE CASCADE,
   FOREIGN KEY (user_id, bound_by_credential_id)
-    REFERENCES straylight.api_credentials(user_id, id)
+    REFERENCES brunn.api_credentials(user_id, id)
 );
 
 CREATE INDEX messaging_credential_bindings_agent_idx
-  ON straylight.messaging_credential_bindings (user_id, agent_id, credential_id);
+  ON brunn.messaging_credential_bindings (user_id, agent_id, credential_id);
 
-CREATE TABLE straylight.messaging_sync_state (
-  user_id uuid PRIMARY KEY REFERENCES straylight.users(id) ON DELETE CASCADE,
+CREATE TABLE brunn.messaging_sync_state (
+  user_id uuid PRIMARY KEY REFERENCES brunn.users(id) ON DELETE CASCADE,
   current_cursor bigint NOT NULL DEFAULT 0 CHECK (current_cursor >= 0),
   updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 
-CREATE TABLE straylight.messaging_conversations (
-  user_id uuid NOT NULL REFERENCES straylight.users(id) ON DELETE CASCADE,
+CREATE TABLE brunn.messaging_conversations (
+  user_id uuid NOT NULL REFERENCES brunn.users(id) ON DELETE CASCADE,
   conversation_id uuid NOT NULL,
   entry_id uuid NOT NULL,
   path text NOT NULL,
@@ -393,14 +393,14 @@ CREATE TABLE straylight.messaging_conversations (
   UNIQUE (user_id, entry_id),
   UNIQUE (user_id, path),
   FOREIGN KEY (user_id, entry_id)
-    REFERENCES straylight.entries(user_id, id) ON DELETE CASCADE
+    REFERENCES brunn.entries(user_id, id) ON DELETE CASCADE
     DEFERRABLE INITIALLY DEFERRED,
   FOREIGN KEY (user_id, created_by_agent_id)
-    REFERENCES straylight.messaging_agents(user_id, agent_id),
+    REFERENCES brunn.messaging_agents(user_id, agent_id),
   FOREIGN KEY (user_id, continues_from)
-    REFERENCES straylight.messaging_conversations(user_id, conversation_id),
+    REFERENCES brunn.messaging_conversations(user_id, conversation_id),
   CHECK (
-    path = '.straylight/conversations/' || conversation_id::text || '.md'
+    path = '.brunn/conversations/' || conversation_id::text || '.md'
   ),
   CHECK (
     (conversation_kind = 'direct' AND (
@@ -417,26 +417,26 @@ CREATE TABLE straylight.messaging_conversations (
 );
 
 CREATE UNIQUE INDEX messaging_conversations_active_direct_idx
-  ON straylight.messaging_conversations (user_id, direct_key)
+  ON brunn.messaging_conversations (user_id, direct_key)
   WHERE conversation_kind = 'direct' AND direct_key IS NOT NULL
     AND status IN ('open', 'paused_for_human');
 
 CREATE UNIQUE INDEX messaging_conversations_continuation_idx
-  ON straylight.messaging_conversations (user_id, continues_from)
+  ON brunn.messaging_conversations (user_id, continues_from)
   WHERE continues_from IS NOT NULL;
 
 CREATE INDEX messaging_conversations_sync_idx
-  ON straylight.messaging_conversations (
+  ON brunn.messaging_conversations (
     user_id, latest_sync_cursor, conversation_id
   );
 
 CREATE INDEX messaging_conversations_inbox_idx
-  ON straylight.messaging_conversations (
+  ON brunn.messaging_conversations (
     user_id, status, last_message_at DESC, conversation_id
   );
 
-CREATE TABLE straylight.messaging_participants (
-  user_id uuid NOT NULL REFERENCES straylight.users(id) ON DELETE CASCADE,
+CREATE TABLE brunn.messaging_participants (
+  user_id uuid NOT NULL REFERENCES brunn.users(id) ON DELETE CASCADE,
   conversation_id uuid NOT NULL,
   agent_id text NOT NULL,
   role text NOT NULL CHECK (role IN ('participant', 'observer')),
@@ -445,27 +445,27 @@ CREATE TABLE straylight.messaging_participants (
   updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   PRIMARY KEY (user_id, conversation_id, agent_id),
   FOREIGN KEY (user_id, conversation_id)
-    REFERENCES straylight.messaging_conversations(user_id, conversation_id)
+    REFERENCES brunn.messaging_conversations(user_id, conversation_id)
     ON DELETE CASCADE,
   FOREIGN KEY (user_id, agent_id)
-    REFERENCES straylight.messaging_agents(user_id, agent_id)
+    REFERENCES brunn.messaging_agents(user_id, agent_id)
     ON DELETE CASCADE
 );
 
 CREATE INDEX messaging_participants_agent_inbox_idx
-  ON straylight.messaging_participants (
+  ON brunn.messaging_participants (
     user_id, agent_id, conversation_id, last_read_seq
   );
 
-CREATE TABLE straylight.messaging_message_index (
-  user_id uuid NOT NULL REFERENCES straylight.users(id) ON DELETE CASCADE,
+CREATE TABLE brunn.messaging_message_index (
+  user_id uuid NOT NULL REFERENCES brunn.users(id) ON DELETE CASCADE,
   conversation_id uuid NOT NULL,
   seq bigint NOT NULL CHECK (seq > 0),
   message_id uuid NOT NULL,
   from_agent_id text,
   client_key text,
   system_key text,
-  request_hash straylight.sha256_hex,
+  request_hash brunn.sha256_hex,
   kind text NOT NULL CHECK (kind IN ('text', 'question', 'system')),
   body_md text NOT NULL CHECK (octet_length(body_md) BETWEEN 1 AND 16384),
   refs jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (
@@ -487,12 +487,12 @@ CREATE TABLE straylight.messaging_message_index (
   UNIQUE (user_id, from_agent_id, client_key),
   UNIQUE (user_id, sync_cursor),
   FOREIGN KEY (user_id, conversation_id)
-    REFERENCES straylight.messaging_conversations(user_id, conversation_id)
+    REFERENCES brunn.messaging_conversations(user_id, conversation_id)
     ON DELETE CASCADE,
   FOREIGN KEY (user_id, from_agent_id)
-    REFERENCES straylight.messaging_agents(user_id, agent_id),
+    REFERENCES brunn.messaging_agents(user_id, agent_id),
   FOREIGN KEY (user_id, in_reply_to_conversation_id, in_reply_to)
-    REFERENCES straylight.messaging_message_index(user_id, conversation_id, seq)
+    REFERENCES brunn.messaging_message_index(user_id, conversation_id, seq)
     DEFERRABLE INITIALLY DEFERRED,
   CHECK ((in_reply_to_conversation_id IS NULL) = (in_reply_to IS NULL)),
   CHECK (
@@ -527,32 +527,32 @@ CREATE TABLE straylight.messaging_message_index (
 );
 
 CREATE INDEX messaging_message_index_cursor_idx
-  ON straylight.messaging_message_index (
+  ON brunn.messaging_message_index (
     user_id, sync_cursor, conversation_id, seq
   );
 
 CREATE INDEX messaging_message_index_reply_idx
-  ON straylight.messaging_message_index (
+  ON brunn.messaging_message_index (
     user_id, in_reply_to_conversation_id, in_reply_to
   )
   WHERE in_reply_to IS NOT NULL;
 
 CREATE UNIQUE INDEX messaging_message_index_system_key_idx
-  ON straylight.messaging_message_index (
+  ON brunn.messaging_message_index (
     user_id, conversation_id, system_key
   )
   WHERE system_key IS NOT NULL;
 
 CREATE INDEX messaging_message_index_sender_rate_idx
-  ON straylight.messaging_message_index (user_id, from_agent_id, created_at DESC)
+  ON brunn.messaging_message_index (user_id, from_agent_id, created_at DESC)
   WHERE from_agent_id IS NOT NULL;
 
 CREATE INDEX messaging_message_index_conversation_rate_idx
-  ON straylight.messaging_message_index (user_id, conversation_id, created_at DESC)
+  ON brunn.messaging_message_index (user_id, conversation_id, created_at DESC)
   WHERE kind <> 'system';
 
 CREATE INDEX messaging_message_index_reply_by_idx
-  ON straylight.messaging_message_index (
+  ON brunn.messaging_message_index (
     reply_by, user_id, conversation_id, seq
   )
   WHERE reply_by IS NOT NULL AND reply_by_handled_at IS NULL;
@@ -570,16 +570,16 @@ BEGIN
     'messaging_message_index'
   ]
   LOOP
-    EXECUTE format('ALTER TABLE straylight.%I ENABLE ROW LEVEL SECURITY', table_name);
-    EXECUTE format('ALTER TABLE straylight.%I FORCE ROW LEVEL SECURITY', table_name);
+    EXECUTE format('ALTER TABLE brunn.%I ENABLE ROW LEVEL SECURITY', table_name);
+    EXECUTE format('ALTER TABLE brunn.%I FORCE ROW LEVEL SECURITY', table_name);
   END LOOP;
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION straylight.enforce_messaging_agent_update()
+CREATE OR REPLACE FUNCTION brunn.enforce_messaging_agent_update()
 RETURNS trigger
 LANGUAGE plpgsql
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 AS $$
 BEGIN
   IF ROW(
@@ -601,7 +601,7 @@ BEGIN
        NEW.archived_at,
        NEW.created_at
      )
-     AND NOT straylight_auth.has_any_capability(
+     AND NOT brunn_auth.has_any_capability(
        ARRAY['credential:manage', 'admin']
      ) THEN
     RAISE EXCEPTION 'message.read can update only messaging presence'
@@ -612,13 +612,13 @@ END;
 $$;
 
 CREATE TRIGGER messaging_agents_update_guard
-BEFORE UPDATE ON straylight.messaging_agents
-FOR EACH ROW EXECUTE FUNCTION straylight.enforce_messaging_agent_update();
+BEFORE UPDATE ON brunn.messaging_agents
+FOR EACH ROW EXECUTE FUNCTION brunn.enforce_messaging_agent_update();
 
-CREATE OR REPLACE FUNCTION straylight.enforce_messaging_participant_update()
+CREATE OR REPLACE FUNCTION brunn.enforce_messaging_participant_update()
 RETURNS trigger
 LANGUAGE plpgsql
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 AS $$
 BEGIN
   IF NEW.last_read_seq < OLD.last_read_seq THEN
@@ -638,7 +638,7 @@ BEGIN
        NEW.role,
        NEW.joined_at
      )
-     AND NOT straylight_auth.has_any_capability(
+     AND NOT brunn_auth.has_any_capability(
        ARRAY['message.write', 'admin']
      ) THEN
     RAISE EXCEPTION 'message.read can update only its durable read position'
@@ -649,79 +649,79 @@ END;
 $$;
 
 CREATE TRIGGER messaging_participants_update_guard
-BEFORE UPDATE ON straylight.messaging_participants
-FOR EACH ROW EXECUTE FUNCTION straylight.enforce_messaging_participant_update();
+BEFORE UPDATE ON brunn.messaging_participants
+FOR EACH ROW EXECUTE FUNCTION brunn.enforce_messaging_participant_update();
 
 CREATE POLICY messaging_agents_select
-ON straylight.messaging_agents
+ON brunn.messaging_agents
 FOR SELECT TO app_rw, app_ro
 USING (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY[
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY[
     'message.read', 'message.write', 'credential:manage', 'admin'
   ])
 );
 
 CREATE POLICY messaging_agents_presence_update
-ON straylight.messaging_agents
+ON brunn.messaging_agents
 FOR UPDATE TO app_rw
 USING (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(
     ARRAY['message.read', 'message.write', 'admin']
   )
   AND EXISTS (
     SELECT 1
-    FROM straylight.messaging_credential_bindings AS binding
+    FROM brunn.messaging_credential_bindings AS binding
     WHERE binding.user_id=messaging_agents.user_id
-      AND binding.credential_id=straylight_auth.current_credential_id()
+      AND binding.credential_id=brunn_auth.current_credential_id()
       AND binding.agent_id=messaging_agents.agent_id
   )
 )
 WITH CHECK (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(
     ARRAY['message.read', 'message.write', 'admin']
   )
   AND EXISTS (
     SELECT 1
-    FROM straylight.messaging_credential_bindings AS binding
+    FROM brunn.messaging_credential_bindings AS binding
     WHERE binding.user_id=messaging_agents.user_id
-      AND binding.credential_id=straylight_auth.current_credential_id()
+      AND binding.credential_id=brunn_auth.current_credential_id()
       AND binding.agent_id=messaging_agents.agent_id
   )
 );
 
 CREATE POLICY messaging_agents_registry_insert
-ON straylight.messaging_agents
+ON brunn.messaging_agents
 FOR INSERT TO app_rw
 WITH CHECK (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['credential:manage', 'admin'])
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['credential:manage', 'admin'])
 );
 
 CREATE POLICY messaging_agents_registry_update
-ON straylight.messaging_agents
+ON brunn.messaging_agents
 FOR UPDATE TO app_rw
 USING (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['credential:manage', 'admin'])
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['credential:manage', 'admin'])
 )
 WITH CHECK (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['credential:manage', 'admin'])
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['credential:manage', 'admin'])
 );
 
 CREATE POLICY messaging_bindings_select
-ON straylight.messaging_credential_bindings
+ON brunn.messaging_credential_bindings
 FOR SELECT TO app_rw, app_ro
 USING (
-  straylight_auth.can_access_user(user_id)
+  brunn_auth.can_access_user(user_id)
   AND (
-    straylight_auth.has_any_capability(ARRAY['credential:manage', 'admin'])
+    brunn_auth.has_any_capability(ARRAY['credential:manage', 'admin'])
     OR (
-      credential_id=straylight_auth.current_credential_id()
-      AND straylight_auth.has_any_capability(
+      credential_id=brunn_auth.current_credential_id()
+      AND brunn_auth.has_any_capability(
         ARRAY['message.read', 'message.write']
       )
     )
@@ -729,112 +729,112 @@ USING (
 );
 
 CREATE POLICY messaging_bindings_write
-ON straylight.messaging_credential_bindings
+ON brunn.messaging_credential_bindings
 FOR ALL TO app_rw
 USING (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['credential:manage', 'admin'])
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['credential:manage', 'admin'])
 )
 WITH CHECK (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['credential:manage', 'admin'])
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['credential:manage', 'admin'])
 );
 
 CREATE POLICY messaging_conversations_select
-ON straylight.messaging_conversations
+ON brunn.messaging_conversations
 FOR SELECT TO app_rw, app_ro
 USING (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(
     ARRAY['message.read', 'message.write', 'admin']
   )
 );
 
 CREATE POLICY messaging_conversations_write
-ON straylight.messaging_conversations
+ON brunn.messaging_conversations
 FOR ALL TO app_rw
 USING (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['message.write', 'admin'])
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['message.write', 'admin'])
 )
 WITH CHECK (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['message.write', 'admin'])
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['message.write', 'admin'])
 );
 
 CREATE POLICY messaging_participants_select
-ON straylight.messaging_participants
+ON brunn.messaging_participants
 FOR SELECT TO app_rw, app_ro
 USING (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(
     ARRAY['message.read', 'message.write', 'admin']
   )
 );
 
 CREATE POLICY messaging_participants_read_state_update
-ON straylight.messaging_participants
+ON brunn.messaging_participants
 FOR UPDATE TO app_rw
 USING (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_capability('message.read')
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_capability('message.read')
   AND EXISTS (
     SELECT 1
-    FROM straylight.messaging_credential_bindings AS binding
+    FROM brunn.messaging_credential_bindings AS binding
     WHERE binding.user_id=messaging_participants.user_id
-      AND binding.credential_id=straylight_auth.current_credential_id()
+      AND binding.credential_id=brunn_auth.current_credential_id()
       AND binding.agent_id=messaging_participants.agent_id
   )
 )
 WITH CHECK (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_capability('message.read')
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_capability('message.read')
   AND EXISTS (
     SELECT 1
-    FROM straylight.messaging_credential_bindings AS binding
+    FROM brunn.messaging_credential_bindings AS binding
     WHERE binding.user_id=messaging_participants.user_id
-      AND binding.credential_id=straylight_auth.current_credential_id()
+      AND binding.credential_id=brunn_auth.current_credential_id()
       AND binding.agent_id=messaging_participants.agent_id
   )
 );
 
 CREATE POLICY messaging_participants_write
-ON straylight.messaging_participants
+ON brunn.messaging_participants
 FOR ALL TO app_rw
 USING (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['message.write', 'admin'])
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['message.write', 'admin'])
 )
 WITH CHECK (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['message.write', 'admin'])
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['message.write', 'admin'])
 );
 
 CREATE POLICY messaging_message_index_select
-ON straylight.messaging_message_index
+ON brunn.messaging_message_index
 FOR SELECT TO app_rw, app_ro
 USING (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(
     ARRAY['message.read', 'message.write', 'admin']
   )
 );
 
 CREATE POLICY messaging_message_index_write
-ON straylight.messaging_message_index
+ON brunn.messaging_message_index
 FOR ALL TO app_rw
 USING (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['message.write', 'admin'])
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['message.write', 'admin'])
 )
 WITH CHECK (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['message.write', 'admin'])
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['message.write', 'admin'])
   AND (
     kind = 'system'
     OR EXISTS (
       SELECT 1
-      FROM straylight.messaging_participants AS participant
+      FROM brunn.messaging_participants AS participant
       WHERE participant.user_id=messaging_message_index.user_id
         AND participant.conversation_id=messaging_message_index.conversation_id
         AND participant.agent_id=messaging_message_index.from_agent_id
@@ -843,44 +843,44 @@ WITH CHECK (
 );
 
 CREATE POLICY messaging_sync_state_select
-ON straylight.messaging_sync_state
+ON brunn.messaging_sync_state
 FOR SELECT TO app_rw, app_ro
 USING (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(
     ARRAY['message.read', 'message.write', 'admin']
   )
 );
 
 CREATE POLICY messaging_sync_state_write
-ON straylight.messaging_sync_state
+ON brunn.messaging_sync_state
 FOR ALL TO app_rw
 USING (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['message.write', 'admin'])
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['message.write', 'admin'])
 )
 WITH CHECK (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['message.write', 'admin'])
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['message.write', 'admin'])
 );
 
 -- Messaging-only credentials can see and version only typed canonical
 -- conversation entries. They never gain search-chunk or job authority.
-CREATE POLICY messaging_entries_select ON straylight.entries
+CREATE POLICY messaging_entries_select ON brunn.entries
 FOR SELECT TO app_rw, app_ro
 USING (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(
     ARRAY['message.read', 'message.write', 'admin']
   )
-  AND path ~ '^\.straylight/conversations/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$'
+  AND path ~ '^\.brunn/conversations/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$'
 );
 
-CREATE POLICY messaging_entry_versions_select ON straylight.entry_versions
+CREATE POLICY messaging_entry_versions_select ON brunn.entry_versions
 FOR SELECT TO app_rw, app_ro
 USING (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(
     ARRAY['message.read', 'message.write', 'admin']
   )
   AND jsonb_typeof(
@@ -910,10 +910,10 @@ USING (
     )->'conversation'
   ) = 'object'
   AND EXISTS (
-    SELECT 1 FROM straylight.entries AS entry
+    SELECT 1 FROM brunn.entries AS entry
     WHERE entry.user_id=entry_versions.user_id
       AND entry.id=entry_versions.entry_id
-      AND entry.path ~ '^\.straylight/conversations/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$'
+      AND entry.path ~ '^\.brunn/conversations/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$'
       AND (
         CASE
           WHEN jsonb_typeof(entry_versions.metadata->'client') = 'object'
@@ -921,37 +921,37 @@ USING (
           ELSE entry_versions.metadata
         END
       )->'conversation'->>'id' = substring(
-        entry.path from '^\.straylight/conversations/([0-9a-f-]{36})\.md$'
+        entry.path from '^\.brunn/conversations/([0-9a-f-]{36})\.md$'
       )
   )
 );
 
-CREATE POLICY messaging_entries_insert ON straylight.entries
+CREATE POLICY messaging_entries_insert ON brunn.entries
 FOR INSERT TO app_rw
 WITH CHECK (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['message.write', 'admin'])
-  AND path ~ '^\.straylight/conversations/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$'
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['message.write', 'admin'])
+  AND path ~ '^\.brunn/conversations/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$'
 );
 
-CREATE POLICY messaging_entries_update ON straylight.entries
+CREATE POLICY messaging_entries_update ON brunn.entries
 FOR UPDATE TO app_rw
 USING (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['message.write', 'admin'])
-  AND path ~ '^\.straylight/conversations/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$'
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['message.write', 'admin'])
+  AND path ~ '^\.brunn/conversations/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$'
 )
 WITH CHECK (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['message.write', 'admin'])
-  AND path ~ '^\.straylight/conversations/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$'
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['message.write', 'admin'])
+  AND path ~ '^\.brunn/conversations/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$'
 );
 
-CREATE POLICY messaging_entry_versions_insert ON straylight.entry_versions
+CREATE POLICY messaging_entry_versions_insert ON brunn.entry_versions
 FOR INSERT TO app_rw
 WITH CHECK (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['message.write', 'admin'])
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['message.write', 'admin'])
   AND jsonb_typeof(
     CASE
       WHEN jsonb_typeof(metadata->'client') = 'object' THEN metadata->'client'
@@ -979,10 +979,10 @@ WITH CHECK (
     )->'conversation'
   ) = 'object'
   AND EXISTS (
-    SELECT 1 FROM straylight.entries AS entry
+    SELECT 1 FROM brunn.entries AS entry
     WHERE entry.user_id=entry_versions.user_id
       AND entry.id=entry_versions.entry_id
-      AND entry.path ~ '^\.straylight/conversations/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$'
+      AND entry.path ~ '^\.brunn/conversations/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$'
       AND (
         CASE
           WHEN jsonb_typeof(entry_versions.metadata->'client') = 'object'
@@ -990,19 +990,19 @@ WITH CHECK (
           ELSE entry_versions.metadata
         END
       )->'conversation'->>'id' = substring(
-        entry.path from '^\.straylight/conversations/([0-9a-f-]{36})\.md$'
+        entry.path from '^\.brunn/conversations/([0-9a-f-]{36})\.md$'
       )
   )
 );
 
-CREATE POLICY messaging_workspace_changes_insert ON straylight.workspace_changes
+CREATE POLICY messaging_workspace_changes_insert ON brunn.workspace_changes
 FOR INSERT TO app_rw
 WITH CHECK (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['message.write', 'admin'])
-  AND path ~ '^\.straylight/conversations/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$'
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['message.write', 'admin'])
+  AND path ~ '^\.brunn/conversations/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$'
   AND EXISTS (
-    SELECT 1 FROM straylight.entries AS entry
+    SELECT 1 FROM brunn.entries AS entry
     WHERE entry.user_id=workspace_changes.user_id
       AND entry.id=workspace_changes.entry_id
       AND entry.path=workspace_changes.path
@@ -1013,12 +1013,12 @@ WITH CHECK (
 -- read side as narrow as the managed conversation namespace so a
 -- message-only credential can atomically obtain the generation it just
 -- emitted without gaining ordinary workspace change-feed access.
-CREATE POLICY messaging_workspace_changes_select ON straylight.workspace_changes
+CREATE POLICY messaging_workspace_changes_select ON brunn.workspace_changes
 FOR SELECT TO app_rw,app_ro
 USING (
-  straylight_auth.can_access_user(user_id)
-  AND straylight_auth.has_any_capability(ARRAY['message.read', 'message.write', 'admin'])
-  AND path ~ '^\.straylight/conversations/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.md$'
+  brunn_auth.can_access_user(user_id)
+  AND brunn_auth.has_any_capability(ARRAY['message.read', 'message.write', 'admin'])
+  AND path ~ '^\.brunn/conversations/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.md$'
 );
 
 -- A message send owns its generic conversation alert as one atomic side
@@ -1026,13 +1026,13 @@ USING (
 -- publisher: only a typed target backed by the just-written conversation
 -- message and the fixed content-free copies below are writable.
 CREATE POLICY messaging_notifications_select
-ON straylight.notifications
+ON brunn.notifications
 FOR SELECT TO app_rw
 USING (
-  user_id = straylight_auth.current_user_id()
-  AND straylight_auth.context_is_valid()
-  AND straylight_auth.has_capability('message.write')
-  AND producer_credential_id = straylight_auth.current_credential_id()
+  user_id = brunn_auth.current_user_id()
+  AND brunn_auth.context_is_valid()
+  AND brunn_auth.has_capability('message.write')
+  AND producer_credential_id = brunn_auth.current_credential_id()
   AND kind = 'operational'
   AND source IS NULL
   AND correlation_id = event_key
@@ -1041,7 +1041,7 @@ USING (
   AND target - 'type' - 'conversation_id' - 'seq' = '{}'::jsonb
   AND EXISTS (
     SELECT 1
-    FROM straylight.messaging_message_index AS message
+    FROM brunn.messaging_message_index AS message
     WHERE message.user_id = notifications.user_id
       AND message.conversation_id::text = notifications.target->>'conversation_id'
       AND message.seq::text = notifications.target->>'seq'
@@ -1053,12 +1053,12 @@ USING (
 -- this policy exists solely so a typed message side effect can populate the
 -- existing outbox in the same transaction.
 CREATE POLICY messaging_notification_installations_select
-ON straylight.notification_installations
+ON brunn.notification_installations
 FOR SELECT TO app_rw
 USING (
-  user_id = straylight_auth.current_user_id()
-  AND straylight_auth.context_is_valid()
-  AND straylight_auth.has_capability('message.write')
+  user_id = brunn_auth.current_user_id()
+  AND brunn_auth.context_is_valid()
+  AND brunn_auth.has_capability('message.write')
   AND enabled
   AND revoked_at IS NULL
 );
@@ -1066,22 +1066,22 @@ USING (
 -- Message delivery uses the owner's existing task quiet-hours settings without
 -- granting a message-only credential any task projection or mutation access.
 CREATE POLICY messaging_task_settings_select
-ON straylight.task_settings
+ON brunn.task_settings
 FOR SELECT TO app_rw
 USING (
-  user_id = straylight_auth.current_user_id()
-  AND straylight_auth.context_is_valid()
-  AND straylight_auth.has_capability('message.write')
+  user_id = brunn_auth.current_user_id()
+  AND brunn_auth.context_is_valid()
+  AND brunn_auth.has_capability('message.write')
 );
 
 CREATE POLICY messaging_notifications_insert
-ON straylight.notifications
+ON brunn.notifications
 FOR INSERT TO app_rw
 WITH CHECK (
-  user_id = straylight_auth.current_user_id()
-  AND straylight_auth.context_is_valid()
-  AND straylight_auth.has_capability('message.write')
-  AND producer_credential_id = straylight_auth.current_credential_id()
+  user_id = brunn_auth.current_user_id()
+  AND brunn_auth.context_is_valid()
+  AND brunn_auth.has_capability('message.write')
+  AND producer_credential_id = brunn_auth.current_credential_id()
   AND kind = 'operational'
   AND source IS NULL
   AND correlation_id = event_key
@@ -1095,22 +1095,22 @@ WITH CHECK (
       event_key = 'message:' || (target->>'conversation_id') || ':' || (target->>'seq')
       AND importance = 'normal'
       AND title = 'New agent message'
-      AND body = 'Open Straylight to view the conversation.'
+      AND body = 'Open Brunn to view the conversation.'
     )
     OR (
       event_key = 'needs-human:' || (target->>'conversation_id') || ':' || (target->>'seq')
       AND importance = 'important'
       AND title = 'Agent reply needed'
-      AND body = 'Open Straylight to continue an agent conversation.'
+      AND body = 'Open Brunn to continue an agent conversation.'
     )
     OR (
       event_key ~ '^reply-by:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]*$'
       AND importance = 'important'
       AND title = 'Agent reply needed'
-      AND body = 'Open Straylight to continue an agent conversation.'
+      AND body = 'Open Brunn to continue an agent conversation.'
       AND EXISTS (
         SELECT 1
-        FROM straylight.messaging_message_index AS system_message
+        FROM brunn.messaging_message_index AS system_message
         WHERE system_message.user_id = notifications.user_id
           AND system_message.conversation_id::text = notifications.target->>'conversation_id'
           AND system_message.seq::text = notifications.target->>'seq'
@@ -1122,12 +1122,12 @@ WITH CHECK (
       event_key = 'message-system:' || (target->>'conversation_id') || ':' || (target->>'seq')
       AND importance = 'normal'
       AND title = 'New agent message'
-      AND body = 'Open Straylight to view the conversation.'
+      AND body = 'Open Brunn to view the conversation.'
     )
   )
   AND EXISTS (
     SELECT 1
-    FROM straylight.messaging_message_index AS message
+    FROM brunn.messaging_message_index AS message
     WHERE message.user_id = notifications.user_id
       AND message.conversation_id::text = notifications.target->>'conversation_id'
       AND message.seq::text = notifications.target->>'seq'
@@ -1135,23 +1135,23 @@ WITH CHECK (
 );
 
 CREATE POLICY messaging_notification_deliveries_insert
-ON straylight.notification_deliveries
+ON brunn.notification_deliveries
 FOR INSERT TO app_rw
 WITH CHECK (
-  user_id = straylight_auth.current_user_id()
-  AND straylight_auth.context_is_valid()
-  AND straylight_auth.has_capability('message.write')
+  user_id = brunn_auth.current_user_id()
+  AND brunn_auth.context_is_valid()
+  AND brunn_auth.has_capability('message.write')
   AND EXISTS (
     SELECT 1
-    FROM straylight.notifications AS notification
+    FROM brunn.notifications AS notification
     WHERE notification.user_id = notification_deliveries.user_id
       AND notification.id = notification_deliveries.notification_id
-      AND notification.producer_credential_id = straylight_auth.current_credential_id()
+      AND notification.producer_credential_id = brunn_auth.current_credential_id()
       AND notification.target->>'type' = 'conversation'
   )
   AND EXISTS (
     SELECT 1
-    FROM straylight.notification_installations AS installation
+    FROM brunn.notification_installations AS installation
     WHERE installation.user_id = notification_deliveries.user_id
       AND installation.id = notification_deliveries.installation_id
       AND installation.enabled
@@ -1167,36 +1167,36 @@ WITH CHECK (
 -- transaction. Keep that read scoped to deliveries for the caller's own
 -- typed Conversation notification.
 CREATE POLICY messaging_notification_deliveries_select
-ON straylight.notification_deliveries
+ON brunn.notification_deliveries
 FOR SELECT TO app_rw
 USING (
-  user_id = straylight_auth.current_user_id()
-  AND straylight_auth.context_is_valid()
-  AND straylight_auth.has_capability('message.write')
+  user_id = brunn_auth.current_user_id()
+  AND brunn_auth.context_is_valid()
+  AND brunn_auth.has_capability('message.write')
   AND EXISTS (
     SELECT 1
-    FROM straylight.notifications AS notification
+    FROM brunn.notifications AS notification
     WHERE notification.user_id = notification_deliveries.user_id
       AND notification.id = notification_deliveries.notification_id
-      AND notification.producer_credential_id = straylight_auth.current_credential_id()
+      AND notification.producer_credential_id = brunn_auth.current_credential_id()
       AND notification.target->>'type' = 'conversation'
   )
 );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON
-  straylight.messaging_agents,
-  straylight.messaging_credential_bindings,
-  straylight.messaging_sync_state,
-  straylight.messaging_conversations,
-  straylight.messaging_participants,
-  straylight.messaging_message_index
+  brunn.messaging_agents,
+  brunn.messaging_credential_bindings,
+  brunn.messaging_sync_state,
+  brunn.messaging_conversations,
+  brunn.messaging_participants,
+  brunn.messaging_message_index
 TO app_rw;
 
 GRANT SELECT ON
-  straylight.messaging_agents,
-  straylight.messaging_credential_bindings,
-  straylight.messaging_sync_state,
-  straylight.messaging_conversations,
-  straylight.messaging_participants,
-  straylight.messaging_message_index
+  brunn.messaging_agents,
+  brunn.messaging_credential_bindings,
+  brunn.messaging_sync_state,
+  brunn.messaging_conversations,
+  brunn.messaging_participants,
+  brunn.messaging_message_index
 TO app_ro;

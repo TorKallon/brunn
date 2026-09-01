@@ -2,8 +2,8 @@ import DOMPurify, { type Config } from "dompurify";
 import { Marked } from "marked";
 import { type MouseEvent, useMemo } from "react";
 
-const WIKI_ENTRY_QUERY = "?straylight-entry=";
-const CUSTOM_ENTRY_QUERY = "?straylight-entry-link=";
+const WIKI_ENTRY_QUERY = "?brunn-entry=";
+const CUSTOM_ENTRY_QUERY = "?brunn-entry-link=";
 
 function escapeHtml(value: string): string {
   return value
@@ -106,7 +106,7 @@ function rewriteCustomEntryHrefs(html: string): string {
   template.innerHTML = html;
   for (const anchor of template.content.querySelectorAll<HTMLAnchorElement>("a[href]")) {
     const href = anchor.getAttribute("href") ?? "";
-    if (/^(?:entry:|straylight:\/\/entry\/)/i.test(href)) {
+    if (/^(?:entry:|brunn:\/\/entry\/)/i.test(href)) {
       anchor.setAttribute("href", `${CUSTOM_ENTRY_QUERY}${encodeURIComponent(href)}`);
     }
   }
@@ -114,7 +114,7 @@ function rewriteCustomEntryHrefs(html: string): string {
 }
 
 function isEntryHref(href: string): boolean {
-  if (/^(?:entry:|straylight:\/\/entry\/)/i.test(href)) return true;
+  if (/^(?:entry:|brunn:\/\/entry\/)/i.test(href)) return true;
   if (/^(?:https?:|mailto:|tel:|callto:|sms:|cid:|xmpp:|matrix:)/i.test(href)) {
     return false;
   }

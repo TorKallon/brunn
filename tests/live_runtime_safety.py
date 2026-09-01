@@ -323,7 +323,7 @@ def parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path(__file__).resolve().parents[1] / ".env",
     )
-    result.add_argument("--project", default="straylight")
+    result.add_argument("--project", default="brunn")
     result.add_argument("--timeout", type=float, default=120)
     return result
 

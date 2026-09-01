@@ -72,7 +72,7 @@ class SemanticEvalPolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "checked step-policy"):
             validate_e09_runtime(status, "deadline_cache_600")
         binding = {
-            "schema": "straylight-e09-step-authorization-binding@v1",
+            "schema": "brunn-e09-step-authorization-binding@v1",
             "authorization_id": "a" * 64,
             "artifact_sha256": "b" * 64,
             "deadline_before_ms": 300,

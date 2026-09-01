@@ -5,26 +5,26 @@ CREATE EXTENSION vector;
 CREATE EXTENSION pg_trgm;
 CREATE EXTENSION btree_gist;
 
-CREATE SCHEMA straylight;
-CREATE SCHEMA straylight_auth;
+CREATE SCHEMA brunn;
+CREATE SCHEMA brunn_auth;
 
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
-REVOKE ALL ON SCHEMA straylight FROM PUBLIC;
-REVOKE ALL ON SCHEMA straylight_auth FROM PUBLIC;
+REVOKE ALL ON SCHEMA brunn FROM PUBLIC;
+REVOKE ALL ON SCHEMA brunn_auth FROM PUBLIC;
 
-CREATE DOMAIN straylight.nonempty_text AS text
+CREATE DOMAIN brunn.nonempty_text AS text
   CHECK (length(btrim(VALUE)) > 0);
 
-CREATE DOMAIN straylight.sha256_hex AS text
+CREATE DOMAIN brunn.sha256_hex AS text
   CHECK (VALUE ~ '^[0-9a-f]{64}$');
 
-CREATE DOMAIN straylight.namespaced_identifier AS text
+CREATE DOMAIN brunn.namespaced_identifier AS text
   CHECK (
     VALUE ~ '^[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)*(:[a-zA-Z0-9][a-zA-Z0-9._@/-]*)?$'
     OR VALUE ~ '^state:[a-z][a-z0-9_.-]*@v[1-9][0-9]*$'
   );
 
-CREATE FUNCTION straylight.prevent_immutable_mutation()
+CREATE FUNCTION brunn.prevent_immutable_mutation()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -34,7 +34,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION straylight.prevent_physical_delete()
+CREATE FUNCTION brunn.prevent_physical_delete()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -44,7 +44,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION straylight.enforce_sequential_head_advance()
+CREATE FUNCTION brunn.enforce_sequential_head_advance()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$

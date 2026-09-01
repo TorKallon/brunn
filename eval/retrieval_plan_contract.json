@@ -1,21 +1,21 @@
 {
-  "schema": "straylight-retrieval-plan-contract@v1",
+  "schema": "brunn-retrieval-plan-contract@v1",
   "app_role": "app_ro",
   "lanes": {
     "lexical": {
-      "function_name": "straylight.workspace_lexical_candidates_v2",
-      "regprocedure": "straylight.workspace_lexical_candidates_v2(text,text)",
+      "function_name": "brunn.workspace_lexical_candidates_v2",
+      "regprocedure": "brunn.workspace_lexical_candidates_v2(text,text)",
       "migration": "apps/api/migrations/0081_bounded_lexical_rank.sql",
-      "invocation_sql": "SELECT * FROM straylight.workspace_lexical_candidates_v2($1,$2)",
-      "body_sha256": "c1ef8b6d4d77bc0257572bd6208bafc0109202772cb04db45e780465b70273b9",
+      "invocation_sql": "SELECT * FROM brunn.workspace_lexical_candidates_v2($1,$2)",
+      "body_sha256": "c3ec270546b300f570e8940c571cf987b2ab790c6db9979253fc827bb5729c69",
       "expected_index": "search_chunks_fts_idx"
     },
     "semantic": {
-      "function_name": "straylight.workspace_semantic_candidates_v2",
-      "regprocedure": "straylight.workspace_semantic_candidates_v2(vector,text)",
+      "function_name": "brunn.workspace_semantic_candidates_v2",
+      "regprocedure": "brunn.workspace_semantic_candidates_v2(vector,text)",
       "migration": "apps/api/migrations/0067_search_candidate_updated_at.sql",
-      "invocation_sql": "SELECT * FROM straylight.workspace_semantic_candidates_v2($1,$2)",
-      "body_sha256": "6818d476c0e9649a789e22dcbe99d4557481f89ca2820818a8eca48dc942333a",
+      "invocation_sql": "SELECT * FROM brunn.workspace_semantic_candidates_v2($1,$2)",
+      "body_sha256": "2eca986f3c8358628a5cec87c594085f24ecf64d6743f22e3570ef5b319e63f5",
       "expected_index": "search_chunks_embedding_hnsw_idx"
     }
   }

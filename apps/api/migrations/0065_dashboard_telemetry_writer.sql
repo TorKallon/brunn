@@ -3,7 +3,7 @@
 -- existing app_rw connection must establish a freshly validated transaction
 -- context before calling these narrowly scoped SECURITY DEFINER writers.
 
-CREATE FUNCTION straylight_auth.write_entry_usage(
+CREATE FUNCTION brunn_auth.write_entry_usage(
   p_user_id uuid,
   p_credential_id uuid,
   p_entry_ids uuid[],
@@ -13,25 +13,25 @@ CREATE FUNCTION straylight_auth.write_entry_usage(
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
   item_count integer;
 BEGIN
-  IF NOT straylight_auth.context_is_valid()
-     OR straylight_auth.current_user_id() IS DISTINCT FROM p_user_id
-     OR straylight_auth.current_credential_id() IS DISTINCT FROM p_credential_id THEN
+  IF NOT brunn_auth.context_is_valid()
+     OR brunn_auth.current_user_id() IS DISTINCT FROM p_user_id
+     OR brunn_auth.current_credential_id() IS DISTINCT FROM p_credential_id THEN
     RAISE EXCEPTION 'validated exact-principal context is required for usage telemetry'
       USING ERRCODE = '42501';
   END IF;
   IF NOT coalesce((
     SELECT context.valid
-    FROM straylight_auth.validate_transaction_context(
+    FROM brunn_auth.validate_transaction_context(
       p_user_id,
       p_credential_id,
-      straylight_auth.current_capabilities(),
-      straylight_auth.current_scope_refs()
+      brunn_auth.current_capabilities(),
+      brunn_auth.current_scope_refs()
     ) AS context
   ), false) THEN
     RAISE EXCEPTION 'current credential context is no longer valid for usage telemetry'
@@ -64,7 +64,7 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  INSERT INTO straylight.entry_usage (
+  INSERT INTO brunn.entry_usage (
     user_id, entry_id, read_count, search_count,
     first_used_at, last_used_at, last_read_at, last_search_at
   )
@@ -80,17 +80,17 @@ BEGIN
   FROM unnest(p_entry_ids, p_read_counts, p_search_counts)
     AS item(entry_id, read_count, search_count)
   ON CONFLICT (user_id, entry_id) DO UPDATE SET
-    read_count = straylight.entry_usage.read_count + EXCLUDED.read_count,
-    search_count = straylight.entry_usage.search_count + EXCLUDED.search_count,
+    read_count = brunn.entry_usage.read_count + EXCLUDED.read_count,
+    search_count = brunn.entry_usage.search_count + EXCLUDED.search_count,
     last_used_at = clock_timestamp(),
     last_read_at = CASE WHEN EXCLUDED.read_count > 0
-      THEN clock_timestamp() ELSE straylight.entry_usage.last_read_at END,
+      THEN clock_timestamp() ELSE brunn.entry_usage.last_read_at END,
     last_search_at = CASE WHEN EXCLUDED.search_count > 0
-      THEN clock_timestamp() ELSE straylight.entry_usage.last_search_at END;
+      THEN clock_timestamp() ELSE brunn.entry_usage.last_search_at END;
 END;
 $$;
 
-CREATE FUNCTION straylight_auth.write_product_activity(
+CREATE FUNCTION brunn_auth.write_product_activity(
   p_user_id uuid,
   p_credential_id uuid,
   p_bucket_starts timestamptz[],
@@ -103,7 +103,7 @@ CREATE FUNCTION straylight_auth.write_product_activity(
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
@@ -115,19 +115,19 @@ DECLARE
   ];
   item_count integer;
 BEGIN
-  IF NOT straylight_auth.context_is_valid()
-     OR straylight_auth.current_user_id() IS DISTINCT FROM p_user_id
-     OR straylight_auth.current_credential_id() IS DISTINCT FROM p_credential_id THEN
+  IF NOT brunn_auth.context_is_valid()
+     OR brunn_auth.current_user_id() IS DISTINCT FROM p_user_id
+     OR brunn_auth.current_credential_id() IS DISTINCT FROM p_credential_id THEN
     RAISE EXCEPTION 'validated exact-principal context is required for product telemetry'
       USING ERRCODE = '42501';
   END IF;
   IF NOT coalesce((
     SELECT context.valid
-    FROM straylight_auth.validate_transaction_context(
+    FROM brunn_auth.validate_transaction_context(
       p_user_id,
       p_credential_id,
-      straylight_auth.current_capabilities(),
-      straylight_auth.current_scope_refs()
+      brunn_auth.current_capabilities(),
+      brunn_auth.current_scope_refs()
     ) AS context
   ), false) THEN
     RAISE EXCEPTION 'current credential context is no longer valid for product telemetry'
@@ -189,7 +189,7 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  INSERT INTO straylight.product_activity_minutely (
+  INSERT INTO brunn.product_activity_minutely (
     user_id, credential_id, bucket_start, operation,
     operation_count, byte_count, first_recorded_at, last_recorded_at
   )
@@ -219,22 +219,22 @@ BEGIN
   )
   ON CONFLICT (user_id, credential_id, bucket_start, operation) DO UPDATE SET
     operation_count =
-      straylight.product_activity_minutely.operation_count
+      brunn.product_activity_minutely.operation_count
         + EXCLUDED.operation_count,
     byte_count =
-      straylight.product_activity_minutely.byte_count + EXCLUDED.byte_count,
+      brunn.product_activity_minutely.byte_count + EXCLUDED.byte_count,
     first_recorded_at = least(
-      straylight.product_activity_minutely.first_recorded_at,
+      brunn.product_activity_minutely.first_recorded_at,
       EXCLUDED.first_recorded_at
     ),
     last_recorded_at = greatest(
-      straylight.product_activity_minutely.last_recorded_at,
+      brunn.product_activity_minutely.last_recorded_at,
       EXCLUDED.last_recorded_at
     );
 END;
 $$;
 
-CREATE FUNCTION straylight_auth.write_credential_activity(
+CREATE FUNCTION brunn_auth.write_credential_activity(
   p_user_id uuid,
   p_credential_id uuid,
   p_last_operation text,
@@ -244,7 +244,7 @@ CREATE FUNCTION straylight_auth.write_credential_activity(
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
@@ -258,19 +258,19 @@ DECLARE
     'credential_delete', 'control'
   ];
 BEGIN
-  IF NOT straylight_auth.context_is_valid()
-     OR straylight_auth.current_user_id() IS DISTINCT FROM p_user_id
-     OR straylight_auth.current_credential_id() IS DISTINCT FROM p_credential_id THEN
+  IF NOT brunn_auth.context_is_valid()
+     OR brunn_auth.current_user_id() IS DISTINCT FROM p_user_id
+     OR brunn_auth.current_credential_id() IS DISTINCT FROM p_credential_id THEN
     RAISE EXCEPTION 'validated exact-principal context is required for credential telemetry'
       USING ERRCODE = '42501';
   END IF;
   IF NOT coalesce((
     SELECT context.valid
-    FROM straylight_auth.validate_transaction_context(
+    FROM brunn_auth.validate_transaction_context(
       p_user_id,
       p_credential_id,
-      straylight_auth.current_capabilities(),
-      straylight_auth.current_scope_refs()
+      brunn_auth.current_capabilities(),
+      brunn_auth.current_scope_refs()
     ) AS context
   ), false) THEN
     RAISE EXCEPTION 'current credential context is no longer valid for credential telemetry'
@@ -286,42 +286,42 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  INSERT INTO straylight.credential_activity (
+  INSERT INTO brunn.credential_activity (
     user_id, credential_id, last_operation, last_used_at, request_count
   ) VALUES (
     p_user_id, p_credential_id, p_last_operation, p_last_used_at, p_request_count
   )
   ON CONFLICT (user_id, credential_id) DO UPDATE SET
     last_operation = CASE
-      WHEN EXCLUDED.last_used_at >= straylight.credential_activity.last_used_at
+      WHEN EXCLUDED.last_used_at >= brunn.credential_activity.last_used_at
         THEN EXCLUDED.last_operation
-      ELSE straylight.credential_activity.last_operation
+      ELSE brunn.credential_activity.last_operation
     END,
     last_used_at = greatest(
-      straylight.credential_activity.last_used_at,
+      brunn.credential_activity.last_used_at,
       EXCLUDED.last_used_at
     ),
     request_count =
-      straylight.credential_activity.request_count + EXCLUDED.request_count;
+      brunn.credential_activity.request_count + EXCLUDED.request_count;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION straylight_auth.write_entry_usage(
+REVOKE ALL ON FUNCTION brunn_auth.write_entry_usage(
   uuid, uuid, uuid[], bigint[], bigint[]
 ) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight_auth.write_product_activity(
+REVOKE ALL ON FUNCTION brunn_auth.write_product_activity(
   uuid, uuid, timestamptz[], text[], bigint[], bigint[], timestamptz[], timestamptz[]
 ) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight_auth.write_credential_activity(
+REVOKE ALL ON FUNCTION brunn_auth.write_credential_activity(
   uuid, uuid, text, timestamptz, bigint
 ) FROM PUBLIC;
 
-GRANT EXECUTE ON FUNCTION straylight_auth.write_entry_usage(
+GRANT EXECUTE ON FUNCTION brunn_auth.write_entry_usage(
   uuid, uuid, uuid[], bigint[], bigint[]
 ) TO app_rw;
-GRANT EXECUTE ON FUNCTION straylight_auth.write_product_activity(
+GRANT EXECUTE ON FUNCTION brunn_auth.write_product_activity(
   uuid, uuid, timestamptz[], text[], bigint[], bigint[], timestamptz[], timestamptz[]
 ) TO app_rw;
-GRANT EXECUTE ON FUNCTION straylight_auth.write_credential_activity(
+GRANT EXECUTE ON FUNCTION brunn_auth.write_credential_activity(
   uuid, uuid, text, timestamptz, bigint
 ) TO app_rw;

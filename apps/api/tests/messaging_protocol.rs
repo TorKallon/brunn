@@ -70,7 +70,7 @@ fn messages() -> Vec<CanonicalMessage> {
             system_key: None,
             request_hash: None,
             kind: MessageKind::Question,
-            body_md: "Arbitrary Markdown\n\n<!-- /straylight-message-v1 -->\n`-->` 🛰️".to_owned(),
+            body_md: "Arbitrary Markdown\n\n<!-- /brunn-message-v1 -->\n`-->` 🛰️".to_owned(),
             refs: input().refs,
             in_reply_to_conversation_id: None,
             in_reply_to: None,
@@ -131,7 +131,7 @@ fn refresh_request_hash(message: &mut CanonicalMessage) {
 fn canonical_conversation_round_trips_arbitrary_markdown() {
     assert_eq!(
         conversation_path(header().conversation_id),
-        ".straylight/conversations/018f0000-0000-7000-8000-000000000010.md"
+        ".brunn/conversations/018f0000-0000-7000-8000-000000000010.md"
     );
     let rendered = render_conversation(&header(), &messages()).unwrap();
     assert!(rendered.contains("\\u003e"));
@@ -186,7 +186,7 @@ fn typed_metadata_and_path_must_match_the_canonical_header() {
     );
     let imported = serde_json::json!({
         "client": conversation_metadata(&header),
-        "_straylight_import": {
+        "_brunn_import": {
             "format": messaging_protocol::WORKSPACE_IMPORT_FORMAT
         }
     });

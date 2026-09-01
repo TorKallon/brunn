@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import unittest
 from pathlib import Path
@@ -43,7 +44,7 @@ class ExecutableExperimentDocsTests(unittest.TestCase):
             with self.subTest(name=name):
                 text = document(name)
                 self.assertIn("E02 rejected D02", text)
-                self.assertIn("STRAYLIGHT_VERBATIM_SPANS=false", text)
+                self.assertIn("BRUNN_VERBATIM_SPANS=false", text)
                 self.assertIn(
                     "--expect-feature-flag verbatim_spans=off",
                     text,
@@ -78,7 +79,7 @@ class ExecutableExperimentDocsTests(unittest.TestCase):
         self.assertIn("Status: Prerequisite abort", e09)
         self.assertIn("E03 Mode 2 failed", e09)
         self.assertIn("quality backfill was not run", e09)
-        self.assertIn("STRAYLIGHT_VERBATIM_SPANS=false", e09)
+        self.assertIn("BRUNN_VERBATIM_SPANS=false", e09)
         self.assertNotIn("verbatim_spans=on", e09)
 
         e10 = document("E10-combined-preflight.md")
@@ -128,25 +129,42 @@ class ExecutableExperimentDocsTests(unittest.TestCase):
 
     def test_e09_e11_abort_artifacts_are_zero_cost_nonverdicts(self) -> None:
         expected = {
-            "E09": (351, 84.24),
-            "E10": (354, 84.96),
-            "E11": (168, 40.32),
+            "E09": (
+                351,
+                84.24,
+                "a18980a2e1dbfc373b3aac4fa91b01a40abe582a5edac12d6f33e750674f0d4f",
+            ),
+            "E10": (
+                354,
+                84.96,
+                "6581cd5faa3d3769426594fc727a9ed3e2f88688849ac07acaa954225520c921",
+            ),
+            "E11": (
+                168,
+                40.32,
+                "8632bcfc5f79647086f342104664993670c8585ae05dfcd17f97a1cc07228976",
+            ),
         }
-        for experiment, (case_runs, equivalent_usd) in expected.items():
+        for experiment, (case_runs, equivalent_usd, frozen_sha256) in expected.items():
             with self.subTest(experiment=experiment):
-                artifact = json.loads(
-                    (
-                        ROOT
-                        / "results"
-                        / (
-                            "2026-07-28-"
-                            f"{experiment.lower()}-prerequisite-abort.json"
-                        )
-                    ).read_text(encoding="utf-8")
+                artifact_path = (
+                    ROOT
+                    / "results"
+                    / (
+                        "2026-07-28-"
+                        f"{experiment.lower()}-prerequisite-abort.json"
+                    )
                 )
+                artifact_bytes = artifact_path.read_bytes()
                 self.assertEqual(
-                    artifact["schema"],
-                    "straylight-experiment-prerequisite-abort@v1",
+                    hashlib.sha256(artifact_bytes).hexdigest(),
+                    frozen_sha256,
+                )
+                artifact = json.loads(artifact_bytes)
+                self.assertTrue(
+                    artifact["schema"].endswith(
+                        "-experiment-prerequisite-abort@v1"
+                    )
                 )
                 self.assertEqual(artifact["status"], "prerequisite_abort")
                 self.assertFalse(artifact["experiment_executed"])

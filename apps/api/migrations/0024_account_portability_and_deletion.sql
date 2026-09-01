@@ -1,8 +1,8 @@
 CREATE UNIQUE INDEX account_exports_one_active_idx
-  ON straylight.account_exports (user_id)
+  ON brunn.account_exports (user_id)
   WHERE status IN ('queued', 'running', 'ready');
 
-ALTER TABLE straylight.account_exports
+ALTER TABLE brunn.account_exports
   ADD COLUMN attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
   ADD COLUMN max_attempts integer NOT NULL DEFAULT 5 CHECK (max_attempts > 0),
   ADD COLUMN available_at timestamptz NOT NULL DEFAULT clock_timestamp(),
@@ -11,7 +11,7 @@ ALTER TABLE straylight.account_exports
   ADD CONSTRAINT account_exports_attempts_within_max_check
     CHECK (attempts <= max_attempts);
 
-ALTER TABLE straylight.account_deletion_requests
+ALTER TABLE brunn.account_deletion_requests
   ADD COLUMN failure_attempts integer NOT NULL DEFAULT 0 CHECK (failure_attempts >= 0),
   ADD COLUMN max_failure_attempts integer NOT NULL DEFAULT 5 CHECK (max_failure_attempts > 0),
   ADD COLUMN locked_at timestamptz,
@@ -19,7 +19,7 @@ ALTER TABLE straylight.account_deletion_requests
   ADD CONSTRAINT account_deletion_failure_attempts_check
     CHECK (failure_attempts <= max_failure_attempts);
 
-CREATE TABLE straylight.account_deletion_targets (
+CREATE TABLE brunn.account_deletion_targets (
   user_id uuid NOT NULL,
   request_id uuid NOT NULL,
   record_id uuid NOT NULL,
@@ -27,37 +27,37 @@ CREATE TABLE straylight.account_deletion_targets (
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   PRIMARY KEY (user_id, request_id, record_id),
   FOREIGN KEY (user_id, request_id)
-    REFERENCES straylight.account_deletion_requests(user_id, id),
+    REFERENCES brunn.account_deletion_requests(user_id, id),
   FOREIGN KEY (user_id, record_id)
-    REFERENCES straylight.record_keys(user_id, record_id),
+    REFERENCES brunn.record_keys(user_id, record_id),
   FOREIGN KEY (user_id, deletion_job_id)
-    REFERENCES straylight.deletion_jobs(user_id, id)
+    REFERENCES brunn.deletion_jobs(user_id, id)
 );
 
 CREATE INDEX account_deletion_targets_job_idx
-  ON straylight.account_deletion_targets (user_id, request_id, deletion_job_id);
+  ON brunn.account_deletion_targets (user_id, request_id, deletion_job_id);
 
-ALTER TABLE straylight.account_deletion_targets ENABLE ROW LEVEL SECURITY;
-ALTER TABLE straylight.account_deletion_targets FORCE ROW LEVEL SECURITY;
+ALTER TABLE brunn.account_deletion_targets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE brunn.account_deletion_targets FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY account_deletion_targets_self_select
-  ON straylight.account_deletion_targets
+  ON brunn.account_deletion_targets
   FOR SELECT TO app_rw, app_ro
-  USING (straylight_auth.can_access_user(user_id));
+  USING (brunn_auth.can_access_user(user_id));
 
-GRANT SELECT ON straylight.account_deletion_targets TO app_rw, app_ro;
+GRANT SELECT ON brunn.account_deletion_targets TO app_rw, app_ro;
 
-CREATE FUNCTION straylight.guard_account_deletion_redaction()
+CREATE FUNCTION brunn.guard_account_deletion_redaction()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY INVOKER
 AS $$
 DECLARE
   request_setting text := current_setting(
-    'straylight.account_deletion_request_id', true
+    'brunn.account_deletion_request_id', true
   );
   deletion_job_setting text := current_setting(
-    'straylight.deletion_job_id', true
+    'brunn.deletion_job_id', true
   );
   request_id uuid;
   deletion_job_id uuid;
@@ -93,7 +93,7 @@ BEGIN
   IF request_id IS NOT NULL AND row_user_id IS NOT NULL THEN
     authorized := EXISTS (
       SELECT 1
-      FROM straylight.account_deletion_requests AS request
+      FROM brunn.account_deletion_requests AS request
       WHERE request.id = request_id
         AND request.user_id = row_user_id
         AND request.status IN ('running', 'awaiting_backup_expiry')
@@ -102,7 +102,7 @@ BEGIN
   IF NOT authorized AND deletion_job_id IS NOT NULL AND row_user_id IS NOT NULL THEN
     authorized := EXISTS (
       SELECT 1
-      FROM straylight.deletion_jobs AS job
+      FROM brunn.deletion_jobs AS job
       WHERE job.id = deletion_job_id
         AND job.user_id = row_user_id
         AND job.status = 'propagating'
@@ -130,14 +130,14 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER audit_events_immutable ON straylight.audit_events;
+DROP TRIGGER audit_events_immutable ON brunn.audit_events;
 CREATE TRIGGER audit_events_deletion_redaction
-BEFORE UPDATE OR DELETE ON straylight.audit_events
-FOR EACH ROW EXECUTE FUNCTION straylight.guard_account_deletion_redaction(
+BEFORE UPDATE OR DELETE ON brunn.audit_events
+FOR EACH ROW EXECUTE FUNCTION brunn.guard_account_deletion_redaction(
   'actor_ref', 'request_id', 'details', 'content_free'
 );
 
-CREATE FUNCTION straylight_auth.request_account_deletion(
+CREATE FUNCTION brunn_auth.request_account_deletion(
   p_user_id uuid,
   p_confirmation text,
   p_reason text,
@@ -146,18 +146,18 @@ CREATE FUNCTION straylight_auth.request_account_deletion(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
   expected_confirmation text;
   request_id uuid := gen_random_uuid();
 BEGIN
-  PERFORM straylight_auth.require_credential_control(p_user_id);
+  PERFORM brunn_auth.require_credential_control(p_user_id);
 
   SELECT 'DELETE ' || external_ref
   INTO expected_confirmation
-  FROM straylight.users
+  FROM brunn.users
   WHERE id = p_user_id AND account_status = 'active'
   FOR UPDATE;
 
@@ -178,41 +178,41 @@ BEGIN
   END IF;
   IF EXISTS (
     SELECT 1
-    FROM straylight.account_exports
+    FROM brunn.account_exports
     WHERE user_id = p_user_id AND status = 'running'
   ) THEN
     RAISE EXCEPTION 'a running account export must finish before deletion'
       USING ERRCODE = '55000';
   END IF;
 
-  INSERT INTO straylight.account_deletion_requests (
+  INSERT INTO brunn.account_deletion_requests (
     id, user_id, requested_by_credential_id, status, confirmation_hash,
     reason, backup_expiry_due_at
   ) VALUES (
     request_id,
     p_user_id,
-    straylight_auth.current_credential_id(),
+    brunn_auth.current_credential_id(),
     'queued',
     encode(public.digest(p_confirmation, 'sha256'), 'hex'),
     p_reason,
     clock_timestamp() + make_interval(days => p_backup_retention_days)
   );
 
-  UPDATE straylight.users
+  UPDATE brunn.users
   SET account_status = 'deleting',
       deletion_requested_at = clock_timestamp()
   WHERE id = p_user_id;
 
-  UPDATE straylight.account_exports
+  UPDATE brunn.account_exports
   SET status = 'deleted',
       completed_at = coalesce(completed_at, clock_timestamp())
   WHERE user_id = p_user_id AND status IN ('queued', 'ready');
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, credential_id, action, details, content_free
   ) VALUES (
     p_user_id,
-    straylight_auth.current_credential_id(),
+    brunn_auth.current_credential_id(),
     'account.deletion.request',
     jsonb_build_object(
       'request_id', request_id,
@@ -225,23 +225,23 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION straylight_auth.mark_account_export_deleted(
+CREATE FUNCTION brunn_auth.mark_account_export_deleted(
   p_user_id uuid,
   p_export_id uuid
 )
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
   current_status text;
 BEGIN
-  PERFORM straylight_auth.require_credential_control(p_user_id);
+  PERFORM brunn_auth.require_credential_control(p_user_id);
 
   SELECT status INTO current_status
-  FROM straylight.account_exports
+  FROM brunn.account_exports
   WHERE user_id = p_user_id AND id = p_export_id
   FOR UPDATE;
   IF current_status IS NULL THEN
@@ -252,17 +252,17 @@ BEGIN
       USING ERRCODE = '55000';
   END IF;
 
-  UPDATE straylight.account_exports
+  UPDATE brunn.account_exports
   SET status = 'deleted',
       object_key = NULL,
       completed_at = coalesce(completed_at, clock_timestamp())
   WHERE user_id = p_user_id AND id = p_export_id;
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, credential_id, action, details, content_free
   ) VALUES (
     p_user_id,
-    straylight_auth.current_credential_id(),
+    brunn_auth.current_credential_id(),
     'account.export.delete',
     jsonb_build_object('export_id', p_export_id),
     true
@@ -270,19 +270,19 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION straylight_auth.request_account_deletion(
+REVOKE ALL ON FUNCTION brunn_auth.request_account_deletion(
   uuid, text, text, integer
 ) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight.guard_account_deletion_redaction() FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight_auth.mark_account_export_deleted(
+REVOKE ALL ON FUNCTION brunn.guard_account_deletion_redaction() FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn_auth.mark_account_export_deleted(
   uuid, uuid
 ) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION straylight_auth.request_account_deletion(
+GRANT EXECUTE ON FUNCTION brunn_auth.request_account_deletion(
   uuid, text, text, integer
 ) TO app_rw;
-GRANT EXECUTE ON FUNCTION straylight_auth.mark_account_export_deleted(
+GRANT EXECUTE ON FUNCTION brunn_auth.mark_account_export_deleted(
   uuid, uuid
 ) TO app_rw;
 
-COMMENT ON TABLE straylight.account_deletion_targets IS
+COMMENT ON TABLE brunn.account_deletion_targets IS
   'Immutable mapping from an account deletion request to per-record deletion jobs.';

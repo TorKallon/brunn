@@ -35,14 +35,14 @@
       "forbidden": ["notarization is required"]
     },
     {
-      "id": "adopt-correction-straylight",
+      "id": "adopt-correction-brunn",
       "workload": "Adoption",
       "scope": "Recent Work",
       "capability": "correction_authoring",
       "task": "Write a durable owner-readiness note that replaces the earlier green checkpoint with the production-sized timeout and write-amplification findings.",
-      "adoption_eligibility": {"feature": "supersession", "supersedes_path": "Projects/Straylight stale checkpoint.md"},
+      "adoption_eligibility": {"feature": "supersession", "supersedes_path": "Projects/Brunn stale checkpoint.md"},
       "claim_slots": {"c1": "written correction"},
-      "rubric": [{"id": "c1", "checks": [{"any": ["not ready", "timeout"]}], "sources_any": ["Projects/Straylight current status.md"]}],
+      "rubric": [{"id": "c1", "checks": [{"any": ["not ready", "timeout"]}], "sources_any": ["Projects/Brunn current status.md"]}],
       "forbidden": ["open the owner alpha immediately"]
     },
     {

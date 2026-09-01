@@ -178,7 +178,7 @@ class OwnerSnapshotEvalTests(unittest.TestCase):
 
     def test_inventory_detects_source_checkpoint_lineage_without_claiming_service_rows(self) -> None:
         self.write_bytes(
-            f".straylight/checkpoints/{PARENT_ID}.md",
+            f".brunn/checkpoints/{PARENT_ID}.md",
             (
                 "---\n"
                 f"checkpoint_id: checkpoint:{PARENT_ID}\n"
@@ -187,7 +187,7 @@ class OwnerSnapshotEvalTests(unittest.TestCase):
             ).encode(),
         )
         self.write_bytes(
-            f".straylight/checkpoints/{CHILD_ID}.md",
+            f".brunn/checkpoints/{CHILD_ID}.md",
             (
                 "---\n"
                 f"checkpoint_id: checkpoint:{CHILD_ID}\n"
@@ -446,7 +446,7 @@ class OwnerSnapshotEvalTests(unittest.TestCase):
             "owner_snapshot_audit.schema.json": AUDIT_SCHEMA,
             "owner_link_candidates.schema.json": LINK_CANDIDATES_SCHEMA,
             "owner_link_leak_request.schema.json": LEAK_REQUEST_SCHEMA,
-            "owner_link_leak_report.schema.json": "straylight-owner-link-leak-report@v1",
+            "owner_link_leak_report.schema.json": "brunn-owner-link-leak-report@v1",
         }
         for filename, schema_value in schemas.items():
             with self.subTest(filename=filename):

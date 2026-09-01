@@ -186,7 +186,7 @@ class SyntheticFixture:
             media_type="image/png",
         )
         description_entry = history_entry(
-            path=".carrystate/descriptions/photo.md",
+            path=".brunn-state/descriptions/photo.md",
             payload=description,
             source_number=4,
             active=True,
@@ -368,15 +368,15 @@ class LegacyTierATests(unittest.TestCase):
             if entry["metadata"].get("kind") == "binary_description"
         )
         self.assertEqual(
-            binary["metadata"]["_straylight_tier_a"]["format"],
+            binary["metadata"]["_brunn_tier_a"]["format"],
             PORTABLE_COMPANION_FORMAT,
         )
         self.assertEqual(
-            binary["metadata"]["_straylight_tier_a"]["binary_description_path"],
+            binary["metadata"]["_brunn_tier_a"]["binary_description_path"],
             description["path"],
         )
         self.assertEqual(
-            description["metadata"]["_straylight_tier_a_history"],
+            description["metadata"]["_brunn_tier_a_history"],
             {
                 "format": TIER_A_HISTORY_STAGE_FORMAT,
                 "target_lineage_ordinal": 1,
@@ -403,9 +403,9 @@ class LegacyTierATests(unittest.TestCase):
                 f"memory/checkpoint/{PARENT_ID}.md",
                 f"memory/checkpoint/{CHILD_ID}.md",
                 "memory/claim/55555555-5555-4555-8555-555555555555.md",
-                "Straylight Migration/Native/legacy-native-records.json",
-                "Straylight Migration/Native/legacy-native-records.index.json",
-                "Straylight Migration/Native/legacy-native-records.description.md",
+                "Brunn Migration/Native/legacy-native-records.json",
+                "Brunn Migration/Native/legacy-native-records.index.json",
+                "Brunn Migration/Native/legacy-native-records.description.md",
             },
         )
         self.assertEqual(artifact["native"]["records"]["count"], 3)
@@ -444,7 +444,7 @@ class LegacyTierATests(unittest.TestCase):
 
         self.assertEqual(first["content_hash"], second["content_hash"])
         self.assertEqual(
-            first["metadata"]["_straylight_tier_a_history"],
+            first["metadata"]["_brunn_tier_a_history"],
             {
                 "format": TIER_A_HISTORY_STAGE_FORMAT,
                 "target_lineage_ordinal": 1,
@@ -452,7 +452,7 @@ class LegacyTierATests(unittest.TestCase):
             },
         )
         self.assertEqual(
-            second["metadata"]["_straylight_tier_a_history"],
+            second["metadata"]["_brunn_tier_a_history"],
             {
                 "format": TIER_A_HISTORY_STAGE_FORMAT,
                 "target_lineage_ordinal": 2,
@@ -556,7 +556,7 @@ class LegacyTierATests(unittest.TestCase):
         write_json(
             export_root / "manifest.json",
             {
-                "format": "straylight-workspace-export@v1",
+                "format": "brunn-workspace-export@v1",
                 "version": 1,
                 "workspace_generation": 1,
                 "workspace_generation_is_snapshot": False,

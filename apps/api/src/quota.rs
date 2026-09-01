@@ -72,7 +72,7 @@ pub async fn reserve_in_tx(
         SELECT account_status, daily_embedding_input_chars,
                daily_model_input_chars, daily_model_output_tokens,
                daily_compute_rows
-        FROM straylight.users
+        FROM brunn.users
         WHERE id=$1
         "#,
     )
@@ -87,7 +87,7 @@ pub async fn reserve_in_tx(
 
     sqlx::query(
         r#"
-        INSERT INTO straylight.user_usage_daily (user_id,usage_date)
+        INSERT INTO brunn.user_usage_daily (user_id,usage_date)
         VALUES ($1,(clock_timestamp() AT TIME ZONE 'UTC')::date)
         ON CONFLICT (user_id,usage_date) DO NOTHING
         "#,
@@ -98,7 +98,7 @@ pub async fn reserve_in_tx(
 
     let updated = sqlx::query(
         r#"
-        UPDATE straylight.user_usage_daily
+        UPDATE brunn.user_usage_daily
         SET embedding_input_chars=embedding_input_chars+$2,
             model_input_chars=model_input_chars+$3,
             model_output_tokens=model_output_tokens+$4,
@@ -166,12 +166,11 @@ pub async fn ensure_storage_capacity_for_objects(
         .bind(user_id)
         .execute(&mut **tx)
         .await?;
-    let row =
-        sqlx::query("SELECT account_status,storage_limit_bytes FROM straylight.users WHERE id=$1")
-            .bind(user_id)
-            .fetch_optional(&mut **tx)
-            .await?
-            .ok_or_else(|| ApiError::not_found("user_not_found", &format!("user:{user_id}")))?;
+    let row = sqlx::query("SELECT account_status,storage_limit_bytes FROM brunn.users WHERE id=$1")
+        .bind(user_id)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or_else(|| ApiError::not_found("user_not_found", &format!("user:{user_id}")))?;
     let account_status: String = row.try_get("account_status")?;
     if account_status != "active" {
         return Err(account_locked(&account_status));
@@ -184,7 +183,7 @@ pub async fn ensure_storage_capacity_for_objects(
           SELECT object_key,max(size_bytes)::bigint AS size_bytes
           FROM (
             SELECT object_key,size_bytes
-            FROM straylight.asset_versions
+            FROM brunn.asset_versions
             WHERE user_id=$1 AND size_bytes > 0
           ) AS physical_objects
           GROUP BY object_key
@@ -206,7 +205,7 @@ pub async fn ensure_storage_capacity_for_objects(
             SELECT DISTINCT existing.object_key
             FROM (
               SELECT object_key
-              FROM straylight.asset_versions
+              FROM brunn.asset_versions
               WHERE user_id=$1
             ) AS existing
             WHERE existing.object_key=ANY($2::text[])
@@ -260,12 +259,11 @@ pub async fn ensure_temporary_export_capacity(
         .bind(user_id)
         .execute(&mut **tx)
         .await?;
-    let row =
-        sqlx::query("SELECT account_status,storage_limit_bytes FROM straylight.users WHERE id=$1")
-            .bind(user_id)
-            .fetch_optional(&mut **tx)
-            .await?
-            .ok_or_else(|| ApiError::not_found("user_not_found", &format!("user:{user_id}")))?;
+    let row = sqlx::query("SELECT account_status,storage_limit_bytes FROM brunn.users WHERE id=$1")
+        .bind(user_id)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or_else(|| ApiError::not_found("user_not_found", &format!("user:{user_id}")))?;
     let account_status: String = row.try_get("account_status")?;
     if account_status != "active" {
         return Err(account_locked(&account_status));

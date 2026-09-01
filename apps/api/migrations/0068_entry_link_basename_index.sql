@@ -1,5 +1,5 @@
 CREATE INDEX entries_user_normalized_basename_idx
-  ON straylight.entries (
+  ON brunn.entries (
     user_id,
     (lower(normalize(regexp_replace(path, '^.*/', ''), NFC)))
   )

@@ -15,7 +15,7 @@ longer written and can be retired after one clean week).
 Create and deliver Rourke's morning briefing for <today's date,
 America/Los_Angeles> with strict net-new filtering.
 
-Storage: hosted Straylight only. Begin with memory.open. If Straylight is
+Storage: hosted Brunn only. Begin with memory.open. If Brunn is
 unreachable or any tool call fails, report the failure and stop — never write
 local files, never send an undeduped briefing.
 
@@ -101,7 +101,7 @@ the edition), keep every existing section and omitted entry unchanged, and
 add/replace the health section. Set idempotency_key
 "briefing-<date>-health-update". The delta in the response should show only
 the health item(s); verify and report if not. Send the concise iMessage.
-Fail closed on any Straylight error.
+Fail closed on any Brunn error.
 ```
 
 ## Intraday alert checks (topic mode "immediate" successor)

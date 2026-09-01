@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA = "straylight-task-guard-gate12@v1"
+SCHEMA = "brunn-task-guard-gate12@v1"
 
 
 class ContractFailure(RuntimeError):
@@ -235,7 +235,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     event = first_events[0]
     require(event.get("inserted") is True, "first lead event was not inserted")
     require(event.get("event_key") == f"task-deadline:{explicit}:7d", "lead key changed")
-    require(event.get("route") == f"straylight://task/{explicit}", "typed route changed")
+    require(event.get("route") == f"brunn://task/{explicit}", "typed route changed")
     notification_for_task(client, explicit)
     checks.append({"name": "notification.typed_target", "elapsed_ms": 0})
 
@@ -298,7 +298,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "checks": checks,
         "summary": {
             "dedupe": "one_inbox_row_per_event_key",
-            "typed_target": {"type": "task", "route": "straylight://task/<uuidv7>"},
+            "typed_target": {"type": "task", "route": "brunn://task/<uuidv7>"},
             "quiet_explicit": "delayed",
             "quiet_inferred": "delayed_with_confirm_marker",
         },
@@ -309,9 +309,9 @@ def parse_args() -> argparse.Namespace:
     root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", required=True)
-    parser.add_argument("--token", default=os.environ.get("STRAYLIGHT_GATE12_OWNER_TOKEN"))
+    parser.add_argument("--token", default=os.environ.get("BRUNN_GATE12_OWNER_TOKEN"))
     parser.add_argument(
-        "--binary", type=Path, default=root / "apps/api/target/debug/straylight"
+        "--binary", type=Path, default=root / "apps/api/target/debug/brunn"
     )
     parser.add_argument(
         "--artifact", type=Path, default=root / "release-artifacts/task-gate12/guard.json"

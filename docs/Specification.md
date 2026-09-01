@@ -1,4 +1,4 @@
-# Straylight Alpha Specification
+# Brunn Alpha Specification
 
 Status: implementation and acceptance contract
 
@@ -376,7 +376,7 @@ The service:
 - rejects a missing explicit workspace reference rather than silently omitting
   it
 - records their exact path, version, and hash
-- writes one immutable Markdown entry under `.straylight/checkpoints/`
+- writes one immutable Markdown entry under `.brunn/checkpoints/`
 - appends only that entry's normal version, chunks, and change
 - commits the entry, generation, embedding job, and exact replay receipt in one
   transaction
@@ -463,7 +463,7 @@ and last timestamps. Usage recording is content-free, batched, and fail-open.
 
 ## CLI And MCP
 
-The Rust `carrystate` CLI and TypeScript MCP server are thin clients over the
+The Rust `brunn-state` CLI and TypeScript MCP server are thin clients over the
 same workspace HTTP API. They do not implement alternative retrieval or write
 semantics.
 

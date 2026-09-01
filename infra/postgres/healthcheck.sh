@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-database=${POSTGRES_DB:-straylight}
+database=${POSTGRES_DB:-brunn}
 user=${POSTGRES_USER:-admin}
 
 pg_isready --username "$user" --dbname "$database" >/dev/null

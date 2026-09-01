@@ -1,11 +1,11 @@
-# Straylight brand assets
+# Brunn brand assets
 
-`straylight-night-signal-1024.png` is the canonical production master for the
+`brunn-night-signal-1024.png` is the canonical production master for the
 selected **Night Signal** identity. It is an opaque, full-bleed 1024 × 1024 RGB
 PNG with no baked corner mask, so iOS and web surfaces can apply their own
 shape.
 
-`reference/straylight-night-signal-selected-board.png` preserves the exact
+`reference/brunn-night-signal-selected-board.png` preserves the exact
 concept board approved by the user. Its SHA-256 digest is
 `eab0ad6d1cbe2136628a19cea62ed592b8950613a5170c3790df75f784e5cc0e`.
 
@@ -20,14 +20,14 @@ inside a primarily blue identity.
 
 Derived assets:
 
-- `apps/ios/Straylight/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png`
-- `apps/ios/Straylight/Resources/Assets.xcassets/LaunchSignal.imageset/`
-- `apps/ios/Straylight/Resources/Assets.xcassets/LaunchBackground.colorset/`
-- `apps/web/public/straylight-mark.png`
+- `apps/ios/Brunn/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png`
+- `apps/ios/Brunn/Resources/Assets.xcassets/LaunchSignal.imageset/`
+- `apps/ios/Brunn/Resources/Assets.xcassets/LaunchBackground.colorset/`
+- `apps/web/public/brunn-mark.png`
 - `apps/web/public/favicon.png`
 - `apps/web/public/apple-touch-icon.png`
 
-`straylight-launch-signal-1024.png` is a transparent, launch-only beam master.
+`brunn-launch-signal-1024.png` is a transparent, launch-only beam master.
 The iOS image set derives 1×, 2×, and 3× centered assets from it. The matching
 launch background is `#06152C` in the default appearance and `#030B18` in dark
 appearance. The transparent master's SHA-256 digest is

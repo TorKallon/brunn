@@ -1,35 +1,35 @@
-CREATE TABLE straylight.dream_regions (
+CREATE TABLE brunn.dream_regions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
-  region_ref straylight.nonempty_text NOT NULL,
+  region_ref brunn.nonempty_text NOT NULL,
   version integer NOT NULL CHECK (version > 0),
-  root_set_hash straylight.sha256_hex NOT NULL,
-  manifest_hash straylight.sha256_hex NOT NULL,
+  root_set_hash brunn.sha256_hex NOT NULL,
+  manifest_hash brunn.sha256_hex NOT NULL,
   policy_id uuid NOT NULL,
   policy_version integer NOT NULL,
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   UNIQUE (user_id, id),
   UNIQUE (user_id, scope_id, region_ref, version),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, policy_id, policy_version)
-    REFERENCES straylight.policy_revisions(user_id, policy_id, version)
+    REFERENCES brunn.policy_revisions(user_id, policy_id, version)
 );
 
-CREATE TABLE straylight.dream_region_members (
+CREATE TABLE brunn.dream_region_members (
   user_id uuid NOT NULL,
   region_id uuid NOT NULL,
   record_id uuid NOT NULL,
-  expansion_reason straylight.nonempty_text NOT NULL,
+  expansion_reason brunn.nonempty_text NOT NULL,
   PRIMARY KEY (user_id, region_id, record_id),
   FOREIGN KEY (user_id, region_id)
-    REFERENCES straylight.dream_regions(user_id, id),
+    REFERENCES brunn.dream_regions(user_id, id),
   FOREIGN KEY (user_id, record_id)
-    REFERENCES straylight.record_keys(user_id, record_id)
+    REFERENCES brunn.record_keys(user_id, record_id)
 );
 
-CREATE TABLE straylight.dream_jobs (
+CREATE TABLE brunn.dream_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
@@ -44,13 +44,13 @@ CREATE TABLE straylight.dream_jobs (
     'stale', 'rolled_back'
   )),
   base_corpus_revision_id uuid NOT NULL,
-  evidence_watermark straylight.nonempty_text NOT NULL,
+  evidence_watermark brunn.nonempty_text NOT NULL,
   region_id uuid NOT NULL,
-  dream_policy_version straylight.nonempty_text NOT NULL,
-  model_version straylight.nonempty_text NOT NULL,
-  prompt_version straylight.nonempty_text NOT NULL,
-  schema_version straylight.nonempty_text NOT NULL,
-  evaluator_version straylight.nonempty_text NOT NULL,
+  dream_policy_version brunn.nonempty_text NOT NULL,
+  model_version brunn.nonempty_text NOT NULL,
+  prompt_version brunn.nonempty_text NOT NULL,
+  schema_version brunn.nonempty_text NOT NULL,
+  evaluator_version brunn.nonempty_text NOT NULL,
   compute_budget jsonb NOT NULL,
   requested_by_credential_id uuid,
   started_at timestamptz,
@@ -58,44 +58,44 @@ CREATE TABLE straylight.dream_jobs (
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   UNIQUE (user_id, id),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, base_corpus_revision_id)
-    REFERENCES straylight.corpus_revisions(user_id, id),
+    REFERENCES brunn.corpus_revisions(user_id, id),
   FOREIGN KEY (user_id, region_id)
-    REFERENCES straylight.dream_regions(user_id, id),
+    REFERENCES brunn.dream_regions(user_id, id),
   FOREIGN KEY (user_id, requested_by_credential_id)
-    REFERENCES straylight.api_credentials(user_id, id),
+    REFERENCES brunn.api_credentials(user_id, id),
   CHECK (completed_at IS NULL OR completed_at >= coalesce(started_at, created_at))
 );
 
 CREATE TRIGGER dream_jobs_register_record
-BEFORE INSERT ON straylight.dream_jobs
-FOR EACH ROW EXECUTE FUNCTION straylight.register_record_key('dream_job');
+BEFORE INSERT ON brunn.dream_jobs
+FOR EACH ROW EXECUTE FUNCTION brunn.register_record_key('dream_job');
 
-CREATE TABLE straylight.dream_job_events (
+CREATE TABLE brunn.dream_job_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
   dream_job_id uuid NOT NULL,
   from_status text,
-  to_status straylight.nonempty_text NOT NULL,
+  to_status brunn.nonempty_text NOT NULL,
   details jsonb NOT NULL DEFAULT '{}'::jsonb,
   recorded_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   UNIQUE (user_id, id),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, dream_job_id)
-    REFERENCES straylight.dream_jobs(user_id, id)
+    REFERENCES brunn.dream_jobs(user_id, id)
 );
 
-CREATE TABLE straylight.dream_candidate_revisions (
+CREATE TABLE brunn.dream_candidate_revisions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
   dream_job_id uuid NOT NULL,
   base_corpus_revision_id uuid NOT NULL,
   candidate_corpus_revision_id uuid NOT NULL,
-  candidate_manifest_hash straylight.sha256_hex NOT NULL,
+  candidate_manifest_hash brunn.sha256_hex NOT NULL,
   status text NOT NULL CHECK (status IN (
     'building', 'ready', 'gated', 'quarantined', 'promoted', 'discarded', 'stale'
   )),
@@ -103,17 +103,17 @@ CREATE TABLE straylight.dream_candidate_revisions (
   UNIQUE (user_id, id),
   UNIQUE (user_id, dream_job_id),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, dream_job_id)
-    REFERENCES straylight.dream_jobs(user_id, id),
+    REFERENCES brunn.dream_jobs(user_id, id),
   FOREIGN KEY (user_id, base_corpus_revision_id)
-    REFERENCES straylight.corpus_revisions(user_id, id),
+    REFERENCES brunn.corpus_revisions(user_id, id),
   FOREIGN KEY (user_id, candidate_corpus_revision_id)
-    REFERENCES straylight.corpus_revisions(user_id, id),
+    REFERENCES brunn.corpus_revisions(user_id, id),
   CHECK (candidate_corpus_revision_id <> base_corpus_revision_id)
 );
 
-CREATE TABLE straylight.dream_candidate_items (
+CREATE TABLE brunn.dream_candidate_items (
   user_id uuid NOT NULL,
   candidate_revision_id uuid NOT NULL,
   target_record_id uuid NOT NULL,
@@ -127,18 +127,18 @@ CREATE TABLE straylight.dream_candidate_items (
   proposal jsonb NOT NULL,
   PRIMARY KEY (user_id, candidate_revision_id, target_record_id),
   FOREIGN KEY (user_id, candidate_revision_id)
-    REFERENCES straylight.dream_candidate_revisions(user_id, id),
+    REFERENCES brunn.dream_candidate_revisions(user_id, id),
   FOREIGN KEY (user_id, target_record_id)
-    REFERENCES straylight.record_keys(user_id, record_id),
+    REFERENCES brunn.record_keys(user_id, record_id),
   CHECK (cardinality(source_refs) > 0)
 );
 
-CREATE TABLE straylight.dream_gate_results (
+CREATE TABLE brunn.dream_gate_results (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
   candidate_revision_id uuid NOT NULL,
-  gate_ref straylight.nonempty_text NOT NULL,
+  gate_ref brunn.nonempty_text NOT NULL,
   gate_kind text NOT NULL CHECK (gate_kind IN (
     'reference', 'hash', 'temporal', 'policy', 'lineage', 'state_machine',
     'canonical_head', 'preservation', 'retrieval_regression', 'task_family'
@@ -151,33 +151,33 @@ CREATE TABLE straylight.dream_gate_results (
   UNIQUE (user_id, id),
   UNIQUE (user_id, candidate_revision_id, gate_ref),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, candidate_revision_id)
-    REFERENCES straylight.dream_candidate_revisions(user_id, id)
+    REFERENCES brunn.dream_candidate_revisions(user_id, id)
 );
 
-CREATE TABLE straylight.dream_evaluations (
+CREATE TABLE brunn.dream_evaluations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
   candidate_revision_id uuid NOT NULL,
   active_corpus_revision_id uuid NOT NULL,
-  frozen_suite_hash straylight.sha256_hex NOT NULL,
-  reader_version straylight.nonempty_text NOT NULL,
-  retrieval_policy_version straylight.nonempty_text NOT NULL,
+  frozen_suite_hash brunn.sha256_hex NOT NULL,
+  reader_version brunn.nonempty_text NOT NULL,
+  retrieval_policy_version brunn.nonempty_text NOT NULL,
   result jsonb NOT NULL,
   passed boolean NOT NULL,
   evaluated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   UNIQUE (user_id, id),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, candidate_revision_id)
-    REFERENCES straylight.dream_candidate_revisions(user_id, id),
+    REFERENCES brunn.dream_candidate_revisions(user_id, id),
   FOREIGN KEY (user_id, active_corpus_revision_id)
-    REFERENCES straylight.corpus_revisions(user_id, id)
+    REFERENCES brunn.corpus_revisions(user_id, id)
 );
 
-CREATE TABLE straylight.dream_reviews (
+CREATE TABLE brunn.dream_reviews (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
@@ -185,36 +185,36 @@ CREATE TABLE straylight.dream_reviews (
   target_record_id uuid,
   reviewer_ref uuid NOT NULL,
   decision text NOT NULL CHECK (decision IN ('approved', 'rejected', 'changes_requested')),
-  reason straylight.nonempty_text NOT NULL,
+  reason brunn.nonempty_text NOT NULL,
   reviewed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   UNIQUE (user_id, id),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, candidate_revision_id)
-    REFERENCES straylight.dream_candidate_revisions(user_id, id),
+    REFERENCES brunn.dream_candidate_revisions(user_id, id),
   FOREIGN KEY (user_id, target_record_id)
-    REFERENCES straylight.record_keys(user_id, record_id),
+    REFERENCES brunn.record_keys(user_id, record_id),
   FOREIGN KEY (user_id, reviewer_ref)
-    REFERENCES straylight.record_keys(user_id, record_id)
+    REFERENCES brunn.record_keys(user_id, record_id)
 );
 
-CREATE TABLE straylight.active_manifests (
+CREATE TABLE brunn.active_manifests (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
   active_corpus_revision_id uuid NOT NULL,
-  manifest_hash straylight.sha256_hex NOT NULL,
+  manifest_hash brunn.sha256_hex NOT NULL,
   generation bigint NOT NULL DEFAULT 1 CHECK (generation > 0),
   updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   UNIQUE (user_id, id),
   UNIQUE (user_id, scope_id),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, active_corpus_revision_id)
-    REFERENCES straylight.corpus_revisions(user_id, id)
+    REFERENCES brunn.corpus_revisions(user_id, id)
 );
 
-CREATE FUNCTION straylight.enforce_manifest_compare_and_swap()
+CREATE FUNCTION brunn.enforce_manifest_compare_and_swap()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -236,21 +236,21 @@ END;
 $$;
 
 CREATE TRIGGER active_manifests_compare_and_swap
-BEFORE UPDATE ON straylight.active_manifests
-FOR EACH ROW EXECUTE FUNCTION straylight.enforce_manifest_compare_and_swap();
+BEFORE UPDATE ON brunn.active_manifests
+FOR EACH ROW EXECUTE FUNCTION brunn.enforce_manifest_compare_and_swap();
 
 CREATE TRIGGER active_manifests_no_delete
-BEFORE DELETE ON straylight.active_manifests
-FOR EACH ROW EXECUTE FUNCTION straylight.prevent_physical_delete();
+BEFORE DELETE ON brunn.active_manifests
+FOR EACH ROW EXECUTE FUNCTION brunn.prevent_physical_delete();
 
-CREATE TABLE straylight.active_manifest_history (
+CREATE TABLE brunn.active_manifest_history (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
   manifest_id uuid NOT NULL,
   generation bigint NOT NULL CHECK (generation > 0),
   corpus_revision_id uuid NOT NULL,
-  manifest_hash straylight.sha256_hex NOT NULL,
+  manifest_hash brunn.sha256_hex NOT NULL,
   change_kind text NOT NULL CHECK (change_kind IN (
     'initial', 'write', 'promotion', 'rollback'
   )),
@@ -259,16 +259,16 @@ CREATE TABLE straylight.active_manifest_history (
   UNIQUE (user_id, id),
   UNIQUE (user_id, manifest_id, generation),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, manifest_id)
-    REFERENCES straylight.active_manifests(user_id, id),
+    REFERENCES brunn.active_manifests(user_id, id),
   FOREIGN KEY (user_id, corpus_revision_id)
-    REFERENCES straylight.corpus_revisions(user_id, id),
+    REFERENCES brunn.corpus_revisions(user_id, id),
   FOREIGN KEY (user_id, dream_job_id)
-    REFERENCES straylight.dream_jobs(user_id, id)
+    REFERENCES brunn.dream_jobs(user_id, id)
 );
 
-CREATE TABLE straylight.dream_promotion_receipts (
+CREATE TABLE brunn.dream_promotion_receipts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
@@ -283,18 +283,18 @@ CREATE TABLE straylight.dream_promotion_receipts (
   UNIQUE (user_id, id),
   UNIQUE (user_id, dream_job_id),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, dream_job_id)
-    REFERENCES straylight.dream_jobs(user_id, id),
+    REFERENCES brunn.dream_jobs(user_id, id),
   FOREIGN KEY (user_id, candidate_revision_id)
-    REFERENCES straylight.dream_candidate_revisions(user_id, id),
+    REFERENCES brunn.dream_candidate_revisions(user_id, id),
   FOREIGN KEY (user_id, previous_corpus_revision_id)
-    REFERENCES straylight.corpus_revisions(user_id, id),
+    REFERENCES brunn.corpus_revisions(user_id, id),
   FOREIGN KEY (user_id, promoted_corpus_revision_id)
-    REFERENCES straylight.corpus_revisions(user_id, id)
+    REFERENCES brunn.corpus_revisions(user_id, id)
 );
 
-CREATE TABLE straylight.dream_rollback_receipts (
+CREATE TABLE brunn.dream_rollback_receipts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
@@ -302,26 +302,26 @@ CREATE TABLE straylight.dream_rollback_receipts (
   failed_corpus_revision_id uuid NOT NULL,
   restored_corpus_revision_id uuid NOT NULL,
   manifest_generation bigint NOT NULL CHECK (manifest_generation > 0),
-  reason straylight.nonempty_text NOT NULL,
+  reason brunn.nonempty_text NOT NULL,
   rolled_back_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   UNIQUE (user_id, id),
   UNIQUE (user_id, promotion_receipt_id),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, promotion_receipt_id)
-    REFERENCES straylight.dream_promotion_receipts(user_id, id),
+    REFERENCES brunn.dream_promotion_receipts(user_id, id),
   FOREIGN KEY (user_id, failed_corpus_revision_id)
-    REFERENCES straylight.corpus_revisions(user_id, id),
+    REFERENCES brunn.corpus_revisions(user_id, id),
   FOREIGN KEY (user_id, restored_corpus_revision_id)
-    REFERENCES straylight.corpus_revisions(user_id, id)
+    REFERENCES brunn.corpus_revisions(user_id, id)
 );
 
-CREATE TABLE straylight.dream_canary_observations (
+CREATE TABLE brunn.dream_canary_observations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
   promotion_receipt_id uuid NOT NULL,
-  request_hash straylight.sha256_hex NOT NULL,
+  request_hash brunn.sha256_hex NOT NULL,
   old_selection jsonb NOT NULL,
   new_selection jsonb NOT NULL,
   correction jsonb,
@@ -329,12 +329,12 @@ CREATE TABLE straylight.dream_canary_observations (
   observed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   UNIQUE (user_id, id),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, promotion_receipt_id)
-    REFERENCES straylight.dream_promotion_receipts(user_id, id)
+    REFERENCES brunn.dream_promotion_receipts(user_id, id)
 );
 
-CREATE TABLE straylight.dream_region_locks (
+CREATE TABLE brunn.dream_region_locks (
   user_id uuid NOT NULL,
   scope_id uuid NOT NULL,
   region_id uuid NOT NULL,
@@ -343,11 +343,11 @@ CREATE TABLE straylight.dream_region_locks (
   expires_at timestamptz NOT NULL,
   PRIMARY KEY (user_id, region_id),
   FOREIGN KEY (user_id, scope_id)
-    REFERENCES straylight.scopes(user_id, id),
+    REFERENCES brunn.scopes(user_id, id),
   FOREIGN KEY (user_id, region_id)
-    REFERENCES straylight.dream_regions(user_id, id),
+    REFERENCES brunn.dream_regions(user_id, id),
   FOREIGN KEY (user_id, dream_job_id)
-    REFERENCES straylight.dream_jobs(user_id, id),
+    REFERENCES brunn.dream_jobs(user_id, id),
   CHECK (expires_at > locked_at)
 );
 
@@ -363,8 +363,8 @@ BEGIN
   ]
   LOOP
     EXECUTE format(
-      'CREATE TRIGGER %I_immutable BEFORE UPDATE OR DELETE ON straylight.%I '
-      'FOR EACH ROW EXECUTE FUNCTION straylight.prevent_immutable_mutation()',
+      'CREATE TRIGGER %I_immutable BEFORE UPDATE OR DELETE ON brunn.%I '
+      'FOR EACH ROW EXECUTE FUNCTION brunn.prevent_immutable_mutation()',
       table_name, table_name
     );
   END LOOP;
@@ -372,5 +372,5 @@ END;
 $$;
 
 CREATE TRIGGER dream_candidate_revisions_immutable
-BEFORE UPDATE OR DELETE ON straylight.dream_candidate_revisions
-FOR EACH ROW EXECUTE FUNCTION straylight.prevent_immutable_mutation();
+BEFORE UPDATE OR DELETE ON brunn.dream_candidate_revisions
+FOR EACH ROW EXECUTE FUNCTION brunn.prevent_immutable_mutation();

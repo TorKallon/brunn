@@ -22,12 +22,12 @@ backup_root=$1
 }
 backup_root=$(CDPATH= cd -- "$backup_root" && pwd)
 
-record_watermark=${STRAYLIGHT_RECORD_BACKUP_WATERMARK:-false}
+record_watermark=${BRUNN_RECORD_BACKUP_WATERMARK:-false}
 case "$record_watermark" in
   true|false)
     ;;
   *)
-    echo "STRAYLIGHT_RECORD_BACKUP_WATERMARK must be true or false" >&2
+    echo "BRUNN_RECORD_BACKUP_WATERMARK must be true or false" >&2
     exit 64
     ;;
 esac
@@ -42,9 +42,9 @@ expired=0
 kept=0
 skipped=0
 protected=0
-inventory=$(mktemp "${TMPDIR:-/tmp}/straylight-backup-prune.XXXXXX")
-deleted_ids=$(mktemp "${TMPDIR:-/tmp}/straylight-backup-deleted.XXXXXX")
-retained_times=$(mktemp "${TMPDIR:-/tmp}/straylight-backup-retained.XXXXXX")
+inventory=$(mktemp "${TMPDIR:-/tmp}/brunn-backup-prune.XXXXXX")
+deleted_ids=$(mktemp "${TMPDIR:-/tmp}/brunn-backup-deleted.XXXXXX")
+retained_times=$(mktemp "${TMPDIR:-/tmp}/brunn-backup-retained.XXXXXX")
 operation_lock_dir="$backup_root/.recovery-operation.lock"
 operation_lock_acquired=false
 receipt_dir="$backup_root/prune-receipts"
@@ -83,7 +83,7 @@ write_prune_receipt() {
     --arg oldest_retained_created_at "$oldest_retained" \
     --argjson deleted_backup_ids "$deleted_json" \
     '{
-      format: "straylight-backup-prune-receipt@v1",
+      format: "brunn-backup-prune-receipt@v1",
       receipt_id: $receipt_id,
       status: $status,
       started_at: $started_at,
@@ -153,10 +153,10 @@ for backup_dir in "$backup_root"/*; do
   completed_at=$(jq -r '.completed_at // .created_at // ""' "$manifest")
   expires_at=$(jq -r '.expires_at // ""' "$manifest")
   case "$format" in
-    straylight-coordinated-backup@v2)
+    brunn-coordinated-backup@v2)
       verifier="$root/scripts/verify-backup.sh"
       ;;
-    straylight-managed-s3-coordinated-backup@v1)
+    brunn-managed-s3-coordinated-backup@v1)
       verifier="$root/scripts/verify-managed-backup.sh"
       ;;
     *)
@@ -244,19 +244,19 @@ if [ "$record_watermark" = true ]; then
     echo "cannot record backup watermark without environment file: $env_file" >&2
     exit 1
   }
-  project=${COMPOSE_PROJECT_NAME:-straylight}
+  project=${COMPOSE_PROJECT_NAME:-brunn}
   compose_file=${COMPOSE_FILE:-"$root/compose.yaml"}
   production_overlay=${COMPOSE_OVERRIDE_FILE:-"$root/compose.production.yaml"}
   managed_overlay=${COMPOSE_MANAGED_S3_FILE:-"$root/compose.managed-s3.yaml"}
   object_store_mode=$(awk -F= '
-    $1 == "STRAYLIGHT_OBJECT_STORE_MODE" {
+    $1 == "BRUNN_OBJECT_STORE_MODE" {
       sub(/^[^=]*=/, "")
       print
       exit
     }
   ' "$env_file")
   object_store_mode=${object_store_mode:-self-hosted-minio}
-  watermark_source=${STRAYLIGHT_BACKUP_WATERMARK_SOURCE:-"prune-backups:$receipt_id"}
+  watermark_source=${BRUNN_BACKUP_WATERMARK_SOURCE:-"prune-backups:$receipt_id"}
   watermark_result="$receipt_dir/$receipt_id.watermark.json"
   watermark_temp="$receipt_dir/.$receipt_id.watermark.tmp"
   case "$object_store_mode" in

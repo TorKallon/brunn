@@ -107,11 +107,11 @@ def database_object_versions(
             "-U",
             "admin",
             "-d",
-            env.get("POSTGRES_DB", "straylight"),
+            env.get("POSTGRES_DB", "brunn"),
             "-Atc",
             (
                 "SELECT object_key || '|' || object_version_id "
-                "FROM straylight.entry_versions "
+                "FROM brunn.entry_versions "
                 "WHERE object_version_id IS NOT NULL ORDER BY object_key"
             ),
         ],
@@ -164,9 +164,9 @@ def run_contract(
     )
 
     run_id = uuid.uuid4().hex[:12]
-    target_bucket = f"straylight-restore-contract-{run_id}"
+    target_bucket = f"brunn-restore-contract-{run_id}"
     with tempfile.TemporaryDirectory(
-        prefix="straylight-simple-object-restore-"
+        prefix="brunn-simple-object-restore-"
     ) as temporary:
         drill_root = Path(temporary)
         export_root = drill_root / "export"
@@ -222,26 +222,26 @@ def run_contract(
 
         restore_env = {
             **env,
-            "STRAYLIGHT_S3_BUCKET": target_bucket,
-            "STRAYLIGHT_MINIO_BUCKET": target_bucket,
-            "STRAYLIGHT_S3_ACCESS_KEY": root_user,
-            "STRAYLIGHT_S3_SECRET_KEY": root_password,
-            "STRAYLIGHT_MINIO_ACCESS_KEY": root_user,
-            "STRAYLIGHT_MINIO_SECRET_KEY": root_password,
+            "BRUNN_S3_BUCKET": target_bucket,
+            "BRUNN_MINIO_BUCKET": target_bucket,
+            "BRUNN_S3_ACCESS_KEY": root_user,
+            "BRUNN_S3_SECRET_KEY": root_password,
+            "BRUNN_MINIO_ACCESS_KEY": root_user,
+            "BRUNN_MINIO_SECRET_KEY": root_password,
         }
         restore_overrides = [
             "-e",
-            "STRAYLIGHT_S3_BUCKET",
+            "BRUNN_S3_BUCKET",
             "-e",
-            "STRAYLIGHT_MINIO_BUCKET",
+            "BRUNN_MINIO_BUCKET",
             "-e",
-            "STRAYLIGHT_S3_ACCESS_KEY",
+            "BRUNN_S3_ACCESS_KEY",
             "-e",
-            "STRAYLIGHT_S3_SECRET_KEY",
+            "BRUNN_S3_SECRET_KEY",
             "-e",
-            "STRAYLIGHT_MINIO_ACCESS_KEY",
+            "BRUNN_MINIO_ACCESS_KEY",
             "-e",
-            "STRAYLIGHT_MINIO_SECRET_KEY",
+            "BRUNN_MINIO_SECRET_KEY",
         ]
         restore_summary = json_line(
             compose(
@@ -330,7 +330,7 @@ def run_contract(
         )
 
     return {
-        "schema": "straylight-simple-object-restore-contract@v1",
+        "schema": "brunn-simple-object-restore-contract@v1",
         "status": "pass",
         "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
         "checks": {
@@ -372,7 +372,7 @@ def main() -> int:
         ValueError,
     ) as error:
         result = {
-            "schema": "straylight-simple-object-restore-contract@v1",
+            "schema": "brunn-simple-object-restore-contract@v1",
             "status": "fail",
             "error": str(error),
         }

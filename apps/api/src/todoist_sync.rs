@@ -76,8 +76,8 @@ impl fmt::Debug for TodoistToken {
 
 fn todoist_endpoints() -> ApiResult<(reqwest::Url, reqwest::Url, bool)> {
     #[cfg(feature = "todoist-fixture")]
-    if let Ok(raw_origin) = std::env::var("STRAYLIGHT_TODOIST_FIXTURE_ORIGIN") {
-        if std::env::var("STRAYLIGHT_ENV").as_deref() == Ok("production") {
+    if let Ok(raw_origin) = std::env::var("BRUNN_TODOIST_FIXTURE_ORIGIN") {
+        if std::env::var("BRUNN_ENV").as_deref() == Ok("production") {
             return Err(ApiError::configuration(
                 "Todoist fixture transport is forbidden in production",
             ));
@@ -129,7 +129,7 @@ impl TodoistClient {
         let http = Client::builder()
             .https_only(!fixture_transport)
             .timeout(Duration::from_secs(30))
-            .user_agent("Straylight-Todoist-Sync/1")
+            .user_agent("Brunn-Todoist-Sync/1")
             .build()
             .map_err(|_| ApiError::configuration("could not initialize Todoist sync client"))?;
         Ok(Self {
@@ -442,12 +442,12 @@ pub(crate) async fn clear_ineligible_sync_work(
     let result = if environment_enabled {
         sqlx::query(
             r#"
-            UPDATE straylight.task_sync_state AS state
+            UPDATE brunn.task_sync_state AS state
             SET next_run_at=NULL,manual_requested_at=NULL,
                 lease_owner=NULL,lease_expires_at=NULL,
                 updated_at=clock_timestamp()
-            FROM straylight.task_integration_config AS config,
-                 straylight.users AS account
+            FROM brunn.task_integration_config AS config,
+                 brunn.users AS account
             WHERE state.user_id=config.user_id
               AND state.system='todoist' AND config.system='todoist'
               AND account.id=state.user_id
@@ -455,7 +455,7 @@ pub(crate) async fn clear_ineligible_sync_work(
                 config.mode='off'
                 OR account.account_status<>'active'
                 OR NOT EXISTS (
-                  SELECT 1 FROM straylight.secrets AS secret
+                  SELECT 1 FROM brunn.secrets AS secret
                   WHERE secret.user_id=state.user_id
                     AND secret.name='todoist-api-token'
                 )
@@ -472,7 +472,7 @@ pub(crate) async fn clear_ineligible_sync_work(
     } else {
         sqlx::query(
             r#"
-            UPDATE straylight.task_sync_state
+            UPDATE brunn.task_sync_state
             SET next_run_at=NULL,manual_requested_at=NULL,
                 lease_owner=NULL,lease_expires_at=NULL,
                 updated_at=clock_timestamp()
@@ -511,15 +511,15 @@ pub async fn claim_next_sync(
         r#"
         WITH candidate AS (
           SELECT state.user_id
-          FROM straylight.task_sync_state AS state
-          JOIN straylight.task_integration_config AS config
+          FROM brunn.task_sync_state AS state
+          JOIN brunn.task_integration_config AS config
             ON config.user_id=state.user_id AND config.system=state.system
-          JOIN straylight.users AS account ON account.id=state.user_id
+          JOIN brunn.users AS account ON account.id=state.user_id
           WHERE state.system='todoist'
             AND account.account_status='active'
             AND config.mode IN ('import_once','pull')
             AND EXISTS (
-              SELECT 1 FROM straylight.secrets AS secret
+              SELECT 1 FROM brunn.secrets AS secret
               WHERE secret.user_id=state.user_id
                 AND secret.name='todoist-api-token'
             )
@@ -549,7 +549,7 @@ pub async fn claim_next_sync(
           FOR UPDATE OF state SKIP LOCKED
           LIMIT 1
         )
-        UPDATE straylight.task_sync_state AS state
+        UPDATE brunn.task_sync_state AS state
         SET configuration_generation=config.configuration_generation,
             -- A mode-generation change is not an upstream identity reset.
             -- Keeping the opaque cursor is required to receive completion and
@@ -568,8 +568,8 @@ pub async fn claim_next_sync(
             lease_expires_at=clock_timestamp()+make_interval(secs=>$2),
             updated_at=clock_timestamp()
         FROM candidate,
-             straylight.task_integration_config AS config,
-             straylight.task_settings AS settings
+             brunn.task_integration_config AS config,
+             brunn.task_settings AS settings
         WHERE state.user_id=candidate.user_id
           AND state.system='todoist'
           AND config.user_id=state.user_id AND config.system=state.system
@@ -615,13 +615,13 @@ pub async fn finish_sync_failure(
     .unwrap_or(5 * 60);
     sqlx::query(
         r#"
-        UPDATE straylight.task_sync_state AS state
+        UPDATE brunn.task_sync_state AS state
         SET last_outcome='error',last_error_code=$4,
             next_run_at=clock_timestamp()+make_interval(secs=>$5),
             manual_requested_at=NULL,
             lease_owner=NULL,lease_expires_at=NULL,
             updated_at=clock_timestamp()
-        FROM straylight.task_integration_config AS config
+        FROM brunn.task_integration_config AS config
         WHERE state.user_id=$1 AND state.system='todoist'
           AND state.configuration_generation=$2
           AND state.lease_owner=$3
@@ -655,7 +655,7 @@ pub async fn finish_sync_success_in_tx(
     }
     let row = sqlx::query(
         r#"
-        UPDATE straylight.task_sync_state AS state
+        UPDATE brunn.task_sync_state AS state
         SET cursor=$4,last_run_at=$6,last_outcome='success',
             last_error_code=NULL,
             next_run_at=CASE WHEN config.mode='pull'
@@ -664,7 +664,7 @@ pub async fn finish_sync_success_in_tx(
             manual_requested_at=NULL,
             lease_owner=NULL,lease_expires_at=NULL,
             updated_at=clock_timestamp()
-        FROM straylight.task_integration_config AS config
+        FROM brunn.task_integration_config AS config
         WHERE state.user_id=$1 AND state.system='todoist'
           AND state.configuration_generation=$2
           AND state.lease_owner=$3

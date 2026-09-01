@@ -1,8 +1,8 @@
-# Straylight Object Store Evaluation
+# Brunn Object Store Evaluation
 
 Status: managed cloud architecture approved; exact provider qualification pending
 
-Straylight stores source and artifact blobs behind a versioned S3 interface.
+Brunn stores source and artifact blobs behind a versioned S3 interface.
 Production uses a managed cloud object store. MinIO is reserved for local
 development, destructive integration tests, and migration tooling. Provider
 labels are not enough: every production candidate must pass the live
@@ -12,31 +12,31 @@ labels are not enough: every production candidate must pass the live
 
 The application uses the AWS SDK and supports two credential modes:
 
-- If `STRAYLIGHT_S3_ACCESS_KEY_FILE` and `STRAYLIGHT_S3_SECRET_KEY_FILE` are
-  both set, Straylight reads that explicit static credential pair from mounted
+- If `BRUNN_S3_ACCESS_KEY_FILE` and `BRUNN_S3_SECRET_KEY_FILE` are
+  both set, Brunn reads that explicit static credential pair from mounted
   secret files. Direct environment values remain available for local tooling
   but are rejected by the managed-production validator.
-- If both are absent, Straylight leaves credential resolution to the AWS
+- If both are absent, Brunn leaves credential resolution to the AWS
   default chain. This supports standard AWS environment variables, shared
   profiles, web identity, ECS task identity, and EC2 instance identity without
-  putting long-lived keys in Straylight configuration.
+  putting long-lived keys in Brunn configuration.
 
 Setting only one explicit key is a configuration error. Every existing
-`STRAYLIGHT_MINIO_*` endpoint, region, bucket, access-key, and secret-key name
+`BRUNN_MINIO_*` endpoint, region, bucket, access-key, and secret-key name
 remains a lower-precedence alias for local installations.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `STRAYLIGHT_S3_REGION` | `us-east-1` | Signing and bucket region; `STRAYLIGHT_MINIO_REGION` is an alias |
-| `STRAYLIGHT_S3_BUCKET` | `straylight` | Existing object bucket; `STRAYLIGHT_MINIO_BUCKET` is an alias |
-| `STRAYLIGHT_S3_ENDPOINT` | unset | Optional custom S3-compatible endpoint; `STRAYLIGHT_MINIO_ENDPOINT` is an alias |
-| `STRAYLIGHT_S3_FORCE_PATH_STYLE` | `true` with a custom endpoint, otherwise `false` | Override bucket addressing; `STRAYLIGHT_MINIO_FORCE_PATH_STYLE` is an alias |
-| `STRAYLIGHT_S3_CREATE_BUCKET` | `true` outside production, `false` in production | Allow the application to create a missing bucket; `STRAYLIGHT_MINIO_CREATE_BUCKET` is an alias |
-| `STRAYLIGHT_S3_ACCESS_KEY_FILE` and `STRAYLIGHT_S3_SECRET_KEY_FILE` | unset | Optional mounted static credentials; direct values and the corresponding MinIO aliases remain available outside managed production |
+| `BRUNN_S3_REGION` | `us-east-1` | Signing and bucket region; `BRUNN_MINIO_REGION` is an alias |
+| `BRUNN_S3_BUCKET` | `brunn` | Existing object bucket; `BRUNN_MINIO_BUCKET` is an alias |
+| `BRUNN_S3_ENDPOINT` | unset | Optional custom S3-compatible endpoint; `BRUNN_MINIO_ENDPOINT` is an alias |
+| `BRUNN_S3_FORCE_PATH_STYLE` | `true` with a custom endpoint, otherwise `false` | Override bucket addressing; `BRUNN_MINIO_FORCE_PATH_STYLE` is an alias |
+| `BRUNN_S3_CREATE_BUCKET` | `true` outside production, `false` in production | Allow the application to create a missing bucket; `BRUNN_MINIO_CREATE_BUCKET` is an alias |
+| `BRUNN_S3_ACCESS_KEY_FILE` and `BRUNN_S3_SECRET_KEY_FILE` | unset | Optional mounted static credentials; direct values and the corresponding MinIO aliases remain available outside managed production |
 
 For AWS S3 production, provision and version the bucket outside the
 application, grant the runtime a workload identity, and omit the endpoint and
-explicit Straylight key pair. Startup still performs `HeadBucket`; it fails
+explicit Brunn key pair. Startup still performs `HeadBucket`; it fails
 closed if the bucket is absent because production does not create buckets by
 default. For local MinIO, the existing aliases continue to select the custom
 endpoint, explicit app user, path-style addressing, and development bucket

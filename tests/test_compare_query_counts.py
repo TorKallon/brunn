@@ -84,7 +84,7 @@ def artifact(
         "verbatim_spans": False,
     }
     runtime = {
-        "schema": "straylight-service-runtime-snapshot@v1",
+        "schema": "brunn-service-runtime-snapshot@v1",
         "status": "ready",
         "build_revision": REVISION,
         "read_only": False,
@@ -119,7 +119,7 @@ def artifact(
             [],
         ).extend(values)
     return {
-        "schema": "straylight-performance-eval@v2",
+        "schema": "brunn-performance-eval@v2",
         "protocol": "simple",
         "pass": True,
         "errors": [],
@@ -179,7 +179,7 @@ def artifact(
             "discovery_task": "Find the terminal synthetic corpus answer.",
             "discovery_path_was_provided": False,
             "fixture_manifest": {
-                "schema": "straylight-synthetic-fixture@v2",
+                "schema": "brunn-synthetic-fixture@v2",
                 "scale": SCALE,
                 "verbatim_identifiers": [
                     {
@@ -207,7 +207,7 @@ def artifact(
                 "by_sample_name": by_sample_name,
                 "sample_cardinality": {
                     "schema": (
-                        "straylight-query-count-sample-cardinality@v1"
+                        "brunn-query-count-sample-cardinality@v1"
                     ),
                     "authoritative": True,
                     "expected_by_sample_name": dict(catalog),

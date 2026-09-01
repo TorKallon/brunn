@@ -18,7 +18,7 @@ function requestOf(fetchMock: ReturnType<typeof installFetch>): Request {
   const [input, init] = fetchMock.mock.calls[0];
   return input instanceof Request
     ? input
-    : new Request(new URL(String(input), "https://straylight.test"), init);
+    : new Request(new URL(String(input), "https://brunn.test"), init);
 }
 
 describe("published document api client", () => {

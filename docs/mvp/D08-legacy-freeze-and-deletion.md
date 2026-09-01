@@ -66,7 +66,7 @@ All are required:
 2. **Passed:** the fresh 4,267-file source overlay reproduces its exact ledger;
    all ten moved-path soft deletions retain history and active replacements.
 3. **Passed:** Codex and Aether/OpenClaw pass D13 from fresh production-facing
-   processes with Straylight-only durable persistence.
+   processes with Brunn-only durable persistence.
 4. **Not yet satisfied for destructive legacy-code deletion:** a PostgreSQL
    plus versioned-S3 restore reproduces the same fidelity audits. The 2026-07-31
    attempt was environment-blocked before Docker created a container; this does

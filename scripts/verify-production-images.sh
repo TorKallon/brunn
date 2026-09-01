@@ -23,13 +23,13 @@ read_value() {
   ' "$env_file"
 }
 
-revision=$(read_value STRAYLIGHT_RELEASE_REVISION)
-object_store_mode=$(read_value STRAYLIGHT_OBJECT_STORE_MODE)
+revision=$(read_value BRUNN_RELEASE_REVISION)
+object_store_mode=$(read_value BRUNN_OBJECT_STORE_MODE)
 object_store_mode=${object_store_mode:-self-hosted-minio}
-image_names="STRAYLIGHT_DATABASE_IMAGE STRAYLIGHT_API_IMAGE
-STRAYLIGHT_WEB_IMAGE STRAYLIGHT_MCP_IMAGE STRAYLIGHT_EDGE_IMAGE"
+image_names="BRUNN_DATABASE_IMAGE BRUNN_API_IMAGE
+BRUNN_WEB_IMAGE BRUNN_MCP_IMAGE BRUNN_EDGE_IMAGE"
 if [ "$object_store_mode" = "self-hosted-minio" ]; then
-  image_names="$image_names STRAYLIGHT_OBJECT_STORE_CLIENT_IMAGE"
+  image_names="$image_names BRUNN_OBJECT_STORE_CLIENT_IMAGE"
 fi
 for name in $image_names; do
   image=$(read_value "$name")

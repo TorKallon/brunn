@@ -3,8 +3,8 @@ import { z } from "zod/v4";
 
 import {
   type ApiResponse,
-  StraylightApiClient,
-  StraylightApiError,
+  BrunnApiClient,
+  BrunnApiError,
 } from "./api-client.js";
 
 const CLIENT_KEY_PATTERN = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/;
@@ -131,7 +131,7 @@ export const MESSAGING_TOOL_DESCRIPTIONS = {
 } as const;
 
 export async function sendMessage(
-  client: StraylightApiClient,
+  client: BrunnApiClient,
   input: z.infer<typeof messageSendSchema>,
 ): Promise<ApiResponse> {
   const { to, conversation_id: requestedConversationId, ...body } = input;
@@ -153,7 +153,7 @@ export async function sendMessage(
 }
 
 export function waitForMessages(
-  client: StraylightApiClient,
+  client: BrunnApiClient,
   input: z.infer<typeof messageWaitSchema>,
 ): Promise<ApiResponse> {
   const query = syncQuery(input, input.timeout_s);
@@ -161,7 +161,7 @@ export function waitForMessages(
 }
 
 export function listMessages(
-  client: StraylightApiClient,
+  client: BrunnApiClient,
   input: z.infer<typeof messageListSchema>,
 ): Promise<ApiResponse> {
   const query = syncQuery(input, 0);
@@ -169,7 +169,7 @@ export function listMessages(
 }
 
 export function markMessageRead(
-  client: StraylightApiClient,
+  client: BrunnApiClient,
   input: z.infer<typeof messageReadSchema>,
 ): Promise<ApiResponse> {
   return client.request(
@@ -178,7 +178,7 @@ export function markMessageRead(
   );
 }
 
-export function listAgents(client: StraylightApiClient): Promise<ApiResponse> {
+export function listAgents(client: BrunnApiClient): Promise<ApiResponse> {
   return client.request("/v1/workspace/messaging/agents");
 }
 
@@ -188,7 +188,7 @@ export interface RegisterMessagingToolsOptions {
 
 export function registerMessagingTools(
   server: McpServer,
-  client: StraylightApiClient,
+  client: BrunnApiClient,
   options: RegisterMessagingToolsOptions = {},
 ): void {
   const includeStructuredContent = options.includeStructuredContent ?? false;
@@ -302,7 +302,7 @@ function registerMessagingTool<Schema extends z.ZodType<Record<string, unknown>>
         ...(includeStructuredContent ? { structuredContent: response.body } : {}),
       };
     } catch (error) {
-      const body = error instanceof StraylightApiError
+      const body = error instanceof BrunnApiError
         ? error.body
         : { error: { code: "adapter_error", message: errorMessage(error) } };
       return {

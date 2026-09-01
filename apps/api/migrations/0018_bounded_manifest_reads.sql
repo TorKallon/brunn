@@ -2,7 +2,7 @@
 -- the RLS helper once per corpus row made cold multi-tenant reads needlessly
 -- expensive while providing no additional authorization decision.
 
-CREATE FUNCTION straylight_auth.read_manifest_stats(
+CREATE FUNCTION brunn_auth.read_manifest_stats(
   p_user_id uuid,
   p_scope_id uuid,
   p_corpus_revision_id uuid
@@ -11,11 +11,11 @@ RETURNS TABLE(record_count bigint, chunk_tokens bigint)
 LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 BEGIN
-  IF NOT straylight_auth.can_access_scope(p_user_id, p_scope_id) THEN
+  IF NOT brunn_auth.can_access_scope(p_user_id, p_scope_id) THEN
     RETURN;
   END IF;
 
@@ -24,8 +24,8 @@ BEGIN
          coalesce(sum(chunk.token_count::bigint) FILTER (
            WHERE member.record_kind = 'chunk'
          ), 0)::bigint
-  FROM straylight.corpus_members AS member
-  LEFT JOIN straylight.chunks AS chunk
+  FROM brunn.corpus_members AS member
+  LEFT JOIN brunn.chunks AS chunk
     ON chunk.user_id = member.user_id
    AND chunk.id = member.record_id
   WHERE member.user_id = p_user_id
@@ -35,7 +35,7 @@ BEGIN
 END
 $$;
 
-CREATE FUNCTION straylight_auth.read_manifest_sample(
+CREATE FUNCTION brunn_auth.read_manifest_sample(
   p_user_id uuid,
   p_scope_id uuid,
   p_corpus_revision_id uuid,
@@ -51,11 +51,11 @@ RETURNS TABLE(
 LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 BEGIN
-  IF NOT straylight_auth.can_access_scope(p_user_id, p_scope_id) THEN
+  IF NOT brunn_auth.can_access_scope(p_user_id, p_scope_id) THEN
     RETURN;
   END IF;
 
@@ -69,7 +69,7 @@ BEGIN
            row_number() OVER (
              PARTITION BY member.record_kind ORDER BY member.record_id
            ) AS sample_position
-    FROM straylight.corpus_members AS member
+    FROM brunn.corpus_members AS member
     WHERE member.user_id = p_user_id
       AND member.scope_id = p_scope_id
       AND member.corpus_revision_id = p_corpus_revision_id
@@ -85,7 +85,7 @@ BEGIN
 END
 $$;
 
-REVOKE ALL ON FUNCTION straylight_auth.read_manifest_stats(uuid, uuid, uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight_auth.read_manifest_sample(uuid, uuid, uuid, integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION straylight_auth.read_manifest_stats(uuid, uuid, uuid) TO app_rw, app_ro;
-GRANT EXECUTE ON FUNCTION straylight_auth.read_manifest_sample(uuid, uuid, uuid, integer) TO app_rw, app_ro;
+REVOKE ALL ON FUNCTION brunn_auth.read_manifest_stats(uuid, uuid, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn_auth.read_manifest_sample(uuid, uuid, uuid, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION brunn_auth.read_manifest_stats(uuid, uuid, uuid) TO app_rw, app_ro;
+GRANT EXECUTE ON FUNCTION brunn_auth.read_manifest_sample(uuid, uuid, uuid, integer) TO app_rw, app_ro;

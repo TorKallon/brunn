@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use sqlx::{PgPool, Row, Transaction, postgres::PgPoolOptions};
 use uuid::Uuid;
 
-use straylight::{
+use brunn::{
     auth::{AuthContext, hash_token},
     db::set_context,
     models::{CredentialId, UserId},
@@ -28,11 +28,11 @@ struct Owner {
 }
 
 async fn connect_test_pool() -> Option<PgPool> {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping Todoist database test");
+        eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping Todoist database test");
         return None;
     };
     let pool = PgPoolOptions::new()
@@ -78,14 +78,14 @@ async fn insert_owner(pool: &PgPool) -> Owner {
     .into_iter()
     .map(str::to_owned)
     .collect::<Vec<_>>();
-    sqlx::query("INSERT INTO straylight.users(id,external_ref,display_name) VALUES($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users(id,external_ref,display_name) VALUES($1,$2,$3)")
         .bind(user_id)
         .bind(format!("todoist-test:{user_id}"))
         .bind("Todoist test")
         .execute(pool)
         .await
         .expect("insert Todoist owner");
-    sqlx::query("INSERT INTO straylight.scopes(id,user_id,scope_ref,name) VALUES($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO brunn.scopes(id,user_id,scope_ref,name) VALUES($1,$2,$3,$4)")
         .bind(scope_id)
         .bind(user_id)
         .bind(&scope_ref)
@@ -95,7 +95,7 @@ async fn insert_owner(pool: &PgPool) -> Owner {
         .expect("insert Todoist scope");
     sqlx::query(
         r#"
-        INSERT INTO straylight.api_credentials(
+        INSERT INTO brunn.api_credentials(
           id,user_id,label,token_hash,capabilities
         ) VALUES($1,$2,'Todoist owner',$3,$4)
         "#,
@@ -108,7 +108,7 @@ async fn insert_owner(pool: &PgPool) -> Owner {
     .await
     .expect("insert Todoist owner credential");
     sqlx::query(
-        "INSERT INTO straylight.credential_scope_grants(credential_id,user_id,scope_id) VALUES($1,$2,$3)",
+        "INSERT INTO brunn.credential_scope_grants(credential_id,user_id,scope_id) VALUES($1,$2,$3)",
     )
     .bind(credential_id)
     .bind(user_id)
@@ -226,7 +226,7 @@ fn ordinary_sync(external_id: &str, title: &str) -> TodoistSyncResponse {
 }
 
 async fn todoist_producer(pool: &PgPool, user_id: Uuid) -> Uuid {
-    sqlx::query_scalar::<_, Uuid>("SELECT straylight.ensure_task_todoist_producer($1)")
+    sqlx::query_scalar::<_, Uuid>("SELECT brunn.ensure_task_todoist_producer($1)")
         .bind(user_id)
         .fetch_one(pool)
         .await
@@ -258,8 +258,8 @@ async fn external_task(pool: &PgPool, user_id: Uuid, external_id: &str) -> (Uuid
     let row = sqlx::query(
         r#"
         SELECT reference.task_id,task.task
-        FROM straylight.task_external_refs AS reference
-        JOIN straylight.task_index AS task
+        FROM brunn.task_external_refs AS reference
+        JOIN brunn.task_index AS task
           ON task.user_id=reference.user_id AND task.task_id=reference.task_id
         WHERE reference.user_id=$1 AND reference.system='todoist'
           AND reference.external_id=$2
@@ -283,10 +283,10 @@ where
         SELECT entry.id AS entry_id,entry.path,entry.current_version,
                version.content_sha256::text AS content_sha256,
                version.content,version.size_bytes,version.metadata
-        FROM straylight.task_index AS task
-        JOIN straylight.entries AS entry
+        FROM brunn.task_index AS task
+        JOIN brunn.entries AS entry
           ON entry.user_id=task.user_id AND entry.id=task.entry_id
-        JOIN straylight.entry_versions AS version
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id AND version.entry_id=entry.id
          AND version.version=entry.current_version
         WHERE task.user_id=$1 AND task.task_id=$2
@@ -311,7 +311,7 @@ where
     let next_version = current_version + 1;
     sqlx::query(
         r#"
-        INSERT INTO straylight.entry_versions(
+        INSERT INTO brunn.entry_versions(
           user_id,entry_id,version,content_sha256,content,size_bytes,metadata,
           created_by_credential_id
         ) VALUES($1,$2,$3,$4,$5,$6,$7,$8)
@@ -329,7 +329,7 @@ where
     .await
     .expect("append canonical task metadata version");
     sqlx::query(
-        "UPDATE straylight.entries SET current_version=$3,updated_at=clock_timestamp() WHERE user_id=$1 AND id=$2",
+        "UPDATE brunn.entries SET current_version=$3,updated_at=clock_timestamp() WHERE user_id=$1 AND id=$2",
     )
     .bind(owner.user_id)
     .bind(entry_id)
@@ -370,7 +370,7 @@ async fn todoist_worker_secret_read_is_exact_audited_hidden_and_non_bearer() {
     let (ciphertext, nonce) = encrypt_secret_value(&key, &aad, canary).unwrap();
     sqlx::query(
         r#"
-        INSERT INTO straylight.secrets(
+        INSERT INTO brunn.secrets(
           id,user_id,name,description,value_ciphertext,value_nonce,version,
           created_by_credential_id,updated_by_credential_id
         ) VALUES($1,$2,'todoist-api-token','Todoist token',$3,$4,1,$5,$5)
@@ -385,7 +385,7 @@ async fn todoist_worker_secret_read_is_exact_audited_hidden_and_non_bearer() {
     .await
     .expect("insert encrypted Todoist token");
 
-    let row = sqlx::query("SELECT * FROM straylight.task_todoist_secret_for_worker($1)")
+    let row = sqlx::query("SELECT * FROM brunn.task_todoist_secret_for_worker($1)")
         .bind(owner.user_id)
         .fetch_one(&pool)
         .await
@@ -399,20 +399,19 @@ async fn todoist_worker_secret_read_is_exact_audited_hidden_and_non_bearer() {
     );
     assert!(!String::from_utf8_lossy(&stored_ciphertext).contains(canary));
 
-    let producer = sqlx::query(
-        "SELECT label,capabilities,disabled_at FROM straylight.api_credentials WHERE id=$1",
-    )
-    .bind(producer_id)
-    .fetch_one(&pool)
-    .await
-    .expect("load internal Todoist producer");
+    let producer =
+        sqlx::query("SELECT label,capabilities,disabled_at FROM brunn.api_credentials WHERE id=$1")
+            .bind(producer_id)
+            .fetch_one(&pool)
+            .await
+            .expect("load internal Todoist producer");
     assert_eq!(
         producer.try_get::<Vec<String>, _>("capabilities").unwrap(),
         ["task.read", "task.write"]
     );
     assert_eq!(
         producer.try_get::<String, _>("label").unwrap(),
-        "__straylight_todoist_sync__"
+        "__brunn_todoist_sync__"
     );
     assert!(
         producer
@@ -421,7 +420,7 @@ async fn todoist_worker_secret_read_is_exact_audited_hidden_and_non_bearer() {
             .is_none()
     );
     let access_count = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM straylight.secret_access_log WHERE user_id=$1 AND secret_id=$2 AND credential_id=$3 AND operation='get'",
+        "SELECT count(*) FROM brunn.secret_access_log WHERE user_id=$1 AND secret_id=$2 AND credential_id=$3 AND operation='get'",
     )
     .bind(owner.user_id)
     .bind(secret_id)
@@ -433,7 +432,7 @@ async fn todoist_worker_secret_read_is_exact_audited_hidden_and_non_bearer() {
 
     let mut owner_tx = begin_as_app_rw(&pool, &owner.auth).await;
     assert!(
-        sqlx::query("SELECT * FROM straylight.task_todoist_secret_for_worker($1)")
+        sqlx::query("SELECT * FROM brunn.task_todoist_secret_for_worker($1)")
             .bind(owner.user_id)
             .fetch_one(&mut *owner_tx)
             .await
@@ -443,15 +442,14 @@ async fn todoist_worker_secret_read_is_exact_audited_hidden_and_non_bearer() {
     owner_tx.rollback().await.unwrap();
 
     let mut owner_tx = begin_as_app_rw(&pool, &owner.auth).await;
-    let listed =
-        sqlx::query_scalar::<_, Uuid>("SELECT id FROM straylight_auth.list_credentials($1)")
-            .bind(owner.user_id)
-            .fetch_all(&mut *owner_tx)
-            .await
-            .expect("list public credentials");
+    let listed = sqlx::query_scalar::<_, Uuid>("SELECT id FROM brunn_auth.list_credentials($1)")
+        .bind(owner.user_id)
+        .fetch_all(&mut *owner_tx)
+        .await
+        .expect("list public credentials");
     assert!(!listed.contains(&producer_id));
     let revoke = sqlx::query_scalar::<_, chrono::DateTime<chrono::Utc>>(
-        "SELECT straylight_auth.revoke_credential($1,$2)",
+        "SELECT brunn_auth.revoke_credential($1,$2)",
     )
     .bind(owner.user_id)
     .bind(producer_id)
@@ -469,7 +467,7 @@ async fn todoist_sync_state_is_seeded_with_a_paired_durable_lease() {
     };
     let owner = insert_owner(&pool).await;
     let row = sqlx::query(
-        "SELECT system,configuration_generation,lease_owner,lease_expires_at FROM straylight.task_sync_state WHERE user_id=$1",
+        "SELECT system,configuration_generation,lease_owner,lease_expires_at FROM brunn.task_sync_state WHERE user_id=$1",
     )
     .bind(owner.user_id)
     .fetch_one(&pool)
@@ -487,7 +485,7 @@ async fn todoist_sync_state_is_seeded_with_a_paired_durable_lease() {
     );
 
     let error = sqlx::query(
-        "UPDATE straylight.task_sync_state SET lease_owner='worker' WHERE user_id=$1 AND system='todoist'",
+        "UPDATE brunn.task_sync_state SET lease_owner='worker' WHERE user_id=$1 AND system='todoist'",
     )
     .bind(owner.user_id)
     .execute(&pool)
@@ -505,7 +503,7 @@ async fn stale_worker_cannot_finalize_after_a_boot_unique_reclaim() {
     let secret_id = Uuid::now_v7();
     sqlx::query(
         r#"
-        INSERT INTO straylight.secrets(
+        INSERT INTO brunn.secrets(
           id,user_id,name,value_ciphertext,value_nonce,version,
           created_by_credential_id,updated_by_credential_id
         ) VALUES($1,$2,'todoist-api-token',$3,$4,1,$5,$5)
@@ -520,7 +518,7 @@ async fn stale_worker_cannot_finalize_after_a_boot_unique_reclaim() {
     .await
     .expect("insert scheduler-eligibility secret metadata");
     sqlx::query(
-        "UPDATE straylight.task_integration_config SET mode='pull' WHERE user_id=$1 AND system='todoist'",
+        "UPDATE brunn.task_integration_config SET mode='pull' WHERE user_id=$1 AND system='todoist'",
     )
     .bind(owner.user_id)
     .execute(&pool)
@@ -531,7 +529,7 @@ async fn stale_worker_cannot_finalize_after_a_boot_unique_reclaim() {
     // disposable database contains rows left by an earlier contract run.
     sqlx::query(
         r#"
-        UPDATE straylight.task_sync_state
+        UPDATE brunn.task_sync_state
         SET manual_requested_at='2000-01-01T00:00:00Z',
             next_run_at=NULL,lease_owner=NULL,lease_expires_at=NULL
         WHERE user_id=$1 AND system='todoist'
@@ -547,7 +545,7 @@ async fn stale_worker_cannot_finalize_after_a_boot_unique_reclaim() {
         .unwrap()
         .expect("first worker claims Todoist sync");
     sqlx::query(
-        "UPDATE straylight.task_sync_state SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE user_id=$1 AND system='todoist'",
+        "UPDATE brunn.task_sync_state SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE user_id=$1 AND system='todoist'",
     )
     .bind(owner.user_id)
     .execute(&pool)
@@ -582,7 +580,7 @@ async fn stale_worker_cannot_finalize_after_a_boot_unique_reclaim() {
     .expect("replacement worker owns finalization");
     winner_tx.commit().await.unwrap();
     let cursor = sqlx::query_scalar::<_, Option<String>>(
-        "SELECT cursor FROM straylight.task_sync_state WHERE user_id=$1 AND system='todoist'",
+        "SELECT cursor FROM brunn.task_sync_state WHERE user_id=$1 AND system='todoist'",
     )
     .bind(owner.user_id)
     .fetch_one(&pool)
@@ -590,7 +588,7 @@ async fn stale_worker_cannot_finalize_after_a_boot_unique_reclaim() {
     .unwrap();
     assert_eq!(cursor.as_deref(), Some("cursor-from-winner-b"));
     let last_run_at = sqlx::query_scalar::<_, Option<DateTime<Utc>>>(
-        "SELECT last_run_at FROM straylight.task_sync_state WHERE user_id=$1 AND system='todoist'",
+        "SELECT last_run_at FROM brunn.task_sync_state WHERE user_id=$1 AND system='todoist'",
     )
     .bind(owner.user_id)
     .fetch_one(&pool)
@@ -601,7 +599,7 @@ async fn stale_worker_cannot_finalize_after_a_boot_unique_reclaim() {
     for worker_id in ["worker:1:failed-c", "worker:1:failed-d"] {
         sqlx::query(
             r#"
-            UPDATE straylight.task_sync_state
+            UPDATE brunn.task_sync_state
             SET manual_requested_at='2000-01-01T00:00:00Z',next_run_at=NULL
             WHERE user_id=$1 AND system='todoist'
             "#,
@@ -622,7 +620,7 @@ async fn stale_worker_cannot_finalize_after_a_boot_unique_reclaim() {
         .await
         .unwrap();
         let state = sqlx::query(
-            "SELECT cursor,last_run_at,last_outcome FROM straylight.task_sync_state WHERE user_id=$1 AND system='todoist'",
+            "SELECT cursor,last_run_at,last_outcome FROM brunn.task_sync_state WHERE user_id=$1 AND system='todoist'",
         )
         .bind(owner.user_id)
         .fetch_one(&pool)
@@ -645,7 +643,7 @@ async fn stale_worker_cannot_finalize_after_a_boot_unique_reclaim() {
 
     sqlx::query(
         r#"
-        UPDATE straylight.task_sync_state
+        UPDATE brunn.task_sync_state
         SET manual_requested_at='2000-01-01T00:00:00Z',next_run_at=NULL
         WHERE user_id=$1 AND system='todoist'
         "#,
@@ -670,7 +668,7 @@ async fn stale_worker_cannot_finalize_after_a_boot_unique_reclaim() {
     .unwrap();
     retry_tx.commit().await.unwrap();
     let recovered = sqlx::query(
-        "SELECT cursor,last_run_at FROM straylight.task_sync_state WHERE user_id=$1 AND system='todoist'",
+        "SELECT cursor,last_run_at FROM brunn.task_sync_state WHERE user_id=$1 AND system='todoist'",
     )
     .bind(owner.user_id)
     .fetch_one(&pool)
@@ -694,7 +692,7 @@ async fn recorded_fixture_is_idempotent_file_native_and_requires_near_match_conf
     let owner = insert_owner(&pool).await;
     let producer = todoist_producer(&pool, owner.user_id).await;
     sqlx::query(
-        "INSERT INTO straylight.task_projects(user_id,slug,title,created_by) VALUES($1,'straylight','Straylight','owner')",
+        "INSERT INTO brunn.task_projects(user_id,slug,title,created_by) VALUES($1,'brunn','Brunn','owner')",
     )
     .bind(owner.user_id)
     .execute(&pool)
@@ -703,7 +701,7 @@ async fn recorded_fixture_is_idempotent_file_native_and_requires_near_match_conf
 
     apply_sync(&pool, owner.user_id, producer, &[recorded_full_sync()], &[]).await;
     let task_count =
-        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM straylight.task_index WHERE user_id=$1")
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM brunn.task_index WHERE user_id=$1")
             .bind(owner.user_id)
             .fetch_one(&pool)
             .await
@@ -711,7 +709,7 @@ async fn recorded_fixture_is_idempotent_file_native_and_requires_near_match_conf
     assert_eq!(task_count, 3);
 
     let (_, deadline) = external_task(&pool, owner.user_id, "9QwErTyUiOpAsDfG").await;
-    assert_eq!(deadline["project"]["value"], json!("straylight"));
+    assert_eq!(deadline["project"]["value"], json!("brunn"));
     assert_eq!(
         deadline["required_contexts"]["value"],
         json!(["online", "release"])
@@ -741,7 +739,7 @@ async fn recorded_fixture_is_idempotent_file_native_and_requires_near_match_conf
     assert!(hard_without_due["triaged_at"]["value"].is_null());
 
     let version_sum_before = sqlx::query_scalar::<_, i64>(
-        "SELECT coalesce(sum(entry.current_version),0)::bigint FROM straylight.entries AS entry JOIN straylight.task_index AS task ON task.user_id=entry.user_id AND task.entry_id=entry.id WHERE entry.user_id=$1",
+        "SELECT coalesce(sum(entry.current_version),0)::bigint FROM brunn.entries AS entry JOIN brunn.task_index AS task ON task.user_id=entry.user_id AND task.entry_id=entry.id WHERE entry.user_id=$1",
     )
     .bind(owner.user_id)
     .fetch_one(&pool)
@@ -749,7 +747,7 @@ async fn recorded_fixture_is_idempotent_file_native_and_requires_near_match_conf
     .unwrap();
     apply_sync(&pool, owner.user_id, producer, &[recorded_full_sync()], &[]).await;
     let version_sum_after = sqlx::query_scalar::<_, i64>(
-        "SELECT coalesce(sum(entry.current_version),0)::bigint FROM straylight.entries AS entry JOIN straylight.task_index AS task ON task.user_id=entry.user_id AND task.entry_id=entry.id WHERE entry.user_id=$1",
+        "SELECT coalesce(sum(entry.current_version),0)::bigint FROM brunn.entries AS entry JOIN brunn.task_index AS task ON task.user_id=entry.user_id AND task.entry_id=entry.id WHERE entry.user_id=$1",
     )
     .bind(owner.user_id)
     .fetch_one(&pool)
@@ -757,13 +755,11 @@ async fn recorded_fixture_is_idempotent_file_native_and_requires_near_match_conf
     .unwrap();
     assert_eq!(version_sum_after, version_sum_before);
     assert_eq!(
-        sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.task_index WHERE user_id=$1",
-        )
-        .bind(owner.user_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap(),
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM brunn.task_index WHERE user_id=$1",)
+            .bind(owner.user_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
         3
     );
 
@@ -774,10 +770,10 @@ async fn recorded_fixture_is_idempotent_file_native_and_requires_near_match_conf
     let row = sqlx::query(
         r#"
         SELECT task.entry_id,task.entry_version,entry.path,version.metadata
-        FROM straylight.task_index AS task
-        JOIN straylight.entries AS entry
+        FROM brunn.task_index AS task
+        JOIN brunn.entries AS entry
           ON entry.user_id=task.user_id AND entry.id=task.entry_id
-        JOIN straylight.entry_versions AS version
+        JOIN brunn.entry_versions AS version
           ON version.user_id=task.user_id AND version.entry_id=task.entry_id
          AND version.version=task.entry_version
         WHERE task.user_id=$1 AND task.task_id=$2
@@ -792,13 +788,13 @@ async fn recorded_fixture_is_idempotent_file_native_and_requires_near_match_conf
     let entry_version: i64 = row.get("entry_version");
     let path: String = row.get("path");
     let metadata: Value = row.get("metadata");
-    sqlx::query("DELETE FROM straylight.task_external_refs WHERE user_id=$1 AND task_id=$2")
+    sqlx::query("DELETE FROM brunn.task_external_refs WHERE user_id=$1 AND task_id=$2")
         .bind(owner.user_id)
         .bind(recurring_task_id)
         .execute(&mut *rebuild_tx)
         .await
         .unwrap();
-    sqlx::query("DELETE FROM straylight.task_todoist_occurrences WHERE user_id=$1 AND task_id=$2")
+    sqlx::query("DELETE FROM brunn.task_todoist_occurrences WHERE user_id=$1 AND task_id=$2")
         .bind(owner.user_id)
         .bind(recurring_task_id)
         .execute(&mut *rebuild_tx)
@@ -819,7 +815,7 @@ async fn recorded_fixture_is_idempotent_file_native_and_requires_near_match_conf
     assert_eq!(rebuilt_task_id, recurring_task_id);
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.task_todoist_occurrences WHERE user_id=$1 AND task_id=$2",
+            "SELECT count(*) FROM brunn.task_todoist_occurrences WHERE user_id=$1 AND task_id=$2",
         )
         .bind(owner.user_id)
         .bind(recurring_task_id)
@@ -830,13 +826,11 @@ async fn recorded_fixture_is_idempotent_file_native_and_requires_near_match_conf
     );
     apply_sync(&pool, owner.user_id, producer, &[recorded_full_sync()], &[]).await;
     assert_eq!(
-        sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.task_index WHERE user_id=$1",
-        )
-        .bind(owner.user_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap(),
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM brunn.task_index WHERE user_id=$1",)
+            .bind(owner.user_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
         3
     );
 
@@ -861,7 +855,7 @@ async fn recorded_fixture_is_idempotent_file_native_and_requires_near_match_conf
     apply_sync(&pool, owner.user_id, producer, &[near_match], &[]).await;
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.task_contexts WHERE user_id=$1 AND (slug='phnoe' OR lower(display_name)='phnoe')",
+            "SELECT count(*) FROM brunn.task_contexts WHERE user_id=$1 AND (slug='phnoe' OR lower(display_name)='phnoe')",
         )
         .bind(owner.user_id)
         .fetch_one(&pool)
@@ -871,7 +865,7 @@ async fn recorded_fixture_is_idempotent_file_native_and_requires_near_match_conf
     );
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.task_context_aliases WHERE user_id=$1 AND lower(alias)='phnoe'",
+            "SELECT count(*) FROM brunn.task_context_aliases WHERE user_id=$1 AND lower(alias)='phnoe'",
         )
         .bind(owner.user_id)
         .fetch_one(&pool)
@@ -948,8 +942,8 @@ async fn recurring_history_materializes_every_missed_occurrence_once_and_replays
     let rows = sqlx::query(
         r#"
         SELECT occurrence.occurrence_key,task.status,task.done_at,task.task_id
-        FROM straylight.task_todoist_occurrences AS occurrence
-        JOIN straylight.task_index AS task
+        FROM brunn.task_todoist_occurrences AS occurrence
+        JOIN brunn.task_index AS task
           ON task.user_id=occurrence.user_id AND task.task_id=occurrence.task_id
         WHERE occurrence.user_id=$1 AND occurrence.series_id=$2
         ORDER BY occurrence.occurrence_key
@@ -992,7 +986,7 @@ async fn recurring_history_materializes_every_missed_occurrence_once_and_replays
     let active_task_id = rows[3].get::<Uuid, _>("task_id");
     assert_eq!(
         sqlx::query_scalar::<_, Uuid>(
-            "SELECT task_id FROM straylight.task_external_refs WHERE user_id=$1 AND system='todoist' AND external_id=$2",
+            "SELECT task_id FROM brunn.task_external_refs WHERE user_id=$1 AND system='todoist' AND external_id=$2",
         )
         .bind(owner.user_id)
         .bind(series_id)
@@ -1016,7 +1010,7 @@ async fn recurring_history_materializes_every_missed_occurrence_once_and_replays
     .await;
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.task_todoist_occurrences WHERE user_id=$1 AND series_id=$2",
+            "SELECT count(*) FROM brunn.task_todoist_occurrences WHERE user_id=$1 AND series_id=$2",
         )
         .bind(owner.user_id)
         .bind(series_id)
@@ -1027,7 +1021,7 @@ async fn recurring_history_materializes_every_missed_occurrence_once_and_replays
     );
     assert_eq!(
         sqlx::query_scalar::<_, Uuid>(
-            "SELECT task_id FROM straylight.task_external_refs WHERE user_id=$1 AND system='todoist' AND external_id=$2",
+            "SELECT task_id FROM brunn.task_external_refs WHERE user_id=$1 AND system='todoist' AND external_id=$2",
         )
         .bind(owner.user_id)
         .bind(series_id)
@@ -1083,7 +1077,7 @@ async fn fixed_zone_recurring_history_keeps_utc_keys_across_dst() {
     )
     .await;
     let keys = sqlx::query_scalar::<_, String>(
-        "SELECT occurrence_key FROM straylight.task_todoist_occurrences WHERE user_id=$1 AND series_id=$2 ORDER BY occurrence_key",
+        "SELECT occurrence_key FROM brunn.task_todoist_occurrences WHERE user_id=$1 AND series_id=$2 ORDER BY occurrence_key",
     )
     .bind(owner.user_id)
     .bind(series_id)
@@ -1191,8 +1185,8 @@ async fn unparseable_remote_recurrence_keeps_one_review_while_recording_each_com
     let occurrences = sqlx::query(
         r#"
         SELECT occurrence.occurrence_key,task.status,task.task_id
-        FROM straylight.task_todoist_occurrences AS occurrence
-        JOIN straylight.task_index AS task
+        FROM brunn.task_todoist_occurrences AS occurrence
+        JOIN brunn.task_index AS task
           ON task.user_id=occurrence.user_id AND task.task_id=occurrence.task_id
         WHERE occurrence.user_id=$1 AND occurrence.series_id=$2
         ORDER BY occurrence.occurrence_key
@@ -1232,7 +1226,7 @@ async fn unparseable_remote_recurrence_keeps_one_review_while_recording_each_com
     );
     assert_eq!(
         sqlx::query_scalar::<_, Uuid>(
-            "SELECT task_id FROM straylight.task_external_refs WHERE user_id=$1 AND system='todoist' AND external_id=$2",
+            "SELECT task_id FROM brunn.task_external_refs WHERE user_id=$1 AND system='todoist' AND external_id=$2",
         )
         .bind(owner.user_id)
         .bind(series_id)
@@ -1251,7 +1245,7 @@ async fn unparseable_remote_recurrence_keeps_one_review_while_recording_each_com
     .await;
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.task_todoist_occurrences WHERE user_id=$1 AND series_id=$2",
+            "SELECT count(*) FROM brunn.task_todoist_occurrences WHERE user_id=$1 AND series_id=$2",
         )
         .bind(owner.user_id)
         .bind(series_id)
@@ -1315,8 +1309,8 @@ async fn stale_initial_full_plus_incremental_preserves_the_completed_baseline_oc
     let rows = sqlx::query(
         r#"
         SELECT occurrence.occurrence_key,task.status,task.done_at
-        FROM straylight.task_todoist_occurrences AS occurrence
-        JOIN straylight.task_index AS task
+        FROM brunn.task_todoist_occurrences AS occurrence
+        JOIN brunn.task_index AS task
           ON task.user_id=occurrence.user_id AND task.task_id=occurrence.task_id
         WHERE occurrence.user_id=$1 AND occurrence.series_id=$2
         ORDER BY occurrence.occurrence_key
@@ -1370,7 +1364,7 @@ async fn stale_initial_full_plus_incremental_preserves_the_completed_baseline_oc
     .await;
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.task_todoist_occurrences WHERE user_id=$1 AND series_id=$2",
+            "SELECT count(*) FROM brunn.task_todoist_occurrences WHERE user_id=$1 AND series_id=$2",
         )
         .bind(owner.user_id)
         .bind(series_id)
@@ -1423,8 +1417,8 @@ async fn current_initial_full_ignores_unprovable_completion_history_before_the_i
     let rows = sqlx::query(
         r#"
         SELECT occurrence.occurrence_key,task.status
-        FROM straylight.task_todoist_occurrences AS occurrence
-        JOIN straylight.task_index AS task
+        FROM brunn.task_todoist_occurrences AS occurrence
+        JOIN brunn.task_index AS task
           ON task.user_id=occurrence.user_id AND task.task_id=occurrence.task_id
         WHERE occurrence.user_id=$1 AND occurrence.series_id=$2
         "#,
@@ -1487,7 +1481,7 @@ async fn recurring_due_reschedules_replace_the_current_ledger_key_without_comple
         let ledger = sqlx::query(
             r#"
             SELECT occurrence_key,task_id
-            FROM straylight.task_todoist_occurrences
+            FROM brunn.task_todoist_occurrences
             WHERE user_id=$1 AND series_id=$2
             "#,
         )
@@ -1563,7 +1557,7 @@ async fn field_authority_controls_terminals_and_recurrence_lifecycle_independent
     assert!(overridden_task["recurrence"]["value"].is_null());
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.task_todoist_occurrences WHERE user_id=$1 AND series_id=$2",
+            "SELECT count(*) FROM brunn.task_todoist_occurrences WHERE user_id=$1 AND series_id=$2",
         )
         .bind(owner.user_id)
         .bind(overridden_series)
@@ -1675,7 +1669,7 @@ async fn field_authority_controls_terminals_and_recurrence_lifecycle_independent
     )
     .await;
     let identity = sqlx::query(
-        "SELECT series_id,occurrence_key FROM straylight.task_external_refs WHERE user_id=$1 AND system='todoist' AND external_id=$2",
+        "SELECT series_id,occurrence_key FROM brunn.task_external_refs WHERE user_id=$1 AND system='todoist' AND external_id=$2",
     )
     .bind(owner.user_id)
     .bind(removed_series)
@@ -1690,7 +1684,7 @@ async fn field_authority_controls_terminals_and_recurrence_lifecycle_independent
     );
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.task_todoist_occurrences WHERE user_id=$1 AND task_id=$2",
+            "SELECT count(*) FROM brunn.task_todoist_occurrences WHERE user_id=$1 AND task_id=$2",
         )
         .bind(owner.user_id)
         .bind(removed_task_id)
@@ -1789,7 +1783,7 @@ async fn owner_completion_materializes_one_next_or_one_review_and_remote_replay_
     assert_eq!(replay_next, first_next);
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.task_todoist_occurrences WHERE user_id=$1 AND series_id=$2",
+            "SELECT count(*) FROM brunn.task_todoist_occurrences WHERE user_id=$1 AND series_id=$2",
         )
         .bind(owner.user_id)
         .bind(parseable_series)
@@ -1800,7 +1794,7 @@ async fn owner_completion_materializes_one_next_or_one_review_and_remote_replay_
     );
     assert_eq!(
         sqlx::query_scalar::<_, Uuid>(
-            "SELECT task_id FROM straylight.task_external_refs WHERE user_id=$1 AND system='todoist' AND external_id=$2",
+            "SELECT task_id FROM brunn.task_external_refs WHERE user_id=$1 AND system='todoist' AND external_id=$2",
         )
         .bind(owner.user_id)
         .bind(parseable_series)
@@ -1823,7 +1817,7 @@ async fn owner_completion_materializes_one_next_or_one_review_and_remote_replay_
     .await;
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.task_todoist_occurrences WHERE user_id=$1 AND series_id=$2",
+            "SELECT count(*) FROM brunn.task_todoist_occurrences WHERE user_id=$1 AND series_id=$2",
         )
         .bind(owner.user_id)
         .bind(parseable_series)
@@ -1886,7 +1880,7 @@ async fn owner_completion_materializes_one_next_or_one_review_and_remote_replay_
     review_replay_tx.commit().await.unwrap();
     assert_eq!(review_replay, review_task);
     let review_projection = sqlx::query_scalar::<_, Value>(
-        "SELECT task FROM straylight.task_index WHERE user_id=$1 AND task_id=$2",
+        "SELECT task FROM brunn.task_index WHERE user_id=$1 AND task_id=$2",
     )
     .bind(owner.user_id)
     .bind(review_task)
@@ -1901,7 +1895,7 @@ async fn owner_completion_materializes_one_next_or_one_review_and_remote_replay_
     let review_occurrence_key = format!("review:{review_completed_task}");
     assert_eq!(
         sqlx::query_scalar::<_, String>(
-            "SELECT occurrence_key FROM straylight.task_external_refs WHERE user_id=$1 AND system='todoist' AND external_id=$2",
+            "SELECT occurrence_key FROM brunn.task_external_refs WHERE user_id=$1 AND system='todoist' AND external_id=$2",
         )
         .bind(owner.user_id)
         .bind(review_series)
@@ -1924,7 +1918,7 @@ async fn owner_completion_materializes_one_next_or_one_review_and_remote_replay_
     .await;
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.task_todoist_occurrences WHERE user_id=$1 AND series_id=$2",
+            "SELECT count(*) FROM brunn.task_todoist_occurrences WHERE user_id=$1 AND series_id=$2",
         )
         .bind(owner.user_id)
         .bind(review_series)
@@ -1935,7 +1929,7 @@ async fn owner_completion_materializes_one_next_or_one_review_and_remote_replay_
     );
     assert_eq!(
         sqlx::query_scalar::<_, Uuid>(
-            "SELECT task_id FROM straylight.task_external_refs WHERE user_id=$1 AND system='todoist' AND external_id=$2",
+            "SELECT task_id FROM brunn.task_external_refs WHERE user_id=$1 AND system='todoist' AND external_id=$2",
         )
         .bind(owner.user_id)
         .bind(review_series)
@@ -1955,7 +1949,7 @@ async fn project_only_renames_remap_todoist_owned_fields_but_preserve_owner_over
     let producer = todoist_producer(&pool, owner.user_id).await;
     for (slug, title) in [("alpha", "Alpha"), ("beta", "Beta"), ("gamma", "Gamma")] {
         sqlx::query(
-            "INSERT INTO straylight.task_projects(user_id,slug,title,created_by) VALUES($1,$2,$3,'owner')",
+            "INSERT INTO brunn.task_projects(user_id,slug,title,created_by) VALUES($1,$2,$3,'owner')",
         )
         .bind(owner.user_id)
         .bind(slug)
@@ -2028,7 +2022,7 @@ async fn project_only_renames_remap_todoist_owned_fields_but_preserve_owner_over
     );
     assert_eq!(
         sqlx::query_scalar::<_, String>(
-            "SELECT metadata->>'project_id' FROM straylight.task_external_refs WHERE user_id=$1 AND system='todoist' AND external_id='ExistingRenameItem0001'",
+            "SELECT metadata->>'project_id' FROM brunn.task_external_refs WHERE user_id=$1 AND system='todoist' AND external_id='ExistingRenameItem0001'",
         )
         .bind(owner.user_id)
         .fetch_one(&pool)

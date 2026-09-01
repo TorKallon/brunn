@@ -1,6 +1,6 @@
 {
   "benchmark_version": "0.3",
-  "name": "Straylight fresh-agent checkpoint transition evaluation",
+  "name": "Brunn fresh-agent checkpoint transition evaluation",
   "base_corpus_root": "eval/corpus-v0.2",
   "seed_results": "results/2026-07-10-agent-work-v0.2.json",
   "model": "gpt-5.6-sol",
@@ -256,12 +256,12 @@
       "forbidden": ["everything is booked", "meet after Belgium"]
     },
     {
-      "id": "straylight-api-gate-transition",
-      "workload": "Straylight",
+      "id": "brunn-api-gate-transition",
+      "workload": "Brunn",
       "capability": "checkpoint_reopen_into_implementation",
-      "seed_case_id": "straylight-product-resume",
-      "delta_path": "eval/transition-deltas/straylight-api-gate.md",
-      "task": "Reopen the Straylight project checkpoint and advance it from evaluation into implementation using the new API gate. Correct the interpretation of the token result, define the first persistent build slice, and leave a child checkpoint with measurable acceptance criteria and source lineage.",
+      "seed_case_id": "brunn-product-resume",
+      "delta_path": "eval/transition-deltas/brunn-api-gate.md",
+      "task": "Reopen the Brunn project checkpoint and advance it from evaluation into implementation using the new API gate. Correct the interpretation of the token result, define the first persistent build slice, and leave a child checkpoint with measurable acceptance criteria and source lineage.",
       "claim_slots": {
         "c1": "recovered product thesis",
       "c2": "corrected cached-replay versus uncached-input interpretation and BM25 baseline",
@@ -277,8 +277,8 @@
             {"any": ["not retrieval", "more than retrieval", "not primarily", "portable context"]}
           ],
           "sources_any": [
-            "Projects/Straylight/Straylight.md",
-            "Projects/Straylight/Decisions.md"
+            "Projects/Brunn/Brunn.md",
+            "Projects/Brunn/Decisions.md"
           ]
         },
         {
@@ -289,7 +289,7 @@
             {"any": ["tool calls", "round trips"]},
             {"any": ["BM25", "lexical"]}
           ],
-          "sources_any": ["eval/transition-deltas/straylight-api-gate.md"]
+          "sources_any": ["eval/transition-deltas/brunn-api-gate.md"]
         },
         {
           "id": "c3",
@@ -301,8 +301,8 @@
             {"any": ["child checkpoint", "commits a child", "committed child"]}
           ],
           "sources_any": [
-            "Projects/Straylight/Retrieval API - Initial Design.md",
-            "eval/transition-deltas/straylight-api-gate.md"
+            "Projects/Brunn/Retrieval API - Initial Design.md",
+            "eval/transition-deltas/brunn-api-gate.md"
           ]
         },
         {
@@ -313,7 +313,7 @@
             {"any": ["cached", "uncached"]},
             {"any": ["parent", "source references", "source lineage"]}
           ],
-          "sources_any": ["eval/transition-deltas/straylight-api-gate.md"]
+          "sources_any": ["eval/transition-deltas/brunn-api-gate.md"]
         }
       ],
       "forbidden": ["BM25 shell is the target architecture", "2.2x more unique context"]

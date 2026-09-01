@@ -319,7 +319,7 @@ def query_scope(args: argparse.Namespace) -> str | dict[str, Any]:
 
 
 def enforced_evaluation_retrieval_modes() -> tuple[str, ...]:
-    raw = os.environ.get("STRAYLIGHT_EVAL_RETRIEVAL_MODES", "")
+    raw = os.environ.get("BRUNN_EVAL_RETRIEVAL_MODES", "")
     modes = tuple(
         mode.strip().casefold()
         for mode in raw.split(",")
@@ -330,7 +330,7 @@ def enforced_evaluation_retrieval_modes() -> tuple[str, ...]:
         for mode in modes
     ):
         raise ValueError(
-            "STRAYLIGHT_EVAL_RETRIEVAL_MODES must be a unique comma-separated "
+            "BRUNN_EVAL_RETRIEVAL_MODES must be a unique comma-separated "
             "subset of exact,lexical,semantic"
         )
     return modes
@@ -1295,7 +1295,7 @@ def checkpoint_key(session_id: str, payload: dict[str, Any]) -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Native Straylight evaluation memory adapter")
+    parser = argparse.ArgumentParser(description="Native Brunn evaluation memory adapter")
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--task-file", type=Path, required=True)
     parser.add_argument("--scope", required=True)

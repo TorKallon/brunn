@@ -17,14 +17,14 @@ RUN go get \
     && make build
 
 FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
-ARG STRAYLIGHT_BUILD_REVISION=unknown
-LABEL org.opencontainers.image.title="Straylight MinIO Client" \
-      org.opencontainers.image.revision="${STRAYLIGHT_BUILD_REVISION}"
+ARG BRUNN_BUILD_REVISION=unknown
+LABEL org.opencontainers.image.title="Brunn MinIO Client" \
+      org.opencontainers.image.revision="${BRUNN_BUILD_REVISION}"
 RUN apk add --no-cache ca-certificates \
-    && addgroup -g 10001 -S straylight \
-    && adduser -S -D -h /home/straylight -u 10001 -G straylight straylight \
-    && install -d -o 10001 -g 10001 -m 0700 /home/straylight
+    && addgroup -g 10001 -S brunn \
+    && adduser -S -D -h /home/brunn -u 10001 -G brunn brunn \
+    && install -d -o 10001 -g 10001 -m 0700 /home/brunn
 COPY --from=build /src/mc /usr/local/bin/mc
-ENV HOME=/home/straylight
+ENV HOME=/home/brunn
 USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/mc"]

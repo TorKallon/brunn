@@ -47,7 +47,7 @@ type OAuthResponse = Parameters<OAuthServerProvider["authorize"]>[2];
 type UpstreamTokenVerifier = (token: string) => Promise<boolean | void>;
 type Clock = () => number;
 
-export interface StraylightOAuthProviderOptions {
+export interface BrunnOAuthProviderOptions {
   secret: string | Uint8Array;
   resourceUrl: string | URL;
   verifyUpstreamToken: UpstreamTokenVerifier;
@@ -166,14 +166,14 @@ export class StatelessOAuthClientsStore implements OAuthRegisteredClientsStore {
 }
 
 /**
- * OAuth 2.1 provider for the hosted Straylight MCP endpoint.
+ * OAuth 2.1 provider for the hosted Brunn MCP endpoint.
  *
  * Client registrations and all issued credentials are AES-256-GCM sealed.
  * Authorization codes additionally carry a per-process instance identifier,
  * and their identifiers are consumed in memory before token issuance. This
  * makes a code single-use and deliberately invalid after a server restart.
  */
-export class StraylightOAuthProvider implements OAuthServerProvider {
+export class BrunnOAuthProvider implements OAuthServerProvider {
   readonly clientsStore: StatelessOAuthClientsStore;
   readonly skipLocalPkceValidation = false;
 
@@ -189,7 +189,7 @@ export class StraylightOAuthProvider implements OAuthServerProvider {
   private readonly consumedAuthorizationCodes = new Map<string, number>();
   private readonly consumedRefreshTokens = new Map<string, number>();
 
-  constructor(options: StraylightOAuthProviderOptions) {
+  constructor(options: BrunnOAuthProviderOptions) {
     this.sealer = new AesGcmSealer(options.secret);
     this.resourceUrl = validateResourceUrl(options.resourceUrl);
     this.verifyUpstreamToken = options.verifyUpstreamToken;
@@ -236,7 +236,7 @@ export class StraylightOAuthProvider implements OAuthServerProvider {
 
     const upstreamToken = extractSubmittedToken(request.body);
     if (!upstreamToken) {
-      throw new InvalidRequestError("A Straylight credential is required");
+      throw new InvalidRequestError("A Brunn credential is required");
     }
     try {
       const accepted = await this.verifyUpstreamToken(upstreamToken);
@@ -244,7 +244,7 @@ export class StraylightOAuthProvider implements OAuthServerProvider {
         throw new Error("credential rejected");
       }
     } catch {
-      throw new AccessDeniedError("The Straylight credential could not be verified");
+      throw new AccessDeniedError("The Brunn credential could not be verified");
     }
 
     const codeEnvelope: AuthorizationCodeEnvelope = {
@@ -477,7 +477,7 @@ class AesGcmSealer {
       throw new Error("OAuth secret must contain at least 32 bytes");
     }
     this.key = createHash("sha256")
-      .update("straylight-mcp-oauth-key-v1\0", "utf8")
+      .update("brunn-mcp-oauth-key-v1\0", "utf8")
       .update(bytes)
       .digest();
   }
@@ -531,7 +531,7 @@ class AesGcmSealer {
 }
 
 function sealedPrefix(kind: string): string {
-  return `straylight_${kind}_v${TOKEN_VERSION}`;
+  return `brunn_${kind}_v${TOKEN_VERSION}`;
 }
 
 function parseClientEnvelope(value: unknown): ClientEnvelope | undefined {
@@ -752,10 +752,10 @@ function isLoopbackHostname(hostname: string): boolean {
 }
 
 function extractSubmittedToken(body: unknown): string | undefined {
-  if (!isRecord(body) || typeof body.straylight_token !== "string") {
+  if (!isRecord(body) || typeof body.brunn_token !== "string") {
     return undefined;
   }
-  const token = body.straylight_token.trim();
+  const token = body.brunn_token.trim();
   return token === "" || token.length > MAX_UPSTREAM_TOKEN_LENGTH ? undefined : token;
 }
 
@@ -786,7 +786,7 @@ function renderApprovalForm(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Connect Straylight</title>
+  <title>Connect Brunn</title>
   <style>
     :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
     body { margin: 0; padding: 2rem 1rem; background: Canvas; color: CanvasText; }
@@ -799,15 +799,15 @@ function renderApprovalForm(
 </head>
 <body>
   <main>
-    <h1>Connect Straylight</h1>
-    <p><strong>${escapeHtml(clientName)}</strong> is requesting access to your hosted Straylight workspace.</p>
+    <h1>Connect Brunn</h1>
+    <p><strong>${escapeHtml(clientName)}</strong> is requesting access to your hosted Brunn workspace.</p>
     <p class="scope">Requested access: ${escapeHtml(scopes.join(", "))}</p>
-    <p>After approval, Straylight will return control to <strong>${escapeHtml(redirectOrigin)}</strong>.</p>
+    <p>After approval, Brunn will return control to <strong>${escapeHtml(redirectOrigin)}</strong>.</p>
     <p>Use a dedicated root-scoped read/write credential without owner or credential-management access.</p>
     <form method="post" action="" autocomplete="off">
 ${inputs}
-      <label for="straylight-token">Straylight credential</label>
-      <input id="straylight-token" name="straylight_token" type="password" required autofocus autocomplete="off" spellcheck="false">
+      <label for="brunn-token">Brunn credential</label>
+      <input id="brunn-token" name="brunn_token" type="password" required autofocus autocomplete="off" spellcheck="false">
       <button type="submit">Approve connection</button>
     </form>
   </main>

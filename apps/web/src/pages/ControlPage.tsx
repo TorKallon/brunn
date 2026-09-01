@@ -120,7 +120,7 @@ export function ControlPage() {
 
   const entries = manifestQuery.data?.data.entries ?? [];
   const checkpoints = entries.filter((entry) =>
-    entry.path.startsWith(".straylight/checkpoints/"),
+    entry.path.startsWith(".brunn/checkpoints/"),
   );
   const changes = changesQuery.data?.data.changes ?? [];
   const usageEntries = usageQuery.data?.data.entries ?? [];

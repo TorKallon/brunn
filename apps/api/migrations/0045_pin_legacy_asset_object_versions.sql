@@ -3,13 +3,13 @@
 -- scoped administrator operation to attach a verified exact version without
 -- weakening immutable asset history.
 
-CREATE OR REPLACE FUNCTION straylight.guard_deletion_redaction()
+CREATE OR REPLACE FUNCTION brunn.guard_deletion_redaction()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY INVOKER
 AS $$
 DECLARE
-  deletion_job_setting text := current_setting('straylight.deletion_job_id', true);
+  deletion_job_setting text := current_setting('brunn.deletion_job_id', true);
   deletion_job_id uuid;
   row_user_id uuid;
   old_shape jsonb := to_jsonb(OLD);
@@ -19,9 +19,9 @@ DECLARE
   source_bucket text;
   restored_bucket text;
 BEGIN
-  IF TG_TABLE_SCHEMA='straylight' AND TG_TABLE_NAME='asset_versions' THEN
+  IF TG_TABLE_SCHEMA='brunn' AND TG_TABLE_NAME='asset_versions' THEN
     IF TG_OP='UPDATE'
-       AND straylight.asset_internal_operation_authorized(
+       AND brunn.asset_internal_operation_authorized(
          'legacy_locator_pin',
          OLD.user_id,
          OLD.asset_id,
@@ -47,7 +47,7 @@ BEGIN
     END IF;
 
     IF TG_OP='UPDATE'
-       AND straylight.asset_internal_operation_authorized(
+       AND brunn.asset_internal_operation_authorized(
          'restore_locator_remap',
          OLD.user_id,
          OLD.asset_id,
@@ -56,9 +56,9 @@ BEGIN
          NEW.object_version_id
        ) THEN
       source_bucket :=
-        current_setting('straylight.asset_recovery_source_bucket', true);
+        current_setting('brunn.asset_recovery_source_bucket', true);
       restored_bucket :=
-        current_setting('straylight.asset_recovery_target_bucket', true);
+        current_setting('brunn.asset_recovery_target_bucket', true);
       IF OLD.object_version_id IS NULL
          OR NEW.object_version_id IS NULL
          OR btrim(NEW.object_version_id) IN ('', 'null')
@@ -82,7 +82,7 @@ BEGIN
     END IF;
 
     IF TG_OP='DELETE'
-       AND straylight.asset_internal_operation_authorized(
+       AND brunn.asset_internal_operation_authorized(
          'stage_reclaim',
          OLD.user_id,
          OLD.asset_id,
@@ -123,7 +123,7 @@ BEGIN
      OR row_user_id IS NULL
      OR NOT EXISTS (
        SELECT 1
-       FROM straylight.deletion_jobs AS job
+       FROM brunn.deletion_jobs AS job
        WHERE job.id = deletion_job_id
          AND job.user_id = row_user_id
          AND job.status = 'propagating'
@@ -164,11 +164,11 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION straylight.pin_legacy_asset_object_versions(p_mapping jsonb)
+CREATE FUNCTION brunn.pin_legacy_asset_object_versions(p_mapping jsonb)
 RETURNS bigint
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 DECLARE
@@ -177,7 +177,7 @@ DECLARE
   affected bigint;
   updated_count bigint := 0;
 BEGIN
-  IF NOT straylight.database_administrator() THEN
+  IF NOT brunn.database_administrator() THEN
     RAISE EXCEPTION
       'legacy asset locator pinning requires a database administrator'
       USING ERRCODE = '42501';
@@ -234,7 +234,7 @@ BEGIN
 
   IF EXISTS (
     SELECT 1
-    FROM straylight.asset_versions AS version
+    FROM brunn.asset_versions AS version
     JOIN pg_temp.legacy_asset_locator_map AS mapping
       ON mapping.user_id=version.user_id
      AND mapping.asset_id=version.asset_id
@@ -247,7 +247,7 @@ BEGIN
     SELECT count(*) FROM pg_temp.legacy_asset_locator_map
   ) <> (
     SELECT count(*)
-    FROM straylight.asset_versions AS version
+    FROM brunn.asset_versions AS version
     JOIN pg_temp.legacy_asset_locator_map AS mapping
       ON mapping.user_id=version.user_id
      AND mapping.asset_id=version.asset_id
@@ -277,12 +277,12 @@ BEGIN
       'hex'
     );
     PERFORM set_config(
-      'straylight.asset_internal_operation',
+      'brunn.asset_internal_operation',
       operation_context,
       true
     );
 
-    UPDATE straylight.asset_versions AS version
+    UPDATE brunn.asset_versions AS version
     SET object_version_id=candidate.object_version_id
     WHERE version.user_id=candidate.user_id
       AND version.asset_id=candidate.asset_id
@@ -300,10 +300,10 @@ BEGIN
     updated_count := updated_count + affected;
   END LOOP;
 
-  PERFORM set_config('straylight.asset_internal_operation', '', true);
+  PERFORM set_config('brunn.asset_internal_operation', '', true);
   RETURN updated_count;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION straylight.pin_legacy_asset_object_versions(jsonb)
+REVOKE ALL ON FUNCTION brunn.pin_legacy_asset_object_versions(jsonb)
 FROM PUBLIC,app_rw,app_ro;

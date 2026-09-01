@@ -108,7 +108,7 @@ def task_metadata(task_id: uuid.UUID, status: str) -> dict[str, Any]:
         "id": str(task_id),
         "title": "Verify generic task storage",
         "status": sourced(status, "owner"),
-        "project": sourced("straylight", "agent:codex"),
+        "project": sourced("brunn", "agent:codex"),
         "required_contexts": sourced(["phone", "online"], "owner"),
         "cost_of_delay": sourced(
             {"amount_cents": 700, "per": "week", "since": "2026-08-01"},
@@ -123,8 +123,8 @@ def task_metadata(task_id: uuid.UUID, status: str) -> dict[str, Any]:
     if status == "done":
         task["done_at"] = "2026-08-27T08:05:00Z"
     return {
-        "_straylight_import": {
-            "format": "straylight-workspace-import-manifest@v1"
+        "_brunn_import": {
+            "format": "brunn-workspace-import-manifest@v1"
         },
         "portable": {"modified_unix_ns": None, "mode": None},
         "client": {"kind": "task", "schema": "task.v1", "task": task},
@@ -212,13 +212,13 @@ def projection_row(
     sql = f"""
     SELECT task.entry_version,task.status,task.cost_amount_cents,task.cost_period,
            cardinality(task.required_contexts),
-           (SELECT count(*) FROM straylight.search_chunks AS chunk
+           (SELECT count(*) FROM brunn.search_chunks AS chunk
             WHERE chunk.user_id=task.user_id AND chunk.entry_id=task.entry_id),
-           (SELECT count(*) FROM straylight.jobs AS job
+           (SELECT count(*) FROM brunn.jobs AS job
             WHERE job.user_id=task.user_id
               AND job.payload->>'entry_id'=task.entry_id::text)
-    FROM straylight.task_index AS task
-    JOIN straylight.users AS owner ON owner.id=task.user_id
+    FROM brunn.task_index AS task
+    JOIN brunn.users AS owner ON owner.id=task.user_id
     WHERE task.task_id='{task_id}'::uuid
       AND owner.external_ref='{external_ref}'
     """
@@ -254,11 +254,11 @@ def run_cli(
     *command: str,
 ) -> subprocess.CompletedProcess[str]:
     completed = subprocess.run(
-        [str(args.carrystate), *command],
+        [str(args.brunn_state), *command],
         env={
             **os.environ,
-            "CARRYSTATE_API_URL": args.base_url,
-            "CARRYSTATE_API_TOKEN": token,
+            "BRUNN_STATE_API_URL": args.base_url,
+            "BRUNN_STATE_API_TOKEN": token,
         },
         text=True,
         capture_output=True,
@@ -266,7 +266,7 @@ def run_cli(
     )
     require(
         completed.returncode == 0,
-        f"carrystate {' '.join(command[:2])} failed: {completed.stderr[-1000:]}",
+        f"brunn-state {' '.join(command[:2])} failed: {completed.stderr[-1000:]}",
     )
     return completed
 
@@ -402,7 +402,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     require(source_user_ref != target_user_ref, "source and target reused one identity")
 
     task_id = uuid7()
-    task_path = f".straylight/tasks/{task_id}.md"
+    task_path = f".brunn/tasks/{task_id}.md"
     require(
         str(task_id) == str(task_id).lower() and task_id.version == 7,
         "task path does not use a canonical lowercase UUIDv7",
@@ -469,7 +469,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         f"generic import produced an invalid projection/chunk/job row: {row!r}",
     )
 
-    with tempfile.TemporaryDirectory(prefix="straylight-task-history-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="brunn-task-history-") as temporary:
         temporary_root = Path(temporary)
         source_export = temporary_root / "source-export"
         run_cli(
@@ -605,7 +605,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         )
 
     return {
-        "schema": "straylight-live-tasks-storage-contract@v1",
+        "schema": "brunn-live-tasks-storage-contract@v1",
         "status": "pass",
         "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
         "task_id": str(task_id),
@@ -638,25 +638,25 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="http://127.0.0.1:18112")
     parser.add_argument("--token", required=True)
-    parser.add_argument("--database-container", default="straylight-task-m1-db")
+    parser.add_argument("--database-container", default="brunn-task-m1-db")
     parser.add_argument("--database-user", default="admin")
-    parser.add_argument("--database-name", default="straylight")
+    parser.add_argument("--database-name", default="brunn")
     parser.add_argument(
-        "--carrystate",
+        "--brunn-state",
         type=Path,
         default=Path(__file__).resolve().parents[1]
         / "apps"
         / "api"
         / "target"
         / "debug"
-        / "carrystate",
+        / "brunn-state",
     )
     args = parser.parse_args()
     try:
         result = run(args)
     except (ContractFailure, KeyError, OSError, ValueError) as error:
         result = {
-            "schema": "straylight-live-tasks-storage-contract@v1",
+            "schema": "brunn-live-tasks-storage-contract@v1",
             "status": "fail",
             "error": str(error),
         }

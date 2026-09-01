@@ -52,7 +52,7 @@ def safe_relative_path(value: str) -> Path:
 
 def case_spec(case_id: str) -> dict[str, Any]:
     spec = load_json(SPEC_PATH)
-    if spec.get("schema") != "straylight-e06-mutations@v1":
+    if spec.get("schema") != "brunn-e06-mutations@v1":
         raise ValueError("unsupported E06 mutation schema")
     case = spec.get("cases", {}).get(case_id)
     if not isinstance(case, dict):
@@ -150,7 +150,7 @@ def build_plan(case_id: str, base_root: Path, seed: str) -> dict[str, Any]:
     if not any(target["before_chars"] > SMALL_SOURCE_CHARS for target in targets):
         raise ValueError(f"{case_id}: mutation plan does not exercise unified_diff mode")
     return {
-        "schema": "straylight-e06-mutation-plan@v1",
+        "schema": "brunn-e06-mutation-plan@v1",
         "case_id": case_id,
         "seed": seed,
         "delta_path": delta_path.as_posix(),
@@ -212,7 +212,7 @@ def apply_plan(
     mirror_root.mkdir(parents=True, exist_ok=True)
     paths = [target["path"] for target in plan["targets"]]
     client = (
-        NativeApiClient(run_id=os.environ.get("STRAYLIGHT_EVAL_RUN"), case_id=plan["case_id"])
+        NativeApiClient(run_id=os.environ.get("BRUNN_EVAL_RUN"), case_id=plan["case_id"])
         if workspace
         else None
     )
@@ -311,7 +311,7 @@ def apply_plan(
     else:
         corpus_revision = None
     return {
-        "schema": "straylight-e06-mutation-receipt@v1",
+        "schema": "brunn-e06-mutation-receipt@v1",
         "case_id": plan["case_id"],
         "seed": plan["seed"],
         "paths": paths,

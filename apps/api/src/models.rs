@@ -972,12 +972,12 @@ pub enum CaptureSourceOrigin {
 
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
 pub struct CaptureSource {
-    /// Existing Straylight source reference. When omitted, capture creates the
+    /// Existing Brunn source reference. When omitted, capture creates the
     /// source episode in the same atomic save as the extracted records.
     #[serde(rename = "ref")]
     pub reference: Option<String>,
     /// Stable identity in the source system, such as a conversation turn or
-    /// message ID. This is provenance, not a Straylight record reference.
+    /// message ID. This is provenance, not a Brunn record reference.
     pub external_ref: Option<String>,
     pub title: Option<String>,
     #[serde(default = "default_capture_source_kind")]

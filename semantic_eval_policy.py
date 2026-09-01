@@ -1,7 +1,7 @@
 """Fail-closed arm selection and provenance helpers for E09.
 
 This module contains no provider calls. It only validates the runtime feature
-state reported by a Straylight service and computes counter deltas.
+state reported by a Brunn service and computes counter deltas.
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ def validate_step_binding(
     if (
         not isinstance(step_authorization, Mapping)
         or step_authorization.get("schema")
-        != "straylight-e09-step-authorization-binding@v1"
+        != "brunn-e09-step-authorization-binding@v1"
         or step_authorization.get("deadline_before_ms") != 300
         or step_authorization.get("deadline_after_ms") != 600
         or step_authorization.get("automatic_1000ms_step_allowed") is not False

@@ -71,7 +71,7 @@ async function parseBody(response: Response): Promise<unknown> {
 function readCsrfToken(): string | null {
   for (const raw of document.cookie.split(";")) {
     const cookie = raw.trim();
-    for (const name of ["__Host-straylight_csrf", "straylight_csrf"]) {
+    for (const name of ["__Host-brunn_csrf", "brunn_csrf"]) {
       const prefix = `${name}=`;
       if (!cookie.startsWith(prefix)) continue;
       const value = cookie.slice(prefix.length);

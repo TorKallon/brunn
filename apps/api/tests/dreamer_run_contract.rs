@@ -1,4 +1,4 @@
-//! The dreamer run contract, end to end against a mock Straylight API and a
+//! The dreamer run contract, end to end against a mock Brunn API and a
 //! stub codex binary: CONTROL fail-closed, auth fail-closed with env
 //! stripping, skipped(limits), the advance flip and hold-advance, CAS
 //! conflict re-read-once-retry-once, the kill timer, the run-file fallback,
@@ -20,11 +20,11 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use chrono::NaiveDate;
-use serde_json::{Value, json};
-use straylight::dreamer::run::{
+use brunn::dreamer::run::{
     AUTH_SECRET, CONTROL_PATH, DECISIONS_PATH, Dreamer, DreamerConfig, RunKind, RunOutcome,
 };
+use chrono::NaiveDate;
+use serde_json::{Value, json};
 
 #[derive(Default)]
 struct MockState {
@@ -271,8 +271,8 @@ Budget: 3 of 40 writes used.
 generation: 1
 EOF
 )
-curl -sf -X POST "$STRAYLIGHT_API_URL/v1/workspace/write" \
-  -H "Authorization: Bearer $STRAYLIGHT_API_TOKEN" \
+curl -sf -X POST "$BRUNN_API_URL/v1/workspace/write" \
+  -H "Authorization: Bearer $BRUNN_API_TOKEN" \
   -H 'Content-Type: application/json' \
   --data "$(printf '%s' "$BODY" | python3 -c 'import json,sys;print(json.dumps({"path":sys.argv[1],"content":sys.stdin.read(),"expected_version":0}))' "$RUN_PATH")" \
   > /dev/null
@@ -580,8 +580,8 @@ async fn confinement_cross_check_reports_stray_writes() {
     let behavior = r#"
 if [ "$N" = "0" ]; then echo READY; exit 0; fi
 write() {
-  curl -sf -X POST "$STRAYLIGHT_API_URL/v1/workspace/write" \
-    -H "Authorization: Bearer $STRAYLIGHT_API_TOKEN" \
+  curl -sf -X POST "$BRUNN_API_URL/v1/workspace/write" \
+    -H "Authorization: Bearer $BRUNN_API_TOKEN" \
     -H 'Content-Type: application/json' \
     --data "{\"path\":\"$1\",\"content\":\"$2\"}" > /dev/null
 }
@@ -612,8 +612,8 @@ async fn refreshed_tokens_are_persisted_back_to_the_vault() {
 if [ "$N" = "0" ]; then echo READY; exit 0; fi
 echo '{"tokens":{"account_id":"acct_test","access_token":"refreshed"}}' > "$CODEX_HOME/auth.json"
 RUN_PATH=$(grep -o 'dreams/runs/[0-9-]*\.md' "$DIR/exec-$N.stdin" | head -1)
-curl -sf -X POST "$STRAYLIGHT_API_URL/v1/workspace/write" \
-  -H "Authorization: Bearer $STRAYLIGHT_API_TOKEN" \
+curl -sf -X POST "$BRUNN_API_URL/v1/workspace/write" \
+  -H "Authorization: Bearer $BRUNN_API_TOKEN" \
   -H 'Content-Type: application/json' \
   --data "{\"path\":\"$RUN_PATH\",\"content\":\"Done.\n\n## Watermark\n\ngeneration: 2\n\",\"expected_version\":0}" > /dev/null
 exit 0

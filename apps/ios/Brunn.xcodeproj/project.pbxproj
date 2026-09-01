@@ -1,0 +1,796 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		098D3A40EB296A051F74FAD0 /* NotificationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30084A4FA58F5649B337F34 /* NotificationModels.swift */; };
+		140EF346C3ECB2317FE488D1 /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E3A31BA38FA19E110114D22 /* TasksView.swift */; };
+		3044409B0F764615A0AB9A67 /* AgentPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE81EB492B6F79BE0CC8513F /* AgentPickerView.swift */; };
+		384F6C6AE6D6354916A78589 /* AgentMessagingStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 668926FA2643A2E633CE5F24 /* AgentMessagingStoreTests.swift */; };
+		3A7E6744D3416925D45A3517 /* BrunnApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11DABAA0523E9DFAFB57A777 /* BrunnApp.swift */; };
+		416E817FC023C25A45B2345D /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EA4B91BBABDABEE4D005B67 /* SearchView.swift */; };
+		4693B59B2E476054E7F01CB8 /* BrunnTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9B2C3729BC469B6DBB96FC1 /* BrunnTests.swift */; };
+		4745206E7283BBA05849D4A6 /* MessagingBackgroundTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A38E471DE64CD0E1F6E698D /* MessagingBackgroundTransport.swift */; };
+		484B2218D0C85885E95632DA /* TopicsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26C7BF89573C5C303C7A71A2 /* TopicsView.swift */; };
+		4F8492A946E2BFF4B5021D1C /* MessagingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC55BB480FE9674135ACBC31 /* MessagingStore.swift */; };
+		510CA02613AC2CE1B2D63935 /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B1E2DF582760E2B5BCEBF3D /* TodayView.swift */; };
+		5B3DB106A675056EE219CCE8 /* KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4787DC4C6EC323525D87BDF4 /* KeychainCredentialStore.swift */; };
+		66B5918BD21C6A065ECBA078 /* ConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40044C0EDD79C13DE10F0841 /* ConversationView.swift */; };
+		69D208878AF1643D76642348 /* ConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F14DE1ED8732CDA6CD45778B /* ConnectionView.swift */; };
+		8436C3269CF24E38D5BB83AD /* NotificationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12B52FF662149DF1CE674E40 /* NotificationCoordinator.swift */; };
+		86952D5F27A53C5E118F48D8 /* AppRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAACA51C6545E7A689AAD8E8 /* AppRoute.swift */; };
+		87242DC79676918273353F51 /* ArchiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6676D69ED64C7EB91117D0F4 /* ArchiveView.swift */; };
+		89F29B512F6EF7942EB0A09D /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 569EB29562959750287AA075 /* RootView.swift */; };
+		8DA09BB63980776DD0142164 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACB6F2C1CDB5B627BF4F171A /* DashboardView.swift */; };
+		A0B7F1371B13E21825E99D5E /* MessagingController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94BB7567FEB6DE729BBDFAFA /* MessagingController.swift */; };
+		A49CCB9182F61D7B438BB210 /* PresentationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85493195C6DF737A06CA1161 /* PresentationModels.swift */; };
+		ACE08501F7EC0720019B478C /* AlertsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 406D3734D9BCF7A4151EAFD5 /* AlertsView.swift */; };
+		B92036372F5476628E40CBDF /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF4299FA18CD853112F8F3E2 /* AppModel.swift */; };
+		B9291DA9572DAB79F99F4A8C /* AgentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B665C66C35637A1B5EE1BDCC /* AgentsView.swift */; };
+		BC5F37E0FB10688E9453178D /* MessagingBackgroundTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C41293AB3708DD8BEEEB7D6 /* MessagingBackgroundTransportTests.swift */; };
+		C899F2BCC15AE94440BAB00E /* MoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0299D55136FA2AFA82446E0 /* MoreView.swift */; };
+		CEE8CA128BA67402422113A4 /* BriefingCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39A038829EC30B1B47BF984A /* BriefingCache.swift */; };
+		D944DFB33973CC595F7FBC54 /* BrunnUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7B2B3F71920119E9265574F /* BrunnUITests.swift */; };
+		DC1AC2E77468C8CAE1234C71 /* SampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 803B0B916CAA82232908B90A /* SampleData.swift */; };
+		E4DCF70150FA5E39007E5DBB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E956402262612D72E366D793 /* Assets.xcassets */; };
+		EB9EEEDC20D0F0A2C56E1F64 /* BrunnTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B9D3F02C3DB7B91CF5BDA52 /* BrunnTheme.swift */; };
+		ED458ECC353F9A47D46E41AA /* AgentMessagingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D0299EF755DF6A84250BA1 /* AgentMessagingUITests.swift */; };
+		F7CD2D22B5BE9251193C0718 /* BrunnAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D164938F02B8BA879E64F87 /* BrunnAPI.swift */; };
+		F91DFAC9B86C2C8EC033F066 /* MessagingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC136BCE51797E2FE025114 /* MessagingModels.swift */; };
+		F96A127FCD80EDA063BCCAAA /* AgentMessagingTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D65A4E54EF4FF03A7748726 /* AgentMessagingTransportTests.swift */; };
+		FDCBDBAC6023BFE5C4D8137E /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F5AB3385284E27CC4B0F44E /* APIModels.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		4812AA4855D84E17ECE37D70 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 64DDB9742283B356023DF84E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 89D2793FC269C2790AE5F230;
+			remoteInfo = Brunn;
+		};
+		55E3CB175A305F667006B2E9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 64DDB9742283B356023DF84E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 89D2793FC269C2790AE5F230;
+			remoteInfo = Brunn;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		0B1E2DF582760E2B5BCEBF3D /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
+		11DABAA0523E9DFAFB57A777 /* BrunnApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrunnApp.swift; sourceTree = "<group>"; };
+		12B52FF662149DF1CE674E40 /* NotificationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationCoordinator.swift; sourceTree = "<group>"; };
+		1B9D3F02C3DB7B91CF5BDA52 /* BrunnTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrunnTheme.swift; sourceTree = "<group>"; };
+		24BC8100496C9079F87F704E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		26C7BF89573C5C303C7A71A2 /* TopicsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopicsView.swift; sourceTree = "<group>"; };
+		27F8AC7F78EA8741BB5603F0 /* Brunn.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Brunn.entitlements; sourceTree = "<group>"; };
+		2E3A31BA38FA19E110114D22 /* TasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksView.swift; sourceTree = "<group>"; };
+		2EA4B91BBABDABEE4D005B67 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
+		3060BEF4060B0A0B869F061C /* BrunnUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = BrunnUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		39A038829EC30B1B47BF984A /* BriefingCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BriefingCache.swift; sourceTree = "<group>"; };
+		3C41293AB3708DD8BEEEB7D6 /* MessagingBackgroundTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagingBackgroundTransportTests.swift; sourceTree = "<group>"; };
+		3CC136BCE51797E2FE025114 /* MessagingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagingModels.swift; sourceTree = "<group>"; };
+		3F5AB3385284E27CC4B0F44E /* APIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIModels.swift; sourceTree = "<group>"; };
+		40044C0EDD79C13DE10F0841 /* ConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationView.swift; sourceTree = "<group>"; };
+		406D3734D9BCF7A4151EAFD5 /* AlertsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertsView.swift; sourceTree = "<group>"; };
+		4787DC4C6EC323525D87BDF4 /* KeychainCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainCredentialStore.swift; sourceTree = "<group>"; };
+		4A38E471DE64CD0E1F6E698D /* MessagingBackgroundTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagingBackgroundTransport.swift; sourceTree = "<group>"; };
+		569EB29562959750287AA075 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		5D164938F02B8BA879E64F87 /* BrunnAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrunnAPI.swift; sourceTree = "<group>"; };
+		5D65A4E54EF4FF03A7748726 /* AgentMessagingTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMessagingTransportTests.swift; sourceTree = "<group>"; };
+		5EDDD7D0B1ED2ECE300ABEED /* Brunn.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Brunn.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6676D69ED64C7EB91117D0F4 /* ArchiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveView.swift; sourceTree = "<group>"; };
+		668926FA2643A2E633CE5F24 /* AgentMessagingStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMessagingStoreTests.swift; sourceTree = "<group>"; };
+		803B0B916CAA82232908B90A /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
+		85493195C6DF737A06CA1161 /* PresentationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresentationModels.swift; sourceTree = "<group>"; };
+		94BB7567FEB6DE729BBDFAFA /* MessagingController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagingController.swift; sourceTree = "<group>"; };
+		A9D0299EF755DF6A84250BA1 /* AgentMessagingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMessagingUITests.swift; sourceTree = "<group>"; };
+		ACB6F2C1CDB5B627BF4F171A /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		B665C66C35637A1B5EE1BDCC /* AgentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsView.swift; sourceTree = "<group>"; };
+		BC55BB480FE9674135ACBC31 /* MessagingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagingStore.swift; sourceTree = "<group>"; };
+		C7B2B3F71920119E9265574F /* BrunnUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrunnUITests.swift; sourceTree = "<group>"; };
+		CAACA51C6545E7A689AAD8E8 /* AppRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRoute.swift; sourceTree = "<group>"; };
+		CF4299FA18CD853112F8F3E2 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		CF453E7C6F81B25B9A5CBC2E /* BrunnTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = BrunnTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		E0299D55136FA2AFA82446E0 /* MoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreView.swift; sourceTree = "<group>"; };
+		E30084A4FA58F5649B337F34 /* NotificationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationModels.swift; sourceTree = "<group>"; };
+		E956402262612D72E366D793 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F14DE1ED8732CDA6CD45778B /* ConnectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionView.swift; sourceTree = "<group>"; };
+		F9B2C3729BC469B6DBB96FC1 /* BrunnTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrunnTests.swift; sourceTree = "<group>"; };
+		FE81EB492B6F79BE0CC8513F /* AgentPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPickerView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		02F0BC238CED9A11328601CA /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				1B9D3F02C3DB7B91CF5BDA52 /* BrunnTheme.swift */,
+				803B0B916CAA82232908B90A /* SampleData.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		29EFA26E746CF660C9E1603B /* Search */ = {
+			isa = PBXGroup;
+			children = (
+				2EA4B91BBABDABEE4D005B67 /* SearchView.swift */,
+			);
+			path = Search;
+			sourceTree = "<group>";
+		};
+		2A1467C0DF34AE1627208990 /* BrunnUITests */ = {
+			isa = PBXGroup;
+			children = (
+				A9D0299EF755DF6A84250BA1 /* AgentMessagingUITests.swift */,
+				C7B2B3F71920119E9265574F /* BrunnUITests.swift */,
+			);
+			path = BrunnUITests;
+			sourceTree = "<group>";
+		};
+		33BE757FF86BAB144084F89C /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				5EDDD7D0B1ED2ECE300ABEED /* Brunn.app */,
+				CF453E7C6F81B25B9A5CBC2E /* BrunnTests.xctest */,
+				3060BEF4060B0A0B869F061C /* BrunnUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		3C4795097550EEC254D26581 /* Alerts */ = {
+			isa = PBXGroup;
+			children = (
+				406D3734D9BCF7A4151EAFD5 /* AlertsView.swift */,
+			);
+			path = Alerts;
+			sourceTree = "<group>";
+		};
+		43B08E7FD2D7AF641C312B83 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				CF4299FA18CD853112F8F3E2 /* AppModel.swift */,
+				11DABAA0523E9DFAFB57A777 /* BrunnApp.swift */,
+				569EB29562959750287AA075 /* RootView.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		5DD5387F7ADFB21B1C336F57 /* BrunnTests */ = {
+			isa = PBXGroup;
+			children = (
+				668926FA2643A2E633CE5F24 /* AgentMessagingStoreTests.swift */,
+				5D65A4E54EF4FF03A7748726 /* AgentMessagingTransportTests.swift */,
+				F9B2C3729BC469B6DBB96FC1 /* BrunnTests.swift */,
+				3C41293AB3708DD8BEEEB7D6 /* MessagingBackgroundTransportTests.swift */,
+			);
+			path = BrunnTests;
+			sourceTree = "<group>";
+		};
+		6B08F4102CC7479F06BFAB7F /* Connection */ = {
+			isa = PBXGroup;
+			children = (
+				F14DE1ED8732CDA6CD45778B /* ConnectionView.swift */,
+			);
+			path = Connection;
+			sourceTree = "<group>";
+		};
+		6C10E20F5D909316691A4CC8 /* Tasks */ = {
+			isa = PBXGroup;
+			children = (
+				2E3A31BA38FA19E110114D22 /* TasksView.swift */,
+			);
+			path = Tasks;
+			sourceTree = "<group>";
+		};
+		7375205A04F205FF0A2CFEAF /* Today */ = {
+			isa = PBXGroup;
+			children = (
+				0B1E2DF582760E2B5BCEBF3D /* TodayView.swift */,
+			);
+			path = Today;
+			sourceTree = "<group>";
+		};
+		7D9F2585058E1CEDED11A4BB /* Dashboard */ = {
+			isa = PBXGroup;
+			children = (
+				ACB6F2C1CDB5B627BF4F171A /* DashboardView.swift */,
+			);
+			path = Dashboard;
+			sourceTree = "<group>";
+		};
+		7F07F4A5D552B4F10ADD84DA /* Agents */ = {
+			isa = PBXGroup;
+			children = (
+				FE81EB492B6F79BE0CC8513F /* AgentPickerView.swift */,
+				B665C66C35637A1B5EE1BDCC /* AgentsView.swift */,
+				40044C0EDD79C13DE10F0841 /* ConversationView.swift */,
+			);
+			path = Agents;
+			sourceTree = "<group>";
+		};
+		81CD999A7E974DC50E255E59 /* API */ = {
+			isa = PBXGroup;
+			children = (
+				3F5AB3385284E27CC4B0F44E /* APIModels.swift */,
+				5D164938F02B8BA879E64F87 /* BrunnAPI.swift */,
+				4A38E471DE64CD0E1F6E698D /* MessagingBackgroundTransport.swift */,
+				3CC136BCE51797E2FE025114 /* MessagingModels.swift */,
+				E30084A4FA58F5649B337F34 /* NotificationModels.swift */,
+			);
+			path = API;
+			sourceTree = "<group>";
+		};
+		8C8F800B5B3729788D08EA6A /* Topics */ = {
+			isa = PBXGroup;
+			children = (
+				26C7BF89573C5C303C7A71A2 /* TopicsView.swift */,
+			);
+			path = Topics;
+			sourceTree = "<group>";
+		};
+		911B3835BE855B6E33060AC7 /* Archive */ = {
+			isa = PBXGroup;
+			children = (
+				6676D69ED64C7EB91117D0F4 /* ArchiveView.swift */,
+			);
+			path = Archive;
+			sourceTree = "<group>";
+		};
+		9557999100CAFF959C5A68DF /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				39A038829EC30B1B47BF984A /* BriefingCache.swift */,
+				4787DC4C6EC323525D87BDF4 /* KeychainCredentialStore.swift */,
+				94BB7567FEB6DE729BBDFAFA /* MessagingController.swift */,
+				BC55BB480FE9674135ACBC31 /* MessagingStore.swift */,
+				12B52FF662149DF1CE674E40 /* NotificationCoordinator.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		9A3055ED65C6145519E5E90A /* More */ = {
+			isa = PBXGroup;
+			children = (
+				E0299D55136FA2AFA82446E0 /* MoreView.swift */,
+			);
+			path = More;
+			sourceTree = "<group>";
+		};
+		A4E4CD7A51A30164C45E46D9 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				E956402262612D72E366D793 /* Assets.xcassets */,
+				27F8AC7F78EA8741BB5603F0 /* Brunn.entitlements */,
+				24BC8100496C9079F87F704E /* Info.plist */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		ADB1F8405B5793D3D11631F5 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				7F07F4A5D552B4F10ADD84DA /* Agents */,
+				3C4795097550EEC254D26581 /* Alerts */,
+				911B3835BE855B6E33060AC7 /* Archive */,
+				6B08F4102CC7479F06BFAB7F /* Connection */,
+				7D9F2585058E1CEDED11A4BB /* Dashboard */,
+				9A3055ED65C6145519E5E90A /* More */,
+				29EFA26E746CF660C9E1603B /* Search */,
+				6C10E20F5D909316691A4CC8 /* Tasks */,
+				7375205A04F205FF0A2CFEAF /* Today */,
+				8C8F800B5B3729788D08EA6A /* Topics */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		AFF55DF1FB33FC54CDC22B82 /* Domain */ = {
+			isa = PBXGroup;
+			children = (
+				CAACA51C6545E7A689AAD8E8 /* AppRoute.swift */,
+				85493195C6DF737A06CA1161 /* PresentationModels.swift */,
+			);
+			path = Domain;
+			sourceTree = "<group>";
+		};
+		B66C2B5ECC171DB1910FC4B3 = {
+			isa = PBXGroup;
+			children = (
+				F917C5EBA564FC58CF433212 /* Brunn */,
+				5DD5387F7ADFB21B1C336F57 /* BrunnTests */,
+				2A1467C0DF34AE1627208990 /* BrunnUITests */,
+				33BE757FF86BAB144084F89C /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		F917C5EBA564FC58CF433212 /* Brunn */ = {
+			isa = PBXGroup;
+			children = (
+				81CD999A7E974DC50E255E59 /* API */,
+				43B08E7FD2D7AF641C312B83 /* App */,
+				AFF55DF1FB33FC54CDC22B82 /* Domain */,
+				ADB1F8405B5793D3D11631F5 /* Features */,
+				A4E4CD7A51A30164C45E46D9 /* Resources */,
+				9557999100CAFF959C5A68DF /* Services */,
+				02F0BC238CED9A11328601CA /* Shared */,
+			);
+			path = Brunn;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		71C1C1CF0129A640727D7F7C /* BrunnTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 31B47E0B3E65EE184502D846 /* Build configuration list for PBXNativeTarget "BrunnTests" */;
+			buildPhases = (
+				DF313E1402F2B791AEAA1AFC /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				230D3DC693E98B0C4C9FC78D /* PBXTargetDependency */,
+			);
+			name = BrunnTests;
+			packageProductDependencies = (
+			);
+			productName = BrunnTests;
+			productReference = CF453E7C6F81B25B9A5CBC2E /* BrunnTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		89D2793FC269C2790AE5F230 /* Brunn */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9F819541E38F34EF65D3B728 /* Build configuration list for PBXNativeTarget "Brunn" */;
+			buildPhases = (
+				52C1AF778BC629BAEE624AC2 /* Sources */,
+				4DB7A99BCF3E04DDF884A72C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Brunn;
+			packageProductDependencies = (
+			);
+			productName = Brunn;
+			productReference = 5EDDD7D0B1ED2ECE300ABEED /* Brunn.app */;
+			productType = "com.apple.product-type.application";
+		};
+		F8DEF652D99C4E604EFE0383 /* BrunnUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 953AD2ACAB9D48765E6FCCC1 /* Build configuration list for PBXNativeTarget "BrunnUITests" */;
+			buildPhases = (
+				4BA9DACF5AEF956CEB2D6F6B /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				9D9A25CB2E2F5BB166D6DB46 /* PBXTargetDependency */,
+			);
+			name = BrunnUITests;
+			packageProductDependencies = (
+			);
+			productName = BrunnUITests;
+			productReference = 3060BEF4060B0A0B869F061C /* BrunnUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		64DDB9742283B356023DF84E /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					71C1C1CF0129A640727D7F7C = {
+						ProvisioningStyle = Automatic;
+					};
+					89D2793FC269C2790AE5F230 = {
+						DevelopmentTeam = 8WW8JUE95L;
+						ProvisioningStyle = Automatic;
+					};
+					F8DEF652D99C4E604EFE0383 = {
+						ProvisioningStyle = Automatic;
+						TestTargetID = 89D2793FC269C2790AE5F230;
+					};
+				};
+			};
+			buildConfigurationList = B526FD3D5627814D233C9CC2 /* Build configuration list for PBXProject "Brunn" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = B66C2B5ECC171DB1910FC4B3;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 33BE757FF86BAB144084F89C /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				89D2793FC269C2790AE5F230 /* Brunn */,
+				71C1C1CF0129A640727D7F7C /* BrunnTests */,
+				F8DEF652D99C4E604EFE0383 /* BrunnUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		4DB7A99BCF3E04DDF884A72C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E4DCF70150FA5E39007E5DBB /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		4BA9DACF5AEF956CEB2D6F6B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ED458ECC353F9A47D46E41AA /* AgentMessagingUITests.swift in Sources */,
+				D944DFB33973CC595F7FBC54 /* BrunnUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		52C1AF778BC629BAEE624AC2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FDCBDBAC6023BFE5C4D8137E /* APIModels.swift in Sources */,
+				3044409B0F764615A0AB9A67 /* AgentPickerView.swift in Sources */,
+				B9291DA9572DAB79F99F4A8C /* AgentsView.swift in Sources */,
+				ACE08501F7EC0720019B478C /* AlertsView.swift in Sources */,
+				B92036372F5476628E40CBDF /* AppModel.swift in Sources */,
+				86952D5F27A53C5E118F48D8 /* AppRoute.swift in Sources */,
+				87242DC79676918273353F51 /* ArchiveView.swift in Sources */,
+				CEE8CA128BA67402422113A4 /* BriefingCache.swift in Sources */,
+				F7CD2D22B5BE9251193C0718 /* BrunnAPI.swift in Sources */,
+				3A7E6744D3416925D45A3517 /* BrunnApp.swift in Sources */,
+				EB9EEEDC20D0F0A2C56E1F64 /* BrunnTheme.swift in Sources */,
+				69D208878AF1643D76642348 /* ConnectionView.swift in Sources */,
+				66B5918BD21C6A065ECBA078 /* ConversationView.swift in Sources */,
+				8DA09BB63980776DD0142164 /* DashboardView.swift in Sources */,
+				5B3DB106A675056EE219CCE8 /* KeychainCredentialStore.swift in Sources */,
+				4745206E7283BBA05849D4A6 /* MessagingBackgroundTransport.swift in Sources */,
+				A0B7F1371B13E21825E99D5E /* MessagingController.swift in Sources */,
+				F91DFAC9B86C2C8EC033F066 /* MessagingModels.swift in Sources */,
+				4F8492A946E2BFF4B5021D1C /* MessagingStore.swift in Sources */,
+				C899F2BCC15AE94440BAB00E /* MoreView.swift in Sources */,
+				8436C3269CF24E38D5BB83AD /* NotificationCoordinator.swift in Sources */,
+				098D3A40EB296A051F74FAD0 /* NotificationModels.swift in Sources */,
+				A49CCB9182F61D7B438BB210 /* PresentationModels.swift in Sources */,
+				89F29B512F6EF7942EB0A09D /* RootView.swift in Sources */,
+				DC1AC2E77468C8CAE1234C71 /* SampleData.swift in Sources */,
+				416E817FC023C25A45B2345D /* SearchView.swift in Sources */,
+				140EF346C3ECB2317FE488D1 /* TasksView.swift in Sources */,
+				510CA02613AC2CE1B2D63935 /* TodayView.swift in Sources */,
+				484B2218D0C85885E95632DA /* TopicsView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DF313E1402F2B791AEAA1AFC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				384F6C6AE6D6354916A78589 /* AgentMessagingStoreTests.swift in Sources */,
+				F96A127FCD80EDA063BCCAAA /* AgentMessagingTransportTests.swift in Sources */,
+				4693B59B2E476054E7F01CB8 /* BrunnTests.swift in Sources */,
+				BC5F37E0FB10688E9453178D /* MessagingBackgroundTransportTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		230D3DC693E98B0C4C9FC78D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 89D2793FC269C2790AE5F230 /* Brunn */;
+			targetProxy = 4812AA4855D84E17ECE37D70 /* PBXContainerItemProxy */;
+		};
+		9D9A25CB2E2F5BB166D6DB46 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 89D2793FC269C2790AE5F230 /* Brunn */;
+			targetProxy = 55E3CB175A305F667006B2E9 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		2AC43762DF6498D354D509B1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				BRUNN_APNS_ENVIRONMENT = development;
+				CODE_SIGN_ENTITLEMENTS = Brunn/Resources/Brunn.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 8WW8JUE95L;
+				INFOPLIST_FILE = Brunn/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.rourkem.brunn;
+				PRODUCT_NAME = Brunn;
+				SDKROOT = iphoneos;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		38ED0A549013D77EDEEC141E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				BRUNN_APNS_ENVIRONMENT = production;
+				CODE_SIGN_ENTITLEMENTS = Brunn/Resources/Brunn.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 8WW8JUE95L;
+				INFOPLIST_FILE = Brunn/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.rourkem.brunn;
+				PRODUCT_NAME = Brunn;
+				SDKROOT = iphoneos;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		3D7F5A5F8A16FEAE1AFFC273 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 5;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_LANGUAGE = en;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.2.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		4A712B1453B728C0C16E7CA3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.rourkem.brunn.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Brunn.app/Brunn";
+			};
+			name = Release;
+		};
+		8A777D084E5C50C36897A0CB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.rourkem.brunn.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Brunn;
+			};
+			name = Release;
+		};
+		A10EAF2E979D5C0BB1893123 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.rourkem.brunn.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Brunn;
+			};
+			name = Debug;
+		};
+		B9F216A9589AEA8A9FEC8C7A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.rourkem.brunn.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Brunn.app/Brunn";
+			};
+			name = Debug;
+		};
+		CE0A8863E660E57873753B66 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 5;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_LANGUAGE = en;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.2.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		31B47E0B3E65EE184502D846 /* Build configuration list for PBXNativeTarget "BrunnTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B9F216A9589AEA8A9FEC8C7A /* Debug */,
+				4A712B1453B728C0C16E7CA3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		953AD2ACAB9D48765E6FCCC1 /* Build configuration list for PBXNativeTarget "BrunnUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10EAF2E979D5C0BB1893123 /* Debug */,
+				8A777D084E5C50C36897A0CB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9F819541E38F34EF65D3B728 /* Build configuration list for PBXNativeTarget "Brunn" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2AC43762DF6498D354D509B1 /* Debug */,
+				38ED0A549013D77EDEEC141E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B526FD3D5627814D233C9CC2 /* Build configuration list for PBXProject "Brunn" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CE0A8863E660E57873753B66 /* Debug */,
+				3D7F5A5F8A16FEAE1AFFC273 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 64DDB9742283B356023DF84E /* Project object */;
+}

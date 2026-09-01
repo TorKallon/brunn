@@ -32,11 +32,11 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA = "straylight-openai-embedding-fault-proxy-state@v1"
-CONFIG_SCHEMA = "straylight-openai-embedding-fault-proxy-config@v1"
-ATTESTATION_SCHEMA = "straylight-eval-hook-attestation@v1"
-IDENTITY_SCHEMA = "straylight-openai-embedding-fault-proxy-identity@v1"
-USAGE_SCHEMA = "straylight-openai-embedding-usage-receipt@v1"
+SCHEMA = "brunn-openai-embedding-fault-proxy-state@v1"
+CONFIG_SCHEMA = "brunn-openai-embedding-fault-proxy-config@v1"
+ATTESTATION_SCHEMA = "brunn-eval-hook-attestation@v1"
+IDENTITY_SCHEMA = "brunn-openai-embedding-fault-proxy-identity@v1"
+USAGE_SCHEMA = "brunn-openai-embedding-usage-receipt@v1"
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 55210
 MAX_BODY_BYTES = 64 * 1024 * 1024
@@ -395,10 +395,10 @@ def _attestation(
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "StraylightEmbeddingFaultProxy/1"
+    server_version = "BrunnEmbeddingFaultProxy/1"
 
     def do_GET(self) -> None:
-        if urllib.parse.urlsplit(self.path).path == "/__straylight/identity":
+        if urllib.parse.urlsplit(self.path).path == "/__brunn/identity":
             assert STATE_PATH is not None
             self._json(
                 200,
@@ -409,8 +409,8 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
         if self.path not in {
-            "/__straylight/health",
-            "/__straylight/status",
+            "/__brunn/health",
+            "/__brunn/status",
         }:
             self._json(404, {"error": "not_found"})
             return
@@ -433,7 +433,7 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def do_POST(self) -> None:
-        if self.path == "/__straylight/control":
+        if self.path == "/__brunn/control":
             self._control()
             return
         if urllib.parse.urlsplit(self.path).path != "/v1/embeddings":
@@ -522,7 +522,7 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "error": {
                         "message": "injected embedding provider failure",
-                        "type": "straylight_fault_proxy",
+                        "type": "brunn_fault_proxy",
                     }
                 },
             )
@@ -569,7 +569,7 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "error": {
                         "message": "embedding upstream unavailable",
-                        "type": "straylight_fault_proxy",
+                        "type": "brunn_fault_proxy",
                     }
                 },
             )
@@ -737,7 +737,7 @@ def start(args: argparse.Namespace) -> int:
             status = _control_request(
                 state,
                 method="GET",
-                path="/__straylight/health",
+                path="/__brunn/health",
                 payload=None,
                 control_token_file=args.control_token_file,
             )
@@ -815,7 +815,7 @@ def configure(args: argparse.Namespace) -> int:
     value = _control_request(
         state,
         method="POST",
-        path="/__straylight/control",
+        path="/__brunn/control",
         payload=payload,
         control_token_file=args.control_token_file,
     )
@@ -843,7 +843,7 @@ def status(args: argparse.Namespace) -> int:
     value = _control_request(
         state,
         method="GET",
-        path="/__straylight/status",
+        path="/__brunn/status",
         payload=None,
         control_token_file=args.control_token_file,
     )

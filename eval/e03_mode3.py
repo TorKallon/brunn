@@ -30,12 +30,12 @@ from performance_eval import (  # noqa: E402
 
 PERFORMANCE = PROJECT_ROOT / "performance_eval.py"
 PROXY = PROJECT_ROOT / "eval" / "openai_embedding_fault_proxy.py"
-SCHEMA = "straylight-e03-mode3-orchestration@v1"
-PROXY_STATE_SCHEMA = "straylight-openai-embedding-fault-proxy-state@v1"
+SCHEMA = "brunn-e03-mode3-orchestration@v1"
+PROXY_STATE_SCHEMA = "brunn-openai-embedding-fault-proxy-state@v1"
 PROXY_IDENTITY_SCHEMA = (
-    "straylight-openai-embedding-fault-proxy-identity@v1"
+    "brunn-openai-embedding-fault-proxy-identity@v1"
 )
-PROXY_USAGE_SCHEMA = "straylight-openai-embedding-usage-receipt@v1"
+PROXY_USAGE_SCHEMA = "brunn-openai-embedding-usage-receipt@v1"
 OFFICIAL_OPENAI_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_PROBE_IMAGE = (
     "busybox@sha256:"
@@ -187,19 +187,19 @@ def container_endpoint_contract(args: argparse.Namespace) -> dict[str, Any]:
             "service": labels.get("com.docker.compose.service") == service,
             "running": state.get("Running") is True,
             "provider": (
-                environment.get("STRAYLIGHT_EMBEDDING_PROVIDER", "openai")
+                environment.get("BRUNN_EMBEDDING_PROVIDER", "openai")
                 == "openai"
             ),
             "exact_model": (
                 environment.get(
-                    "STRAYLIGHT_EMBEDDING_MODEL",
+                    "BRUNN_EMBEDDING_MODEL",
                     E03_EMBEDDING_MODELS["mode3"],
                 )
                 == E03_EMBEDDING_MODELS["mode3"]
             ),
             "exact_dimensions": (
                 environment.get(
-                    "STRAYLIGHT_EMBEDDING_DIMENSIONS",
+                    "BRUNN_EMBEDDING_DIMENSIONS",
                     str(E03_EMBEDDING_DIMENSIONS),
                 )
                 == str(E03_EMBEDDING_DIMENSIONS)
@@ -343,7 +343,7 @@ def proxy_identity_probe(
     target = endpoint[role]
     parsed = urllib.parse.urlsplit(args.expected_proxy_base_url)
     identity_url = urllib.parse.urlunsplit(
-        (parsed.scheme, parsed.netloc, "/__straylight/identity", "", "")
+        (parsed.scheme, parsed.netloc, "/__brunn/identity", "", "")
     )
     command = [
         "docker",
@@ -880,7 +880,7 @@ def main() -> int:
     try:
         result = json.loads(args.out.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
-        result = {"schema": "straylight-performance-eval@v2", "pass": False}
+        result = {"schema": "brunn-performance-eval@v2", "pass": False}
     result["e03_embedding_usage_receipt"] = receipt
     cost = result.get("e03_embedding_cost")
     if isinstance(cost, dict):

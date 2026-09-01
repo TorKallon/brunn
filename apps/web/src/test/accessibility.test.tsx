@@ -112,14 +112,14 @@ describe("accessibility contracts", () => {
 
   it("has no automated violations on project state", async () => {
     installApiMock({
-      "GET /api/v1/workspace/projects/straylight/state": {
+      "GET /api/v1/workspace/projects/brunn/state": {
         status: "complete",
         data: taskProjectState,
       },
     });
-    const { container } = renderApp("/projects/straylight", "read-write-token");
+    const { container } = renderApp("/projects/brunn", "read-write-token");
     expect(
-      await screen.findByRole("heading", { name: "Straylight" }),
+      await screen.findByRole("heading", { name: "Brunn" }),
     ).toBeInTheDocument();
     await expectNoAutomatedViolations(container);
   });

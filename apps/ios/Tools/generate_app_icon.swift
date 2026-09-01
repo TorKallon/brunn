@@ -6,9 +6,9 @@ let iosRoot = scriptURL.deletingLastPathComponent().deletingLastPathComponent()
 let repositoryRoot = iosRoot.deletingLastPathComponent().deletingLastPathComponent()
 
 let defaultSource = repositoryRoot
-    .appendingPathComponent("assets/brand/straylight-night-signal-1024.png")
+    .appendingPathComponent("assets/brand/brunn-night-signal-1024.png")
 let defaultOutput = iosRoot
-    .appendingPathComponent("Straylight/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png")
+    .appendingPathComponent("Brunn/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png")
 
 let source = CommandLine.arguments.count > 1
     ? URL(fileURLWithPath: CommandLine.arguments[1])

@@ -27,7 +27,7 @@ The API process must be created with normal SQLx statements visible to the JSON
 formatter:
 
 ```text
-RUST_LOG=info,straylight=debug,sqlx::query=debug
+RUST_LOG=info,brunn=debug,sqlx::query=debug
 ```
 
 Setting this after process start is insufficient. SQLx logs parameterized SQL,
@@ -40,7 +40,7 @@ at a billable provider merely to explain a query-count discrepancy.
 
 ## Run and correlate
 
-With `STRAYLIGHT_API_URL` and `STRAYLIGHT_EVAL_TOKEN` already loaded from a
+With `BRUNN_API_URL` and `BRUNN_EVAL_TOKEN` already loaded from a
 private environment file:
 
 ```bash

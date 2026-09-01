@@ -9,7 +9,7 @@ use serde_json::Value;
 use sqlx::{AssertSqlSafe, PgPool, Postgres, Transaction, postgres::PgPoolOptions};
 use uuid::Uuid;
 
-use straylight::{
+use brunn::{
     auth::{AuthContext, hash_token},
     db::set_context,
     models::{CredentialId, UserId},
@@ -24,11 +24,11 @@ const CANDIDATE_P95_LIMIT: Duration = Duration::from_millis(50);
 const PROJECT_STATE_P95_LIMIT: Duration = Duration::from_millis(100);
 
 async fn connect_test_pool() -> Option<PgPool> {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping task latency database test");
+        eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping task latency database test");
         return None;
     };
     let pool = PgPoolOptions::new()
@@ -39,7 +39,7 @@ async fn connect_test_pool() -> Option<PgPool> {
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .expect("apply Straylight migrations");
+        .expect("apply Brunn migrations");
     Some(pool)
 }
 
@@ -53,14 +53,14 @@ async fn insert_principal(
     let token = format!("task-latency-test-token-{credential_id}-secret");
     let capabilities = vec!["task.read".to_owned()];
 
-    sqlx::query("INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
         .bind(user_id)
         .bind(format!("task-latency-test:{user_id}"))
         .bind("Task latency database test")
         .execute(&mut **tx)
         .await
         .expect("insert task latency test user");
-    sqlx::query("INSERT INTO straylight.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO brunn.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)")
         .bind(scope_id)
         .bind(user_id)
         .bind(&scope_ref)
@@ -70,7 +70,7 @@ async fn insert_principal(
         .expect("insert task latency test scope");
     sqlx::query(
         r#"
-        INSERT INTO straylight.api_credentials (
+        INSERT INTO brunn.api_credentials (
           id,user_id,label,token_hash,capabilities
         ) VALUES ($1,$2,$3,$4,$5)
         "#,
@@ -85,7 +85,7 @@ async fn insert_principal(
     .expect("insert task latency test credential");
     sqlx::query(
         r#"
-        INSERT INTO straylight.credential_scope_grants (
+        INSERT INTO brunn.credential_scope_grants (
           credential_id,user_id,scope_id
         ) VALUES ($1,$2,$3)
         "#,
@@ -121,7 +121,7 @@ async fn insert_reader_credential(
     let credential_id = Uuid::now_v7();
     let token = format!("task-latency-{label}-{credential_id}-secret");
     sqlx::query(
-        "INSERT INTO straylight.api_credentials(id,user_id,label,token_hash,capabilities) VALUES($1,$2,$3,$4,ARRAY['task.read']::text[])",
+        "INSERT INTO brunn.api_credentials(id,user_id,label,token_hash,capabilities) VALUES($1,$2,$3,$4,ARRAY['task.read']::text[])",
     )
     .bind(credential_id)
     .bind(user_id)
@@ -131,7 +131,7 @@ async fn insert_reader_credential(
     .await
     .expect("insert HTTP latency reader credential");
     sqlx::query(
-        "INSERT INTO straylight.credential_scope_grants(credential_id,user_id,scope_id) VALUES($1,$2,$3)",
+        "INSERT INTO brunn.credential_scope_grants(credential_id,user_id,scope_id) VALUES($1,$2,$3)",
     )
     .bind(credential_id)
     .bind(user_id)
@@ -151,9 +151,9 @@ async fn delete_fixture_task_rows(pool: &PgPool, user_ids: &[Uuid]) {
     // API buffers credential-activity writes, so deleting credentials here
     // can race its asynchronous usage flush after the benchmark completes.
     for statement in [
-        "DELETE FROM straylight.task_index WHERE user_id=ANY($1)",
-        "DELETE FROM straylight.entry_versions WHERE user_id=ANY($1)",
-        "DELETE FROM straylight.entries WHERE user_id=ANY($1)",
+        "DELETE FROM brunn.task_index WHERE user_id=ANY($1)",
+        "DELETE FROM brunn.entry_versions WHERE user_id=ANY($1)",
+        "DELETE FROM brunn.entries WHERE user_id=ANY($1)",
     ] {
         sqlx::query(statement)
             .bind(user_ids)
@@ -174,7 +174,7 @@ async fn insert_task_fixture(
 
     sqlx::query(
         r#"
-        INSERT INTO straylight.task_projects (
+        INSERT INTO brunn.task_projects (
           user_id,slug,title,created_by,last_activity_at
         )
         SELECT
@@ -194,13 +194,13 @@ async fn insert_task_fixture(
 
     let inserted_entries = sqlx::query(
         r#"
-        INSERT INTO straylight.entries (
+        INSERT INTO brunn.entries (
           id,user_id,path,title,kind,media_type,current_version
         )
         SELECT
           fixture.entry_id,
           $1,
-          '.straylight/tasks/' || fixture.task_id::text || '.md',
+          '.brunn/tasks/' || fixture.task_id::text || '.md',
           format('Synthetic task %s',fixture.ordinal),
           'markdown',
           'text/markdown',
@@ -237,7 +237,7 @@ async fn insert_task_fixture(
             END AS status
           FROM fixture
         )
-        INSERT INTO straylight.entry_versions (
+        INSERT INTO brunn.entry_versions (
           user_id,entry_id,version,content_sha256,content,size_bytes,metadata
         )
         SELECT
@@ -263,7 +263,7 @@ async fn insert_task_fixture(
     .expect("insert synthetic task entry versions");
     assert_eq!(inserted_versions.rows_affected(), TASK_COUNT as u64);
 
-    sqlx::query("UPDATE straylight.entries SET current_version=1 WHERE user_id=$1 AND id=ANY($2)")
+    sqlx::query("UPDATE brunn.entries SET current_version=1 WHERE user_id=$1 AND id=ANY($2)")
         .bind(user_id)
         .bind(&entry_ids)
         .execute(&mut **tx)
@@ -288,7 +288,7 @@ async fn insert_task_fixture(
             '{}'::text[] AS required_contexts
           FROM fixture
         )
-        INSERT INTO straylight.task_index (
+        INSERT INTO brunn.task_index (
           user_id,task_id,entry_id,entry_version,title,status,ready_at,
           soft_due,hard_due,hard_due_lead_days,cost_amount_cents,cost_period,
           cost_flag,cost_since,required_contexts,project_slug,estimate_minutes,
@@ -338,7 +338,7 @@ async fn insert_task_fixture(
     assert_eq!(inserted_tasks.rows_affected(), TASK_COUNT as u64);
 
     let stored_task_count =
-        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM straylight.task_index WHERE user_id=$1")
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM brunn.task_index WHERE user_id=$1")
             .bind(user_id)
             .fetch_one(&mut **tx)
             .await
@@ -391,7 +391,7 @@ fn p95(samples: &mut [Duration]) -> Duration {
 }
 
 fn live_api_url() -> Option<String> {
-    std::env::var("STRAYLIGHT_TEST_API_URL")
+    std::env::var("BRUNN_TEST_API_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
         .map(|value| value.trim_end_matches('/').to_owned())
@@ -513,7 +513,7 @@ async fn task_projection_meets_candidate_and_project_state_latency_gates() {
         return;
     };
     let interrupted_fixture_users = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM straylight.users WHERE external_ref LIKE 'task-latency-test:%'",
+        "SELECT id FROM brunn.users WHERE external_ref LIKE 'task-latency-test:%'",
     )
     .fetch_all(&pool)
     .await
@@ -534,7 +534,7 @@ async fn task_projection_meets_candidate_and_project_state_latency_gates() {
         insert_task_fixture(&mut setup, noise_user_id, as_of).await;
         fixture_user_ids.push(noise_user_id);
     }
-    sqlx::query("ANALYZE straylight.task_index")
+    sqlx::query("ANALYZE brunn.task_index")
         .execute(&mut *setup)
         .await
         .expect("analyze exact deployed task projections");
@@ -681,7 +681,7 @@ async fn task_projection_meets_candidate_and_project_state_latency_gates() {
             "project-state HTTP p95 exceeded 100 ms: {project_p95:?}"
         );
     } else {
-        eprintln!("STRAYLIGHT_TEST_API_URL is unset; skipping live task handler latency samples");
+        eprintln!("BRUNN_TEST_API_URL is unset; skipping live task handler latency samples");
     }
 
     delete_fixture_task_rows(&pool, &fixture_user_ids).await;

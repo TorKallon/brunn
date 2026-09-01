@@ -25,8 +25,8 @@ from eval.e09_step_authorization import (
     load_step_authorization,
 )
 
-SCHEMA = "straylight-paired-draw-aggregate@v1"
-RUN_LEDGER_SCHEMA = "straylight-eval-run-ledger@v1"
+SCHEMA = "brunn-paired-draw-aggregate@v1"
+RUN_LEDGER_SCHEMA = "brunn-eval-run-ledger@v1"
 DEFAULT_ITERATIONS = 10_000
 DEFAULT_SEED = 20_260_727
 DEFAULT_NON_INFERIORITY_MARGIN_CLAIMS = 5.0
@@ -37,7 +37,7 @@ CANONICAL_CONDITIONS = {
 }
 EXPERIMENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 RESPONSE_CHARACTER_METRICS_SCHEMA = (
-    "straylight-agent-response-character-metrics@v1"
+    "brunn-agent-response-character-metrics@v1"
 )
 RESPONSE_CHARACTER_FIELDS = (
     "service_result_chars",
@@ -47,9 +47,9 @@ RESPONSE_CHARACTER_FIELDS = (
     "model_visible_tool_output_chars",
 )
 SERVICE_CONDITIONS = frozenset({"service_api", "service_api_resume"})
-SERVICE_IMAGE_PROVENANCE_SCHEMA = "straylight-service-image-provenance@v1"
-SERVICE_IMAGE_FINGERPRINT_SCHEMA = "straylight-service-image-fingerprint@v1"
-CASE_EXTENSION_PLAN_SCHEMA = "straylight-case-extension-plan@v1"
+SERVICE_IMAGE_PROVENANCE_SCHEMA = "brunn-service-image-provenance@v1"
+SERVICE_IMAGE_FINGERPRINT_SCHEMA = "brunn-service-image-fingerprint@v1"
+CASE_EXTENSION_PLAN_SCHEMA = "brunn-case-extension-plan@v1"
 RETRIEVAL_MODES = frozenset({"exact", "lexical", "semantic"})
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 DOCKER_IMAGE_ID_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -240,7 +240,7 @@ def _service_run_provenance(
     expected_build_revision = run.get("expected_build_revision")
     if (
         not isinstance(runtime, dict)
-        or runtime.get("schema") != "straylight-service-runtime-snapshot@v1"
+        or runtime.get("schema") != "brunn-service-runtime-snapshot@v1"
         or runtime.get("status") != "ready"
         or runtime.get("build_revision") != source_revision
         or expected_build_revision != source_revision
@@ -302,7 +302,7 @@ def _service_run_provenance(
             f"{path}: run ledger does not hash-bind service image provenance"
         )
     return {
-        "schema": "straylight-aggregate-service-provenance@v1",
+        "schema": "brunn-aggregate-service-provenance@v1",
         "service_arms": list(service_arms),
         "service_retrieval_modes": list(modes),
         "source_revision": source_revision,
@@ -376,7 +376,7 @@ def validate_service_provenance_pairing(
                 f"{sorted(values)}"
             )
     return {
-        "schema": "straylight-aggregate-service-provenance-summary@v1",
+        "schema": "brunn-aggregate-service-provenance-summary@v1",
         "status": "complete" if validated else "not_applicable",
         "expected_arm_retrieval_modes": expected,
         "service_arms": service_arms,
@@ -496,7 +496,7 @@ def validate_mutation_provenance_pairing(
             if (
                 not isinstance(plan, dict)
                 or plan.get("schema")
-                != "straylight-e06-mutation-plan@v1"
+                != "brunn-e06-mutation-plan@v1"
                 or plan.get("case_id") != case_id
                 or plan.get("seed") != values["mutation_seed"]
                 or not isinstance(source_refs, list)
@@ -554,7 +554,7 @@ def validate_mutation_provenance_pairing(
             if (
                 not isinstance(receipt, dict)
                 or receipt.get("schema")
-                != "straylight-e06-mutation-receipt@v1"
+                != "brunn-e06-mutation-receipt@v1"
                 or receipt.get("case_id") != case_id
                 or receipt.get("seed") != values["mutation_seed"]
                 or receipt.get("paths") != source_refs
@@ -650,7 +650,7 @@ def validate_mutation_provenance_pairing(
         })
     if not bindings:
         return {
-            "schema": "straylight-aggregate-mutation-provenance@v1",
+            "schema": "brunn-aggregate-mutation-provenance@v1",
             "status": "not_applicable",
             "mutation_script_sha256": None,
             "draw_bindings": [],
@@ -704,7 +704,7 @@ def validate_mutation_provenance_pairing(
             ),
         })
     return {
-        "schema": "straylight-aggregate-mutation-provenance@v1",
+        "schema": "brunn-aggregate-mutation-provenance@v1",
         "status": "complete",
         "mutation_script_sha256": next(iter(script_hashes)),
         "draw_bindings": draw_bindings,
@@ -817,7 +817,7 @@ def _validate_run_ledger(run: dict[str, Any]) -> str:
         build_revision = runtime_snapshot.get("build_revision")
         if (
             runtime_snapshot.get("schema")
-            != "straylight-service-runtime-snapshot@v1"
+            != "brunn-service-runtime-snapshot@v1"
             or runtime_snapshot.get("status") != "ready"
             or not isinstance(runtime_snapshot.get("captured_at"), str)
             or not runtime_snapshot["captured_at"]
@@ -2853,7 +2853,7 @@ def aggregate(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Aggregate complete paired Straylight reasoning draws",
+        description="Aggregate complete paired Brunn reasoning draws",
     )
     parser.add_argument("inputs", type=Path, nargs="+")
     parser.add_argument("--out", type=Path, required=True)

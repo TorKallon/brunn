@@ -9,7 +9,7 @@ SELECT format(
   tablename
 )
 FROM pg_tables
-WHERE schemaname IN ('straylight', 'straylight_auth')
+WHERE schemaname IN ('brunn', 'brunn_auth')
 ORDER BY schemaname, tablename
 \gexec
 

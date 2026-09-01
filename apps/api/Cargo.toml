@@ -1,5 +1,5 @@
 [package]
-name = "straylight-api"
+name = "brunn-api"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.96"
@@ -10,20 +10,20 @@ publish = false
 default = []
 # Builds used only by the disposable gate-12e stack may point the read-only
 # Todoist client at a loopback fixture server. Production builds never enable
-# this feature, and runtime validation also rejects it under STRAYLIGHT_ENV=production.
+# this feature, and runtime validation also rejects it under BRUNN_ENV=production.
 todoist-fixture = []
 
 [lib]
-name = "straylight"
+name = "brunn"
 path = "src/lib.rs"
 
 [[bin]]
-name = "straylight"
+name = "brunn"
 path = "src/main.rs"
 
 [[bin]]
-name = "carrystate"
-path = "src/bin/carrystate.rs"
+name = "brunn-state"
+path = "src/bin/brunn-state.rs"
 
 [dependencies]
 anyhow = "1"

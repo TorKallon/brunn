@@ -118,7 +118,7 @@ export function DreamsPage() {
     () =>
       (changesQuery.data?.data.changes ?? []).filter(
         (change) =>
-          change.path.startsWith(".straylight/") ||
+          change.path.startsWith(".brunn/") ||
           change.path.startsWith("Inbox/Proposals/"),
       ),
     [changesQuery.data],

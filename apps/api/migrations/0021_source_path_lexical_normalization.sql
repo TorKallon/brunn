@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION straylight.lexical_source_text(p_source_ref text)
+CREATE OR REPLACE FUNCTION brunn.lexical_source_text(p_source_ref text)
 RETURNS text
 LANGUAGE sql
 IMMUTABLE
@@ -13,5 +13,5 @@ AS $$
   )
 $$;
 
-COMMENT ON FUNCTION straylight.lexical_source_text(text) IS
+COMMENT ON FUNCTION brunn.lexical_source_text(text) IS
   'Normalizes path separators and camel-cased segments for lexical source-path matching.';

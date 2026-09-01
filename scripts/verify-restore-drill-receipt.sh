@@ -15,7 +15,7 @@ manifest_sha256=$(shasum -a 256 "$manifest" | awk '{print "sha256:" $1}')
 jq -e \
   --arg backup_id "$backup_id" \
   --arg manifest_sha256 "$manifest_sha256" '
-  .format == "straylight-restore-drill-receipt@v1"
+  .format == "brunn-restore-drill-receipt@v1"
   and .status == "pass"
   and .backup_id == $backup_id
   and .backup_manifest_sha256 == $manifest_sha256

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Real-interface Gate 12a/12b harness for agent messaging.
 
-The normal mode talks to the Straylight HTTP API and to two fresh stdio MCP
+The normal mode talks to the Brunn HTTP API and to two fresh stdio MCP
 adapter processes. Credentials are supplied only by references (``env:NAME``
 or ``file:/path``), are redacted from diagnostics, and are never accepted as
 literal command-line values. Every run uses unique conversation data and
@@ -178,7 +178,7 @@ class HttpClient:
         *,
         expected_status: int | None = None,
     ) -> HttpResult:
-        headers = {"accept": "application/json", "user-agent": "straylight-messaging-gate12/1"}
+        headers = {"accept": "application/json", "user-agent": "brunn-messaging-gate12/1"}
         headers["authorization"] = f"Bearer {self.token}"
         data = None
         if body is not None:
@@ -239,10 +239,10 @@ class McpClient:
         }
         environment.update(
             {
-                "STRAYLIGHT_API_TOKEN": token,
-                "STRAYLIGHT_API_URL": base_url,
-                "STRAYLIGHT_MESSAGING_ENABLED": "true",
-                "STRAYLIGHT_MCP_RETRY_BACKOFF_MS": "1,1,1,1,1,1",
+                "BRUNN_API_TOKEN": token,
+                "BRUNN_API_URL": base_url,
+                "BRUNN_MESSAGING_ENABLED": "true",
+                "BRUNN_MCP_RETRY_BACKOFF_MS": "1,1,1,1,1,1",
             }
         )
         try:
@@ -267,7 +267,7 @@ class McpClient:
             {
                 "protocolVersion": "2025-06-18",
                 "capabilities": {},
-                "clientInfo": {"name": "straylight-gate12", "version": "1"},
+                "clientInfo": {"name": "brunn-gate12", "version": "1"},
             },
         )
         self.notify("notifications/initialized", {})
@@ -432,7 +432,7 @@ class EchoProcess:
         script = args.source_root / "scripts" / "agent_messaging_echo.py"
         if not script.is_file():
             raise ScenarioFailure("echo resident script is missing")
-        self._temporary = tempfile.TemporaryDirectory(prefix="straylight-gate12-echo-")
+        self._temporary = tempfile.TemporaryDirectory(prefix="brunn-gate12-echo-")
         environment = {
             key: value
             for key, value in os.environ.items()
@@ -889,11 +889,11 @@ class MessagingScenario:
             f"""
             WITH target AS (
               SELECT participant.user_id
-              FROM straylight.messaging_participants AS participant
+              FROM brunn.messaging_participants AS participant
               WHERE participant.conversation_id='{conversation_id}'::uuid
                 AND participant.agent_id='{agent_id}'
             ), changed AS (
-              UPDATE straylight.messaging_agents AS agent
+              UPDATE brunn.messaging_agents AS agent
               SET lease_expires_at=agent.last_seen_at
               FROM target
               WHERE agent.user_id=target.user_id
@@ -919,11 +919,11 @@ class MessagingScenario:
             self.args,
             f"""
             SELECT count(*)
-            FROM straylight.notifications AS notification
+            FROM brunn.notifications AS notification
             WHERE notification.event_key='{event_key}'
               AND notification.user_id=(
                 SELECT conversation.user_id
-                FROM straylight.messaging_conversations AS conversation
+                FROM brunn.messaging_conversations AS conversation
                 WHERE conversation.conversation_id='{conversation_id}'::uuid
               )
             """,
@@ -978,49 +978,49 @@ def static_preflight(source_root: Path) -> None:
 def parser() -> argparse.ArgumentParser:
     source_root = Path(__file__).resolve().parents[1]
     result = argparse.ArgumentParser(
-        description="Run the real-interface Straylight agent messaging Gate 12a/12b scenario.",
+        description="Run the real-interface Brunn agent messaging Gate 12a/12b scenario.",
     )
     result.add_argument("--preflight", action="store_true", help="check route/tool registrations only")
     result.add_argument("--source-root", type=Path, default=source_root)
     result.add_argument(
         "--base-url",
-        default=os.environ.get("STRAYLIGHT_MESSAGING_SCENARIO_BASE_URL", DEFAULT_BASE_URL),
+        default=os.environ.get("BRUNN_MESSAGING_SCENARIO_BASE_URL", DEFAULT_BASE_URL),
     )
     result.add_argument(
         "--mcp-command",
         default=os.environ.get(
-            "STRAYLIGHT_MESSAGING_SCENARIO_MCP_COMMAND", "node apps/mcp/dist/index.js"
+            "BRUNN_MESSAGING_SCENARIO_MCP_COMMAND", "node apps/mcp/dist/index.js"
         ),
     )
-    result.add_argument("--agent-a-id", default=os.environ.get("STRAYLIGHT_GATE12_AGENT_A_ID", "gate12-a"))
-    result.add_argument("--agent-b-id", default=os.environ.get("STRAYLIGHT_GATE12_AGENT_B_ID", "gate12-b"))
-    result.add_argument("--resident-id", default=os.environ.get("STRAYLIGHT_GATE12_RESIDENT_ID", "echo"))
+    result.add_argument("--agent-a-id", default=os.environ.get("BRUNN_GATE12_AGENT_A_ID", "gate12-a"))
+    result.add_argument("--agent-b-id", default=os.environ.get("BRUNN_GATE12_AGENT_B_ID", "gate12-b"))
+    result.add_argument("--resident-id", default=os.environ.get("BRUNN_GATE12_RESIDENT_ID", "echo"))
     result.add_argument(
         "--agent-a-credential-ref",
-        default=os.environ.get("STRAYLIGHT_GATE12_AGENT_A_CREDENTIAL_REF"),
+        default=os.environ.get("BRUNN_GATE12_AGENT_A_CREDENTIAL_REF"),
     )
     result.add_argument(
         "--agent-b-credential-ref",
-        default=os.environ.get("STRAYLIGHT_GATE12_AGENT_B_CREDENTIAL_REF"),
+        default=os.environ.get("BRUNN_GATE12_AGENT_B_CREDENTIAL_REF"),
     )
     result.add_argument(
         "--owner-credential-ref",
-        default=os.environ.get("STRAYLIGHT_GATE12_OWNER_CREDENTIAL_REF"),
+        default=os.environ.get("BRUNN_GATE12_OWNER_CREDENTIAL_REF"),
     )
     result.add_argument(
         "--resident-credential-ref",
-        default=os.environ.get("STRAYLIGHT_GATE12_RESIDENT_CREDENTIAL_REF"),
+        default=os.environ.get("BRUNN_GATE12_RESIDENT_CREDENTIAL_REF"),
     )
     result.add_argument("--timeout", type=float, default=10.0)
     result.add_argument("--worker-observation-timeout", type=float, default=20.0)
     result.add_argument(
-        "--database-container", default="straylight_agent_messaging-db-1"
+        "--database-container", default="brunn_agent_messaging-db-1"
     )
     result.add_argument(
-        "--database-compose-project", default="straylight_agent_messaging"
+        "--database-compose-project", default="brunn_agent_messaging"
     )
     result.add_argument("--database-user", default="admin")
-    result.add_argument("--database-name", default="straylight_agent_messaging")
+    result.add_argument("--database-name", default="brunn_agent_messaging")
     result.add_argument(
         "--allow-nonlocal",
         action="store_true",

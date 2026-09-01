@@ -37,7 +37,7 @@ export function workspaceEntryNavigationSearch(
 }
 
 function alternateSourcePaths(path: string): string[] | undefined {
-  if (path.startsWith("sources/") || path.startsWith(".straylight/")) {
+  if (path.startsWith("sources/") || path.startsWith(".brunn/")) {
     return undefined;
   }
   return [`sources/${path}`];
@@ -80,10 +80,10 @@ function customEntryTarget(value: string): WorkspaceEntryNavigationTarget | unde
   if (!decodedValue) return undefined;
   const target = stripTargetSuffix(decodedValue);
   if (target.startsWith("entry:")) return { ref: target };
-  if (!target.toLowerCase().startsWith("straylight://entry/")) return undefined;
+  if (!target.toLowerCase().startsWith("brunn://entry/")) return undefined;
   try {
     const url = new URL(target);
-    if (url.protocol !== "straylight:" || url.hostname !== "entry") return undefined;
+    if (url.protocol !== "brunn:" || url.hostname !== "entry") return undefined;
     const decoded = url.pathname.replace(/^\/+/, "");
     if (!decoded) return undefined;
     if (decoded.startsWith("entry:")) return { ref: decoded };

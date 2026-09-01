@@ -4,8 +4,8 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
-import { StraylightApiClient } from "./api-client.js";
-import { createStraylightMcpServer } from "./index.js";
+import { BrunnApiClient } from "./api-client.js";
+import { createBrunnMcpServer } from "./index.js";
 
 interface RecordedCall {
   url: string;
@@ -29,8 +29,8 @@ async function connectedPair(
     });
   };
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const server = createStraylightMcpServer(
-    new StraylightApiClient("https://api.invalid", "test-token", fetchImpl),
+  const server = createBrunnMcpServer(
+    new BrunnApiClient("https://api.invalid", "test-token", fetchImpl),
   );
   const client = new Client({ name: "secret-tools-test", version: "0.1.0" });
   await server.connect(serverTransport);

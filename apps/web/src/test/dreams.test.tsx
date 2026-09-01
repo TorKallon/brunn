@@ -17,7 +17,7 @@ describe("visible background maintenance", () => {
           entries: [
             {
               entry_ref: "entry:proposal-1",
-              path: ".straylight/proposals/people-index.md",
+              path: ".brunn/proposals/people-index.md",
               title: "People index refresh",
               kind: "markdown",
               media_type: "text/markdown",
@@ -55,7 +55,7 @@ describe("visible background maintenance", () => {
             {
               generation: 88,
               operation: "create",
-              path: ".straylight/proposals/people-index.md",
+              path: ".brunn/proposals/people-index.md",
               version: 1,
               content_hash: "sha256:proposal",
               recorded_at: "2026-07-26T18:00:00Z",
@@ -103,7 +103,7 @@ describe("visible background maintenance", () => {
           items: [
             {
               reference: "entry:proposal-1",
-              path: ".straylight/proposals/people-index.md",
+              path: ".brunn/proposals/people-index.md",
               title: "People index refresh",
               version: 1,
               version_ref: "entry-version:proposal-v1",

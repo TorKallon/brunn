@@ -11,10 +11,10 @@ RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:1.30.4-alpine@sha256:44e36330f74d4f3a1d4e222acca9e23b401fb87811a7597024502bb759c4dd49
 
-ARG STRAYLIGHT_BUILD_REVISION=unknown
-LABEL org.opencontainers.image.title="Straylight Control Plane" \
-      org.opencontainers.image.revision="${STRAYLIGHT_BUILD_REVISION}"
-ENV NGINX_ENVSUBST_FILTER="^STRAYLIGHT_"
+ARG BRUNN_BUILD_REVISION=unknown
+LABEL org.opencontainers.image.title="Brunn Control Plane" \
+      org.opencontainers.image.revision="${BRUNN_BUILD_REVISION}"
+ENV NGINX_ENVSUBST_FILTER="^BRUNN_"
 USER root
 RUN install -d -o 101 -g 101 -m 0755 /etc/nginx/templates
 COPY --chmod=0644 apps/web/nginx.railway.conf.template /etc/nginx/templates/default.conf.template

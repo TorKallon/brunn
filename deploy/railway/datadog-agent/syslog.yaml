@@ -2,14 +2,14 @@ logs:
   - type: udp
     port: 514
     source: rust
-    service: straylight
+    service: brunn
     tags:
       - platform:railway
       - component:api
   - type: udp
     port: 515
     source: rust
-    service: straylight
+    service: brunn
     tags:
       - platform:railway
       - component:worker

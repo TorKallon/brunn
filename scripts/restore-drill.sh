@@ -12,12 +12,12 @@ root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 backup_dir=$(CDPATH= cd -- "$1" && pwd)
 backup_root=$(dirname "$backup_dir")
 env_file=${ENV_FILE:-"$root/.env"}
-project="straylight-restore-$(date -u +%Y%m%d%H%M%S)-$$"
+project="brunn-restore-$(date -u +%Y%m%d%H%M%S)-$$"
 compose_file="$root/compose.yaml"
 compose_override_file=${COMPOSE_OVERRIDE_FILE:-}
 override_file="$root/compose.restore-drill.yaml"
 started_epoch=$(date +%s)
-temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/straylight-restore-drill.XXXXXX")
+temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/brunn-restore-drill.XXXXXX")
 host_baseline="$temp_dir/host-containers.tsv"
 operation_lock_dir="$backup_root/.recovery-operation.lock"
 operation_lock_acquired=false
@@ -109,7 +109,7 @@ wait_healthy minio
 
 db_container=$(compose ps -q db)
 minio_container=$(compose ps -q minio)
-docker exec "$db_container" /usr/local/bin/straylight-postgres-healthcheck
+docker exec "$db_container" /usr/local/bin/brunn-postgres-healthcheck
 db_user=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$db_container" |
   awk -F= '$1 == "POSTGRES_USER" {sub(/^[^=]*=/, ""); print; exit}')
 db_name=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$db_container" |
@@ -159,7 +159,7 @@ docker exec -i "$db_container" psql \
   <"$root/scripts/db-inventory.sql" \
   >"$temp_dir/db-inventory.txt"
 diff -u "$backup_dir/db-inventory.txt" "$temp_dir/db-inventory.txt"
-docker exec "$db_container" /usr/local/bin/straylight-postgres-healthcheck
+docker exec "$db_container" /usr/local/bin/brunn-postgres-healthcheck
 
 echo "verifying restored object-version inventory"
 compose run --rm -T --no-deps --entrypoint /bin/sh minio-init -ec '
@@ -182,7 +182,7 @@ compose run --rm -T --no-deps --entrypoint /bin/sh minio-init -ec '
   mc alias set local http://minio:9000 \
     "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
   mc ls --versions --recursive --json \
-    "local/$STRAYLIGHT_MINIO_BUCKET"
+    "local/$BRUNN_MINIO_BUCKET"
 ' | LC_ALL=C sort >"$temp_dir/minio-versions.jsonl"
 diff -u \
   "$backup_dir/minio-versions.jsonl" \
@@ -245,7 +245,7 @@ authenticated_credentials=$(docker exec "$db_container" psql \
   --tuples-only \
   --no-align \
   --no-psqlrc \
-  --command "SELECT count(*) FROM straylight.api_credentials WHERE token_hash IN ('$provision_hash','$recovery_hash') AND disabled_at IS NULL" |
+  --command "SELECT count(*) FROM brunn.api_credentials WHERE token_hash IN ('$provision_hash','$recovery_hash') AND disabled_at IS NULL" |
   tr -d '[:space:]')
 [ "$authenticated_credentials" = "2" ] || {
   echo "operator provision/recovery credentials were not durably created" >&2
@@ -272,7 +272,7 @@ credential_states=$(docker exec "$db_container" psql \
   --tuples-only \
   --no-align \
   --no-psqlrc \
-  --command "SELECT count(*) FILTER (WHERE disabled_at IS NULL),count(*) FILTER (WHERE disabled_at IS NOT NULL) FROM straylight.api_credentials WHERE token_hash IN ('$provision_hash','$recovery_hash','$compromise_hash')" |
+  --command "SELECT count(*) FILTER (WHERE disabled_at IS NULL),count(*) FILTER (WHERE disabled_at IS NOT NULL) FROM brunn.api_credentials WHERE token_hash IN ('$provision_hash','$recovery_hash','$compromise_hash')" |
   tr -d '[:space:]')
 [ "$credential_states" = "1|2" ] || {
   echo "compromised-token recovery did not atomically replace existing owners" >&2
@@ -304,7 +304,7 @@ jq -n \
   --argjson rto_seconds "$rto_seconds" \
   --argjson object_reference_integrity "$object_reference_integrity_verified" \
   '{
-    format: "straylight-restore-drill-receipt@v1",
+    format: "brunn-restore-drill-receipt@v1",
     status: "pass",
     backup_id: $backup_id,
     backup_manifest_sha256: $manifest_sha256,

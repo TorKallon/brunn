@@ -1,5 +1,5 @@
 {
-  "name": "@straylight/control-plane",
+  "name": "@brunn/control-plane",
   "private": true,
   "version": "0.1.0",
   "type": "module",

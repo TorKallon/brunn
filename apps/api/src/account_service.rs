@@ -120,7 +120,7 @@ pub async fn request_export(state: &AppState, auth: &AuthContext) -> ApiResult<V
     let mut tx = state.begin_write(auth).await?;
     let row = sqlx::query(
         r#"
-        INSERT INTO straylight.account_exports (
+        INSERT INTO brunn.account_exports (
           id,user_id,requested_by_credential_id,status,expires_at
         ) VALUES (
           $1,$2,$3,'queued',clock_timestamp()+make_interval(secs => $4)
@@ -151,7 +151,7 @@ pub async fn list_exports(state: &AppState, auth: &AuthContext) -> ApiResult<Val
         r#"
         SELECT id,status,content_hash,size_bytes,table_count,object_count,
                failure_code,created_at,started_at,completed_at,expires_at
-        FROM straylight.account_exports
+        FROM brunn.account_exports
         WHERE user_id=$1
         ORDER BY created_at DESC,id DESC
         LIMIT 100
@@ -180,7 +180,7 @@ pub async fn get_export(
         r#"
         SELECT id,status,content_hash,size_bytes,table_count,object_count,
                failure_code,created_at,started_at,completed_at,expires_at
-        FROM straylight.account_exports
+        FROM brunn.account_exports
         WHERE user_id=$1 AND id=$2
         "#,
     )
@@ -204,7 +204,7 @@ pub async fn download_export(
     let row = sqlx::query(
         r#"
         SELECT status,object_key,object_version_id,content_hash,size_bytes,expires_at
-        FROM straylight.account_exports
+        FROM brunn.account_exports
         WHERE user_id=$1 AND id=$2
         "#,
     )
@@ -275,13 +275,13 @@ pub async fn download_export(
         .header(CONTENT_TYPE, "application/gzip")
         .header(
             CONTENT_DISPOSITION,
-            format!("attachment; filename=\"straylight-export-{export_id}.tar.gz\""),
+            format!("attachment; filename=\"brunn-export-{export_id}.tar.gz\""),
         )
         .header("cache-control", "private, no-store")
         .header("x-content-type-options", "nosniff")
-        .header("x-carrystate-sha256", &content_hash)
+        .header("x-brunn-state-sha256", &content_hash)
         .header(
-            "x-carrystate-integrity",
+            "x-brunn-state-integrity",
             "expected-sha256-verified-on-complete",
         )
         .header(CONTENT_LENGTH, size_bytes.to_string());
@@ -299,13 +299,13 @@ pub async fn delete_export(
     let export_id = parse_ref(export_ref, "export")?;
     let object_key = {
         let mut tx = state.begin_write(auth).await?;
-        sqlx::query("SELECT straylight.assert_storage_write_allowed($1)")
+        sqlx::query("SELECT brunn.assert_storage_write_allowed($1)")
             .bind(auth.user_id.0)
             .execute(&mut *tx)
             .await?;
         let row = sqlx::query(
             "SELECT status,object_key
-             FROM straylight_auth.begin_account_export_delete($1,$2)",
+             FROM brunn_auth.begin_account_export_delete($1,$2)",
         )
         .bind(auth.user_id.0)
         .bind(export_id)
@@ -324,11 +324,11 @@ pub async fn delete_export(
     };
 
     let mut tx = state.begin_write(auth).await?;
-    sqlx::query("SELECT straylight.assert_storage_write_allowed($1)")
+    sqlx::query("SELECT brunn.assert_storage_write_allowed($1)")
         .bind(auth.user_id.0)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("SELECT straylight_auth.finish_account_export_delete($1,$2)")
+    sqlx::query("SELECT brunn_auth.finish_account_export_delete($1,$2)")
         .bind(auth.user_id.0)
         .bind(export_id)
         .execute(&mut *tx)
@@ -349,20 +349,19 @@ pub async fn request_deletion(
 ) -> ApiResult<Value> {
     auth.require(Capability::CredentialManage)?;
     let mut tx = state.begin_write(auth).await?;
-    let request_id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT straylight_auth.request_account_deletion($1,$2,$3,$4)",
-    )
-    .bind(auth.user_id.0)
-    .bind(&request.confirmation)
-    .bind(request.reason.trim())
-    .bind(state.config.account_deletion_backup_retention_days)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(map_deletion_database_error)?;
+    let request_id =
+        sqlx::query_scalar::<_, Uuid>("SELECT brunn_auth.request_account_deletion($1,$2,$3,$4)")
+            .bind(auth.user_id.0)
+            .bind(&request.confirmation)
+            .bind(request.reason.trim())
+            .bind(state.config.account_deletion_backup_retention_days)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(map_deletion_database_error)?;
     let row = sqlx::query(
         r#"
         SELECT created_at,backup_expiry_due_at
-        FROM straylight.account_deletion_requests
+        FROM brunn.account_deletion_requests
         WHERE user_id=$1 AND id=$2
         "#,
     )
@@ -395,7 +394,7 @@ pub async fn get_deletion(
                backup_erasure_verified_at,backup_erasure_watermark_at,
                backup_erasure_receipt_sha256,backup_erasure_source,
                failure_code,terminal_result,created_at,started_at,completed_at
-        FROM straylight.account_deletion_requests
+        FROM brunn.account_deletion_requests
         WHERE user_id=$1 AND ($2::uuid IS NULL OR id=$2)
         ORDER BY created_at DESC
         LIMIT 1

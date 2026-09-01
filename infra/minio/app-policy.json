@@ -10,7 +10,7 @@
         "s3:GetBucketVersioning",
         "s3:ListBucketMultipartUploads"
       ],
-      "Resource": ["arn:aws:s3:::__STRAYLIGHT_BUCKET__"]
+      "Resource": ["arn:aws:s3:::__BRUNN_BUCKET__"]
     },
     {
       "Effect": "Allow",
@@ -22,7 +22,7 @@
         "s3:AbortMultipartUpload",
         "s3:ListMultipartUploadParts"
       ],
-      "Resource": ["arn:aws:s3:::__STRAYLIGHT_BUCKET__/*"]
+      "Resource": ["arn:aws:s3:::__BRUNN_BUCKET__/*"]
     }
   ]
 }

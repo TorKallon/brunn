@@ -43,9 +43,9 @@ Does budget-contracted retrieval — fair-share allocation + token-tied char cap
 5. (S) Exact-value claim-slot tagging: annotate rubric slots requiring verbatim values (dates, IDs, numbers, paths) in the three manifests; grader carries the tag into results (pointer-demotion risk per D01).
 6. (implemented) `agent_work_eval.py` emits the canonical per-case
    `response_character_metrics` envelope
-   (`straylight-agent-response-character-metrics@v1`) with service and
+   (`brunn-agent-response-character-metrics@v1`) with service and
    model-visible character fields.
-7. (implemented) `eval/audit_accepted_sources.py`, comparing saved `service_operations[].source_paths` against each rubric's accepted sources and emitting `straylight-accepted-source-context-audit@v1`.
+7. (implemented) `eval/audit_accepted_sources.py`, comparing saved `service_operations[].source_paths` against each rubric's accepted sources and emitting `brunn-accepted-source-context-audit@v1`.
 8. (implemented) `eval/compare_query_counts.py`, which pairs named request
    samples from two passing definitive performance artifacts and fails closed
    unless source/build/image, retrieval modes, fixtures, sample shape, and all
@@ -53,7 +53,7 @@ Does budget-contracted retrieval — fair-share allocation + token-tied char cap
 
 **Resolved nuisance posture (2026-07-28):** E02 rejected D02, so every E04
 service and performance stack must start with
-`STRAYLIGHT_VERBATIM_SPANS=false` and every measured service arm must assert
+`BRUNN_VERBATIM_SPANS=false` and every measured service arm must assert
 `--expect-feature-flag verbatim_spans=off`. Verbatim spans are not an E04
 variable. An E04 pass cannot rehabilitate D02.
 
@@ -110,7 +110,7 @@ on-disk counts in the cost ledger.
 6. Build exact input arrays:
    `E04_FULL=(results/2026-MM-DD-e04-{A,B,C,F}-{rupture,work,personal}-draw{1,2,3}.json); E04_CHRONIC=(results/2026-MM-DD-e04-{A,B,C,F}-{rupture,work}-draw{4,5}.json); E04_ALL=("${E04_FULL[@]}" "${E04_CHRONIC[@]}")`.
    Aggregate with
-   `python3 eval/aggregate_draws.py "${E04_ALL[@]}" --expected-arm e04-A --expected-arm e04-B --expected-arm e04-C --expected-arm e04-F --expected-arm-retrieval-modes e04-A=exact,lexical --expected-arm-retrieval-modes e04-B=exact,lexical --expected-arm-retrieval-modes e04-C=exact,lexical --require-claim-tag exact_value --case-extension-plan eval/e04_case_extension_plan.json --case-extension-plan-sha256 5a50d84dafdd8dacd845e99e19b3146f26feacafc2bafb82f5aa1b89dde0843a --out results/2026-MM-DD-e04-aggregate.json`.
+   `python3 eval/aggregate_draws.py "${E04_ALL[@]}" --expected-arm e04-A --expected-arm e04-B --expected-arm e04-C --expected-arm e04-F --expected-arm-retrieval-modes e04-A=exact,lexical --expected-arm-retrieval-modes e04-B=exact,lexical --expected-arm-retrieval-modes e04-C=exact,lexical --require-claim-tag exact_value --case-extension-plan eval/e04_case_extension_plan.json --case-extension-plan-sha256 13a4a41c3dc123c91e83e0006e98704d88e3fccafc7f32c998941c415c77e275 --out results/2026-MM-DD-e04-aggregate.json`.
    The checked-in plan binds the exact parent-manifest hashes, chronic subsets,
    and 3+2 draw counts. Do not recompute the declared plan hash from a modified
    plan.

@@ -1,5 +1,5 @@
 {
-  "schema": "straylight-context-contract-fixture@v1",
+  "schema": "brunn-context-contract-fixture@v1",
   "normalized_from": [
     "Profiles/object-profiles.json",
     "Relations/role-relations.json",

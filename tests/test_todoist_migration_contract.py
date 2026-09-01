@@ -18,11 +18,11 @@ class TodoistMigrationContractTests(unittest.TestCase):
         self.assertIn("secret_access_log", source)
         self.assertIn("'get'", source)
         self.assertIn(
-            "REVOKE ALL ON FUNCTION straylight.task_todoist_secret_for_worker(uuid)",
+            "REVOKE ALL ON FUNCTION brunn.task_todoist_secret_for_worker(uuid)",
             source,
         )
         self.assertNotIn(
-            "GRANT EXECUTE ON FUNCTION straylight.task_todoist_secret_for_worker",
+            "GRANT EXECUTE ON FUNCTION brunn.task_todoist_secret_for_worker",
             source,
         )
 
@@ -30,7 +30,7 @@ class TodoistMigrationContractTests(unittest.TestCase):
         source = self.source()
         self.assertIn("task_todoist_producers", source)
         self.assertIn("ARRAY['task.read','task.write']::text[]", source)
-        self.assertIn("NOT EXISTS (\n      SELECT 1 FROM straylight.task_todoist_producers", source)
+        self.assertIn("NOT EXISTS (\n      SELECT 1 FROM brunn.task_todoist_producers", source)
 
     def test_sync_state_has_a_durable_scheduler_lease(self) -> None:
         source = self.source()
@@ -52,7 +52,7 @@ class TodoistMigrationContractTests(unittest.TestCase):
         self.assertIn("web_identities", source)
         self.assertIn("current_credential_id()", source)
         self.assertIn(
-            "GRANT EXECUTE ON FUNCTION straylight.require_todoist_web_owner(uuid) TO app_rw",
+            "GRANT EXECUTE ON FUNCTION brunn.require_todoist_web_owner(uuid) TO app_rw",
             source,
         )
 

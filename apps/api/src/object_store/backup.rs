@@ -16,9 +16,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::ObjectStore;
 
-const BACKUP_FORMAT: &str = "straylight-object-version-archive@v1";
-const RESTORE_MAP_FORMAT: &str = "straylight-object-version-restore-map@v2";
-const LEGACY_RESTORE_MAP_FORMAT: &str = "straylight-object-version-restore-map@v1";
+const BACKUP_FORMAT: &str = "brunn-object-version-archive@v1";
+const RESTORE_MAP_FORMAT: &str = "brunn-object-version-restore-map@v2";
+const LEGACY_RESTORE_MAP_FORMAT: &str = "brunn-object-version-restore-map@v1";
 const MAX_PORTABLE_OBJECT_BYTES: u64 = 5 * 1024 * 1024 * 1024;
 const MULTIPART_RESTORE_THRESHOLD_BYTES: u64 = 64 * 1024 * 1024;
 const MULTIPART_RESTORE_PART_BYTES: u64 = 64 * 1024 * 1024;
@@ -923,7 +923,7 @@ pub async fn pin_legacy_database_references(
     let user_ids = sqlx::query_scalar::<_, uuid::Uuid>(
         "SELECT user_id
          FROM (
-           SELECT user_id FROM straylight.asset_versions
+           SELECT user_id FROM brunn.asset_versions
            WHERE object_version_id IS NULL
              AND NOT (
                object_key::text = user_id::text || '/deleted-assets/'
@@ -931,11 +931,11 @@ pub async fn pin_legacy_database_references(
                AND content_hash::text =
                  'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
                AND size_bytes=0
-               AND media_type::text='application/x-straylight-deleted'
+               AND media_type::text='application/x-brunn-deleted'
                AND metadata ? 'redacted_by_deletion_job'
              )
            UNION
-           SELECT user_id FROM straylight.account_exports
+           SELECT user_id FROM brunn.account_exports
            WHERE status='ready' AND object_key IS NOT NULL
              AND object_version_id IS NULL
          ) AS affected
@@ -955,7 +955,7 @@ pub async fn pin_legacy_database_references(
     let asset_rows = sqlx::query(
         "SELECT user_id,asset_id,version,bucket,object_key,
                 content_hash::text AS content_hash,size_bytes
-         FROM straylight.asset_versions
+         FROM brunn.asset_versions
          WHERE object_version_id IS NULL
            AND NOT (
              object_key::text = user_id::text || '/deleted-assets/'
@@ -963,7 +963,7 @@ pub async fn pin_legacy_database_references(
              AND content_hash::text =
                'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
              AND size_bytes=0
-             AND media_type::text='application/x-straylight-deleted'
+             AND media_type::text='application/x-brunn-deleted'
              AND metadata ? 'redacted_by_deletion_job'
            )
          ORDER BY user_id,asset_id,version
@@ -974,7 +974,7 @@ pub async fn pin_legacy_database_references(
     .context("could not lock legacy immutable asset rows")?;
     let export_rows = sqlx::query(
         "SELECT user_id,id,object_key,content_hash::text AS content_hash,size_bytes
-         FROM straylight.account_exports
+         FROM brunn.account_exports
          WHERE status='ready' AND object_key IS NOT NULL
            AND object_version_id IS NULL
          ORDER BY user_id,id
@@ -1017,13 +1017,12 @@ pub async fn pin_legacy_database_references(
             "size_bytes": size_bytes
         }));
     }
-    let asset_versions_pinned = sqlx::query_scalar::<_, i64>(
-        "SELECT straylight.pin_legacy_asset_object_versions($1::jsonb)",
-    )
-    .bind(serde_json::Value::Array(asset_mapping))
-    .fetch_one(&mut *transaction)
-    .await
-    .context("could not pin legacy immutable asset object versions")?;
+    let asset_versions_pinned =
+        sqlx::query_scalar::<_, i64>("SELECT brunn.pin_legacy_asset_object_versions($1::jsonb)")
+            .bind(serde_json::Value::Array(asset_mapping))
+            .fetch_one(&mut *transaction)
+            .await
+            .context("could not pin legacy immutable asset object versions")?;
 
     let upload_canonical_versions_pinned = 0_u64;
 
@@ -1046,7 +1045,7 @@ pub async fn pin_legacy_database_references(
             .object_version_id
             .context("object store returned no exact version ID while pinning an account export")?;
         let updated = sqlx::query(
-            "UPDATE straylight.account_exports
+            "UPDATE brunn.account_exports
              SET object_version_id=$1
              WHERE user_id=$2 AND id=$3 AND object_key=$4
                AND content_hash=$5 AND size_bytes=$6
@@ -1102,25 +1101,25 @@ pub async fn verify_database_references(
 	           SELECT 'asset_versions'::text AS relation,bucket AS object_bucket,
 	                  object_key,object_version_id,
 	                  content_hash::text AS content_hash,size_bytes
-	           FROM straylight.asset_versions
+	           FROM brunn.asset_versions
 	           WHERE NOT (
 	             object_key::text = user_id::text || '/deleted-assets/'
 	               || asset_id::text || '/' || version::text
 	             AND content_hash::text =
 	               'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
 	             AND size_bytes=0
-	             AND media_type::text='application/x-straylight-deleted'
+	             AND media_type::text='application/x-brunn-deleted'
 	             AND metadata ? 'redacted_by_deletion_job'
 	           )
            UNION ALL
            SELECT 'account_exports',$1::text,object_key,object_version_id,
                   content_hash::text,size_bytes
-           FROM straylight.account_exports
+           FROM brunn.account_exports
            WHERE status='ready' AND object_key IS NOT NULL
            UNION ALL
            SELECT 'entry_versions',$1::text,object_key,object_version_id,
                   content_sha256::text,size_bytes
-           FROM straylight.entry_versions
+           FROM brunn.entry_versions
            WHERE object_key IS NOT NULL
          ) AS authoritative
          ORDER BY relation,object_key,object_version_id NULLS FIRST",
@@ -1359,7 +1358,7 @@ pub async fn remap_database(
         "WITH referenced AS (
            SELECT 'asset_versions' AS relation,object_key,object_version_id,
                   false AS may_be_absent
-	           FROM straylight.asset_versions
+	           FROM brunn.asset_versions
 	           WHERE object_version_id IS NOT NULL
 	             AND NOT (
 	               object_key::text = user_id::text || '/deleted-assets/'
@@ -1367,16 +1366,16 @@ pub async fn remap_database(
 	               AND content_hash::text =
 	                 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
 	               AND size_bytes=0
-	               AND media_type::text='application/x-straylight-deleted'
+	               AND media_type::text='application/x-brunn-deleted'
 	               AND metadata ? 'redacted_by_deletion_job'
 	             )
            UNION ALL
            SELECT 'account_exports',object_key,object_version_id,false
-           FROM straylight.account_exports
+           FROM brunn.account_exports
            WHERE object_key IS NOT NULL AND object_version_id IS NOT NULL
            UNION ALL
            SELECT 'entry_versions',object_key,object_version_id,false
-           FROM straylight.entry_versions
+           FROM brunn.entry_versions
            WHERE object_key IS NOT NULL AND object_version_id IS NOT NULL
          )
          SELECT referenced.relation,
@@ -1430,7 +1429,7 @@ pub async fn remap_database(
         })
         .collect::<Vec<_>>();
     let asset_versions_updated =
-        sqlx::query_scalar::<_, i64>("SELECT straylight.remap_asset_object_versions($1::jsonb)")
+        sqlx::query_scalar::<_, i64>("SELECT brunn.remap_asset_object_versions($1::jsonb)")
             .bind(serde_json::Value::Array(asset_mapping))
             .fetch_one(&mut *transaction)
             .await
@@ -1438,7 +1437,7 @@ pub async fn remap_database(
     let asset_versions_updated =
         u64::try_from(asset_versions_updated).context("asset remap returned a negative count")?;
     let workspace_entry_versions_updated = sqlx::query(
-        "UPDATE straylight.entry_versions version
+        "UPDATE brunn.entry_versions version
          SET object_version_id=mapping.restored_version_id
          FROM object_version_restore_map mapping
          WHERE mapping.object_key=version.object_key
@@ -1450,7 +1449,7 @@ pub async fn remap_database(
     let upload_temporary_versions_updated = 0_u64;
     let upload_canonical_versions_updated = 0_u64;
     let account_exports_updated = sqlx::query(
-        "UPDATE straylight.account_exports export
+        "UPDATE brunn.account_exports export
          SET object_version_id=mapping.restored_version_id
          FROM object_version_restore_map mapping
          WHERE mapping.object_key=export.object_key
@@ -1468,7 +1467,7 @@ pub async fn remap_database(
                   object_version_id,
                   content_hash::text AS content_hash,
                   size_bytes
-	           FROM straylight.asset_versions
+	           FROM brunn.asset_versions
 	           WHERE object_version_id IS NOT NULL
 	             AND NOT (
 	               object_key::text = user_id::text || '/deleted-assets/'
@@ -1476,7 +1475,7 @@ pub async fn remap_database(
 	               AND content_hash::text =
 	                 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
 	               AND size_bytes=0
-	               AND media_type::text='application/x-straylight-deleted'
+	               AND media_type::text='application/x-brunn-deleted'
 	               AND metadata ? 'redacted_by_deletion_job'
 	             )
            UNION ALL
@@ -1486,7 +1485,7 @@ pub async fn remap_database(
                   object_version_id,
                   content_hash::text,
                   size_bytes
-           FROM straylight.account_exports
+           FROM brunn.account_exports
            WHERE object_key IS NOT NULL
              AND object_version_id IS NOT NULL
            UNION ALL
@@ -1496,7 +1495,7 @@ pub async fn remap_database(
                   object_version_id,
                   content_sha256::text,
                   size_bytes
-           FROM straylight.entry_versions
+           FROM brunn.entry_versions
            WHERE object_key IS NOT NULL
              AND object_version_id IS NOT NULL
          )
@@ -1539,7 +1538,7 @@ pub async fn remap_database(
     }
     let database_references_verified = sqlx::query_scalar::<_, i64>(
         "SELECT
-	           (SELECT count(*) FROM straylight.asset_versions
+	           (SELECT count(*) FROM brunn.asset_versions
 	            WHERE object_version_id IS NOT NULL
 	              AND NOT (
 	                object_key::text = user_id::text || '/deleted-assets/'
@@ -1547,12 +1546,12 @@ pub async fn remap_database(
 	                AND content_hash::text =
 	                  'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
 	                AND size_bytes=0
-	                AND media_type::text='application/x-straylight-deleted'
+	                AND media_type::text='application/x-brunn-deleted'
 	                AND metadata ? 'redacted_by_deletion_job'
 	              ))
-           + (SELECT count(*) FROM straylight.account_exports
+           + (SELECT count(*) FROM brunn.account_exports
               WHERE object_version_id IS NOT NULL)
-           + (SELECT count(*) FROM straylight.entry_versions
+           + (SELECT count(*) FROM brunn.entry_versions
               WHERE object_version_id IS NOT NULL)",
     )
     .fetch_one(&mut *transaction)
@@ -2604,8 +2603,8 @@ mod tests {
 
     #[tokio::test]
     async fn live_minio_restore_resumes_and_uses_multipart() {
-        if std::env::var("STRAYLIGHT_LIVE_S3_RECOVERY_TEST").as_deref() != Ok("1") {
-            eprintln!("STRAYLIGHT_LIVE_S3_RECOVERY_TEST is unset; skipping live recovery test");
+        if std::env::var("BRUNN_LIVE_S3_RECOVERY_TEST").as_deref() != Ok("1") {
+            eprintln!("BRUNN_LIVE_S3_RECOVERY_TEST is unset; skipping live recovery test");
             return;
         }
 

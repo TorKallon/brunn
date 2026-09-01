@@ -6,20 +6,20 @@ Result: **Passed**
 ## Visual target
 
 The implementation was compared directly with the user-approved concept board
-at `assets/brand/reference/straylight-night-signal-selected-board.png`.
+at `assets/brand/reference/brunn-night-signal-selected-board.png`.
 
 ## Web
 
 - The real raster mark replaces the placeholder `S` on both the authenticated
   shell and authentication screens.
 - The visible identity uses a midnight sidebar, blue interaction accents, and
-  a readable serif system stack for `Straylight`; green is no longer used as a
+  a readable serif system stack for `Brunn`; green is no longer used as a
   core web brand color.
 - The production assets stay blue-dominant while using layered sapphire/cobalt
   shading and internal beam gradations; no visible pink or hot magenta remains.
 - The 64 px favicon remains recognizable when reduced to 32 px and 16 px.
 - The login implementation was captured at
-  `/Users/aether/.codex/visualizations/2026/08/02/019fc465-35c6-7671-ae30-6cc291b72b59/straylight-web-brand-login.png`.
+  `/Users/aether/.codex/visualizations/2026/08/02/019fc465-35c6-7671-ae30-6cc291b72b59/brunn-web-brand-login.png`.
 - Source and implementation were inspected together: the off-center source,
   single lower-right beam, midnight field, and serif wordmark all remain
   faithful at product scale, with no clipping or layout regression.

@@ -66,8 +66,8 @@ from transition_eval import (
 ROOT = Path(__file__).resolve().parent
 EXECUTION_ROOT = Path(
     os.environ.get(
-        "CARRYSTATE_EVAL_RUN_ROOT",
-        "/Users/Shared/carrystate-eval-runs",
+        "BRUNN_STATE_EVAL_RUN_ROOT",
+        "/Users/Shared/brunn-state-eval-runs",
     )
 ).expanduser().resolve()
 SCHEMA = ROOT / "eval" / "work_answer_schema.json"
@@ -747,8 +747,8 @@ class ServiceBroker:
             "Connection": "close",
             "Content-Length": str(len(body)),
             "Host": self.upstream.netloc,
-            "X-Straylight-Eval-Run": self.run_id,
-            "X-Straylight-Eval-Case": self.job.key,
+            "X-Brunn-Eval-Run": self.run_id,
+            "X-Brunn-Eval-Case": self.job.key,
         })
         upstream_path = (
             self.upstream.path.rstrip("/") + path
@@ -1019,14 +1019,14 @@ class ServiceBroker:
 def parent_model_credentials(*, direct_openai: bool) -> dict[str, str]:
     if direct_openai:
         raise ValueError(
-            "Direct OpenAI reasoning is forbidden for Straylight evaluations. "
+            "Direct OpenAI reasoning is forbidden for Brunn evaluations. "
             "Use the Codex plan, switch ChatGPT accounts, or wait for its reset."
         )
     auth_path = Path.home() / ".codex" / "auth.json"
     auth = load_json(auth_path)
     if auth.get("auth_mode") != "chatgpt":
         raise ValueError(
-            "Straylight reasoning evaluations require ChatGPT-authenticated Codex."
+            "Brunn reasoning evaluations require ChatGPT-authenticated Codex."
         )
     tokens = auth.get("tokens")
     if not isinstance(tokens, dict):
@@ -1661,7 +1661,7 @@ def build_run_manifest(
         },
     }
     manifest = {
-        "format": "carrystate-interface-run-manifest-v3",
+        "format": "brunn-state-interface-run-manifest-v3",
         "run_id": run_id,
         "selection": {
             "jobs": sorted(job.key for job in jobs),
@@ -1873,7 +1873,7 @@ def ensure_binary_fixture() -> tuple[Path, dict[str, Any]]:
             shutil.rmtree(root)
         generate_fixture(root)
     manifest = load_json(manifest_path)
-    if manifest.get("format") != "carrystate-binary-fixture-v1":
+    if manifest.get("format") != "brunn-state-binary-fixture-v1":
         raise ValueError("binary fixture has an unexpected format")
     errors = verify_binary_fixture(root, manifest)
     if errors:
@@ -2087,7 +2087,7 @@ def validate_binary_leakage(
         if (
             "/generated/descriptions/" in str(document.get("path") or "")
             or str(document.get("path") or "").startswith(
-                ".carrystate/generated/descriptions/"
+                ".brunn-state/generated/descriptions/"
             )
         )
         and any(
@@ -2585,7 +2585,7 @@ def common_retrieval_policy(
     )
     native_policy = (
         """Native files are authoritative retained evidence, not model-context payloads. Locate
-the exact asset reference through CarryState, fetch it through the supplied verified asset
+the exact asset reference through Brunn State, fetch it through the supplied verified asset
 operation, and use local image, SQLite, archive, or hashing tools only on the returned private
 path. Run `./inspect-asset "returned/private/path"` before the specialized local analysis.
 A SQLite claim must come from `./inspect-asset "returned/private/path" --sqlite-query
@@ -2596,9 +2596,9 @@ inspect any other local files."""
         else ""
     )
     call_budget = (
-        "eight CarryState operations"
+        "eight Brunn State operations"
         if binary_assets
-        else "four CarryState calls"
+        else "four Brunn State calls"
     )
     sequence = (
         "open, a focused query/read as needed, asset list or metadata, verified asset fetch, "
@@ -2608,17 +2608,17 @@ inspect any other local files."""
     )
     filesystem_boundary = (
         "Do not browse, search the filesystem for additional evidence, inspect an adapter, "
-        "or use any evidence outside CarryState."
+        "or use any evidence outside Brunn State."
         if binary_assets
         else "Do not browse, search the filesystem, inspect an adapter, or use any evidence "
-        "outside CarryState."
+        "outside Brunn State."
     )
     return f"""Treat the initial open response as the first answer packet. A `complete_source`
 item already contains the full source and must not be read again. Pointer-only evidence leads
 are candidates, not proof. Build a checklist from every task facet and claim slot. Query only
 unresolved gaps. If a candidate path clearly owns an unresolved claim, read that exact path
 before searching globally again. Copy every read `path` or `ref` verbatim from the current
-CarryState response; never synthesize a filename from a title, heading, or topic. If no exact
+Brunn State response; never synthesize a filename from a title, heading, or topic. If no exact
 locator was returned, do not guess one. Use batch query or read operations for independent gaps.
 Copy identifiers, timestamps, hashes, quantities, and measurements exactly. Use no more than
 {call_budget} when the evidence permits. Prefer this sequence: {sequence}.
@@ -2656,7 +2656,7 @@ def filesystem_policy() -> str:
 sources that own each unresolved claim, preserve exact identifiers, timestamps, hashes,
 quantities, measurements, conditions, and provenance boundaries, and reconcile conflicts by
 authority and freshness. Do not browse or read outside this run directory. The checkpoint
-object in the final answer is a handoff projection; do not call CarryState or any network
+object in the final answer is a handoff projection; do not call Brunn State or any network
 service."""
 
 
@@ -2671,7 +2671,7 @@ def cli_access(job: Job) -> str:
         if job.eval_case.binary_asset_paths
         else "4."
     )
-    return f"""Use only the thin CarryState CLI at `./memory`.
+    return f"""Use only the thin Brunn State CLI at `./memory`.
 
 1. Start with `./memory {initial}`.
 2. For an unresolved gap, use a focused query such as:
@@ -2710,7 +2710,7 @@ def mcp_access(job: Job, metadata: dict[str, Any]) -> str:
         if job.eval_case.binary_asset_paths
         else "4."
     )
-    return f"""Use only the CarryState MCP tools named `memory.open`, `memory.query`,
+    return f"""Use only the Brunn State MCP tools named `memory.open`, `memory.query`,
 `memory.read`, `memory.compute`, `memory.verify`, and `memory.checkpoint`{native_tools}.
 Do not use shell commands for memory or asset access.
 
@@ -2998,10 +2998,10 @@ def codex_gateway_config_values(
     provider = "evaluation_gateway"
     values = [
         f'model_provider="{provider}"',
-        f'model_providers.{provider}.name="CarryState evaluation gateway"',
+        f'model_providers.{provider}.name="Brunn State evaluation gateway"',
         f"model_providers.{provider}.base_url={json.dumps(model_base_url)}",
         f'model_providers.{provider}.wire_api="responses"',
-        f'model_providers.{provider}.env_key="CARRYSTATE_MODEL_GATEWAY_TOKEN"',
+        f'model_providers.{provider}.env_key="BRUNN_STATE_MODEL_GATEWAY_TOKEN"',
         f"model_providers.{provider}.requires_openai_auth=true",
         f"model_providers.{provider}.supports_websockets=false",
     ]
@@ -3161,22 +3161,22 @@ def openclaw_config(
     if job.interface == "mcp":
         config["mcp"] = {
             "servers": {
-                "carrystate": {
+                "brunn-state": {
                     "command": "node",
                     "args": [str(MCP_SERVER)],
                     "env": {
-                        "STRAYLIGHT_API_URL": (
-                            service_api_url or os.environ["STRAYLIGHT_API_URL"]
+                        "BRUNN_API_URL": (
+                            service_api_url or os.environ["BRUNN_API_URL"]
                         ),
-                        "STRAYLIGHT_API_TOKEN": (
+                        "BRUNN_API_TOKEN": (
                             service_token or metadata["token"]
                         ),
-                        "STRAYLIGHT_EVAL_RUN": run_id,
-                        "STRAYLIGHT_EVAL_CASE": job.key,
-                        "STRAYLIGHT_MCP_TRACE_PATH": str(
+                        "BRUNN_EVAL_RUN": run_id,
+                        "BRUNN_EVAL_CASE": job.key,
+                        "BRUNN_MCP_TRACE_PATH": str(
                             run_dir / "mcp-trace.jsonl"
                         ),
-                        "CARRYSTATE_MCP_ASSET_ROOT": str(run_dir / "assets"),
+                        "BRUNN_STATE_MCP_ASSET_ROOT": str(run_dir / "assets"),
                     },
                 },
             },
@@ -3235,7 +3235,7 @@ def prepare_openclaw(
 
 
 def cleanup_openclaw_state(run_dir: Path) -> None:
-    if os.environ.get("CARRYSTATE_EVAL_KEEP_AGENT_STATE") == "1":
+    if os.environ.get("BRUNN_STATE_EVAL_KEEP_AGENT_STATE") == "1":
         return
     state_dir = run_dir / ".openclaw-state"
     if state_dir.is_symlink():
@@ -3296,13 +3296,13 @@ def agent_environment(
         if not service_api_url or not service_token:
             raise ValueError("service evaluation requires a trusted broker")
         env.update({
-            "STRAYLIGHT_API_URL": service_api_url,
-            "STRAYLIGHT_EVAL_TOKEN": service_token,
-            "STRAYLIGHT_API_TOKEN": service_token,
-            "STRAYLIGHT_EVAL_RUN": run_id,
-            "STRAYLIGHT_EVAL_CASE": job.key,
-            "STRAYLIGHT_MCP_TRACE_PATH": str(run_dir / "mcp-trace.jsonl"),
-            "CARRYSTATE_MCP_ASSET_ROOT": str(run_dir / "assets"),
+            "BRUNN_API_URL": service_api_url,
+            "BRUNN_EVAL_TOKEN": service_token,
+            "BRUNN_API_TOKEN": service_token,
+            "BRUNN_EVAL_RUN": run_id,
+            "BRUNN_EVAL_CASE": job.key,
+            "BRUNN_MCP_TRACE_PATH": str(run_dir / "mcp-trace.jsonl"),
+            "BRUNN_STATE_MCP_ASSET_ROOT": str(run_dir / "assets"),
         })
     return env
 
@@ -3343,24 +3343,24 @@ def codex_command(
         ))
     if job.interface == "mcp":
         forwarded = [
-            "STRAYLIGHT_API_URL",
-            "STRAYLIGHT_API_TOKEN",
-            "STRAYLIGHT_EVAL_RUN",
-            "STRAYLIGHT_EVAL_CASE",
-            "STRAYLIGHT_MCP_TRACE_PATH",
-            "CARRYSTATE_MCP_ASSET_ROOT",
+            "BRUNN_API_URL",
+            "BRUNN_API_TOKEN",
+            "BRUNN_EVAL_RUN",
+            "BRUNN_EVAL_CASE",
+            "BRUNN_MCP_TRACE_PATH",
+            "BRUNN_STATE_MCP_ASSET_ROOT",
         ]
         command.extend([
             "--config",
-            'mcp_servers.carrystate.command="node"',
+            'mcp_servers.brunn-state.command="node"',
             "--config",
-            f"mcp_servers.carrystate.args={json.dumps([str(MCP_SERVER)])}",
+            f"mcp_servers.brunn-state.args={json.dumps([str(MCP_SERVER)])}",
             "--config",
-            f"mcp_servers.carrystate.env_vars={json.dumps(forwarded)}",
+            f"mcp_servers.brunn-state.env_vars={json.dumps(forwarded)}",
             "--config",
-            "mcp_servers.carrystate.startup_timeout_sec=30",
+            "mcp_servers.brunn-state.startup_timeout_sec=30",
             "--config",
-            'mcp_servers.carrystate.default_tools_approval_mode="approve"',
+            'mcp_servers.brunn-state.default_tools_approval_mode="approve"',
         ])
     command.extend([
         "--dangerously-bypass-approvals-and-sandbox",
@@ -3941,7 +3941,7 @@ def write_trusted_service_state(run_dir: Path, broker: ServiceBroker) -> None:
         {"checkpoint_id", "id"},
     )
     state = {
-        "format": "carrystate-supervisor-service-receipts-v1",
+        "format": "brunn-state-supervisor-service-receipts-v1",
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "session_id": broker.session_id,
         "corpus_revision": broker.corpus_revision,
@@ -4498,7 +4498,7 @@ def write_record_seal(
     key = record_hmac_key(run_root)
     seal_path = record_seal_path(run_root, job)
     payload = {
-        "format": "carrystate-parent-record-seal-v2",
+        "format": "brunn-state-parent-record-seal-v2",
         "run_id": run_id,
         "job_key": job.key,
         "record_sha256": f"sha256:{hashlib.sha256(record_bytes).hexdigest()}",
@@ -4551,7 +4551,7 @@ async def run_job(
                 job,
                 metadata,
                 run_id=run_id,
-                service_api_url=os.environ["STRAYLIGHT_API_URL"],
+                service_api_url=os.environ["BRUNN_API_URL"],
             )
             if job.interface != FILESYSTEM_INTERFACE
             else None
@@ -4581,7 +4581,7 @@ async def run_job(
             expected_reasoning_effort="xhigh",
         )
         await model_gateway.start()
-        env["CARRYSTATE_MODEL_GATEWAY_TOKEN"] = model_gateway.capability
+        env["BRUNN_STATE_MODEL_GATEWAY_TOKEN"] = model_gateway.capability
         inspector = (
             TrustedInspectionServer(job, run_dir)
             if job.eval_case.binary_asset_paths
@@ -4589,8 +4589,8 @@ async def run_job(
         )
         if inspector is not None:
             await inspector.start()
-            env["CARRYSTATE_INSPECT_URL"] = str(inspector.url)
-            env["CARRYSTATE_INSPECT_CAPABILITY"] = inspector.capability
+            env["BRUNN_STATE_INSPECT_URL"] = str(inspector.url)
+            env["BRUNN_STATE_INSPECT_CAPABILITY"] = inspector.capability
         allowed_urls = [
             str(model_gateway.base_url),
             *(
@@ -4873,7 +4873,7 @@ def load_existing_record(
         record_bytes=record_bytes,
     )
     if (
-        seal.get("format") != "carrystate-parent-record-seal-v2"
+        seal.get("format") != "brunn-state-parent-record-seal-v2"
         or seal.get("run_id") != run_id
         or seal.get("job_key") != job.key
         or seal.get("record_sha256") != expected_sha256
@@ -5383,7 +5383,7 @@ def quality_publishability(
     if not comparison_checks or not all(
         item["complete"] for item in comparison_checks.values()
     ):
-        blockers.append("filesystem and CarryState matched pairs are incomplete")
+        blockers.append("filesystem and Brunn State matched pairs are incomplete")
     if not trusted_receipts:
         blockers.append("one or more service operations lacks a parent receipt")
     if not parent_custody:
@@ -5461,7 +5461,7 @@ def render_report(run: dict[str, Any]) -> str:
     pricing = run.get("pricing") or {}
     pricing_complete = bool(pricing) and pricing.get("complete", True) is not False
     lines = [
-        "# CarryState interface evaluation",
+        "# Brunn State interface evaluation",
         "",
         f"- Run: `{run['run_id']}`",
         f"- Model: `{run['protocol']['model']}` at `xhigh` reasoning",
@@ -5585,19 +5585,19 @@ def render_report(run: dict[str, Any]) -> str:
         "- Within each agent, every interface received the same task, claim slots, evidence discipline, model ID, and reasoning effort. Codex and OpenClaw are not treated as interchangeable runtimes: their system prompts, tool plumbing, and structured-output enforcement differ.",
         "- Primary workflow and claim rates include every attempted run. Provider, authentication, timeout, malformed-output, and runner failures therefore count as misses; evaluated-only rates remain secondary diagnostics in the JSON.",
         (
-            "- Every CarryState run used a separate service user, credential, corpus, "
+            "- Every Brunn State run used a separate service user, credential, corpus, "
             "session history, and writable checkpoint history. Each filesystem control "
             "used a private read-only copy of the same frozen operational corpus."
             if FILESYSTEM_INTERFACE in run["protocol"]["interfaces"]
-            else "- Every run used a separate CarryState user, credential, corpus, "
+            else "- Every run used a separate Brunn State user, credential, corpus, "
             "session history, and writable checkpoint history."
         ),
-        "- CLI retained session IDs and compacted service responses. MCP supplied typed tools and the same compact reasoning view. HTTP returned raw JSON and required the agent to manage identifiers and payloads. Filesystem controls used ordinary local search and reads without CarryState.",
-        "- The evaluator gives each agent an isolated home and temporary directory. Network access is restricted to exact parent-owned model, CarryState, and native-inspection ports. The parent injects real credentials and records service, checkpoint, download, and inspection receipts; agent-written traces are diagnostic only.",
+        "- CLI retained session IDs and compacted service responses. MCP supplied typed tools and the same compact reasoning view. HTTP returned raw JSON and required the agent to manage identifiers and payloads. Filesystem controls used ordinary local search and reads without Brunn State.",
+        "- The evaluator gives each agent an isolated home and temporary directory. Network access is restricted to exact parent-owned model, Brunn State, and native-inspection ports. The parent injects real credentials and records service, checkpoint, download, and inspection receipts; agent-written traces are diagnostic only.",
         "- Deterministic claim rubrics are a screening signal, not final quality adjudication. A result cannot be published as parity evidence without a complete matched matrix, at least five randomized repetitions, and blind semantic or human review.",
         (
-            "- CarryState workflow passes require a passing answer and the expected "
-            "durable checkpoint. CarryState transition cases additionally require exact "
+            "- Brunn State workflow passes require a passing answer and the expected "
+            "durable checkpoint. Brunn State transition cases additionally require exact "
             "parent, corpus revision, old-source, delta-source, and four-call lineage "
             "gates. Filesystem workflow passes grade the answer only."
         ),
@@ -5628,7 +5628,7 @@ def render_report(run: dict[str, Any]) -> str:
         "## Reproduce",
         "",
         "```bash",
-        "cd /Users/Shared/projects/straylight",
+        "cd /Users/Shared/projects/brunn",
         "python3 interface_eval.py validate",
         f"python3 interface_eval.py run --resume-run-id {run['run_id']} "
         f"--repetitions {run['protocol']['repetitions']} "
@@ -5727,12 +5727,12 @@ async def run_all(args: argparse.Namespace) -> dict[str, Any]:
         job for job in jobs
         if job.interface != FILESYSTEM_INTERFACE
     ]
-    if service_jobs and not os.environ.get("STRAYLIGHT_API_URL"):
-        raise ValueError("STRAYLIGHT_API_URL is required for CarryState interfaces")
-    if service_jobs and not os.environ.get("STRAYLIGHT_EVAL_TOKEN"):
-        raise ValueError("STRAYLIGHT_EVAL_TOKEN is required for CarryState interfaces")
+    if service_jobs and not os.environ.get("BRUNN_API_URL"):
+        raise ValueError("BRUNN_API_URL is required for Brunn State interfaces")
+    if service_jobs and not os.environ.get("BRUNN_EVAL_TOKEN"):
+        raise ValueError("BRUNN_EVAL_TOKEN is required for Brunn State interfaces")
     direct_openai = False
-    service_api_url = os.environ.get("STRAYLIGHT_API_URL", "")
+    service_api_url = os.environ.get("BRUNN_API_URL", "")
     run_manifest = build_run_manifest(
         run_id,
         jobs,
@@ -5846,7 +5846,7 @@ async def run_all(args: argparse.Namespace) -> dict[str, Any]:
         )
     )
     run = {
-        "experiment_version": "carrystate-interface-v3-screening",
+        "experiment_version": "brunn-state-interface-v3-screening",
         "run_id": run_id,
         "run_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "output_path": str(args.out),
@@ -5865,7 +5865,7 @@ async def run_all(args: argparse.Namespace) -> dict[str, Any]:
             "randomization_seed": randomization_seed,
             "fresh_agent_runs": len(jobs),
             "isolation": (
-                "one service user and credential per CarryState cell; "
+                "one service user and credential per Brunn State cell; "
                 "one frozen run directory per filesystem control"
                 if any(
                     job.interface == FILESYSTEM_INTERFACE
@@ -5962,7 +5962,7 @@ async def run_all(args: argparse.Namespace) -> dict[str, Any]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Compare CarryState CLI, MCP, raw HTTP, and a frozen operational "
+            "Compare Brunn State CLI, MCP, raw HTTP, and a frozen operational "
             "filesystem corpus "
             "from Codex and OpenClaw"
         ),

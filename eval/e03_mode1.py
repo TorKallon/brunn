@@ -19,7 +19,7 @@ from performance_eval import E03_COMMON_RUNTIME_EXPECTATIONS  # noqa: E402
 from performance_eval import E03_EMBEDDING_DIMENSIONS  # noqa: E402
 
 PERFORMANCE = PROJECT_ROOT / "performance_eval.py"
-SCHEMA = "straylight-e03-mode1-orchestration@v2"
+SCHEMA = "brunn-e03-mode1-orchestration@v2"
 
 
 def run_command(
@@ -72,11 +72,11 @@ def stack_contract(args: argparse.Namespace) -> dict[str, Any]:
             "compose_service": labels.get("com.docker.compose.service"),
             "image_revision": labels.get("org.opencontainers.image.revision"),
             "embedding_provider": environment.get(
-                "STRAYLIGHT_EMBEDDING_PROVIDER",
+                "BRUNN_EMBEDDING_PROVIDER",
                 "openai",
             ),
             "embedding_dimensions": environment.get(
-                "STRAYLIGHT_EMBEDDING_DIMENSIONS",
+                "BRUNN_EMBEDDING_DIMENSIONS",
                 str(E03_EMBEDDING_DIMENSIONS),
             ),
             "provider_credential": {
@@ -302,7 +302,7 @@ def main() -> int:
     try:
         result = json.loads(args.out.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
-        result = {"schema": "straylight-performance-eval@v2", "pass": False}
+        result = {"schema": "brunn-performance-eval@v2", "pass": False}
     result["mode1_orchestration"] = orchestration
     result["pass"] = bool(result.get("pass")) and orchestration["pass"]
     args.out.parent.mkdir(parents=True, exist_ok=True)

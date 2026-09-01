@@ -1,4 +1,4 @@
-# Straylight Local Operations
+# Brunn Local Operations
 
 ## Prerequisites
 
@@ -43,7 +43,7 @@ docker compose down
 ```
 
 `docker compose down` preserves named Postgres and MinIO volumes. Do not use
-`down -v` unless intentionally destroying all local Straylight data.
+`down -v` unless intentionally destroying all local Brunn data.
 
 The repository builds its own pinned PostgreSQL 17 plus pgvector 0.8.5 image.
 New clusters use PostgreSQL's built-in `C.UTF-8` collation and page checksums;
@@ -54,7 +54,7 @@ backup/restore path, not mounted into the Alpine runtime.
 The native agent adapter emits minified JSON by default. Use
 `./memory --pretty <operation>` only for human inspection. MCP emits textual
 JSON without a second `structuredContent` copy by default; set
-`STRAYLIGHT_MCP_INCLUDE_STRUCTURED_CONTENT=1` only for a client that explicitly
+`BRUNN_MCP_INCLUDE_STRUCTURED_CONTENT=1` only for a client that explicitly
 requires it.
 
 The production remote connector endpoint and OAuth runbook are documented in
@@ -64,15 +64,15 @@ registration and must never be given an owner or credential-management token.
 Semantic retrieval remains an experimental, default-off accelerator:
 
 ```bash
-STRAYLIGHT_SEMANTIC_LANE=false
-STRAYLIGHT_EMBED_CACHE=true
-STRAYLIGHT_SEMANTIC_DEADLINE_MS=2500
-STRAYLIGHT_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS=5000
-STRAYLIGHT_SEMANTIC_QUERY_CONCURRENCY=8
-STRAYLIGHT_EMBEDDING_BACKFILL_GUARD=true
+BRUNN_SEMANTIC_LANE=false
+BRUNN_EMBED_CACHE=true
+BRUNN_SEMANTIC_DEADLINE_MS=2500
+BRUNN_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS=5000
+BRUNN_SEMANTIC_QUERY_CONCURRENCY=8
+BRUNN_EMBEDDING_BACKFILL_GUARD=true
 ```
 
-`STRAYLIGHT_SEMANTIC_DEADLINE_MS=0` removes the semantic-specific deadline but
+`BRUNN_SEMANTIC_DEADLINE_MS=0` removes the semantic-specific deadline but
 does not remove the outer 2.5-second retrieval-lane timeout. The semantic lane
 runs concurrently with exact+lexical. For a hybrid request, exact+lexical form
 the response barrier: semantic candidates are included only when ready by that
@@ -80,8 +80,8 @@ point, and a pending or failed optional semantic lane neither delays nor marks
 the response partial. Semantic-only requests wait for the lane under its
 2.5-second bound, which gives normal cold provider requests time to complete.
 Online query embeddings are deduplicated per normalized query (single flight), capped globally at
-`STRAYLIGHT_SEMANTIC_QUERY_CONCURRENCY` concurrent provider calls (1–64), and
-hard-bounded by `STRAYLIGHT_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS` (1–60000)
+`BRUNN_SEMANTIC_QUERY_CONCURRENCY` concurrent provider calls (1–64), and
+hard-bounded by `BRUNN_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS` (1–60000)
 independent of the 60-second provider client used by backfill; a timed-out or
 failed call is negative-cached for 60 seconds. A provider task already launched
 by a hybrid request remains bounded and may warm the cache after that response
@@ -90,16 +90,16 @@ its distinct uncached semantic queries into provider batches of at most 16
 items and 100,000 UTF-8 bytes while retaining per-query tickets, ordering,
 single-flight, and deadlines (an individual query over that byte target remains
 a singleton, preserving the existing query contract). Turning
-`STRAYLIGHT_EMBEDDING_BACKFILL_GUARD=false` stops the worker from claiming
+`BRUNN_EMBEDDING_BACKFILL_GUARD=false` stops the worker from claiming
 embedding jobs. With the guard on, each publication is capped at 64 chunks and
 full batches are separated by at least 250ms. In Compose the worker also reads
 the API process's rolling foreground-latency snapshot from
 `http://api:8080/health/foreground-latency`. Hosted environments must set
-`STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_URL` to a private/internal API
+`BRUNN_EMBEDDING_BACKFILL_FOREGROUND_STATUS_URL` to a private/internal API
 URL and may tune its request timeout with
-`STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_TIMEOUT_MS`.
+`BRUNN_EMBEDDING_BACKFILL_FOREGROUND_STATUS_TIMEOUT_MS`.
 
-The snapshot schema is `straylight-foreground-latency@v1`, covers 60 seconds,
+The snapshot schema is `brunn-foreground-latency@v1`, covers 60 seconds,
 and contains only sample counts, p95 values, newest-sample ages, and generation
 time. It contains no query text, paths, user IDs, or credentials. A configured
 worker pauses embedding claims when either p95 exceeds its open/search limit
@@ -122,13 +122,13 @@ revision before their guarded backfill or reasoning work.
 Trusted agents store, retrieve, list, and delete named secrets through the
 `secret.put`, `secret.get`, `secret.list`, and `secret.delete` MCP tools
 (`/v1/workspace/secrets*`). Values are AES-256-GCM ciphertext in the dedicated
-`straylight.secrets` table, outside the memory corpus: never embedded,
+`brunn.secrets` table, outside the memory corpus: never embedded,
 dreamed, searched, exported, logged, or written to object storage. Account
 exports include secret metadata but strip `value_ciphertext` and
-`value_nonce`. A content-free `straylight.secret_access_log` records which
+`value_nonce`. A content-free `brunn.secret_access_log` records which
 credential performed each put, get, and delete.
 
-The API process needs `STRAYLIGHT_SECRET_ENCRYPTION_KEY` (or its `_FILE`
+The API process needs `BRUNN_SECRET_ENCRYPTION_KEY` (or its `_FILE`
 sibling): base64 that decodes to exactly 32 bytes, generated by
 `make production-secrets` in self-hosted production and stored as an API
 service variable on Railway. The key is deliberately separate from the
@@ -157,11 +157,11 @@ Notification configuration is deliberately split by process:
 
 | Process | Configuration |
 | --- | --- |
-| API | `STRAYLIGHT_APNS_APP_ID`, `STRAYLIGHT_APNS_DELIVERY_ENABLED`, plus `STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY` or its `_FILE` sibling, so authenticated installation upserts can validate the app topic, encrypt device tokens, and suppress transport work while the release gate is off. |
-| Worker | The API values plus `STRAYLIGHT_APNS_TEAM_ID`, `STRAYLIGHT_APNS_KEY_ID`, and `STRAYLIGHT_APNS_PRIVATE_KEY` or its `_FILE` sibling. The worker sends only when the release gate is on. |
+| API | `BRUNN_APNS_APP_ID`, `BRUNN_APNS_DELIVERY_ENABLED`, plus `BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY` or its `_FILE` sibling, so authenticated installation upserts can validate the app topic, encrypt device tokens, and suppress transport work while the release gate is off. |
+| Worker | The API values plus `BRUNN_APNS_TEAM_ID`, `BRUNN_APNS_KEY_ID`, and `BRUNN_APNS_PRIVATE_KEY` or its `_FILE` sibling. The worker sends only when the release gate is on. |
 | Migrate, Web, MCP | No notification token or APNs provider secrets. |
 
-`STRAYLIGHT_APNS_DELIVERY_ENABLED` defaults to `false` and must have the same
+`BRUNN_APNS_DELIVERY_ENABLED` defaults to `false` and must have the same
 value on API and worker. While false, new notification deliveries are recorded
 as suppressed, previously queued/running transport work is also suppressed,
 and the worker never constructs an APNs provider or sends to Apple. When true,
@@ -177,8 +177,8 @@ Deploy the worker first and require its `APNs notification delivery enabled`
 startup line before deploying the API. A delivery suppressed under the old
 gate is terminal, so every post-rollout canary needs a fresh `event_key`.
 
-`STRAYLIGHT_APNS_APP_ID` is the non-secret iOS bundle ID
-(`com.rourkem.straylight`). Apple team and key identifiers are non-secret but
+`BRUNN_APNS_APP_ID` is the non-secret iOS bundle ID
+(`com.rourkem.brunn`). Apple team and key identifiers are non-secret but
 remain worker-only because no other process uses them. The notification token
 key must be base64 that decodes to exactly 32 bytes. Every supported secret
 accepts a sibling `_FILE` variable; never set the direct value and file form
@@ -201,12 +201,12 @@ make production-secrets \
 
 For another secret manager, generate 32 random bytes and base64-encode them
 without logging the result, then supply them through
-`STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE`. Rotating this key is a
+`BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE`. Rotating this key is a
 coordinated installation reset: existing encrypted device tokens cannot be
 decrypted with a new key and must be registered again.
 
 The signed app reports `development` or `production` from its
-`STRAYLIGHT_APNS_ENVIRONMENT` build setting. That value is stored with the
+`BRUNN_APNS_ENVIRONMENT` build setting. That value is stored with the
 installation and selects Apple's sandbox or production endpoint. It must match
 the provisioning profile and `aps-environment` entitlement that produced the
 device token; a token from one environment is invalid in the other. The
@@ -216,7 +216,7 @@ for every signed archive.
 
 Push payloads are intentionally generic and opaque: a schema version, opaque
 notification and delivery references, and a strict
-`straylight://notification` route. They never contain briefing prose, topics,
+`brunn://notification` route. They never contain briefing prose, topics,
 paths, source URLs, or other private content. Tapping a push opens the
 authenticated durable notification detail first; any briefing or entry target
 is a secondary explicit action from that screen. `accepted_by_apns` means
@@ -282,11 +282,11 @@ before review.
 Capture and scheduler tuning is explicit in `.env`:
 
 ```bash
-STRAYLIGHT_CAPTURE_MODEL=gpt-5.6
-STRAYLIGHT_CAPTURE_MAX_OUTPUT_TOKENS=8192
-STRAYLIGHT_DREAM_SCHEDULER_POLL_SECONDS=15
-STRAYLIGHT_DREAM_INACTIVITY_SECONDS=60
-STRAYLIGHT_DREAM_COOLDOWN_SECONDS=900
+BRUNN_CAPTURE_MODEL=gpt-5.6
+BRUNN_CAPTURE_MAX_OUTPUT_TOKENS=8192
+BRUNN_DREAM_SCHEDULER_POLL_SECONDS=15
+BRUNN_DREAM_INACTIVITY_SECONDS=60
+BRUNN_DREAM_COOLDOWN_SECONDS=900
 ```
 
 The scheduler remains shadow-only. These intervals control refresh latency,
@@ -294,21 +294,21 @@ not authority or active-corpus promotion.
 
 ## Production Observability
 
-Straylight emits production metrics through DogStatsD when
-`STRAYLIGHT_METRICS_ENABLED=true`. The exporter aggregates counters and
+Brunn emits production metrics through DogStatsD when
+`BRUNN_METRICS_ENABLED=true`. The exporter aggregates counters and
 histograms in process, sends histograms as Datadog distributions, and fails
 open: an unavailable Agent must never make the API or worker unavailable.
 
 Set the deployment identity and Agent credentials in `.env`:
 
 ```bash
-STRAYLIGHT_METRICS_ENABLED=true
-STRAYLIGHT_DOGSTATSD_ADDR=datadog-agent:8125
-STRAYLIGHT_METRICS_FLUSH_SECONDS=3
+BRUNN_METRICS_ENABLED=true
+BRUNN_DOGSTATSD_ADDR=datadog-agent:8125
+BRUNN_METRICS_FLUSH_SECONDS=3
 DD_API_KEY=<Datadog API key>
 DD_SITE=datadoghq.com
 DD_ENV=production
-DD_SERVICE=straylight
+DD_SERVICE=brunn
 DD_VERSION=<immutable release version>
 ```
 
@@ -321,12 +321,12 @@ make observability-logs
 ```
 
 An externally managed Datadog Agent is also supported. Point
-`STRAYLIGHT_DOGSTATSD_ADDR` at its reachable UDP address and omit the Compose
+`BRUNN_DOGSTATSD_ADDR` at its reachable UDP address and omit the Compose
 profile. API and worker metrics share `env`, `service`, and `version`; the
 bounded `component` tag distinguishes them.
 
 The checked-in dashboard is
-`infra/datadog/straylight-production-dashboard.json`. It covers HTTP demand and
+`infra/datadog/brunn-production-dashboard.json`. It covers HTTP demand and
 errors, retrieval quality and lane behavior, reads and deterministic compute,
 writes and capture, model and embedding usage, dreaming, background queues,
 deletion propagation, database pools, and object storage. Dashboard queries
@@ -346,8 +346,8 @@ docker compose --env-file .env exec datadog-agent agent status
 python3 tests/dogstatsd_wire_smoke.py --env-file .env
 ```
 
-After first production traffic, confirm `straylight.http.requests`,
-`straylight.runtime.alive`, and `straylight.worker.cycles` are reporting for
+After first production traffic, confirm `brunn.http.requests`,
+`brunn.runtime.alive`, and `brunn.worker.cycles` are reporting for
 the expected `env`, `service`, `version`, and `component` tags.
 
 Datadog stores distributions immediately but does not enable p50/p95/p99
@@ -365,17 +365,17 @@ in the production dashboard.
 
 ## Vault And Asset CLI
 
-The same `carrystate` binary is present in the API image. A local dry run needs
+The same `brunn-state` binary is present in the API image. A local dry run needs
 no token and performs no write:
 
 ```bash
 docker compose run --rm --no-deps \
-  --entrypoint /usr/local/bin/carrystate \
+  --entrypoint /usr/local/bin/brunn-state \
   --volume /path/to/vault:/vault:ro api vault import \
   --root /vault --scope scope:root --vault-id owner-vault --dry-run
 ```
 
-For a live import, mount the vault read-only, set `CARRYSTATE_API_TOKEN` through
+For a live import, mount the vault read-only, set `BRUNN_STATE_API_TOKEN` through
 the environment or a secret file, and omit `--dry-run`. Missing files are
 retained. To make local absence authoritative, first run with `--mirror`; the
 CLI prints the paths it would remove and an exact `--confirm-mirror` value.
@@ -384,7 +384,7 @@ Run again with that value only after reviewing the preview.
 Portable export never overwrites an existing destination:
 
 ```bash
-carrystate vault export \
+brunn-state vault export \
   --vault-id owner-vault --scope scope:root --output /backups/owner-vault
 ```
 
@@ -395,10 +395,10 @@ account export remains the complete service disaster-recovery artifact.
 
 To restore a portable export through the vault importer, pass its `sources/`
 directory as `--root` and keep `manifest.json` plus `CHECKSUMS.sha256` beside
-it. CarryState verifies the manifest checksum and each source hash before
+it. Brunn State verifies the manifest checksum and each source hash before
 reusing the exported MIME type, nanosecond modification time, and mode.
 Generated companions in any reserved
-`.carrystate/generated/descriptions/` subtree are ignored and recreated. An
+`.brunn-state/generated/descriptions/` subtree are ignored and recreated. An
 identical repeat reports `status: unchanged`; it does not create a new
 authoritative revision.
 
@@ -406,7 +406,7 @@ An agent fetches one pinned native version without loading it into the protocol
 response:
 
 ```bash
-carrystate asset fetch \
+brunn-state asset fetch \
   --session-id session:... --asset-ref asset:... --version 1 \
   --output /private/work/receipt.png
 ```
@@ -419,8 +419,8 @@ size and SHA-256, and refuses overwrite or symlink traversal.
 Set the native adapter environment without printing the token:
 
 ```bash
-export STRAYLIGHT_API_URL=http://127.0.0.1:18110
-export STRAYLIGHT_EVAL_TOKEN='<owner read/write token>'
+export BRUNN_API_URL=http://127.0.0.1:18110
+export BRUNN_EVAL_TOKEN='<owner read/write token>'
 ```
 
 Run the unchanged filesystem baseline and native service only:
@@ -542,7 +542,7 @@ the configured automatic scheduler behavior.
 
 `interface_eval.py` is the complete agent-interface gate. With no agent,
 interface, suite, or case filters it runs all frozen cases through Codex and
-OpenClaw using CarryState CLI, MCP, raw HTTP, and the matched local-file
+OpenClaw using Brunn State CLI, MCP, raw HTTP, and the matched local-file
 control. The current 52-case suite therefore schedules 416 fresh-agent runs.
 Use `--interface` only for a deliberate focused diagnostic; a release
 comparison must retain the filesystem cells.
@@ -633,7 +633,7 @@ was created after the canonical purge. Record that watermark only as part of a
 successful applying prune:
 
 ```bash
-STRAYLIGHT_RECORD_BACKUP_WATERMARK=true \
+BRUNN_RECORD_BACKUP_WATERMARK=true \
   ENV_FILE=/path/to/production.env \
   make backup-prune BACKUP_ROOT=/durable/backups
 ```
@@ -646,16 +646,16 @@ receipt source. Datadog queue metrics retain `account_export:deleting` and
 ### Managed S3 production
 
 Start from `production.managed-s3.env.example`. Set
-`STRAYLIGHT_OBJECT_STORE_MODE=managed-s3`, an existing private bucket, its
-region, and an absolute durable `STRAYLIGHT_MANAGED_BACKUP_ROOT`. Keep
-`STRAYLIGHT_S3_CREATE_BUCKET=false`. Prefer a workload identity with access
+`BRUNN_OBJECT_STORE_MODE=managed-s3`, an existing private bucket, its
+region, and an absolute durable `BRUNN_MANAGED_BACKUP_ROOT`. Keep
+`BRUNN_S3_CREATE_BUCKET=false`. Prefer a workload identity with access
 limited to that bucket. Static credentials must be mounted as secret files and
-selected with both `STRAYLIGHT_S3_ACCESS_KEY_FILE` and
-`STRAYLIGHT_S3_SECRET_KEY_FILE`; direct key values are rejected by the
+selected with both `BRUNN_S3_ACCESS_KEY_FILE` and
+`BRUNN_S3_SECRET_KEY_FILE`; direct key values are rejected by the
 production validator and never expanded into rendered Compose configuration.
 The bucket must have versioning enabled and must permit
 listing, reading, writing, and deleting exact object versions. Do not attach a
-lifecycle rule that can delete live CarryState versions.
+lifecycle rule that can delete live Brunn State versions.
 
 Validate the hosted shape before deployment:
 
@@ -666,7 +666,7 @@ make production-deploy ENV_FILE=/path/to/production.env
 ```
 
 The production deploy and rollback scripts select the managed overlay from
-`STRAYLIGHT_OBJECT_STORE_MODE`; they do not start or depend on MinIO in this
+`BRUNN_OBJECT_STORE_MODE`; they do not start or depend on MinIO in this
 mode. A pre-deploy backup pauses the API and worker, takes one PostgreSQL
 snapshot, and exports every cloud object version and delete marker into the
 durable backup root.
@@ -678,7 +678,7 @@ make managed-production-backup ENV_FILE=/path/to/production.env
 ```
 
 For a restore drill, prepare a separate environment file and empty bucket,
-using different database secrets and `STRAYLIGHT_RESTORE_DRILL=true`. The drill
+using different database secrets and `BRUNN_RESTORE_DRILL=true`. The drill
 restores the database and every object version into an isolated Compose
 project, applies the current migrations, pins restored legacy references,
 remaps provider-specific version IDs, verifies every remapped database

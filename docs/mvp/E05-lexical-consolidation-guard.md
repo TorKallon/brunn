@@ -41,7 +41,7 @@ Can the up-to-3 sequential lexical candidate scans in the search path be consoli
 
 **Resolved nuisance posture (2026-07-28):** E02 rejected D02, so every E05
 service and performance stack must start with
-`STRAYLIGHT_VERBATIM_SPANS=false` and every measured service arm must assert
+`BRUNN_VERBATIM_SPANS=false` and every measured service arm must assert
 `--expect-feature-flag verbatim_spans=off`. Verbatim spans are not an E05
 variable. An E05 pass cannot rehabilitate D02.
 
@@ -67,7 +67,7 @@ Identical corpus, identical manifests, identical model (from manifest: gpt-5.6-s
    `python3 agent_work_eval.py --manifest eval/work_cases.json validate` and
    `python3 agent_work_eval.py --manifest eval/e05_targeted_cases.json validate`.
 2. Deterministic guards on Arm B first (cheap kill), against a disposable API
-   already started with `STRAYLIGHT_LEXICAL_SINGLE_SCAN=true`:
+   already started with `BRUNN_LEXICAL_SINGLE_SCAN=true`:
    `python3 performance_eval.py run --label e05-armB-guards --gate-profile e05-lexical-consolidation --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --verbatim-feature-acceptance not-applicable --query-budget-profile not-applicable --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag lexical_single_scan=on --expect-build-revision "$REV" --run-tag E05 --run-tag armB-guards --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --out results/2026-MM-DD-e05-armB-guards-soak.json`.
    Require `old_relevant_source_survives_many_newer_writes` 30/30 and
    `bounded_lexical_overflow_returns_late_relevant_source` pass. Any failure →

@@ -50,23 +50,23 @@ impl AppState {
         let auth_pool = pool(
             &config.database_url_rw,
             config.database_max_connections,
-            "straylight-auth",
+            "brunn-auth",
         )
         .await?;
         let rw_pool = pool(
             &config.database_url_rw,
             config.database_max_connections,
-            "straylight-rw",
+            "brunn-rw",
         )
         .await?;
         let ro_pool = pool(
             &config.database_url_ro,
             config.database_max_connections,
-            "straylight-ro",
+            "brunn-ro",
         )
         .await?;
         let admin_pool = match &config.database_url_admin {
-            Some(url) => Some(pool(url, 4, "straylight-worker-admin").await?),
+            Some(url) => Some(pool(url, 4, "brunn-worker-admin").await?),
             None => None,
         };
         let embedder = embedder_from_config(&config)?;
@@ -160,12 +160,11 @@ impl AppState {
         let mut transaction = result?;
         set_context(&mut transaction, auth).await?;
         set_statement_timeout(&mut transaction, timeout).await?;
-        let status = sqlx::query_scalar::<_, String>(
-            "SELECT account_status FROM straylight.users WHERE id=$1",
-        )
-        .bind(auth.user_id.0)
-        .fetch_one(&mut *transaction)
-        .await?;
+        let status =
+            sqlx::query_scalar::<_, String>("SELECT account_status FROM brunn.users WHERE id=$1")
+                .bind(auth.user_id.0)
+                .fetch_one(&mut *transaction)
+                .await?;
         if status != "active" {
             return Err(ApiError::with_details(
                 http::StatusCode::LOCKED,
@@ -216,7 +215,7 @@ async fn pool(url: &str, max: u32, application_name: &str) -> ApiResult<PgPool> 
 }
 
 pub async fn operator_pool(url: &str) -> ApiResult<PgPool> {
-    pool(url, 1, "straylight-operator").await
+    pool(url, 1, "brunn-operator").await
 }
 
 pub async fn set_context(
@@ -229,7 +228,7 @@ pub async fn set_context(
     let row = sqlx::query(
         r#"
         SELECT valid, scope_ids
-        FROM straylight_auth.validate_transaction_context($1, $2, $3, $4)
+        FROM brunn_auth.validate_transaction_context($1, $2, $3, $4)
         "#,
     )
     .bind(auth.user_id.0)
@@ -275,7 +274,7 @@ pub async fn migrate_and_bootstrap(config: &Config) -> ApiResult<()> {
         .database_url_admin
         .as_deref()
         .ok_or_else(|| ApiError::configuration("DATABASE_URL_ADMIN is required for migrations"))?;
-    let admin = pool(admin_url, 2, "straylight-migrate").await?;
+    let admin = pool(admin_url, 2, "brunn-migrate").await?;
     sqlx::migrate!("./migrations").run(&admin).await?;
     bootstrap_dev_identity(&admin, config).await?;
     Ok(())
@@ -283,15 +282,13 @@ pub async fn migrate_and_bootstrap(config: &Config) -> ApiResult<()> {
 
 async fn bootstrap_dev_identity(pool: &PgPool, config: &Config) -> ApiResult<()> {
     let Some(read_write_token) = &config.dev_read_write_token else {
-        tracing::warn!(
-            "STRAYLIGHT_DEV_READ_WRITE_TOKEN is unset; no local credential was bootstrapped"
-        );
+        tracing::warn!("BRUNN_DEV_READ_WRITE_TOKEN is unset; no local credential was bootstrapped");
         return Ok(());
     };
 
     let write_capabilities = dev_write_capabilities(config.messaging_enabled);
     let (_user_id, _, _scope_id, _): (Uuid, Uuid, Uuid, Uuid) =
-        sqlx::query_as("SELECT * FROM straylight_auth.bootstrap_user($1, $2, $3, $4, $5)")
+        sqlx::query_as("SELECT * FROM brunn_auth.bootstrap_user($1, $2, $3, $4, $5)")
             .bind(&config.dev_user_ref)
             .bind(&config.dev_user_name)
             .bind("Local read/write")
@@ -303,7 +300,7 @@ async fn bootstrap_dev_identity(pool: &PgPool, config: &Config) -> ApiResult<()>
     if let Some(read_only_token) = &config.dev_read_only_token {
         let read_capabilities = dev_read_capabilities(config.messaging_enabled);
         let _: (Uuid, Uuid, Uuid, Uuid) =
-            sqlx::query_as("SELECT * FROM straylight_auth.bootstrap_user($1, $2, $3, $4, $5)")
+            sqlx::query_as("SELECT * FROM brunn_auth.bootstrap_user($1, $2, $3, $4, $5)")
                 .bind(&config.dev_user_ref)
                 .bind(&config.dev_user_name)
                 .bind("Local read-only")

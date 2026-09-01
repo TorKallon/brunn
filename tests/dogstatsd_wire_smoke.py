@@ -14,16 +14,16 @@ from pathlib import Path
 
 
 EXPECTED_TYPES = {
-    "straylight.runtime.starts": "c",
-    "straylight.runtime.alive": "g",
-    "straylight.db.pool.connect.duration_ms": "d",
-    "straylight.http.requests": "c",
-    "straylight.http.request.duration_ms": "d",
+    "brunn.runtime.starts": "c",
+    "brunn.runtime.alive": "g",
+    "brunn.db.pool.connect.duration_ms": "d",
+    "brunn.http.requests": "c",
+    "brunn.http.request.duration_ms": "d",
     "datadog.dogstatsd.client.packets_sent": "c",
 }
 EXPECTED_TAGS = {
     "env:wire-test",
-    "service:straylight",
+    "service:brunn",
     "version:wire-test",
     "component:api",
 }
@@ -76,7 +76,7 @@ def main() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as http_sock:
         http_sock.bind(("127.0.0.1", 0))
         http_port = http_sock.getsockname()[1]
-    container_name = f"straylight-dogstatsd-wire-smoke-{os.getpid()}"
+    container_name = f"brunn-dogstatsd-wire-smoke-{os.getpid()}"
     command = [
         "docker",
         "compose",
@@ -92,15 +92,15 @@ def main() -> int:
         "--publish",
         f"127.0.0.1:{http_port}:8080",
         "-e",
-        "STRAYLIGHT_METRICS_ENABLED=true",
+        "BRUNN_METRICS_ENABLED=true",
         "-e",
-        f"STRAYLIGHT_DOGSTATSD_ADDR={args.dogstatsd_host}:{port}",
+        f"BRUNN_DOGSTATSD_ADDR={args.dogstatsd_host}:{port}",
         "-e",
-        "STRAYLIGHT_METRICS_FLUSH_SECONDS=1",
+        "BRUNN_METRICS_FLUSH_SECONDS=1",
         "-e",
         "DD_ENV=wire-test",
         "-e",
-        "DD_SERVICE=straylight",
+        "DD_SERVICE=brunn",
         "-e",
         "DD_VERSION=wire-test",
         "api",
@@ -165,7 +165,7 @@ def main() -> int:
             missing_tags = EXPECTED_TAGS - tags
             if missing_tags:
                 raise RuntimeError(f"{name} lacks tags: {sorted(missing_tags)}")
-        for name in ("straylight.http.requests", "straylight.http.request.duration_ms"):
+        for name in ("brunn.http.requests", "brunn.http.request.duration_ms"):
             _, tags = observed[name]
             expected_http_tags = {"method:GET", "route:/health", "status_code:200"}
             missing_tags = expected_http_tags - tags

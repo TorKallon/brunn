@@ -1,5 +1,5 @@
 {
-  "schema": "straylight-query-budgets@v1",
+  "schema": "brunn-query-budgets@v1",
   "profile": "e02-verbatim",
   "retrieval_modes": [
     "exact",

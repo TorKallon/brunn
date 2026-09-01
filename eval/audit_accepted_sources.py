@@ -22,7 +22,7 @@ except ImportError:
     )
 
 
-SCHEMA = "straylight-accepted-source-context-audit@v1"
+SCHEMA = "brunn-accepted-source-context-audit@v1"
 
 
 def normalize_path(value: str) -> str:

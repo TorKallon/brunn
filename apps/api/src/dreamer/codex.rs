@@ -22,7 +22,7 @@ const EXPLICIT_DENIALS: &[&str] = &[
     "AZURE_OPENAI_API_KEY",
     "AZURE_OPENAI_ENDPOINT",
     "CODEX_API_KEY",
-    "CARRYSTATE_EVAL_DIRECT_OPENAI",
+    "BRUNN_STATE_EVAL_DIRECT_OPENAI",
 ];
 
 /// The exact login line codex must report for subscription auth.
@@ -165,7 +165,7 @@ fn first_line(rendered: &str) -> &str {
     rendered.lines().next().unwrap_or_default().trim()
 }
 
-/// Arguments for one `codex exec` invocation with the Straylight MCP server
+/// Arguments for one `codex exec` invocation with the Brunn MCP server
 /// on stdio. The MCP server authenticates with the scoped `dreamer` token via
 /// forwarded environment variables; codex itself never sees vault-capable
 /// auth.
@@ -178,7 +178,7 @@ pub struct ExecSpec<'a> {
 }
 
 pub fn exec_command(spec: &ExecSpec<'_>) -> Vec<String> {
-    let forwarded = serde_json::json!(["STRAYLIGHT_API_URL", "STRAYLIGHT_API_TOKEN"]);
+    let forwarded = serde_json::json!(["BRUNN_API_URL", "BRUNN_API_TOKEN"]);
     let args = serde_json::json!([spec.mcp_server_entry.display().to_string()]);
     vec![
         spec.codex.display().to_string(),
@@ -198,15 +198,15 @@ pub fn exec_command(spec: &ExecSpec<'_>) -> Vec<String> {
         "--model".into(),
         spec.model.into(),
         "--config".into(),
-        "mcp_servers.straylight.command=\"node\"".into(),
+        "mcp_servers.brunn.command=\"node\"".into(),
         "--config".into(),
-        format!("mcp_servers.straylight.args={args}"),
+        format!("mcp_servers.brunn.args={args}"),
         "--config".into(),
-        format!("mcp_servers.straylight.env_vars={forwarded}"),
+        format!("mcp_servers.brunn.env_vars={forwarded}"),
         "--config".into(),
-        "mcp_servers.straylight.startup_timeout_sec=30".into(),
+        "mcp_servers.brunn.startup_timeout_sec=30".into(),
         "--config".into(),
-        "mcp_servers.straylight.default_tools_approval_mode=\"approve\"".into(),
+        "mcp_servers.brunn.default_tools_approval_mode=\"approve\"".into(),
         "--dangerously-bypass-approvals-and-sandbox".into(),
         "--cd".into(),
         spec.working_dir.display().to_string(),
@@ -252,7 +252,7 @@ mod tests {
             ("ANTHROPIC_API_KEY", "sk-a"),
             ("CODEX_API_BASE", "http://other"),
             ("CODEX_API_KEY", "ck"),
-            ("CARRYSTATE_EVAL_DIRECT_OPENAI", "1"),
+            ("BRUNN_STATE_EVAL_DIRECT_OPENAI", "1"),
             ("PATH", "/usr/bin"),
             ("HOME", "/home/dreamer"),
             ("CODEX_HOME", "/home/dreamer/.codex"),
@@ -269,7 +269,7 @@ mod tests {
         let host = env_of(&[
             ("PATH", "/usr/bin"),
             ("OPENAI_API_KEY", "sk-x"),
-            ("STRAYLIGHT_API_TOKEN", "secret"),
+            ("BRUNN_API_TOKEN", "secret"),
             ("LANG", "en_US.UTF-8"),
         ]);
         let env = codex_environment(
@@ -285,7 +285,7 @@ mod tests {
             Some("/tmp/run/.home/.codex")
         );
         assert!(!env.contains_key("OPENAI_API_KEY"));
-        assert!(!env.contains_key("STRAYLIGHT_API_TOKEN"));
+        assert!(!env.contains_key("BRUNN_API_TOKEN"));
     }
 
     #[tokio::test]
@@ -331,9 +331,9 @@ mod tests {
         };
         let command = exec_command(&spec);
         let rendered = command.join(" ");
-        assert!(rendered.contains("mcp_servers.straylight.command=\"node\""));
+        assert!(rendered.contains("mcp_servers.brunn.command=\"node\""));
         assert!(rendered.contains("/srv/mcp/dist/index.js"));
-        assert!(rendered.contains("STRAYLIGHT_API_TOKEN"));
+        assert!(rendered.contains("BRUNN_API_TOKEN"));
         assert!(rendered.contains("--ephemeral"));
         assert!(rendered.contains("--output-last-message /tmp/run/answer.md"));
     }

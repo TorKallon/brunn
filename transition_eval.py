@@ -54,16 +54,16 @@ from native_eval import (
     text_documents,
     write_native_memory_wrapper,
 )
-from straylight import StraylightStore
-from straylight.embeddings import HashingEmbeddingProvider, OpenAIEmbeddingProvider
+from brunn import BrunnStore
+from brunn.embeddings import HashingEmbeddingProvider, OpenAIEmbeddingProvider
 
 
 ROOT = Path(__file__).resolve().parent
 LABELS = {
     "filesystem_rebuild": "Filesystem rebuild",
     "filesystem_sidecar": "Filesystem rebuild with writable sidecar",
-    "workspace_resume": "Straylight checkpoint resume",
-    "service_api_resume": "Native Straylight checkpoint resume",
+    "workspace_resume": "Brunn checkpoint resume",
+    "service_api_resume": "Native Brunn checkpoint resume",
 }
 TRANSITION_ADAPTERS = {
     "filesystem_rebuild": "filesystem",
@@ -161,10 +161,72 @@ def apply_mutation_manifest(
             ]
     mutated["experiment"] = {
         "id": "E06",
-        "mutation_schema": "straylight-e06-mutation-plan@v1",
+        "mutation_schema": "brunn-e06-mutation-plan@v1",
         "synthetic_fixtures": True,
     }
     return mutated
+
+
+def derive_seed_case_id_map(
+    seed_results: dict[str, Any],
+    current_work_cases: dict[str, Any],
+) -> dict[str, str]:
+    historical_cases = seed_results.get("manifest", {}).get("cases")
+    current_cases = current_work_cases.get("cases")
+    if not isinstance(historical_cases, list) or not isinstance(current_cases, list):
+        raise ValueError("seed and current work manifests must contain case lists")
+    if len(historical_cases) != len(current_cases):
+        raise ValueError("seed and current work manifests have different case counts")
+
+    mapping: dict[str, str] = {}
+    current_ids: set[str] = set()
+    for position, (historical, current) in enumerate(
+        zip(historical_cases, current_cases, strict=True)
+    ):
+        if not isinstance(historical, dict) or not isinstance(current, dict):
+            raise ValueError(f"work manifest case {position} is not an object")
+        historical_id = historical.get("id")
+        current_id = current.get("id")
+        if not isinstance(historical_id, str) or not isinstance(current_id, str):
+            raise ValueError(f"work manifest case {position} has no stable ID")
+        if historical_id in mapping or current_id in current_ids:
+            raise ValueError("seed or current work manifest contains duplicate case IDs")
+        if historical.get("capability") != current.get("capability"):
+            raise ValueError(
+                f"work manifest case {position} changed capability during ID migration"
+            )
+        historical_rubric = historical.get("rubric")
+        current_rubric = current.get("rubric")
+        if not isinstance(historical_rubric, list) or not isinstance(current_rubric, list):
+            raise ValueError(f"work manifest case {position} has no rubric list")
+        historical_slots = {
+            item.get("id") for item in historical_rubric if isinstance(item, dict)
+        }
+        current_slots = {
+            item.get("id") for item in current_rubric if isinstance(item, dict)
+        }
+        if (
+            None in historical_slots
+            or None in current_slots
+            or len(historical_slots) != len(historical_rubric)
+            or len(current_slots) != len(current_rubric)
+            or historical_slots != current_slots
+        ):
+            raise ValueError(
+                f"work manifest case {position} changed rubric slots during ID migration"
+            )
+        mapping[historical_id] = current_id
+        current_ids.add(current_id)
+
+    records = seed_results.get("records")
+    if not isinstance(records, list):
+        raise ValueError("seed results must contain a record list")
+    for position, record in enumerate(records):
+        if not isinstance(record, dict) or record.get("case_id") not in mapping:
+            raise ValueError(
+                f"seed result record {position} does not reference its embedded manifest"
+            )
+    return mapping
 
 
 def validate(
@@ -180,12 +242,25 @@ def validate(
         for path in base_root.rglob("*") if path.is_file()
     }
     seed_results = load_json(ROOT / manifest["seed_results"])
-    seed_records = {
-        record["case_id"]: record
-        for record in seed_results["records"]
-        if record["condition"] == "workspace" and record.get("workspace_checkpoint")
-    }
     errors = []
+    seed_case_id_map: dict[str, str] = {}
+    seed_records: dict[str, dict[str, Any]] = {}
+    try:
+        seed_case_id_map = derive_seed_case_id_map(
+            seed_results,
+            load_json(ROOT / "eval" / "work_cases.json"),
+        )
+    except ValueError as exc:
+        errors.append(str(exc))
+    else:
+        for record in seed_results["records"]:
+            if record["condition"] != "workspace" or not record.get("workspace_checkpoint"):
+                continue
+            current_id = seed_case_id_map[record["case_id"]]
+            if current_id in seed_records:
+                errors.append(f"duplicate workspace seed checkpoint for {current_id}")
+                continue
+            seed_records[current_id] = record
     for case in manifest["cases"]:
         if case["seed_case_id"] not in seed_records:
             errors.append(f"{case['id']}: missing seed checkpoint {case['seed_case_id']}")
@@ -217,7 +292,7 @@ def validate(
                 source_refs = plan.get("source_refs")
                 targets = plan.get("targets")
                 if (
-                    plan.get("schema") != "straylight-e06-mutation-plan@v1"
+                    plan.get("schema") != "brunn-e06-mutation-plan@v1"
                     or not isinstance(source_refs, list)
                     or len(source_refs) != 3
                     or len(set(source_refs)) != 3
@@ -255,6 +330,7 @@ def validate(
         "base_root": base_root,
         "base_paths": base_paths,
         "seed_records": seed_records,
+        "seed_case_id_map": seed_case_id_map,
         "mutation_script": mutation_script,
         "mutation_seed": mutation_seed,
         "mutation_plans": mutation_plans,
@@ -288,7 +364,7 @@ def prepare_assets(
     assets = run_root / "assets"
     assets.mkdir(parents=True, exist_ok=True)
     template = assets / "base.db"
-    template_store = StraylightStore(template)
+    template_store = BrunnStore(template)
     base_revision = template_store.ingest_directory(validated["base_root"], note="frozen transition base")
     provider = embedding_provider(embeddings, embedding_model)
     embedding_summary = template_store.index_embeddings(provider) if provider else None
@@ -300,7 +376,7 @@ def prepare_assets(
         case_root.mkdir()
         database = case_root / "workspace.db"
         backup_database(template, database)
-        store = StraylightStore(database)
+        store = BrunnStore(database)
         state = validated["seed_records"][case["seed_case_id"]]["workspace_checkpoint"]
         sources = seed_sources(case, work_cases, validated["base_paths"])
         seed = store.create_checkpoint(base_revision["seq"], state, sources)
@@ -387,8 +463,8 @@ def apply_case_mutation(
     if metadata is not None:
         environment.update(
             {
-                "STRAYLIGHT_EVAL_TOKEN": metadata["token"],
-                "STRAYLIGHT_EVAL_RUN": metadata["run_id"],
+                "BRUNN_EVAL_TOKEN": metadata["token"],
+                "BRUNN_EVAL_RUN": metadata["run_id"],
             }
         )
     receipt = run_mutation_hook(
@@ -402,7 +478,7 @@ def apply_case_mutation(
         environment=environment,
     )
     if (
-        receipt.get("schema") != "straylight-e06-mutation-receipt@v1"
+        receipt.get("schema") != "brunn-e06-mutation-receipt@v1"
         or receipt.get("paths")
         != validated["mutation_plans"][case_id]["source_refs"]
         or receipt.get("exactly_three_sources") is not True
@@ -443,7 +519,7 @@ def prepare_native_assets(
                 validated["mutation_plans"].get(case["id"]) is not None
                 and (
                     persisted.get("mutation", {}).get("schema")
-                    != "straylight-e06-mutation-receipt@v1"
+                    != "brunn-e06-mutation-receipt@v1"
                 )
             ):
                 raise ValueError(
@@ -517,8 +593,8 @@ def render_prompt(
 ) -> str:
     slots = "\n".join(f"- {key}: {value}" for key, value in case["claim_slots"].items())
     if condition in {"workspace_resume", "service_api_resume"}:
-        adapter = "native Straylight service" if condition == "service_api_resume" else "typed Straylight adapter"
-        access = """Use only the typed Straylight adapter at `./memory`.
+        adapter = "native Brunn service" if condition == "service_api_resume" else "typed Brunn adapter"
+        access = """Use only the typed Brunn adapter at `./memory`.
 
 1. Run `./memory resume`. It returns the complete parent checkpoint, the revision-N-to-N+1 delta with source content, and a scoped corpus map.
 2. If the checkpoint and delta are insufficient, use at most one batched `query` and one batched `read`:
@@ -528,7 +604,7 @@ def render_prompt(
    `./memory checkpoint '{"state":{"objective":"...","current_state":[],"decisions":[],"open_questions":[],"next_actions":[],"artifacts":[]},"source_refs":["exact/source/path"]}'`
 
 Do not call help or schema. Use no more than four workspace calls. The checkpoint write returns a receipt instead of echoing the state."""
-        access = access.replace("typed Straylight adapter", adapter).replace("workspace calls", "service calls")
+        access = access.replace("typed Brunn adapter", adapter).replace("workspace calls", "service calls")
     elif condition == "filesystem_sidecar":
         access = """Use only `./checkpoint.json`, `./delta.json`, the exact delta source under `./eval/transition-deltas`, the frozen `./corpus`, and the run-scoped writable `./sidecar`.
 
@@ -1224,7 +1300,7 @@ def attach_results(
     session_id = None
     if (run_dir / "session.json").exists():
         session_id = load_json(run_dir / "session.json").get("session_id")
-    store = StraylightStore(metadata.get("workspace_database", metadata["database"]))
+    store = BrunnStore(metadata.get("workspace_database", metadata["database"]))
     operation_summary = store.operation_summary(session_id) if session_id else {
         "completed_calls": 0, "result_chars": 0, "operations": []
     }
@@ -1418,14 +1494,14 @@ def render_report(run: dict[str, Any]) -> str:
         f"Updated: {run['run_at']}",
         "Status: Complete",
         "",
-        "Related: [[Straylight]], [[Projects/Straylight/Agent work evaluation results - 2026-07-10|Agent work evaluation results]]",
+        "Related: [[Brunn]], [[Projects/Brunn/Agent work evaluation results - 2026-07-10|Agent work evaluation results]]",
         "",
-        "# Straylight checkpoint transition evaluation",
+        "# Brunn checkpoint transition evaluation",
         "",
         "## Scope",
         f"- Model: `{run['manifest']['model']}`",
         f"- Embeddings: `{run['embeddings']['kind']}` / `{run['embeddings']['model']}`",
-        f"- Cards: {len(run['manifest']['cases'])} across Warmind, Charlemagne, Star Rupture, Switzerland, and Straylight",
+        f"- Cards: {len(run['manifest']['cases'])} across Warmind, Charlemagne, Star Rupture, Switzerland, and Brunn",
         "- Each card reopens a revision-N checkpoint with a fresh agent, introduces a revision-N+1 delta, and requires a source-preserving child checkpoint.",
         *experiment_provenance_lines(run),
         "",
@@ -1494,9 +1570,9 @@ def render_report(run: dict[str, Any]) -> str:
         "",
         "## Reproduce",
         "```bash",
-        "cd /Users/Shared/projects/straylight",
+        "cd /Users/Shared/projects/brunn",
         "python3 transition_eval.py validate",
-        "STRAYLIGHT_API_URL=http://127.0.0.1:18110 STRAYLIGHT_EVAL_TOKEN='<owner read/write token>' python3 transition_eval.py run --filesystem-native --concurrency 2 --timeout 420 --out results/native-transitions.json",
+        "BRUNN_API_URL=http://127.0.0.1:18110 BRUNN_EVAL_TOKEN='<owner read/write token>' python3 transition_eval.py run --filesystem-native --concurrency 2 --timeout 420 --out results/native-transitions.json",
         "```",
         "",
     ])
@@ -1747,12 +1823,12 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
         environment = None
         if condition == "service_api_resume":
             environment = {
-                "STRAYLIGHT_API_URL": os.environ["STRAYLIGHT_API_URL"],
-                "STRAYLIGHT_EVAL_TOKEN": native_metadata[case["id"]]["token"],
+                "BRUNN_API_URL": os.environ["BRUNN_API_URL"],
+                "BRUNN_EVAL_TOKEN": native_metadata[case["id"]]["token"],
             }
             if service_retrieval_modes:
                 environment[
-                    "STRAYLIGHT_EVAL_RETRIEVAL_MODES"
+                    "BRUNN_EVAL_RETRIEVAL_MODES"
                 ] = ",".join(service_retrieval_modes)
         tasks.append(run_one(
             semaphore, args.codex, manifest["model"], args.schema,
@@ -1826,8 +1902,8 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
         "manifest": manifest,
         "manifest_sha256": manifest_sha256,
         "harness_sha256": sha256_file(Path(__file__)),
-        "service_sha256": sha256_file(ROOT / "straylight" / "service.py"),
-        "store_sha256": sha256_file(ROOT / "straylight" / "store.py"),
+        "service_sha256": sha256_file(ROOT / "brunn" / "service.py"),
+        "store_sha256": sha256_file(ROOT / "brunn" / "store.py"),
         "native_memory_sha256": sha256_file(ROOT / "native_memory.py"),
         "embeddings": {"kind": args.embeddings, "model": args.embedding_model},
         "native_provisioning": {
@@ -1894,7 +1970,7 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Straylight checkpoint transition evaluation")
+    parser = argparse.ArgumentParser(description="Brunn checkpoint transition evaluation")
     parser.add_argument("--manifest", type=Path, default=ROOT / "eval" / "transition_cases.json")
     parser.add_argument("--schema", type=Path, default=ROOT / "eval" / "work_answer_schema.json")
     subparsers = parser.add_subparsers(dest="command", required=True)

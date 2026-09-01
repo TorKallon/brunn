@@ -1,6 +1,6 @@
 export type Appearance = "dark" | "light";
 
-export const APPEARANCE_STORAGE_KEY = "straylight.appearance.v1";
+export const APPEARANCE_STORAGE_KEY = "brunn.appearance.v1";
 export const DEFAULT_APPEARANCE: Appearance = "dark";
 
 export function readAppearance(

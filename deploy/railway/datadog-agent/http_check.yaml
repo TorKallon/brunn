@@ -4,8 +4,8 @@ init_config:
   skip_proxy: true
 
 instances:
-  - name: straylight-public-edge
-    url: https://straylight.rourkem.com/healthz
+  - name: brunn-public-edge
+    url: https://brunn.ai/healthz
     method: get
     http_response_status_code: 200
     content_match: '^ok\s*$'
@@ -16,14 +16,14 @@ instances:
     connect_timeout: 3
     read_timeout: 3
     min_collection_interval: 15
-    service: straylight
+    service: brunn
     tags:
       - component:public-edge
       - probe:public-edge
       - platform:railway
       - vantage:railway-agent
-  - name: straylight-public-api-ready
-    url: https://straylight.rourkem.com/api/ready
+  - name: brunn-public-api-ready
+    url: https://brunn.ai/api/ready
     method: get
     http_response_status_code: 200
     content_match: '"status"\s*:\s*"ready"'
@@ -34,7 +34,7 @@ instances:
     connect_timeout: 3
     read_timeout: 3
     min_collection_interval: 15
-    service: straylight
+    service: brunn
     tags:
       - component:public-edge
       - probe:public-edge

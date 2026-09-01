@@ -2,14 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build Straylight's briefings platform per `docs/superpowers/specs/2026-08-01-briefings-design.md`: typed edition publishing rendered to canonical Markdown, a rebuildable story ledger with a dedupe-check endpoint, topics-as-entries with a parsed snapshot, item actions, three MCP tools, and a Daily Thread SPA surface.
+**Goal:** Build Brunn's briefings platform per `docs/superpowers/specs/2026-08-01-briefings-design.md`: typed edition publishing rendered to canonical Markdown, a rebuildable story ledger with a dedupe-check endpoint, topics-as-entries with a parsed snapshot, item actions, three MCP tools, and a Daily Thread SPA surface.
 
-**Architecture:** Agents research and publish; Straylight stores, dedupes, and displays. Editions are ordinary Markdown entries with a `briefing.v1` payload in version metadata. One derived table pair (`briefing_stories`/`briefing_story_urls`) is rebuilt from edition metadata. All routes join the existing `workspace_ordinary` surface; MCP tools are thin adapters; the SPA extends the existing design system.
+**Architecture:** Agents research and publish; Brunn stores, dedupes, and displays. Editions are ordinary Markdown entries with a `briefing.v1` payload in version metadata. One derived table pair (`briefing_stories`/`briefing_story_urls`) is rebuilt from edition metadata. All routes join the existing `workspace_ordinary` surface; MCP tools are thin adapters; the SPA extends the existing design system.
 
 **Tech Stack:** Rust (axum, sqlx-style via existing db helpers), Postgres migration 0059, TypeScript MCP (zod v4, @modelcontextprotocol/sdk), React 19 SPA (TanStack router/query, marked + dompurify).
 
 **Verification gates (run after every task's commit):**
-- Rust: `cargo test -p straylight-api` (workspace root: `cd apps/api && cargo test`) — use whatever test invocation `AGENTS.md`/existing CI-less convention uses; check `Makefile` targets first.
+- Rust: `cargo test -p brunn-api` (workspace root: `cd apps/api && cargo test`) — use whatever test invocation `AGENTS.md`/existing CI-less convention uses; check `Makefile` targets first.
 - Python harness: `python3 -m unittest discover -s tests -v` (must stay green; unaffected unless deployment files change — they should not).
 - MCP: `cd apps/mcp && npm run build && npm test`
 - Web: `cd apps/web && npm run build && npm test -- --run`
@@ -31,7 +31,7 @@
 **Files:**
 - Create: `docs/superpowers/specs/2026-08-01-briefings-interim-contract.md`
 
-- [ ] **Step 1: Write the contract document** containing: target paths (`Briefings/<YYYY>/Morning briefing - <YYYY-MM-DD>.md`, `Briefings/State/news-brief-state.md`, `Briefings/State/daily-trackers.md`), frontmatter (`kind: briefing_edition` / `kind: briefing_state`), fail-closed rule (if Straylight unreachable: report and stop; never write local fallback), idempotency-key format (`briefing-<date>-<edition>-<attempt>`), the 10:00 health job updating the same edition entry, and a complete rewritten cron prompt for the 6:30 job that uses only `memory.open/query/read/write` against the hosted connector available to the cron host. The prompt must preserve the existing research pipeline (X/Discord digests, Datadog snapshots, trackers, strict <48h gate) but replace every Obsidian/local-file step with the Straylight paths above, and dedupe against `Briefings/State/news-brief-state.md` plus the last three `Briefings/` editions via `memory.read`.
+- [ ] **Step 1: Write the contract document** containing: target paths (`Briefings/<YYYY>/Morning briefing - <YYYY-MM-DD>.md`, `Briefings/State/news-brief-state.md`, `Briefings/State/daily-trackers.md`), frontmatter (`kind: briefing_edition` / `kind: briefing_state`), fail-closed rule (if Brunn unreachable: report and stop; never write local fallback), idempotency-key format (`briefing-<date>-<edition>-<attempt>`), the 10:00 health job updating the same edition entry, and a complete rewritten cron prompt for the 6:30 job that uses only `memory.open/query/read/write` against the hosted connector available to the cron host. The prompt must preserve the existing research pipeline (X/Discord digests, Datadog snapshots, trackers, strict <48h gate) but replace every Obsidian/local-file step with the Brunn paths above, and dedupe against `Briefings/State/news-brief-state.md` plus the last three `Briefings/` editions via `memory.read`.
 - [ ] **Step 2: Commit** — `git add docs/superpowers/specs/2026-08-01-briefings-interim-contract.md && git commit -m "docs: interim briefing rewire contract"`
 
 ## Phase B — Rust: migration, render, ledger, endpoints
@@ -49,8 +49,8 @@
 -- the Briefings/ markdown entries; rebuild_briefing_ledger reconstructs
 -- these tables from edition metadata at any time.
 
-CREATE TABLE straylight.briefing_stories (
-  user_id uuid NOT NULL REFERENCES straylight.users(id) ON DELETE CASCADE,
+CREATE TABLE brunn.briefing_stories (
+  user_id uuid NOT NULL REFERENCES brunn.users(id) ON DELETE CASCADE,
   story_key text NOT NULL CHECK (story_key ~ '^[a-z0-9][a-z0-9-]{2,79}$'),
   title text NOT NULL DEFAULT '',
   topic text NOT NULL DEFAULT '',
@@ -68,26 +68,26 @@ CREATE TABLE straylight.briefing_stories (
 );
 
 CREATE INDEX briefing_stories_user_seen_idx
-  ON straylight.briefing_stories (user_id, last_seen_at DESC);
+  ON brunn.briefing_stories (user_id, last_seen_at DESC);
 
-CREATE TABLE straylight.briefing_story_urls (
-  user_id uuid NOT NULL REFERENCES straylight.users(id) ON DELETE CASCADE,
-  url_hash straylight.sha256_hex NOT NULL,
+CREATE TABLE brunn.briefing_story_urls (
+  user_id uuid NOT NULL REFERENCES brunn.users(id) ON DELETE CASCADE,
+  url_hash brunn.sha256_hex NOT NULL,
   story_key text NOT NULL,
   url text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   PRIMARY KEY (user_id, url_hash),
   FOREIGN KEY (user_id, story_key)
-    REFERENCES straylight.briefing_stories(user_id, story_key)
+    REFERENCES brunn.briefing_stories(user_id, story_key)
     ON DELETE CASCADE
 );
 
 CREATE INDEX briefing_story_urls_user_story_idx
-  ON straylight.briefing_story_urls (user_id, story_key);
+  ON brunn.briefing_story_urls (user_id, story_key);
 ```
 
-then the RLS DO-block over `ARRAY['briefing_stories','briefing_story_urls']` with the same `simple_user_select` (app_rw, app_ro) and `simple_user_write` (app_rw, `has_any_capability(ARRAY['save','checkpoint','stage','dream','delete'])`) policies, and `GRANT SELECT, INSERT, UPDATE, DELETE ... TO app_rw; GRANT SELECT ... TO app_ro;` exactly as 0051:378-395 does. Verify `straylight.sha256_hex` domain exists (used by 0051 `entry_versions.content_sha256`); if it is schema-qualified differently, match it.
-- [ ] **Step 2: Verify migration applies fresh + is checksum-stable** — run the repo's migration test path: check `Makefile`/`docs/Operations.md` for the local migrate command (`straylight migrate` via the api binary or compose); at minimum `cargo test` including any existing migration tests must pass, and booting the local stack (`make up` if already configured on this host) applies 0059 without error. If no local DB is available, add/extend an existing migration unit test that asserts the file parses and is registered in the embedded migration list.
+then the RLS DO-block over `ARRAY['briefing_stories','briefing_story_urls']` with the same `simple_user_select` (app_rw, app_ro) and `simple_user_write` (app_rw, `has_any_capability(ARRAY['save','checkpoint','stage','dream','delete'])`) policies, and `GRANT SELECT, INSERT, UPDATE, DELETE ... TO app_rw; GRANT SELECT ... TO app_ro;` exactly as 0051:378-395 does. Verify `brunn.sha256_hex` domain exists (used by 0051 `entry_versions.content_sha256`); if it is schema-qualified differently, match it.
+- [ ] **Step 2: Verify migration applies fresh + is checksum-stable** — run the repo's migration test path: check `Makefile`/`docs/Operations.md` for the local migrate command (`brunn migrate` via the api binary or compose); at minimum `cargo test` including any existing migration tests must pass, and booting the local stack (`make up` if already configured on this host) applies 0059 without error. If no local DB is available, add/extend an existing migration unit test that asserts the file parses and is registered in the embedded migration list.
 - [ ] **Step 3: Commit** — `git commit -m "feat(api): briefing story ledger tables (0059)"`
 
 ### Task 3: `briefing.v1` types + deterministic edition render
@@ -277,13 +277,13 @@ with single blank lines between blocks, no trailing whitespace, `\n` endings, an
 - [ ] **Step 1: Add a live test cycle** (evaluation-user provisioned, destructive only within it): publish a two-item edition → NoOp replay → `GET /briefings` lists it → `GET` edition returns metadata + markdown → dedupe-check with a delivered URL returns `duplicate` with history → `items/action expand` creates a pending request visible in topics snapshot → republish with one changed item returns delta `{changed:[...]}`.
 - [ ] **Step 2: Run against the local stack** (`make up`), record output honestly (repo convention). **Commit** — `git commit -m "test: live briefings contract cycle"`
 
-### Task 15: Structured cron prompt + Straylight records
+### Task 15: Structured cron prompt + Brunn records
 
 **Files:**
 - Create: `docs/superpowers/specs/2026-08-01-briefings-cron-prompt.md` (the post-feature prompt: topics via `briefing.topics`, dedupe via `briefing.dedupe`, publish via `briefing.publish`; the 10:00 health job republishing the same edition; alert checks as intraday republish; fail closed)
 
 - [ ] **Step 1: Write the document.** **Step 2: Commit.**
-- [ ] **Step 3: Write Straylight decision/checkpoint records** (memory.write + memory.checkpoint) summarizing what shipped, with entry refs and commit hashes.
+- [ ] **Step 3: Write Brunn decision/checkpoint records** (memory.write + memory.checkpoint) summarizing what shipped, with entry refs and commit hashes.
 
 ## Self-review results
 

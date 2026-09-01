@@ -300,7 +300,7 @@ async fn process_embedding_batch(
 async fn mark_exhausted(pool: &PgPool) -> ApiResult<()> {
     sqlx::query(
         r#"
-        UPDATE straylight.jobs
+        UPDATE brunn.jobs
         SET status='queued',attempts=0,started_at=NULL,finished_at=NULL,
             available_at=clock_timestamp() + interval '5 minutes'
         WHERE kind IN ('embed_entry','describe_binary')
@@ -320,7 +320,7 @@ async fn mark_exhausted(pool: &PgPool) -> ApiResult<()> {
         r#"
         WITH candidates AS (
           SELECT id
-          FROM straylight.jobs
+          FROM brunn.jobs
           WHERE kind IN ('embed_entry','describe_binary')
             AND status='failed'
             AND coalesce(last_error,'') NOT LIKE 'permanent:%'
@@ -329,7 +329,7 @@ async fn mark_exhausted(pool: &PgPool) -> ApiResult<()> {
           LIMIT 16
           FOR UPDATE SKIP LOCKED
         )
-        UPDATE straylight.jobs AS job
+        UPDATE brunn.jobs AS job
         SET status='queued',attempts=0,available_at=clock_timestamp(),
             started_at=NULL,finished_at=NULL
         FROM candidates
@@ -346,7 +346,7 @@ async fn claim_priority(pool: &PgPool) -> ApiResult<Option<Job>> {
         r#"
         WITH candidate AS (
           SELECT id
-          FROM straylight.jobs
+          FROM brunn.jobs
           WHERE kind='describe_binary'
             AND attempts < $1
             AND status='queued'
@@ -355,7 +355,7 @@ async fn claim_priority(pool: &PgPool) -> ApiResult<Option<Job>> {
           FOR UPDATE SKIP LOCKED
           LIMIT 1
         )
-        UPDATE straylight.jobs AS job
+        UPDATE brunn.jobs AS job
         SET status='running',attempts=job.attempts + 1,
             started_at=clock_timestamp(),finished_at=NULL,last_error=NULL
         FROM candidate
@@ -380,7 +380,7 @@ async fn claim_stale_priority(pool: &PgPool) -> ApiResult<Option<Job>> {
         r#"
         WITH candidate AS (
           SELECT id
-          FROM straylight.jobs
+          FROM brunn.jobs
           WHERE kind='describe_binary'
             AND status='running'
             AND attempts < $1
@@ -389,7 +389,7 @@ async fn claim_stale_priority(pool: &PgPool) -> ApiResult<Option<Job>> {
           FOR UPDATE SKIP LOCKED
           LIMIT 1
         )
-        UPDATE straylight.jobs AS job
+        UPDATE brunn.jobs AS job
         SET status='running',attempts=job.attempts + 1,
             started_at=clock_timestamp(),finished_at=NULL,last_error=NULL
         FROM candidate
@@ -415,7 +415,7 @@ async fn claim_embedding(pool: &PgPool) -> ApiResult<Option<Job>> {
         r#"
         WITH candidate AS (
           SELECT id
-          FROM straylight.jobs
+          FROM brunn.jobs
           WHERE kind='embed_entry'
             AND attempts < $1
             AND status='queued'
@@ -424,7 +424,7 @@ async fn claim_embedding(pool: &PgPool) -> ApiResult<Option<Job>> {
           FOR UPDATE SKIP LOCKED
           LIMIT 1
         )
-        UPDATE straylight.jobs AS job
+        UPDATE brunn.jobs AS job
         SET status='running',attempts=job.attempts + 1,
             started_at=clock_timestamp(),finished_at=NULL,last_error=NULL
         FROM candidate
@@ -449,7 +449,7 @@ async fn claim_stale_embedding(pool: &PgPool) -> ApiResult<Option<Job>> {
         r#"
         WITH candidate AS (
           SELECT id
-          FROM straylight.jobs
+          FROM brunn.jobs
           WHERE kind='embed_entry'
             AND status='running'
             AND attempts < $1
@@ -458,7 +458,7 @@ async fn claim_stale_embedding(pool: &PgPool) -> ApiResult<Option<Job>> {
           FOR UPDATE SKIP LOCKED
           LIMIT 1
         )
-        UPDATE straylight.jobs AS job
+        UPDATE brunn.jobs AS job
         SET status='running',attempts=job.attempts + 1,
             started_at=clock_timestamp(),finished_at=NULL,last_error=NULL
         FROM candidate
@@ -487,7 +487,7 @@ async fn claim_more_embeddings(pool: &PgPool, limit: i64) -> ApiResult<Vec<Job>>
         r#"
         WITH candidates AS (
           SELECT id
-          FROM straylight.jobs
+          FROM brunn.jobs
           WHERE kind='embed_entry'
             AND attempts < $1
             AND status='queued'
@@ -496,7 +496,7 @@ async fn claim_more_embeddings(pool: &PgPool, limit: i64) -> ApiResult<Vec<Job>>
           FOR UPDATE SKIP LOCKED
           LIMIT $2
         )
-        UPDATE straylight.jobs AS job
+        UPDATE brunn.jobs AS job
         SET status='running',attempts=job.attempts + 1,
             started_at=clock_timestamp(),finished_at=NULL,last_error=NULL
         FROM candidates
@@ -523,7 +523,7 @@ async fn claim_more_embeddings(pool: &PgPool, limit: i64) -> ApiResult<Vec<Job>>
 async fn complete(pool: &PgPool, job: &Job) -> ApiResult<()> {
     if matches!(job.kind.as_str(), "embed_entry" | "describe_binary") {
         sqlx::query(
-            "DELETE FROM straylight.jobs \
+            "DELETE FROM brunn.jobs \
              WHERE id=$1 AND user_id=$2 AND status='running'",
         )
         .bind(job.id)
@@ -533,7 +533,7 @@ async fn complete(pool: &PgPool, job: &Job) -> ApiResult<()> {
     } else {
         sqlx::query(
             r#"
-            UPDATE straylight.jobs
+            UPDATE brunn.jobs
             SET status='complete',finished_at=clock_timestamp(),last_error=NULL
             WHERE id=$1 AND user_id=$2 AND status='running'
             "#,
@@ -549,7 +549,7 @@ async fn complete(pool: &PgPool, job: &Job) -> ApiResult<()> {
 async fn complete_many(pool: &PgPool, jobs: &[Job]) -> ApiResult<()> {
     let ids = jobs.iter().map(|job| job.id).collect::<Vec<_>>();
     sqlx::query(
-        "DELETE FROM straylight.jobs \
+        "DELETE FROM brunn.jobs \
          WHERE id=ANY($1) AND kind='embed_entry' AND status='running'",
     )
     .bind(&ids)
@@ -576,7 +576,7 @@ async fn retry_or_fail(pool: &PgPool, job: &Job, error: &ApiError) -> ApiResult<
     let message = sanitize_error(error);
     sqlx::query(
         r#"
-        UPDATE straylight.jobs
+        UPDATE brunn.jobs
         SET status=CASE WHEN $3 THEN 'failed' ELSE 'queued' END,
             attempts=CASE WHEN $6 THEN 0 ELSE attempts END,
             available_at=CASE
@@ -619,7 +619,7 @@ async fn fail_permanently(pool: &PgPool, job: &Job, message: &str) -> ApiResult<
     );
     sqlx::query(
         r#"
-        UPDATE straylight.jobs
+        UPDATE brunn.jobs
         SET status='failed',started_at=NULL,finished_at=clock_timestamp(),
             last_error=$3
         WHERE id=$1 AND user_id=$2 AND status='running'
@@ -683,15 +683,15 @@ async fn embed_entries(state: &AppState, jobs: &[Job]) -> ApiResult<()> {
             SELECT requested.user_id,requested.entry_id,requested.version,
                    chunk.id AS chunk_id,chunk.content
             FROM requested
-            JOIN straylight.entries AS entry
+            JOIN brunn.entries AS entry
               ON requested.user_id=entry.user_id
              AND requested.entry_id=entry.id
              AND requested.version=entry.current_version
-            JOIN straylight.entry_versions AS version
+            JOIN brunn.entry_versions AS version
               ON version.user_id=entry.user_id
              AND version.entry_id=entry.id
              AND version.version=entry.current_version
-            JOIN straylight.search_chunks AS chunk
+            JOIN brunn.search_chunks AS chunk
               ON chunk.user_id=entry.user_id
              AND chunk.entry_id=entry.id
              AND chunk.entry_version_id=version.id
@@ -759,10 +759,10 @@ async fn embed_entries(state: &AppState, jobs: &[Job]) -> ApiResult<()> {
         statement.push(
             r#"
             )
-            UPDATE straylight.search_chunks AS chunk
+            UPDATE brunn.search_chunks AS chunk
             SET embedding=updates.embedding
             FROM updates
-            JOIN straylight.entries AS entry
+            JOIN brunn.entries AS entry
               ON entry.user_id=updates.user_id
              AND entry.id=updates.entry_id
              AND entry.current_version=updates.version
@@ -798,17 +798,17 @@ async fn describe_binary(state: &AppState, job: &Job) -> ApiResult<()> {
                version.object_version_id,version.metadata,
                companion.current_version AS companion_version,
                companion_current.metadata AS companion_metadata
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
-        LEFT JOIN straylight.entries AS companion
+        LEFT JOIN brunn.entries AS companion
           ON companion.user_id=entry.user_id
          AND lower(companion.path)=lower($4)
          AND companion.kind='markdown'
          AND companion.deleted_at IS NULL
-        LEFT JOIN straylight.entry_versions AS companion_current
+        LEFT JOIN brunn.entry_versions AS companion_current
           ON companion_current.user_id=companion.user_id
          AND companion_current.entry_id=companion.id
          AND companion_current.version=companion.current_version
@@ -1058,8 +1058,8 @@ mod tests {
 
     #[tokio::test]
     async fn priority_jobs_precede_backlog_and_embeddings_prefer_recent_writes() {
-        let Ok(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL") else {
-            eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping worker priority test");
+        let Ok(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL") else {
+            eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping worker priority test");
             return;
         };
         let pool = PgPoolOptions::new()
@@ -1076,18 +1076,16 @@ mod tests {
             .execute(&mut *tx)
             .await
             .unwrap();
-        sqlx::query(
-            "INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)",
-        )
-        .bind(user_id)
-        .bind(format!("worker-priority-test:{user_id}"))
-        .bind("Worker priority test")
-        .execute(&mut *tx)
-        .await
-        .unwrap();
+        sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+            .bind(user_id)
+            .bind(format!("worker-priority-test:{user_id}"))
+            .bind("Worker priority test")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
         sqlx::query(
             r#"
-            INSERT INTO straylight.jobs (
+            INSERT INTO brunn.jobs (
               id,user_id,kind,status,payload,available_at,created_at
             )
             SELECT id,$2,'embed_entry','queued','{}'::jsonb,
@@ -1104,7 +1102,7 @@ mod tests {
         .unwrap();
         sqlx::query(
             r#"
-            INSERT INTO straylight.jobs (
+            INSERT INTO brunn.jobs (
               id,user_id,kind,status,payload,available_at,created_at
             ) VALUES
               (
@@ -1144,7 +1142,7 @@ mod tests {
         assert_eq!(embedding_batch.len(), MAX_EMBED_BATCH_JOBS as usize);
         assert!(embedding_batch.iter().all(|job| job.kind == "embed_entry"));
         let remaining = sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.jobs \
+            "SELECT count(*) FROM brunn.jobs \
              WHERE user_id=$1 AND kind='embed_entry' AND status='queued'",
         )
         .bind(user_id)
@@ -1157,12 +1155,12 @@ mod tests {
         );
 
         let mut cleanup = pool.begin().await.unwrap();
-        sqlx::query("DELETE FROM straylight.jobs WHERE user_id=$1")
+        sqlx::query("DELETE FROM brunn.jobs WHERE user_id=$1")
             .bind(user_id)
             .execute(&mut *cleanup)
             .await
             .unwrap();
-        sqlx::query("DELETE FROM straylight.users WHERE id=$1")
+        sqlx::query("DELETE FROM brunn.users WHERE id=$1")
             .bind(user_id)
             .execute(&mut *cleanup)
             .await

@@ -1,14 +1,14 @@
-# Straylight Observability
+# Brunn Observability
 
 ## Contract
 
 Production metrics are opt-in, fail open, and do not change any API request,
 response, authorization, persistence, retrieval, or dreaming semantic.
-Straylight uses the Rust `metrics` facade with the DogStatsD exporter. The
+Brunn uses the Rust `metrics` facade with the DogStatsD exporter. The
 exporter aggregates locally and submits every histogram as a Datadog
 distribution.
 
-Every custom metric has the `straylight.` prefix and these global tags:
+Every custom metric has the `brunn.` prefix and these global tags:
 
 | Tag | Meaning |
 | --- | --- |
@@ -22,7 +22,7 @@ status, retrieval lane, compute operator, queue, and storage operation.
 Unknown values are folded into `other`.
 
 The DogStatsD exporter also emits its standard
-`datadog.dogstatsd.client.*` self-telemetry without the Straylight prefix. It
+`datadog.dogstatsd.client.*` self-telemetry without the Brunn prefix. It
 inherits the same global tags and exposes submitted points, packets, bytes,
 aggregation, serialization drops, and transport drops.
 
@@ -43,34 +43,34 @@ Datadog outage cannot change a memory operation.
 
 | Prefix | Operational question |
 | --- | --- |
-| `straylight.runtime.*` | Are API and worker processes alive and restarting? |
-| `straylight.http.*` | How much traffic arrives, where, how large, and how slow? |
-| `straylight.api.errors` | Which stable API failures are rising? |
-| `straylight.auth.*` | Are credentials valid and capabilities correctly denied? |
-| `straylight.operation.*` | Which memory operations complete, degrade, or conflict? |
-| `straylight.retrieval.*` | Which lanes run, fail, return candidates, or leave gaps? |
-| `straylight.read.*` | Which exact views are slow, partial, or truncated? |
-| `straylight.compute.*` | Which deterministic operators are slow or partial? |
-| `straylight.verify.*` | What classifications and structural checks are produced? |
-| `straylight.write.*` | What is committed, replayed, deduplicated, or reviewed? |
-| `straylight.capture.*` | Does automatic capture commit, draft, or degrade? |
-| `straylight.projection.*` | How much policy projection includes, withholds, or transforms? |
-| `straylight.usage_tracking.*` | Is post-policy record-use telemetry being persisted? |
-| `straylight.model.*` | What model latency, outcomes, and token mix are observed? |
-| `straylight.embedding.*` | Are embedding calls healthy, sized, and keeping up? |
-| `straylight.dream.*` | Are scheduler, model, candidate, and review flows healthy? |
-| `straylight.worker.*` | Are durable jobs progressing and queues aging? |
-| `straylight.deletion.*` | Which deletion surfaces remove, retain, or fail? |
-| `straylight.db.*` | Are transactions or connection pools under pressure? |
-| `straylight.object_store.*` | Is object storage healthy, slow, or moving unusual volume? |
-| `straylight.stage.*` | Are staged imports large, warned, or quarantined? |
-| `straylight.asset.access.*` | Are native files being found and downloaded successfully, and at what volume? |
-| `straylight.asset.description.*` | Are searchable derivative descriptions completing, falling back, or failing? |
-| `straylight.asset.upload.*` | Are resumable uploads progressing, replaying safely, or failing integrity checks? |
-| `straylight.asset.storage.*` | How much logical data exists versus physically deduplicated object data? |
-| `straylight.vault.export.*` | Are revision-pinned portable manifests being produced successfully? |
-| `straylight.dependency.*` | Is a required external dependency ready or degraded? |
-| `straylight.telemetry.*` | Did periodic observability snapshots fail? |
+| `brunn.runtime.*` | Are API and worker processes alive and restarting? |
+| `brunn.http.*` | How much traffic arrives, where, how large, and how slow? |
+| `brunn.api.errors` | Which stable API failures are rising? |
+| `brunn.auth.*` | Are credentials valid and capabilities correctly denied? |
+| `brunn.operation.*` | Which memory operations complete, degrade, or conflict? |
+| `brunn.retrieval.*` | Which lanes run, fail, return candidates, or leave gaps? |
+| `brunn.read.*` | Which exact views are slow, partial, or truncated? |
+| `brunn.compute.*` | Which deterministic operators are slow or partial? |
+| `brunn.verify.*` | What classifications and structural checks are produced? |
+| `brunn.write.*` | What is committed, replayed, deduplicated, or reviewed? |
+| `brunn.capture.*` | Does automatic capture commit, draft, or degrade? |
+| `brunn.projection.*` | How much policy projection includes, withholds, or transforms? |
+| `brunn.usage_tracking.*` | Is post-policy record-use telemetry being persisted? |
+| `brunn.model.*` | What model latency, outcomes, and token mix are observed? |
+| `brunn.embedding.*` | Are embedding calls healthy, sized, and keeping up? |
+| `brunn.dream.*` | Are scheduler, model, candidate, and review flows healthy? |
+| `brunn.worker.*` | Are durable jobs progressing and queues aging? |
+| `brunn.deletion.*` | Which deletion surfaces remove, retain, or fail? |
+| `brunn.db.*` | Are transactions or connection pools under pressure? |
+| `brunn.object_store.*` | Is object storage healthy, slow, or moving unusual volume? |
+| `brunn.stage.*` | Are staged imports large, warned, or quarantined? |
+| `brunn.asset.access.*` | Are native files being found and downloaded successfully, and at what volume? |
+| `brunn.asset.description.*` | Are searchable derivative descriptions completing, falling back, or failing? |
+| `brunn.asset.upload.*` | Are resumable uploads progressing, replaying safely, or failing integrity checks? |
+| `brunn.asset.storage.*` | How much logical data exists versus physically deduplicated object data? |
+| `brunn.vault.export.*` | Are revision-pinned portable manifests being produced successfully? |
+| `brunn.dependency.*` | Is a required external dependency ready or degraded? |
+| `brunn.telemetry.*` | Did periodic observability snapshots fail? |
 | `datadog.dogstatsd.client.*` | Is the exporter sending or dropping packets and bytes? |
 
 Counters describe events, gauges describe current state, and distributions
@@ -79,7 +79,7 @@ for counters, current values for gauges, and p50/p95/p99 for distributions.
 
 ## Dashboard
 
-`infra/datadog/straylight-production-dashboard.json` is the source-controlled
+`infra/datadog/brunn-production-dashboard.json` is the source-controlled
 dashboard definition. Its template variables are `env`, `service`, `version`,
 and `component`. The groups are ordered for incident use:
 

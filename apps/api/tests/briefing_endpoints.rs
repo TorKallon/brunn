@@ -4,19 +4,19 @@ use sha2::{Digest, Sha256};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use uuid::Uuid;
 
-use straylight::briefing_service::{
+use brunn::briefing_service::{
     BriefingOmission, BriefingSection, DedupeCandidate, apply_edition_to_ledger,
     dedupe_candidate_in_tx, feedback_log_path, get_edition_in_tx, list_editions_in_tx,
     render_request_document, topics_snapshot_in_tx,
 };
-use straylight::error::ApiError;
+use brunn::error::ApiError;
 
 async fn connect_test_pool() -> Option<PgPool> {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping briefing endpoint test");
+        eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping briefing endpoint test");
         return None;
     };
     let pool = PgPoolOptions::new()
@@ -27,13 +27,13 @@ async fn connect_test_pool() -> Option<PgPool> {
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .expect("apply Straylight migrations");
+        .expect("apply Brunn migrations");
     Some(pool)
 }
 
 async fn insert_test_user(pool: &PgPool) -> Uuid {
     let user_id = Uuid::now_v7();
-    sqlx::query("INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
         .bind(user_id)
         .bind(format!("briefing-endpoint-test:{user_id}"))
         .bind("Briefing endpoint test")
@@ -76,7 +76,7 @@ async fn insert_entry_version(
     let mut tx = pool.begin().await.expect("begin entry insert");
     sqlx::query(
         r#"
-        INSERT INTO straylight.entries (
+        INSERT INTO brunn.entries (
           id,user_id,path,title,kind,media_type,current_version
         ) VALUES ($1,$2,$3,$4,'markdown','text/markdown',$5)
         ON CONFLICT (user_id,(lower(normalize(path, NFC)))) DO UPDATE
@@ -93,7 +93,7 @@ async fn insert_entry_version(
     .expect("insert entry");
     sqlx::query(
         r#"
-        INSERT INTO straylight.entry_versions (
+        INSERT INTO brunn.entry_versions (
           id,user_id,entry_id,version,content_sha256,content,size_bytes,metadata
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
         "#,

@@ -20,7 +20,7 @@ use tokio::sync::Mutex;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use straylight::{
+use brunn::{
     ApiError, AppState, Config,
     auth::{AuthContext, hash_token},
     messaging_service,
@@ -32,7 +32,7 @@ use straylight::{
     worker,
 };
 
-const APP_ID: &str = "com.example.Straylight";
+const APP_ID: &str = "com.rourkem.brunn";
 
 struct PrincipalFixture {
     user_id: Uuid,
@@ -82,12 +82,12 @@ impl ApnsProvider for FakeProvider {
 }
 
 async fn connect_pool() -> Option<(String, PgPool)> {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
         eprintln!(
-            "STRAYLIGHT_TEST_DATABASE_URL is unset; skipping messaging notification/worker contract"
+            "BRUNN_TEST_DATABASE_URL is unset; skipping messaging notification/worker contract"
         );
         return None;
     };
@@ -99,7 +99,7 @@ async fn connect_pool() -> Option<(String, PgPool)> {
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .expect("apply Straylight migrations");
+        .expect("apply Brunn migrations");
     Some((database_url, pool))
 }
 
@@ -131,14 +131,14 @@ async fn insert_principal(pool: &PgPool, label: &str) -> PrincipalFixture {
         "admin".to_owned(),
     ];
 
-    sqlx::query("INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
         .bind(user_id)
         .bind(format!("messaging-notification-contract:{label}:{user_id}"))
         .bind(format!("Messaging notification contract {label}"))
         .execute(pool)
         .await
         .expect("insert notification contract user");
-    sqlx::query("INSERT INTO straylight.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO brunn.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)")
         .bind(scope_id)
         .bind(user_id)
         .bind(&scope_ref)
@@ -152,7 +152,7 @@ async fn insert_principal(pool: &PgPool, label: &str) -> PrincipalFixture {
     ] {
         sqlx::query(
             r#"
-            INSERT INTO straylight.api_credentials (
+            INSERT INTO brunn.api_credentials (
               id,user_id,label,token_hash,capabilities
             ) VALUES ($1,$2,$3,$4,$5)
             "#,
@@ -167,7 +167,7 @@ async fn insert_principal(pool: &PgPool, label: &str) -> PrincipalFixture {
         .expect("insert notification contract credential");
         sqlx::query(
             r#"
-            INSERT INTO straylight.credential_scope_grants (
+            INSERT INTO brunn.credential_scope_grants (
               credential_id,user_id,scope_id
             ) VALUES ($1,$2,$3)
             "#,
@@ -187,7 +187,7 @@ async fn insert_principal(pool: &PgPool, label: &str) -> PrincipalFixture {
     ] {
         sqlx::query(
             r#"
-            INSERT INTO straylight.messaging_agents (
+            INSERT INTO brunn.messaging_agents (
               user_id,agent_id,display_name,principal_kind,delivery_mode,
               created_by_credential_id
             ) VALUES ($1,$2,$3,$4,'pull',$5)
@@ -204,7 +204,7 @@ async fn insert_principal(pool: &PgPool, label: &str) -> PrincipalFixture {
     }
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_credential_bindings (
+        INSERT INTO brunn.messaging_credential_bindings (
           user_id,credential_id,agent_id,bound_by_credential_id
         ) VALUES ($1,$2,'agent-a',$3)
         "#,
@@ -235,7 +235,7 @@ fn publish_request(event_key: String, target: NotificationTarget) -> PublishRequ
         kind: "operational".to_owned(),
         importance: "normal".to_owned(),
         title: "Generic conversation notification".to_owned(),
-        body: "Open Straylight to view the conversation.".to_owned(),
+        body: "Open Brunn to view the conversation.".to_owned(),
         source: None,
         target,
         occurred_at: Some(Utc::now()),
@@ -268,7 +268,7 @@ fn conversation_target(conversation_id: Value, seq: i64) -> NotificationTarget {
 
 fn encryption_fixture(key: &[u8; 32], user_id: Uuid, installation_id: Uuid) -> (Vec<u8>, Vec<u8>) {
     let token = hex::encode([7_u8; 32]);
-    let aad = format!("straylight.apns-token.v1|{user_id}|{installation_id}|development|{APP_ID}");
+    let aad = format!("brunn.apns-token.v1|{user_id}|{installation_id}|development|{APP_ID}");
     let nonce = [11_u8; 12];
     let cipher = Aes256Gcm::new_from_slice(key).expect("AES key");
     let ciphertext = cipher
@@ -298,7 +298,7 @@ async fn insert_delivery(
     let key = [23_u8; 32];
     let (ciphertext, nonce) = encryption_fixture(&key, user_id, client_installation_id);
 
-    sqlx::query("INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
         .bind(user_id)
         .bind(format!("messaging-apns-contract:{user_id}"))
         .bind("Messaging APNs contract")
@@ -307,7 +307,7 @@ async fn insert_delivery(
         .expect("insert APNs contract user");
     sqlx::query(
         r#"
-        INSERT INTO straylight.api_credentials (
+        INSERT INTO brunn.api_credentials (
           id,user_id,label,token_hash,capabilities
         ) VALUES ($1,$2,'Messaging APNs contract',$3,$4)
         "#,
@@ -323,7 +323,7 @@ async fn insert_delivery(
     .expect("insert APNs contract credential");
     sqlx::query(
         r#"
-        INSERT INTO straylight.notification_installations (
+        INSERT INTO brunn.notification_installations (
           id,user_id,client_installation_id,registered_by_credential_id,
           platform,environment,app_id,token_ciphertext,token_nonce,
           token_hash,preview,enabled
@@ -347,7 +347,7 @@ async fn insert_delivery(
     .expect("insert APNs contract installation");
     sqlx::query(
         r#"
-        INSERT INTO straylight.notifications (
+        INSERT INTO brunn.notifications (
           id,user_id,producer_credential_id,event_key,request_hash,
           correlation_id,kind,importance,title,body,target,occurred_at,expires_at
         ) VALUES (
@@ -371,7 +371,7 @@ async fn insert_delivery(
     .expect("insert APNs contract notification");
     sqlx::query(
         r#"
-        INSERT INTO straylight.notification_deliveries (
+        INSERT INTO brunn.notification_deliveries (
           id,user_id,notification_id,installation_id,available_at
         ) VALUES ($1,$2,$3,$4,clock_timestamp()-interval '1 day')
         "#,
@@ -398,7 +398,7 @@ async fn insert_installation_for_principal(
 
     sqlx::query(
         r#"
-        INSERT INTO straylight.notification_installations (
+        INSERT INTO brunn.notification_installations (
           id,user_id,client_installation_id,registered_by_credential_id,
           platform,environment,app_id,token_ciphertext,token_nonce,
           token_hash,preview,enabled
@@ -560,8 +560,8 @@ async fn conversation_apns_is_generic_prefetchable_and_conversation_collapsed() 
     let request = process_one(&pool).await;
 
     assert_eq!(
-        request.payload["straylight_route"],
-        format!("straylight://conversation/{conversation_id}?seq=17")
+        request.payload["brunn_route"],
+        format!("brunn://conversation/{conversation_id}?seq=17")
     );
     assert_eq!(request.collapse_id, conversation_id.to_string());
     assert_eq!(
@@ -569,16 +569,16 @@ async fn conversation_apns_is_generic_prefetchable_and_conversation_collapsed() 
         json!({
             "aps": {
                 "alert": {
-                    "title": "Straylight",
+                    "title": "Brunn",
                     "body": "A new agent message is available."
                 },
                 "content-available": 1
             },
-            "schema": "straylight-push@v1",
+            "schema": "brunn-push@v1",
             "notification_ref": format!("notification:{}", notification_id.simple()),
             "delivery_ref": format!("delivery:{}", delivery_id.simple()),
-            "straylight_route": format!(
-                "straylight://conversation/{conversation_id}?seq=17"
+            "brunn_route": format!(
+                "brunn://conversation/{conversation_id}?seq=17"
             )
         })
     );
@@ -605,7 +605,7 @@ async fn invalid_stored_conversation_target_uses_private_notification_fallback()
     .await;
     let request = process_one(&pool).await;
     let fallback_route = format!(
-        "straylight://notification/{}?delivery={}",
+        "brunn://notification/{}?delivery={}",
         notification_id.simple(),
         delivery_id.simple()
     );
@@ -619,14 +619,14 @@ async fn invalid_stored_conversation_target_uses_private_notification_fallback()
         json!({
             "aps": {
                 "alert": {
-                    "title": "Straylight",
-                    "body": "Straylight has an operational alert."
+                    "title": "Brunn",
+                    "body": "Brunn has an operational alert."
                 }
             },
-            "schema": "straylight-push@v1",
+            "schema": "brunn-push@v1",
             "notification_ref": format!("notification:{}", notification_id.simple()),
             "delivery_ref": format!("delivery:{}", delivery_id.simple()),
-            "straylight_route": fallback_route
+            "brunn_route": fallback_route
         })
     );
     let serialized = serde_json::to_string(&request.payload).expect("serialize fallback payload");
@@ -656,14 +656,14 @@ async fn existing_notification_and_task_apns_contracts_are_unchanged() {
         json!({
             "aps": {
                 "alert": {
-                    "title": "Straylight",
-                    "body": "A new Straylight alert is available."
+                    "title": "Brunn",
+                    "body": "A new Brunn alert is available."
                 }
             },
-            "schema": "straylight-push@v1",
+            "schema": "brunn-push@v1",
             "notification_ref": format!("notification:{}", task_notification_id.simple()),
             "delivery_ref": format!("delivery:{}", task_delivery_id.simple()),
-            "straylight_route": format!("straylight://task/{task_id}")
+            "brunn_route": format!("brunn://task/{task_id}")
         })
     );
 
@@ -684,15 +684,15 @@ async fn existing_notification_and_task_apns_contracts_are_unchanged() {
         json!({
             "aps": {
                 "alert": {
-                    "title": "Straylight",
-                    "body": "A new Straylight alert is available."
+                    "title": "Brunn",
+                    "body": "A new Brunn alert is available."
                 }
             },
-            "schema": "straylight-push@v1",
+            "schema": "brunn-push@v1",
             "notification_ref": format!("notification:{}", notification_id.simple()),
             "delivery_ref": format!("delivery:{}", delivery_id.simple()),
-            "straylight_route": format!(
-                "straylight://notification/{}?delivery={}",
+            "brunn_route": format!(
+                "brunn://notification/{}?delivery={}",
                 notification_id.simple(),
                 delivery_id.simple()
             )
@@ -783,8 +783,8 @@ async fn delivery_times(
     sqlx::query_as(
         r#"
         SELECT notification.occurred_at,delivery.available_at
-        FROM straylight.notifications AS notification
-        JOIN straylight.notification_deliveries AS delivery
+        FROM brunn.notifications AS notification
+        JOIN brunn.notification_deliveries AS delivery
           ON delivery.user_id=notification.user_id
          AND delivery.notification_id=notification.id
         WHERE notification.user_id=$1 AND notification.event_key=$2
@@ -813,7 +813,7 @@ async fn messaging_delivery_defers_to_quiet_end_without_override() {
     let quiet_end = (database_now + chrono::Duration::hours(1)).time();
     sqlx::query(
         r#"
-        UPDATE straylight.task_settings
+        UPDATE brunn.task_settings
         SET timezone='UTC',quiet_hours_start=$2,quiet_hours_end=$3,
             quiet_override_enabled=true,quiet_override_within_hours=168
         WHERE user_id=$1
@@ -852,7 +852,7 @@ async fn messaging_delivery_is_immediate_when_quiet_hours_are_disabled() {
     insert_installation_for_principal(&pool, &principal, "quiet-hours-disabled").await;
     sqlx::query(
         r#"
-        UPDATE straylight.task_settings
+        UPDATE brunn.task_settings
         SET timezone='UTC',quiet_hours_start='07:00',quiet_hours_end='07:00',
             quiet_override_enabled=true,quiet_override_within_hours=168
         WHERE user_id=$1
@@ -922,7 +922,7 @@ async fn handled_at(pool: &PgPool, user_id: Uuid, conversation_id: Uuid, seq: i6
     sqlx::query_scalar::<_, Option<chrono::DateTime<Utc>>>(
         r#"
         SELECT reply_by_handled_at
-        FROM straylight.messaging_message_index
+        FROM brunn.messaging_message_index
         WHERE user_id=$1 AND conversation_id=$2 AND seq=$3
         "#,
     )
@@ -955,7 +955,7 @@ async fn existing_worker_schedules_reply_by_only_when_messaging_is_enabled() {
     let _ = off_worker.await;
     sqlx::query(
         r#"
-        UPDATE straylight.messaging_message_index
+        UPDATE brunn.messaging_message_index
         SET reply_by_handled_at=clock_timestamp()
         WHERE user_id=$1 AND conversation_id=$2 AND seq=$3
         "#,
@@ -990,10 +990,10 @@ async fn existing_worker_schedules_reply_by_only_when_messaging_is_enabled() {
         r#"
         SELECT
           (SELECT count(*)::bigint
-           FROM straylight.messaging_message_index
+           FROM brunn.messaging_message_index
            WHERE user_id=$1 AND system_key=$2),
           (SELECT count(*)::bigint
-           FROM straylight.notifications
+           FROM brunn.notifications
            WHERE user_id=$1 AND event_key=$2)
         "#,
     )
@@ -1012,10 +1012,10 @@ async fn existing_worker_schedules_reply_by_only_when_messaging_is_enabled() {
         r#"
         SELECT
           (SELECT count(*)::bigint
-           FROM straylight.messaging_message_index
+           FROM brunn.messaging_message_index
            WHERE user_id=$1 AND system_key=$2),
           (SELECT count(*)::bigint
-           FROM straylight.notifications
+           FROM brunn.notifications
            WHERE user_id=$1 AND event_key=$2)
         "#,
     )

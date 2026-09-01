@@ -55,7 +55,7 @@ from agent_work_eval import (  # noqa: E402
     write_native_provisioning_state,
     build_parser as build_agent_parser,
 )
-from straylight_eval import BM25Index  # noqa: E402
+from brunn_eval import BM25Index  # noqa: E402
 from workspace_cli import corpus_hash, load_corpus, safe_compute  # noqa: E402
 from native_memory import authored_frontmatter  # noqa: E402
 from transition_eval import select_transition_cases  # noqa: E402
@@ -84,7 +84,7 @@ def definitive_service_run_fixture(
     }
     expected_features = dict(features)
     runtime_snapshot = {
-        "schema": "straylight-service-runtime-snapshot@v1",
+        "schema": "brunn-service-runtime-snapshot@v1",
         "captured_at": "2026-07-28T12:00:00-07:00",
         "status": "ready",
         "build_revision": revision,
@@ -95,7 +95,7 @@ def definitive_service_run_fixture(
         "embeddings": {"enabled": False},
     }
     image = {
-        "schema": "straylight-service-image-fingerprint@v1",
+        "schema": "brunn-service-image-fingerprint@v1",
         "api_container": "api-container",
         "api_container_id": "container-id",
         "api_container_started_at": "2026-07-28T11:00:00Z",
@@ -104,7 +104,7 @@ def definitive_service_run_fixture(
         "api_image_revision": revision,
     }
     image_provenance = {
-        "schema": "straylight-service-image-provenance@v1",
+        "schema": "brunn-service-image-provenance@v1",
         "stable": True,
         "before": image,
         "after": dict(image),
@@ -185,7 +185,7 @@ def definitive_service_run_fixture(
             for case_id in case_ids
         ],
         "run_ledger": {
-            "schema": "straylight-eval-run-ledger@v1",
+            "schema": "brunn-eval-run-ledger@v1",
             "run_id": run_id,
             "source": {
                 "revision": revision,
@@ -288,7 +288,7 @@ class AgentWorkEvalTests(unittest.TestCase):
             definitive_service_run_provenance(run)
 
         run["manifest"]["cases"][0]["native_failure_contract"] = {
-            "schema": "straylight-native-failure-contract@v1",
+            "schema": "brunn-native-failure-contract@v1",
             "expected_failures": [{
                 "operation": "denied:checkpoint",
                 "http_status": 403,
@@ -570,7 +570,7 @@ class AgentWorkEvalTests(unittest.TestCase):
         self.assertGreater(len(self.chunks), 1500)
         self.assertEqual(
             corpus_hash(self.documents),
-            "b08ded20cdc2f1437da8cc0db5b217de0f84e89a33814995307fd81681be0bc2",
+            "c6ead8b64fd859d6fcf187e15593d8829d3c82efead51488c4eb98533ec6096c",
         )
 
     def test_codex_path_resolution_skips_a_broken_or_missing_install(self):
@@ -616,7 +616,7 @@ class AgentWorkEvalTests(unittest.TestCase):
             "FUTURE_PROVIDER_API_KEY": "future-paid-key",
             "CODEX_BASE_URL": "https://alternate-route.example.test",
             "CODEX_API_KEY": "paid-reasoning-key",
-            "CARRYSTATE_EVAL_DIRECT_OPENAI": "1",
+            "BRUNN_STATE_EVAL_DIRECT_OPENAI": "1",
         })
         self.assertEqual(env["PATH"], "/usr/bin:/bin")
         self.assertNotIn("OPENAI_API_KEY", env)
@@ -625,7 +625,7 @@ class AgentWorkEvalTests(unittest.TestCase):
         self.assertNotIn("FUTURE_PROVIDER_API_KEY", env)
         self.assertNotIn("CODEX_BASE_URL", env)
         self.assertNotIn("CODEX_API_KEY", env)
-        self.assertNotIn("CARRYSTATE_EVAL_DIRECT_OPENAI", env)
+        self.assertNotIn("BRUNN_STATE_EVAL_DIRECT_OPENAI", env)
 
     def test_adoption_measurement_uses_bounded_authored_frontmatter_receipts(self):
         frontmatter = authored_frontmatter({
@@ -1087,7 +1087,7 @@ class AgentWorkEvalTests(unittest.TestCase):
     def test_reasoning_preflight_rejects_direct_api_override(self):
         with patch.dict(
             os.environ,
-            {"CARRYSTATE_EVAL_DIRECT_OPENAI": "1"},
+            {"BRUNN_STATE_EVAL_DIRECT_OPENAI": "1"},
             clear=False,
         ):
             with self.assertRaisesRegex(ValueError, "Direct OpenAI reasoning is forbidden"):
@@ -1154,7 +1154,7 @@ class AgentWorkEvalTests(unittest.TestCase):
                     "service_retrieval_modes": ["exact", "lexical"],
                 },
             )
-        self.assertEqual(ledger["schema"], "straylight-eval-run-ledger@v1")
+        self.assertEqual(ledger["schema"], "brunn-eval-run-ledger@v1")
         self.assertEqual(ledger["source"], source)
         self.assertEqual(ledger["codex"]["path"], "/opt/codex")
         self.assertEqual(
@@ -1201,7 +1201,7 @@ class AgentWorkEvalTests(unittest.TestCase):
                 record["response_character_metrics"],
                 {
                     "schema": (
-                        "straylight-agent-response-character-metrics@v1"
+                        "brunn-agent-response-character-metrics@v1"
                     ),
                     "service_result_chars": 0,
                     "service_source_text_chars": 0,
@@ -1250,7 +1250,7 @@ class AgentWorkEvalTests(unittest.TestCase):
                 record["response_character_metrics"],
                 {
                     "schema": (
-                        "straylight-agent-response-character-metrics@v1"
+                        "brunn-agent-response-character-metrics@v1"
                     ),
                     "service_result_chars": 140,
                     "service_source_text_chars": 95,
@@ -1320,7 +1320,7 @@ class AgentWorkEvalTests(unittest.TestCase):
                 record["local_cli_failures"],
                 {
                     "schema": (
-                        "straylight-local-cli-failure-summary@v1"
+                        "brunn-local-cli-failure-summary@v1"
                     ),
                     "count": 1,
                     "operation_counts": {
@@ -1344,7 +1344,7 @@ class AgentWorkEvalTests(unittest.TestCase):
                 record["response_character_metrics"],
                 {
                     "schema": (
-                        "straylight-agent-response-character-metrics@v1"
+                        "brunn-agent-response-character-metrics@v1"
                     ),
                     "service_result_chars": 50,
                     "service_source_text_chars": 10,
@@ -1420,7 +1420,7 @@ class AgentWorkEvalTests(unittest.TestCase):
             )
             self.assertEqual(
                 record["response_character_metrics"]["schema"],
-                "straylight-agent-response-character-metrics@v1",
+                "brunn-agent-response-character-metrics@v1",
             )
             self.assertEqual(
                 record["response_character_metrics"][
@@ -1479,11 +1479,11 @@ class AgentWorkEvalTests(unittest.TestCase):
         self.assertEqual(len(validated["chunks"]), 587)
         self.assertEqual(
             validated["corpus_sha256"],
-            "aa9c33e39777f0899dacecee61a94f5fd11ec1315f7a6e820a41bc217e1a9803",
+            "f58627c8c1c1a4d50044ca946ab7a909722914a287a3e040dde3867417a725fe",
         )
         self.assertEqual(
             validated["artifact_tree_sha256"],
-            "aa434eb3ffd5f4b6b9c766000d34ec6c30fd14b5ec6f94a4ff625306396b7b50",
+            "ec693c7f31481a70d07754b2eaa2b6a1ca09114954f653db151fa4fe10fc6a37",
         )
         paths = {document.path for document in validated["documents"]}
         self.assertIn(
@@ -1667,13 +1667,13 @@ class AgentWorkEvalTests(unittest.TestCase):
         all_cases = select_cases(self.manifest, None, include_retired=True)
         explicit = select_cases(
             self.manifest,
-            ["straylight-trust-handoff"],
+            ["brunn-trust-handoff"],
             include_retired=False,
         )
 
         self.assertEqual(len(all_cases), len(active) + 1)
-        self.assertNotIn("straylight-trust-handoff", {case["id"] for case in active})
-        self.assertEqual([case["id"] for case in explicit], ["straylight-trust-handoff"])
+        self.assertNotIn("brunn-trust-handoff", {case["id"] for case in active})
+        self.assertEqual([case["id"] for case in explicit], ["brunn-trust-handoff"])
 
     def test_rupture_ops_rubrics_are_satisfiable_and_fixed_packs_are_fair(self):
         manifest = json.loads((ROOT / "eval" / "rupture_ops_cases.json").read_text())
@@ -1762,18 +1762,18 @@ class AgentWorkEvalTests(unittest.TestCase):
         self.assertTrue(all(path.suffix in {".md", ".json", ".csv"} for path in corpus_files))
         self.assertEqual(len(validated["documents"]), 29)
         self.assertEqual(len(validated["chunks"]), 36)
-        self.assertEqual(sum(len(document.text) for document in validated["documents"]), 29352)
+        self.assertEqual(sum(len(document.text) for document in validated["documents"]), 29347)
         self.assertEqual(
             validated["corpus_sha256"],
-            "1f2d62e8f27d2309bdb9353ff349277e038a58b4753c6f3199fd608e9c97ff18",
+            "b481b734c73e73242553cd16df6f698dffb311258ab643a2741c40ff229352ea",
         )
         self.assertEqual(
             validated["artifact_tree_sha256"],
-            "1f2d62e8f27d2309bdb9353ff349277e038a58b4753c6f3199fd608e9c97ff18",
+            "b481b734c73e73242553cd16df6f698dffb311258ab643a2741c40ff229352ea",
         )
         self.assertEqual(
             hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
-            "7a19466c810be3b2e4fda49c6c2b8316a3e92d7d4c1449f5cfe3d250189cf878",
+            "b6482bfc873a967f470985019afff5ef3b23df00de106cc0f38de3438ee60ece",
         )
 
     def test_personal_coordination_rubrics_are_satisfiable_and_fixed_packs_are_fair(self):
@@ -1840,7 +1840,7 @@ class AgentWorkEvalTests(unittest.TestCase):
         self.assertEqual(len(validated["chunks"]), 41)
         self.assertEqual(
             validated["corpus_sha256"],
-            "6bc83dbf4366fc3a716799ba300c32f841f9f644dfcc497b2aea0e138ddcb10b",
+            "ee599a95aad9c9811b270b996cf14fb13edcfc61a87426e8625ba72cc1f88df1",
         )
         self.assertTrue(
             {
@@ -1943,7 +1943,7 @@ class AgentWorkEvalTests(unittest.TestCase):
         contract = json.loads(
             (corpus / "Contracts" / "canonical-contract-snapshot.json").read_text()
         )
-        self.assertEqual(contract["schema"], "straylight-context-contract-fixture@v1")
+        self.assertEqual(contract["schema"], "brunn-context-contract-fixture@v1")
         self.assertEqual(contract["object"]["object_id"], "object:person-p301")
         self.assertGreaterEqual(len(contract["object"]["type_profiles"]), 2)
         self.assertEqual(contract["qualified_relation"]["version"], "v2")

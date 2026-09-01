@@ -17,7 +17,7 @@ production_overlay=${COMPOSE_OVERRIDE_FILE:-"$root/compose.production.yaml"}
 managed_overlay=${COMPOSE_MANAGED_S3_FILE:-"$root/compose.managed-s3.yaml"}
 restore_overlay="$root/compose.restore-drill.yaml"
 started_epoch=$(date +%s)
-temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/straylight-managed-restore.XXXXXX")
+temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/brunn-managed-restore.XXXXXX")
 host_baseline="$temp_dir/host-containers.tsv"
 mapping=
 state_dir=
@@ -38,17 +38,17 @@ read_value() {
     }
   ' "$env_file"
 }
-[ "$(read_value STRAYLIGHT_OBJECT_STORE_MODE)" = "managed-s3" ] || {
-  echo "restore drill environment must set STRAYLIGHT_OBJECT_STORE_MODE=managed-s3" >&2
+[ "$(read_value BRUNN_OBJECT_STORE_MODE)" = "managed-s3" ] || {
+  echo "restore drill environment must set BRUNN_OBJECT_STORE_MODE=managed-s3" >&2
   exit 1
 }
-[ "$(read_value STRAYLIGHT_RESTORE_DRILL)" = "true" ] || {
-  echo "restore drill environment must set STRAYLIGHT_RESTORE_DRILL=true" >&2
+[ "$(read_value BRUNN_RESTORE_DRILL)" = "true" ] || {
+  echo "restore drill environment must set BRUNN_RESTORE_DRILL=true" >&2
   exit 1
 }
 source_bucket=$(jq -r '.object_bucket' "$backup_dir/manifest.json")
 backup_id=$(jq -r '.backup_id' "$backup_dir/manifest.json")
-target_bucket=$(read_value STRAYLIGHT_S3_BUCKET)
+target_bucket=$(read_value BRUNN_S3_BUCKET)
 [ -n "$target_bucket" ] && [ "$target_bucket" != "$source_bucket" ] || {
   echo "restore drill requires a dedicated bucket different from production source $source_bucket" >&2
   exit 1
@@ -59,14 +59,14 @@ restore_state_key=$(
     shasum -a 256 |
     awk '{print $1}'
 )
-state_root=${STRAYLIGHT_MANAGED_RESTORE_STATE_ROOT:-}
+state_root=${BRUNN_MANAGED_RESTORE_STATE_ROOT:-}
 [ -n "$state_root" ] ||
-  state_root=$(read_value STRAYLIGHT_MANAGED_RESTORE_STATE_ROOT)
+  state_root=$(read_value BRUNN_MANAGED_RESTORE_STATE_ROOT)
 case "$state_root" in
   /*)
     ;;
   *)
-    echo "STRAYLIGHT_MANAGED_RESTORE_STATE_ROOT must name an absolute durable directory" >&2
+    echo "BRUNN_MANAGED_RESTORE_STATE_ROOT must name an absolute durable directory" >&2
     exit 64
     ;;
 esac
@@ -79,7 +79,7 @@ esac
 state_dir="$state_root/$restore_state_key"
 mkdir -p "$state_dir"
 mapping="$state_dir/restore-map.json"
-project="straylight-managed-restore-$(printf '%s' "$restore_state_key" | cut -c1-16)"
+project="brunn-managed-restore-$(printf '%s' "$restore_state_key" | cut -c1-16)"
 
 running_containers=$(docker ps -q)
 if [ -n "$running_containers" ]; then
@@ -181,7 +181,7 @@ docker exec -i "$db_container" psql \
   --username "$db_user" --dbname "$db_name" --quiet --no-psqlrc \
   <"$root/scripts/db-inventory.sql" >"$temp_dir/db-inventory-restored.txt"
 diff -u "$backup_dir/db-inventory.txt" "$temp_dir/db-inventory-restored.txt"
-docker exec "$db_container" /usr/local/bin/straylight-postgres-healthcheck
+docker exec "$db_container" /usr/local/bin/brunn-postgres-healthcheck
 
 echo "qualifying the dedicated managed S3 drill bucket"
 ENV_FILE="$env_file" \
@@ -250,7 +250,7 @@ object_reference_integrity_verified=true
 docker exec -i "$db_container" psql \
   --username "$db_user" --dbname "$db_name" --quiet --no-psqlrc \
   <"$root/scripts/db-inventory.sql" >"$temp_dir/db-inventory-migrated.txt"
-docker exec "$db_container" /usr/local/bin/straylight-postgres-healthcheck
+docker exec "$db_container" /usr/local/bin/brunn-postgres-healthcheck
 
 echo "running no-op migrations and restored API/worker readiness"
 compose run --rm migrate >/dev/null
@@ -288,7 +288,7 @@ jq -n \
   --argjson rto_seconds "$rto_seconds" \
   --argjson object_reference_integrity "$object_reference_integrity_verified" \
   '{
-    format: "straylight-restore-drill-receipt@v1",
+    format: "brunn-restore-drill-receipt@v1",
     status: "pass",
     backup_id: $backup_id,
     backup_manifest_sha256: $manifest_sha256,

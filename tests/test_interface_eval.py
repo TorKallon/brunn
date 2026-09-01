@@ -87,7 +87,7 @@ class InterfaceEvalTests(unittest.TestCase):
                 "factory-map-route",
                 "switzerland-booking-state",
                 "kids-ski-schedule-change",
-                "carrystate-alpha-artifact",
+                "brunn-state-alpha-artifact",
                 "office-image-layout",
             },
         )
@@ -274,7 +274,7 @@ class InterfaceEvalTests(unittest.TestCase):
             self.assertIn(eval_case.case["task"], prompt)
             self.assertIn("exactly one self-contained entry", prompt)
             self.assertIn("Build a checklist", prompt)
-            self.assertIn("four CarryState calls", prompt)
+            self.assertIn("four Brunn State calls", prompt)
             self.assertIn("Every claim must cite", prompt)
             self.assertIn("stable or source ID", prompt)
         self.assertIn("./memory open", prompts["cli"])
@@ -309,7 +309,7 @@ class InterfaceEvalTests(unittest.TestCase):
             for interface in ("cli", "mcp", "api")
         }
         for prompt in prompts.values():
-            self.assertIn("eight CarryState operations", prompt)
+            self.assertIn("eight Brunn State operations", prompt)
             self.assertIn("session-pinned size and SHA-256", prompt)
             self.assertIn("returned private", prompt)
         self.assertIn("./memory asset-fetch", prompts["cli"])
@@ -586,7 +586,7 @@ class InterfaceEvalTests(unittest.TestCase):
         prompt = render_prompt(job, metadata)
         self.assertIn("frozen evidence under `./corpus`", prompt)
         self.assertIn("Do not browse or read outside", prompt)
-        self.assertNotIn("four CarryState calls", prompt)
+        self.assertNotIn("four Brunn State calls", prompt)
         self.assertNotIn("`memory.open`", prompt)
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = prepare_run_dir(
@@ -681,7 +681,7 @@ class InterfaceEvalTests(unittest.TestCase):
             {
                 "PATH": "/usr/bin:/bin",
                 "HOME": str(Path.home()),
-                "STRAYLIGHT_API_URL": "http://127.0.0.1:18110",
+                "BRUNN_API_URL": "http://127.0.0.1:18110",
                 "AWS_SECRET_ACCESS_KEY": "must-not-leak",
                 "OPENAI_API_KEY": "subscription-run-must-not-forward",
             },
@@ -695,7 +695,7 @@ class InterfaceEvalTests(unittest.TestCase):
             )
         self.assertNotIn("AWS_SECRET_ACCESS_KEY", filesystem)
         self.assertNotIn("OPENAI_API_KEY", filesystem)
-        self.assertNotIn("STRAYLIGHT_API_URL", filesystem)
+        self.assertNotIn("BRUNN_API_URL", filesystem)
         self.assertEqual(filesystem["HOME"], "/tmp/env-test/.agent-home")
         self.assertEqual(filesystem["CODEX_HOME"], "/tmp/env-test/.agent-home/.codex")
 
@@ -1122,7 +1122,7 @@ class InterfaceEvalTests(unittest.TestCase):
             model_base_url="http://127.0.0.1:12345/backend-api/codex",
         )
         rendered = " ".join(command)
-        self.assertIn("STRAYLIGHT_API_TOKEN", rendered)
+        self.assertIn("BRUNN_API_TOKEN", rendered)
         self.assertNotIn("secret-token", rendered)
         self.assertIn('model_reasoning_effort="xhigh"', command)
         self.assertIn(
@@ -1131,10 +1131,10 @@ class InterfaceEvalTests(unittest.TestCase):
         )
         self.assertNotIn("sandbox_workspace_write.network_access=true", command)
         self.assertIn(
-            'mcp_servers.carrystate.default_tools_approval_mode="approve"',
+            'mcp_servers.brunn-state.default_tools_approval_mode="approve"',
             command,
         )
-        self.assertIn("CARRYSTATE_MODEL_GATEWAY_TOKEN", rendered)
+        self.assertIn("BRUNN_STATE_MODEL_GATEWAY_TOKEN", rendered)
         self.assertIn(
             "model_providers.evaluation_gateway.requires_openai_auth=true",
             command,
@@ -1151,7 +1151,7 @@ class InterfaceEvalTests(unittest.TestCase):
             root = Path(temporary)
             with patch.dict(
                 "os.environ",
-                {"CARRYSTATE_EVAL_DIRECT_OPENAI": "1"},
+                {"BRUNN_STATE_EVAL_DIRECT_OPENAI": "1"},
             ):
                 config = openclaw_config(
                     job,
@@ -1223,7 +1223,7 @@ class InterfaceEvalTests(unittest.TestCase):
             with patch.dict(
                 "os.environ",
                 {
-                    "CARRYSTATE_EVAL_DIRECT_OPENAI": "1",
+                    "BRUNN_STATE_EVAL_DIRECT_OPENAI": "1",
                     "OPENAI_API_KEY": "must-not-be-persisted",
                 },
             ):
@@ -1431,7 +1431,7 @@ class InterfaceEvalTests(unittest.TestCase):
             state_dir.mkdir()
             with patch.dict(
                 "os.environ",
-                {"CARRYSTATE_EVAL_KEEP_AGENT_STATE": "1"},
+                {"BRUNN_STATE_EVAL_KEEP_AGENT_STATE": "1"},
             ):
                 cleanup_openclaw_state(run_dir)
             self.assertTrue(state_dir.is_dir())

@@ -8,12 +8,12 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 
 import { expectedRemoteToolNames } from "./messaging-release-profile.mjs";
 
-const baseUrl = new URL(process.env.STRAYLIGHT_REMOTE_URL ?? "https://straylight.rourkem.com/");
+const baseUrl = new URL(process.env.BRUNN_REMOTE_URL ?? "https://brunn.ai/");
 const resourceUrl = new URL("/mcp", baseUrl);
-const upstreamToken = requiredEnvironment("STRAYLIGHT_REMOTE_TOKEN");
-const label = requiredEnvironment("STRAYLIGHT_REMOTE_LABEL");
-const canaryPath = requiredEnvironment("STRAYLIGHT_REMOTE_CANARY_PATH");
-const marker = requiredEnvironment("STRAYLIGHT_REMOTE_MARKER");
+const upstreamToken = requiredEnvironment("BRUNN_REMOTE_TOKEN");
+const label = requiredEnvironment("BRUNN_REMOTE_LABEL");
+const canaryPath = requiredEnvironment("BRUNN_REMOTE_CANARY_PATH");
+const marker = requiredEnvironment("BRUNN_REMOTE_MARKER");
 
 const registration = await json(await fetch(new URL("/register", baseUrl), {
   method: "POST",
@@ -43,7 +43,7 @@ const approval = await fetch(new URL("/authorize", baseUrl), {
   method: "POST",
   redirect: "manual",
   headers: { "content-type": "application/x-www-form-urlencoded" },
-  body: new URLSearchParams({ ...authorization, straylight_token: upstreamToken }),
+  body: new URLSearchParams({ ...authorization, brunn_token: upstreamToken }),
 });
 assert.equal(approval.status, 302, `authorization returned HTTP ${approval.status}`);
 const callback = new URL(requiredString(approval.headers.get("location"), "authorization redirect"));
@@ -109,7 +109,7 @@ try {
 
   const opened = toolBody(await client.callTool({
     name: "memory.open",
-    arguments: { task: `Verify hosted Straylight access for ${label}`, token_budget: 2_000 },
+    arguments: { task: `Verify hosted Brunn access for ${label}`, token_budget: 2_000 },
   }));
   const sessionId = findString(opened, "session_id");
   const content = [

@@ -7,8 +7,8 @@ import json
 import os
 from pathlib import Path
 
-from straylight import StraylightService, StraylightStore
-from straylight.embeddings import HashingEmbeddingProvider, OpenAIEmbeddingProvider
+from brunn import BrunnService, BrunnStore
+from brunn.embeddings import HashingEmbeddingProvider, OpenAIEmbeddingProvider
 
 
 def save_session(path: Path, session_id: str) -> None:
@@ -44,7 +44,7 @@ def main() -> None:
     parser.add_argument("payload", nargs="?")
     args = parser.parse_args()
 
-    service = StraylightService(StraylightStore(args.db), provider_from_args(args))
+    service = BrunnService(BrunnStore(args.db), provider_from_args(args))
     if args.command == "schema":
         result = service.schema()
     elif args.command == "resume":

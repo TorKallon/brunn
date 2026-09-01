@@ -64,8 +64,9 @@ describe("landing dashboard", () => {
     installApiMock();
     renderApp("/dashboard");
 
+    expect(await screen.findByText("brunn")).toBeInTheDocument();
     expect(
-      await screen.findByRole("heading", { name: "What Straylight is holding" }),
+      await screen.findByRole("heading", { name: "What Brunn is holding" }),
     ).toBeInTheDocument();
 
     const textCard = screen.getByText("Text artifacts").closest("article");
@@ -89,7 +90,7 @@ describe("landing dashboard", () => {
     expect(
       screen.getByRole("table", { name: "Data moved over the last 7 days" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Straylight Web")).toBeInTheDocument();
+    expect(screen.getByText("Brunn Web")).toBeInTheDocument();
     expect(screen.getByText("iPhone")).toBeInTheDocument();
     expect(screen.getByText("This client")).toBeInTheDocument();
     expect(

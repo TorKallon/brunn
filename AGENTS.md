@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Straylight is the durable memory, evidence, checkpoint, and continuity system
+Brunn is the durable memory, evidence, checkpoint, and continuity system
 on Nyx. Read `README.md`, `docs/Architecture.md`, `docs/Specification.md`, and
 `docs/Operations.md` as needed; current code and tests are implementation
 truth.
@@ -12,7 +12,7 @@ surface — must follow `docs/Brand.md` (the **Night Signal** design system).
 In practice:
 
 - Use the defined tokens (CSS custom properties in `apps/web/src/styles.css`,
-  `StraylightTheme` in `apps/ios`), never new color literals.
+  `BrunnTheme` in `apps/ios`), never new color literals.
 - The web app is dark by default (`data-theme="light"` restores light); any
   new foreground/background pairing must be WCAG-validated in both
   appearances, and chart series colors must come from the validated data
@@ -25,18 +25,18 @@ In practice:
 Before adding a helper or duplicating an existing behavior:
 
 1. Use `rg` for exact names, strings, routes, SQL, config keys, and errors.
-2. Use `nyx-code-intel search --project straylight "<intent>"` when the name is
+2. Use `nyx-code-intel search --project brunn "<intent>"` when the name is
    unknown.
-3. Use `nyx-code-intel lsp --project straylight ...` for precise symbols,
+3. Use `nyx-code-intel lsp --project brunn ...` for precise symbols,
    definitions, and references.
 
 Use `--semantic=false` when an entirely local search is preferred. The index
 still returns exact and FTS results if OpenAI semantic search is unavailable.
 
 Use Codex Session Search for historical commands, failures, decisions, and
-handoffs. Use Straylight memory for durable conclusions, checkpoints,
+handoffs. Use Brunn memory for durable conclusions, checkpoints,
 provenance, and cross-session continuity. Do not ingest full source trees into
-Straylight; the local code index is authoritative for the current checkout.
+Brunn; the local code index is authoritative for the current checkout.
 
 The shared implementation and runbook live at:
 

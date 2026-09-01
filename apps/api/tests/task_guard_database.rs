@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use sqlx::{PgPool, Row, Transaction, postgres::PgPoolOptions};
 use uuid::Uuid;
 
-use straylight::{
+use brunn::{
     auth::{AuthContext, hash_token},
     db::set_context,
     models::{CredentialId, UserId},
@@ -19,11 +19,11 @@ struct Principal {
 }
 
 async fn connect_test_pool() -> Option<PgPool> {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping task guard database test");
+        eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping task guard database test");
         return None;
     };
     let pool = PgPoolOptions::new()
@@ -34,7 +34,7 @@ async fn connect_test_pool() -> Option<PgPool> {
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .expect("apply Straylight migrations");
+        .expect("apply Brunn migrations");
     Some(pool)
 }
 
@@ -66,14 +66,14 @@ async fn insert_owner(pool: &PgPool, label: &str) -> Principal {
         "integration.manage".to_owned(),
         "admin".to_owned(),
     ];
-    sqlx::query("INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
         .bind(user_id)
         .bind(format!("task-guard-test:{label}:{user_id}"))
         .bind(format!("Task guard test {label}"))
         .execute(pool)
         .await
         .expect("insert guard test user");
-    sqlx::query("INSERT INTO straylight.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO brunn.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)")
         .bind(scope_id)
         .bind(user_id)
         .bind(&scope_ref)
@@ -83,7 +83,7 @@ async fn insert_owner(pool: &PgPool, label: &str) -> Principal {
         .expect("insert guard test scope");
     sqlx::query(
         r#"
-        INSERT INTO straylight.api_credentials (
+        INSERT INTO brunn.api_credentials (
           id,user_id,label,token_hash,capabilities
         ) VALUES ($1,$2,$3,$4,$5)
         "#,
@@ -98,7 +98,7 @@ async fn insert_owner(pool: &PgPool, label: &str) -> Principal {
     .expect("insert guard owner credential");
     sqlx::query(
         r#"
-        INSERT INTO straylight.credential_scope_grants (
+        INSERT INTO brunn.credential_scope_grants (
           credential_id,user_id,scope_id
         ) VALUES ($1,$2,$3)
         "#,
@@ -150,12 +150,12 @@ fn database_code(error: &sqlx::Error) -> Option<String> {
 async fn insert_installation(pool: &PgPool, principal: &Principal) {
     sqlx::query(
         r#"
-        INSERT INTO straylight.notification_installations (
+        INSERT INTO brunn.notification_installations (
           user_id,client_installation_id,registered_by_credential_id,
           platform,environment,app_id,token_ciphertext,token_nonce,token_hash,
           preview,enabled
         ) VALUES (
-          $1,$2,$3,'ios','development','com.example.Straylight',
+          $1,$2,$3,'ios','development','com.rourkem.brunn',
           $4,$5,$6,'generic',true
         )
         "#,
@@ -188,7 +188,7 @@ async fn insert_task(
     let task_id = Uuid::now_v7();
     let entry_id = Uuid::now_v7();
     let version_id = Uuid::now_v7();
-    let path = format!(".straylight/tasks/{task_id}.md");
+    let path = format!(".brunn/tasks/{task_id}.md");
     let cell = json!({
         "value":hard_due,
         "source":source,
@@ -205,7 +205,7 @@ async fn insert_task(
     let mut tx = pool.begin().await.expect("begin guard task fixture");
     sqlx::query(
         r#"
-        INSERT INTO straylight.entries (
+        INSERT INTO brunn.entries (
           id,user_id,path,title,kind,media_type,current_version,created_at,updated_at
         ) VALUES ($1,$2,$3,$4,'markdown','text/markdown',0,$5,$5)
         "#,
@@ -220,7 +220,7 @@ async fn insert_task(
     .expect("insert guard task entry");
     sqlx::query(
         r#"
-        INSERT INTO straylight.entry_versions (
+        INSERT INTO brunn.entry_versions (
           id,user_id,entry_id,version,content_sha256,content,size_bytes,metadata,
           created_by_credential_id,created_at
         ) VALUES ($1,$2,$3,1,$4,$5,$6,$7,$8,$9)
@@ -238,7 +238,7 @@ async fn insert_task(
     .execute(&mut *tx)
     .await
     .expect("insert guard task version");
-    sqlx::query("UPDATE straylight.entries SET current_version=1 WHERE user_id=$1 AND id=$2")
+    sqlx::query("UPDATE brunn.entries SET current_version=1 WHERE user_id=$1 AND id=$2")
         .bind(principal.user_id)
         .bind(entry_id)
         .execute(&mut *tx)
@@ -246,7 +246,7 @@ async fn insert_task(
         .expect("advance guard task head");
     sqlx::query(
         r#"
-        INSERT INTO straylight.task_index (
+        INSERT INTO brunn.task_index (
           user_id,task_id,entry_id,entry_version,title,status,hard_due,
           hard_due_lead_days,provenance,source_timestamps,task,
           created_at,updated_at
@@ -281,7 +281,7 @@ async fn task_guard_time_travel_dedupes_routes_and_delays_inferred_quiet_deliver
     insert_installation(&pool, &owner).await;
     sqlx::query(
         r#"
-        UPDATE straylight.task_settings
+        UPDATE brunn.task_settings
         SET timezone='UTC',quiet_hours_start='22:00',quiet_hours_end='07:00',
             quiet_override_enabled=true,quiet_override_within_hours=24
         WHERE user_id=$1
@@ -310,7 +310,7 @@ async fn task_guard_time_travel_dedupes_routes_and_delays_inferred_quiet_deliver
     .await;
     sqlx::query(
         r#"
-        UPDATE straylight.task_index
+        UPDATE brunn.task_index
         SET cost_flag=true,cost_since=$3::date,
             provenance=provenance || jsonb_build_object('cost_of_delay','agent:codex'),
             source_timestamps=source_timestamps || jsonb_build_object('cost_of_delay',$3::text),
@@ -345,7 +345,7 @@ async fn task_guard_time_travel_dedupes_routes_and_delays_inferred_quiet_deliver
         format!("task-deadline:{task_id}:7d")
     );
     assert!(first_task[0].inserted);
-    assert_eq!(first_task[0].route, format!("straylight://task/{task_id}"));
+    assert_eq!(first_task[0].route, format!("brunn://task/{task_id}"));
 
     let replay = task_guard::run_on_pool(&pool, seven_day, true)
         .await
@@ -359,7 +359,7 @@ async fn task_guard_time_travel_dedupes_routes_and_delays_inferred_quiet_deliver
         0
     );
     let count = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM straylight.notifications WHERE user_id=$1 AND event_key=$2",
+        "SELECT count(*) FROM brunn.notifications WHERE user_id=$1 AND event_key=$2",
     )
     .bind(owner.user_id)
     .bind(format!("task-deadline:{task_id}:7d"))
@@ -368,7 +368,7 @@ async fn task_guard_time_travel_dedupes_routes_and_delays_inferred_quiet_deliver
     .expect("count deduped seven-day notification");
     assert_eq!(count, 1);
     let cost_set_count = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM straylight.notifications WHERE user_id=$1 AND event_key=$2",
+        "SELECT count(*) FROM brunn.notifications WHERE user_id=$1 AND event_key=$2",
     )
     .bind(owner.user_id)
     .bind(format!("task-cost:{task_id}:set"))
@@ -389,7 +389,7 @@ async fn task_guard_time_travel_dedupes_routes_and_delays_inferred_quiet_deliver
         .await
         .expect("run weekly cost guard band");
     let weekly_cost_keys = sqlx::query_scalar::<_, String>(
-        "SELECT event_key FROM straylight.notifications WHERE user_id=$1 AND event_key LIKE $2 ORDER BY event_key",
+        "SELECT event_key FROM brunn.notifications WHERE user_id=$1 AND event_key LIKE $2 ORDER BY event_key",
     )
     .bind(owner.user_id)
     .bind(format!("task-cost:{task_id}:week:%"))
@@ -401,7 +401,7 @@ async fn task_guard_time_travel_dedupes_routes_and_delays_inferred_quiet_deliver
         [format!("task-cost:{task_id}:week:2026-W36")]
     );
     let keys = sqlx::query_scalar::<_, String>(
-        "SELECT event_key FROM straylight.notifications WHERE user_id=$1 AND event_key LIKE $2 ORDER BY event_key",
+        "SELECT event_key FROM brunn.notifications WHERE user_id=$1 AND event_key LIKE $2 ORDER BY event_key",
     )
     .bind(owner.user_id)
     .bind(format!("task-deadline:{task_id}:%"))
@@ -417,7 +417,7 @@ async fn task_guard_time_travel_dedupes_routes_and_delays_inferred_quiet_deliver
         ]
     );
     let target: Value = sqlx::query_scalar(
-        "SELECT target FROM straylight.notifications WHERE user_id=$1 AND event_key=$2",
+        "SELECT target FROM brunn.notifications WHERE user_id=$1 AND event_key=$2",
     )
     .bind(owner.user_id)
     .bind(format!("task-deadline:{task_id}:7d"))
@@ -460,8 +460,8 @@ async fn task_guard_time_travel_dedupes_routes_and_delays_inferred_quiet_deliver
     let quiet_row = sqlx::query(
         r#"
         SELECT notification.body,delivery.state,delivery.available_at
-        FROM straylight.notifications AS notification
-        JOIN straylight.notification_deliveries AS delivery
+        FROM brunn.notifications AS notification
+        JOIN brunn.notification_deliveries AS delivery
           ON delivery.user_id=notification.user_id
          AND delivery.notification_id=notification.id
         WHERE notification.user_id=$1 AND notification.event_key=$2
@@ -502,7 +502,7 @@ async fn task_guard_time_travel_dedupes_routes_and_delays_inferred_quiet_deliver
     let reserved_key = format!("task-deadline:{reserved_id}:7d");
     sqlx::query(
         r#"
-        INSERT INTO straylight.notifications (
+        INSERT INTO brunn.notifications (
           user_id,producer_credential_id,event_key,request_hash,correlation_id,
           kind,importance,title,body,target,occurred_at,expires_at
         ) VALUES (
@@ -527,7 +527,7 @@ async fn task_guard_time_travel_dedupes_routes_and_delays_inferred_quiet_deliver
         "the internal enqueue primitive must fail closed on reserved-key preemption"
     );
     let reserved_count = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM straylight.notifications WHERE user_id=$1 AND event_key=$2",
+        "SELECT count(*) FROM brunn.notifications WHERE user_id=$1 AND event_key=$2",
     )
     .bind(owner.user_id)
     .bind(reserved_key)
@@ -536,7 +536,7 @@ async fn task_guard_time_travel_dedupes_routes_and_delays_inferred_quiet_deliver
     .expect("count fail-closed reserved event key");
     assert_eq!(reserved_count, 1);
     let failed_state = sqlx::query(
-        "SELECT last_outcome,last_error_code FROM straylight.task_guard_state WHERE user_id=$1",
+        "SELECT last_outcome,last_error_code FROM brunn.task_guard_state WHERE user_id=$1",
     )
     .bind(owner.user_id)
     .fetch_one(&pool)
@@ -566,7 +566,7 @@ async fn task_guard_state_is_seeded_content_free_and_rls_isolated() {
     let columns = sqlx::query_scalar::<_, String>(
         r#"
         SELECT column_name FROM information_schema.columns
-        WHERE table_schema='straylight' AND table_name='task_guard_state'
+        WHERE table_schema='brunn' AND table_name='task_guard_state'
         ORDER BY ordinal_position
         "#,
     )
@@ -585,7 +585,7 @@ async fn task_guard_state_is_seeded_content_free_and_rls_isolated() {
         ]
     );
     let seeded = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM straylight.task_guard_state WHERE user_id=ANY($1)",
+        "SELECT count(*) FROM brunn.task_guard_state WHERE user_id=ANY($1)",
     )
     .bind(vec![owner_a.user_id, owner_b.user_id])
     .fetch_one(&pool)
@@ -597,7 +597,7 @@ async fn task_guard_state_is_seeded_content_free_and_rls_isolated() {
         .await
         .expect("record successful guard run");
     let state = sqlx::query(
-        "SELECT last_run_at,last_outcome,last_error_code,next_run_at FROM straylight.task_guard_state WHERE user_id=$1",
+        "SELECT last_run_at,last_outcome,last_error_code,next_run_at FROM brunn.task_guard_state WHERE user_id=$1",
     )
     .bind(owner_a.user_id)
     .fetch_one(&pool)
@@ -621,7 +621,7 @@ async fn task_guard_state_is_seeded_content_free_and_rls_isolated() {
 
     let mut own_tx = begin_as_app_rw(&pool, &owner_a.auth).await;
     let visible = sqlx::query_scalar::<_, Uuid>(
-        "SELECT user_id FROM straylight.task_guard_state ORDER BY user_id",
+        "SELECT user_id FROM brunn.task_guard_state ORDER BY user_id",
     )
     .fetch_all(&mut *own_tx)
     .await
@@ -634,20 +634,19 @@ async fn task_guard_state_is_seeded_content_free_and_rls_isolated() {
     no_task_read.capabilities.remove("admin");
     let mut denied_tx = begin_as_app_rw(&pool, &no_task_read).await;
     let hidden = sqlx::query_scalar::<_, Uuid>(
-        "SELECT user_id FROM straylight.task_guard_state WHERE user_id=$1",
+        "SELECT user_id FROM brunn.task_guard_state WHERE user_id=$1",
     )
     .bind(owner_a.user_id)
     .fetch_optional(&mut *denied_tx)
     .await
     .expect("non-task principal sees no guard state");
     assert_eq!(hidden, None);
-    let write = sqlx::query(
-        "UPDATE straylight.task_guard_state SET last_outcome='failed' WHERE user_id=$1",
-    )
-    .bind(owner_a.user_id)
-    .execute(&mut *denied_tx)
-    .await
-    .expect_err("application roles cannot write guard state");
+    let write =
+        sqlx::query("UPDATE brunn.task_guard_state SET last_outcome='failed' WHERE user_id=$1")
+            .bind(owner_a.user_id)
+            .execute(&mut *denied_tx)
+            .await
+            .expect_err("application roles cannot write guard state");
     assert_eq!(database_code(&write).as_deref(), Some("42501"));
     denied_tx.rollback().await.unwrap();
 }
@@ -661,8 +660,8 @@ async fn task_guard_internal_producer_has_no_bearer_and_is_hidden_and_irrevocabl
     let producer = sqlx::query(
         r#"
         SELECT credential.id,credential.token_hash,credential.capabilities
-        FROM straylight.task_guard_producers AS guard
-        JOIN straylight.api_credentials AS credential
+        FROM brunn.task_guard_producers AS guard
+        JOIN brunn.api_credentials AS credential
           ON credential.user_id=guard.user_id
          AND credential.id=guard.credential_id
         WHERE guard.user_id=$1
@@ -683,7 +682,7 @@ async fn task_guard_internal_producer_has_no_bearer_and_is_hidden_and_irrevocabl
         SELECT relrowsecurity,relforcerowsecurity
         FROM pg_class AS class
         JOIN pg_namespace AS namespace ON namespace.oid=class.relnamespace
-        WHERE namespace.nspname='straylight'
+        WHERE namespace.nspname='brunn'
           AND class.relname='task_guard_producers'
         "#,
     )
@@ -697,17 +696,17 @@ async fn task_guard_internal_producer_has_no_bearer_and_is_hidden_and_irrevocabl
         SELECT
           has_function_privilege(
             'app_rw',
-            'straylight.enqueue_task_guard_notification(uuid,uuid,text,text,text,timestamptz,timestamptz,timestamptz,boolean)',
+            'brunn.enqueue_task_guard_notification(uuid,uuid,text,text,text,timestamptz,timestamptz,timestamptz,boolean)',
             'EXECUTE'
           ),
           has_function_privilege(
             'app_ro',
-            'straylight.enqueue_task_guard_notification(uuid,uuid,text,text,text,timestamptz,timestamptz,timestamptz,boolean)',
+            'brunn.enqueue_task_guard_notification(uuid,uuid,text,text,text,timestamptz,timestamptz,timestamptz,boolean)',
             'EXECUTE'
           ),
           has_function_privilege(
             'public',
-            'straylight.enqueue_task_guard_notification(uuid,uuid,text,text,text,timestamptz,timestamptz,timestamptz,boolean)',
+            'brunn.enqueue_task_guard_notification(uuid,uuid,text,text,text,timestamptz,timestamptz,timestamptz,boolean)',
             'EXECUTE'
           )
         "#,
@@ -719,7 +718,7 @@ async fn task_guard_internal_producer_has_no_bearer_and_is_hidden_and_irrevocabl
 
     let mut denied_tx = begin_as_app_rw(&pool, &owner.auth).await;
     let denied =
-        sqlx::query("SELECT credential_id FROM straylight.task_guard_producers WHERE user_id=$1")
+        sqlx::query("SELECT credential_id FROM brunn.task_guard_producers WHERE user_id=$1")
             .bind(owner.user_id)
             .fetch_optional(&mut *denied_tx)
             .await
@@ -731,13 +730,13 @@ async fn task_guard_internal_producer_has_no_bearer_and_is_hidden_and_irrevocabl
         .expect("rollback hidden producer denial");
 
     let old_forgeable_bearer = format!(
-        "straylight.task-guard.internal.v1|{}|{}",
+        "brunn.task-guard.internal.v1|{}|{}",
         owner.user_id, producer_id
     );
     assert_ne!(stored_hash, hash_token(&old_forgeable_bearer));
     for attempted_bearer in [old_forgeable_bearer, stored_hash.clone()] {
         let authenticated = sqlx::query_scalar::<_, Uuid>(
-            "SELECT credential_id FROM straylight_auth.authenticate_credential($1)",
+            "SELECT credential_id FROM brunn_auth.authenticate_credential($1)",
         )
         .bind(hash_token(&attempted_bearer))
         .fetch_optional(&pool)
@@ -750,16 +749,15 @@ async fn task_guard_internal_producer_has_no_bearer_and_is_hidden_and_irrevocabl
     }
 
     let mut tx = begin_as_app_rw(&pool, &owner.auth).await;
-    let listed =
-        sqlx::query_scalar::<_, Uuid>("SELECT id FROM straylight_auth.list_credentials($1)")
-            .bind(owner.user_id)
-            .fetch_all(&mut *tx)
-            .await
-            .expect("list visible credentials");
+    let listed = sqlx::query_scalar::<_, Uuid>("SELECT id FROM brunn_auth.list_credentials($1)")
+        .bind(owner.user_id)
+        .fetch_all(&mut *tx)
+        .await
+        .expect("list visible credentials");
     assert!(listed.contains(&owner.credential_id));
     assert!(!listed.contains(&producer_id));
     let revoke =
-        sqlx::query_scalar::<_, DateTime<Utc>>("SELECT straylight_auth.revoke_credential($1,$2)")
+        sqlx::query_scalar::<_, DateTime<Utc>>("SELECT brunn_auth.revoke_credential($1,$2)")
             .bind(owner.user_id)
             .bind(producer_id)
             .fetch_one(&mut *tx)
@@ -771,7 +769,7 @@ async fn task_guard_internal_producer_has_no_bearer_and_is_hidden_and_irrevocabl
         .expect("rollback revoke denial transaction");
 
     let disabled_at = sqlx::query_scalar::<_, Option<DateTime<Utc>>>(
-        "SELECT disabled_at FROM straylight.api_credentials WHERE user_id=$1 AND id=$2",
+        "SELECT disabled_at FROM brunn.api_credentials WHERE user_id=$1 AND id=$2",
     )
     .bind(owner.user_id)
     .bind(producer_id)

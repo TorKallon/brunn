@@ -107,7 +107,7 @@ async fn multipart_inventory_client(config: &Config) -> &'static Client {
                     secret_key.clone(),
                     None,
                     None,
-                    "straylight-multipart-reconciliation",
+                    "brunn-multipart-reconciliation",
                 );
                 loader = loader.credentials_provider(SharedCredentialsProvider::new(credentials));
             }

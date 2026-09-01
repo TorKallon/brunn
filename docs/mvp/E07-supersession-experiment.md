@@ -72,7 +72,7 @@ Does explicit `supersedes` frontmatter with demotion-plus-annotation (D04-supers
 
 **Resolved nuisance posture (2026-07-28):** E02 rejected D02, so every E07
 service and performance stack must start with
-`STRAYLIGHT_VERBATIM_SPANS=false` and every measured service arm must assert
+`BRUNN_VERBATIM_SPANS=false` and every measured service arm must assert
 `--expect-feature-flag verbatim_spans=off`. Verbatim spans are not an E07
 variable. An E07 pass cannot rehabilitate D02.
 
@@ -104,7 +104,7 @@ recent-work-v0.3: the recent suite (14 cases / 56 claims) with correction notes 
    Review its 30-sample counts, freeze a runtime-bound contract with profile
    `e07-supersession`, and do not invent unmeasured headroom. Freeze and
    validate it:
-   `E07_QUERY_BUDGET_CONTRACT="results/2026-MM-DD-e07-supersession-query-budgets.json"; test -s "$E07_QUERY_BUDGET_CONTRACT"; python3 -m json.tool "$E07_QUERY_BUDGET_CONTRACT" >/dev/null; python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); assert p["schema"]=="straylight-query-budgets@v1"; assert p["profile"]=="e07-supersession"; assert p["runtime_features"]["supersession_demotion"] is True; assert p["operations"]' "$E07_QUERY_BUDGET_CONTRACT"; E07_QUERY_BUDGET_SHA256="$(shasum -a 256 "$E07_QUERY_BUDGET_CONTRACT" | awk '{print $1}')"; test -n "$E07_QUERY_BUDGET_SHA256"; chmod 0444 "$E07_QUERY_BUDGET_CONTRACT"`.
+   `E07_QUERY_BUDGET_CONTRACT="results/2026-MM-DD-e07-supersession-query-budgets.json"; test -s "$E07_QUERY_BUDGET_CONTRACT"; python3 -m json.tool "$E07_QUERY_BUDGET_CONTRACT" >/dev/null; python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); assert p["schema"]=="brunn-query-budgets@v1"; assert p["profile"]=="e07-supersession"; assert p["runtime_features"]["supersession_demotion"] is True; assert p["operations"]' "$E07_QUERY_BUDGET_CONTRACT"; E07_QUERY_BUDGET_SHA256="$(shasum -a 256 "$E07_QUERY_BUDGET_CONTRACT" | awk '{print $1}')"; test -n "$E07_QUERY_BUDGET_SHA256"; chmod 0444 "$E07_QUERY_BUDGET_CONTRACT"`.
    Record the reviewer, calibration hash, contract hash, and decision, then run
    the treatment acceptance artifact:
    `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --verbatim-feature-acceptance not-applicable --query-budget-profile e07-supersession --query-budget-contract "$E07_QUERY_BUDGET_CONTRACT" --label e07-supersession-write-latency --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag supersession_demotion=on --expect-runtime-config supersession_demotion_weight=1.5 --out results/2026-MM-DD-e07-supersession-write-latency.json`.

@@ -1,4 +1,4 @@
-# Straylight on Railway
+# Brunn on Railway
 
 Status: Simplified owner deployment live; layered migration, both client
 canaries, backfill, final one-replica qualification, and repository publication
@@ -54,7 +54,7 @@ Completed:
    archived.
 5. Restored the ordinary API configuration and route isolation.
 6. Installed distinct credentials and pinned launchers. Codex and Aether/
-   OpenClaw both passed their final Straylight-only canaries.
+   OpenClaw both passed their final Brunn-only canaries.
 7. Deployed and verified the final web revision. An isolated restore attempt
    could not start because locked Nyx prevented Docker access; no container
    was created. This is recorded as environment-blocked and non-blocking for
@@ -86,7 +86,7 @@ an account-side exact-read; the Claude server path passed, while Claude's
 account-side install still requires an authenticated Claude client. See
 [`results/2026-07-31-chatgpt-claude-remote-cutover.md`](../results/2026-07-31-chatgpt-claude-remote-cutover.md).
 
-`straylight.rourkem.com` is the selected owner-alpha hostname. The API remains
+`brunn.ai` is the permanent product hostname. The API remains
 reachable only through the web proxy, and `/api/v1/admin/*` is not exposed by
 that proxy. The remote MCP service also remains private; the web edge exposes
 only `/mcp`, the OAuth endpoints, and the two OAuth discovery documents.

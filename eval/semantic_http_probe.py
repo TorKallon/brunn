@@ -34,10 +34,10 @@ from native_eval import (  # noqa: E402
 )
 
 
-SCHEMA = "straylight-semantic-http-probe@v1"
+SCHEMA = "brunn-semantic-http-probe@v1"
 SOURCE_TEXT_KEYS = frozenset({"content", "text", "excerpt", "source_text"})
 DEFAULT_QUERY = "locate the current semantic deadline qualification source"
-DEFAULT_MARKER_PREFIX = "straylight-semantic-http-probe"
+DEFAULT_MARKER_PREFIX = "brunn-semantic-http-probe"
 SAFE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 
 

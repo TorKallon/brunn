@@ -97,8 +97,8 @@ def append_trace(path: Path, record: dict[str, Any]) -> None:
 
 
 def supervised_operation(path: Path, operation: str) -> dict[str, Any]:
-    endpoint = os.environ.get("CARRYSTATE_INSPECT_URL")
-    capability = os.environ.get("CARRYSTATE_INSPECT_CAPABILITY")
+    endpoint = os.environ.get("BRUNN_STATE_INSPECT_URL")
+    capability = os.environ.get("BRUNN_STATE_INSPECT_CAPABILITY")
     if not endpoint or not capability:
         raise RuntimeError("trusted inspection supervisor is not available")
     request = urllib.request.Request(

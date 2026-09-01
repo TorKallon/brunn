@@ -118,7 +118,7 @@ describe("workspace writes", () => {
           media_type: "image/png",
           companion: {
             entry_ref: "entry:receipt-description",
-            path: ".straylight/binaries/receipt.md",
+            path: ".brunn/binaries/receipt.md",
             version: 1,
           },
           workspace_generation: 23,
@@ -154,7 +154,7 @@ describe("workspace writes", () => {
     fireEvent.submit(upload.closest("form")!);
 
     expect(
-      await screen.findByText(".straylight/binaries/receipt.md"),
+      await screen.findByText(".brunn/binaries/receipt.md"),
     ).toBeInTheDocument();
     const uploadCall = fetchMock.mock.calls.find(([input]) =>
       String(input).endsWith("/api/v1/workspace/binaries"),

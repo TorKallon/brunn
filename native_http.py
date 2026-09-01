@@ -52,7 +52,7 @@ def response_status(body: dict[str, Any]) -> str | None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Thin authenticated HTTP client for the CarryState evaluation surface",
+        description="Thin authenticated HTTP client for the Brunn State evaluation surface",
     )
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--run-id", required=True)

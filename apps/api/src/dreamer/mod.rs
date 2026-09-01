@@ -1,5 +1,5 @@
-//! The Straylight dreamer: one nightly consolidation run, a Connect flow,
-//! and a private HTTP surface — a pure HTTP client of the Straylight API.
+//! The Brunn dreamer: one nightly consolidation run, a Connect flow,
+//! and a private HTTP surface — a pure HTTP client of the Brunn API.
 //!
 //! Design: Documents/dreaming-lean-design-2026-08-28 (rev 3). The wrapper is
 //! deterministic; all judgment lives in the `codex exec` prompt. Dreaming
@@ -27,7 +27,7 @@ pub fn config_from_env() -> Result<DreamerConfig, String> {
         |name: &str| std::env::var(name).map_err(|_| format!("{name} is required for the dreamer"));
     let host_env: BTreeMap<String, String> = std::env::vars().collect();
     Ok(DreamerConfig {
-        api_url: require("STRAYLIGHT_API_URL")?,
+        api_url: require("BRUNN_API_URL")?,
         workspace_token: require("DREAMER_WORKSPACE_TOKEN")?,
         runner_token: require("DREAMER_RUNNER_TOKEN")?,
         codex_path: std::env::var("DREAMER_CODEX_PATH")

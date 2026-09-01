@@ -33,7 +33,7 @@ Transitions are 0/5 in every run to date; failures are claim-slot omissions, nev
 
 ## Preconditions and build items
 
-- B1 (M): IMPLEMENTED. D03 is behind `STRAYLIGHT_RESUME_DELTAS=false` by default. The resume-open path in `apps/api/src/simple_core.rs` performs the source_refs × changes_since_checkpoint intersection, one batched pinned/current history statement, whole_pair/unified_diff/lead materialization, integrity checks, and ≤6,000-char accounting against open evidence.
+- B1 (M): IMPLEMENTED. D03 is behind `BRUNN_RESUME_DELTAS=false` by default. The resume-open path in `apps/api/src/simple_core.rs` performs the source_refs × changes_since_checkpoint intersection, one batched pinned/current history statement, whole_pair/unified_diff/lead materialization, integrity checks, and ≤6,000-char accounting against open evidence.
 - B2 (S): IMPLEMENTED. `transition_eval.py --mutation-script` invokes `eval/e06_mutate.py` after the seed checkpoint exists. The hook applies deterministic, expected-version writes to exactly 3 author-ordered checkpoint paths and mirrors identical bytes into an isolated filesystem corpus. It reads both worlds before and after mutation and fails the draw on divergence. `eval/e06_mutations.json` and `eval/e06-sources/` are explicitly tagged synthetic fixtures.
 - B3 (implemented): arm-aware n≥3 aggregator with optional one-sided, claim-ID-paired McNemar after strict-majority draw collapse; default case-level output remains two-sided. See [Experiment-run-infrastructure.md](Experiment-run-infrastructure.md).
 - B4 (implemented): the shared D09/performance harness reports definitive 30-sample resume p95 and query counts; the resume-delta gate is 150ms when the flag is on.
@@ -41,7 +41,7 @@ Transitions are 0/5 in every run to date; failures are claim-slot omissions, nev
 
 **Resolved nuisance posture (2026-07-28):** E02 rejected D02, so every E06
 service and performance stack must start with
-`STRAYLIGHT_VERBATIM_SPANS=false` and every measured service arm must assert
+`BRUNN_VERBATIM_SPANS=false` and every measured service arm must assert
 `--expect-feature-flag verbatim_spans=off`. Verbatim spans are not an E06
 variable. An E06 pass cannot rehabilitate D02.
 
@@ -53,7 +53,7 @@ variable. An E06 pass cannot rehabilitate D02.
 
 ## Corpus and fixtures
 
-- Transitions suite: 5 cards / 20 claims (worst chronic card: straylight-api-gate-transition). Model gpt-5.6-sol from manifest.
+- Transitions suite: 5 cards / 20 claims (worst chronic card: brunn-api-gate-transition). Model gpt-5.6-sol from manifest.
 - Mutation set per card: 3 checkpoint source_refs paths, deterministic seeded edits that change facts the resuming agent must cite (e.g. a moved deadline, a changed gate threshold, a renamed owner). Sizing must exercise both D03 modes: at least one source ≤2,400 chars/version (whole_pair) and at least one larger (unified_diff) per card.
 - Embeddings: --embeddings hashing for all arms (semantic stays off the critical path; zero usage-billed spend).
 - Performance: 640k synthetic corpus via performance_eval --future-soak, 30 samples definitive.
@@ -84,9 +84,9 @@ variable. An E06 pass cannot rehabilitate D02.
    card. Every service arm binds the actual running container and injects only
    exact+lexical retrieval; the harness proves the container remains running
    and unchanged before/after and that its OCI revision label equals `$REV`.
-   - Arm A (isolated stack with `STRAYLIGHT_RESUME_DELTAS=false`):
+   - Arm A (isolated stack with `BRUNN_RESUME_DELTAS=false`):
      `python3 transition_eval.py --manifest eval/transition_cases.json run --condition service_api_resume --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --experiment-arm e06-A --paired-draw-id "e06-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag supersession_demotion=off --expect-feature-flag intention_ledger=off --expect-feature-flag resume_deltas=off --embeddings hashing --mutation-script eval/e06_mutate.py --mutation-seed "e06-draw${N}" --run-id "resume-deltas-a-draw${N}" --out "results/2026-MM-DD-resume-deltas-a-draw${N}.json" --report "results/2026-MM-DD-resume-deltas-a-draw${N}.md"`.
-   - Arm B (separate isolated stack with `STRAYLIGHT_RESUME_DELTAS=true`):
+   - Arm B (separate isolated stack with `BRUNN_RESUME_DELTAS=true`):
      `python3 transition_eval.py --manifest eval/transition_cases.json run --condition service_api_resume --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --experiment-arm e06-B --paired-draw-id "e06-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag supersession_demotion=off --expect-feature-flag intention_ledger=off --expect-feature-flag resume_deltas=on --embeddings hashing --mutation-script eval/e06_mutate.py --mutation-seed "e06-draw${N}" --run-id "resume-deltas-b-draw${N}" --out "results/2026-MM-DD-resume-deltas-b-draw${N}.json" --report "results/2026-MM-DD-resume-deltas-b-draw${N}.md"`.
      Never flip the flag on a stack serving another concurrent arm.
    - Arm C (filesystem-only, so no service/image/runtime arguments):
@@ -110,7 +110,7 @@ variable. An E06 pass cannot rehabilitate D02.
    response metrics. Every pair must have treatment `result_chars` ≤ control `result_chars`,
    with zero tolerance; any malformed or drifted evidence fails
    closed and emits a machine-readable failing artifact.
-7. If the headline is inside the noise floor but straylight-api-gate-transition moves, run a targeted 5-draw repeat on that card, all three arms, adding `--case straylight-api-gate-transition` to every invocation and using targeted-specific paired-draw IDs.
+7. If the headline is inside the noise floor but brunn-api-gate-transition moves, run a targeted 5-draw repeat on that card, all three arms, adding `--case brunn-api-gate-transition` to every invocation and using targeted-specific paired-draw IDs.
 
    **Predeclared for the 2026-07-28 execution:** do not invoke this optional
    repeat. Neither "inside the noise floor" nor "moves" has a frozen numeric
@@ -131,7 +131,7 @@ file tree; it is not handed a synthetic change-log file.
 ## Metrics
 
 - Claims per arm per draw (n/20); per-card win/loss/tie grids B-vs-A and B-vs-C.
-- Cases won per arm per draw (historical baseline: 0/5 everywhere); straylight-api-gate-transition tracked individually.
+- Cases won per arm per draw (historical baseline: 0/5 everywhere); brunn-api-gate-transition tracked individually.
 - Resume p95 at 640k with flag on, vs the 35.2ms v8 baseline (results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json) and the 150ms gate.
 - Operation-level resume `result_chars`, arm B vs arm A, paired by draw and
   case. Whole-card response metrics are ineligible for this budget check.
@@ -171,4 +171,4 @@ Subscription rule: all reasoning runs via the ChatGPT-authenticated Codex subscr
 
 ## Reporting
 
-The run record must contain: git fingerprint with clean-tree confirmation; flag state and mutation seeds per draw; per-draw per-arm JSON and MD artifact paths; the full per-card grid including straylight-api-gate-transition; paired McNemar p-values and CIs for B-vs-A and B-vs-C; cases-won table against the historical 0/5; soak numbers (resume p95, concurrent probe, footprint, protocol-to-evidence, query counts); `results/2026-MM-DD-e06-resume-payload-comparison.json` with all 15 operation-level control/treatment `result_chars` pairs, per-pair deltas, totals, means, and the zero-tolerance verdict; cost actuals vs preflight with subscription and embeddings-exempt spend listed separately.
+The run record must contain: git fingerprint with clean-tree confirmation; flag state and mutation seeds per draw; per-draw per-arm JSON and MD artifact paths; the full per-card grid including brunn-api-gate-transition; paired McNemar p-values and CIs for B-vs-A and B-vs-C; cases-won table against the historical 0/5; soak numbers (resume p95, concurrent probe, footprint, protocol-to-evidence, query counts); `results/2026-MM-DD-e06-resume-payload-comparison.json` with all 15 operation-level control/treatment `result_chars` pairs, per-pair deltas, totals, means, and the zero-tolerance verdict; cost actuals vs preflight with subscription and embeddings-exempt spend listed separately.

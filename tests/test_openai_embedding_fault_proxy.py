@@ -90,7 +90,7 @@ class OpenAiEmbeddingFaultProxyTests(unittest.TestCase):
         headers = {
             "Authorization": "Bearer provider-secret",
             "Content-Type": "application/json",
-            "X-Straylight-Control": "never-forward",
+            "X-Brunn-Control": "never-forward",
             "Cookie": "never-forward",
             "Host": "proxy",
         }

@@ -6,7 +6,7 @@
 -- Both operations retain normal triggers. A transaction-local, row-specific
 -- context lets the trigger recognize only the exact row being maintained.
 
-CREATE OR REPLACE FUNCTION straylight.database_administrator()
+CREATE OR REPLACE FUNCTION brunn.database_administrator()
 RETURNS boolean
 LANGUAGE sql
 STABLE
@@ -30,7 +30,7 @@ AS $$
   )
 $$;
 
-CREATE OR REPLACE FUNCTION straylight.asset_internal_operation_authorized(
+CREATE OR REPLACE FUNCTION brunn.asset_internal_operation_authorized(
   p_operation text,
   p_user_id uuid,
   p_asset_id uuid,
@@ -42,10 +42,10 @@ RETURNS boolean
 LANGUAGE sql
 STABLE
 SECURITY INVOKER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 AS $$
-  SELECT straylight.database_administrator()
-    AND current_setting('straylight.asset_internal_operation', true)
+  SELECT brunn.database_administrator()
+    AND current_setting('brunn.asset_internal_operation', true)
       = p_operation || ':' || encode(
         public.digest(
           jsonb_build_array(
@@ -61,9 +61,9 @@ AS $$
       )
 $$;
 
-REVOKE ALL ON FUNCTION straylight.database_administrator()
+REVOKE ALL ON FUNCTION brunn.database_administrator()
 FROM PUBLIC,app_rw,app_ro;
-REVOKE ALL ON FUNCTION straylight.asset_internal_operation_authorized(
+REVOKE ALL ON FUNCTION brunn.asset_internal_operation_authorized(
   text,
   uuid,
   uuid,
@@ -71,9 +71,9 @@ REVOKE ALL ON FUNCTION straylight.asset_internal_operation_authorized(
   text,
   text
 ) FROM PUBLIC,app_rw,app_ro;
-GRANT EXECUTE ON FUNCTION straylight.database_administrator()
+GRANT EXECUTE ON FUNCTION brunn.database_administrator()
 TO app_rw,app_ro;
-GRANT EXECUTE ON FUNCTION straylight.asset_internal_operation_authorized(
+GRANT EXECUTE ON FUNCTION brunn.asset_internal_operation_authorized(
   text,
   uuid,
   uuid,
@@ -85,13 +85,13 @@ GRANT EXECUTE ON FUNCTION straylight.asset_internal_operation_authorized(
 -- Migration 0016 replaced the original asset-version immutability trigger with
 -- this deletion-redaction guard. Preserve that behavior and add only exact,
 -- administrator-authorized locator updates and unpublished-stage deletes.
-CREATE OR REPLACE FUNCTION straylight.guard_deletion_redaction()
+CREATE OR REPLACE FUNCTION brunn.guard_deletion_redaction()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY INVOKER
 AS $$
 DECLARE
-  deletion_job_setting text := current_setting('straylight.deletion_job_id', true);
+  deletion_job_setting text := current_setting('brunn.deletion_job_id', true);
   deletion_job_id uuid;
   row_user_id uuid;
   old_shape jsonb := to_jsonb(OLD);
@@ -99,9 +99,9 @@ DECLARE
   argument_index integer;
   administrator boolean := false;
 BEGIN
-  IF TG_TABLE_SCHEMA='straylight' AND TG_TABLE_NAME='asset_versions' THEN
+  IF TG_TABLE_SCHEMA='brunn' AND TG_TABLE_NAME='asset_versions' THEN
     IF TG_OP='UPDATE'
-       AND straylight.asset_internal_operation_authorized(
+       AND brunn.asset_internal_operation_authorized(
          'restore_locator_remap',
          OLD.user_id,
          OLD.asset_id,
@@ -124,7 +124,7 @@ BEGIN
     END IF;
 
     IF TG_OP='DELETE'
-       AND straylight.asset_internal_operation_authorized(
+       AND brunn.asset_internal_operation_authorized(
          'stage_reclaim',
          OLD.user_id,
          OLD.asset_id,
@@ -159,7 +159,7 @@ BEGIN
      OR row_user_id IS NULL
      OR NOT EXISTS (
        SELECT 1
-       FROM straylight.deletion_jobs AS job
+       FROM brunn.deletion_jobs AS job
        WHERE job.id = deletion_job_id
          AND job.user_id = row_user_id
          AND job.status = 'propagating'
@@ -191,14 +191,14 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION straylight.enforce_sequential_head_advance()
+CREATE OR REPLACE FUNCTION brunn.enforce_sequential_head_advance()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  IF TG_TABLE_SCHEMA='straylight'
+  IF TG_TABLE_SCHEMA='brunn'
      AND TG_TABLE_NAME='assets'
-     AND straylight.asset_internal_operation_authorized(
+     AND brunn.asset_internal_operation_authorized(
        'stage_reclaim',
        OLD.user_id,
        OLD.id,
@@ -222,13 +222,13 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION straylight.prevent_physical_delete()
+CREATE OR REPLACE FUNCTION brunn.prevent_physical_delete()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  IF TG_TABLE_SCHEMA='straylight' AND TG_TABLE_NAME='assets' THEN
-    IF straylight.asset_internal_operation_authorized(
+  IF TG_TABLE_SCHEMA='brunn' AND TG_TABLE_NAME='assets' THEN
+    IF brunn.asset_internal_operation_authorized(
       'stage_reclaim',
       OLD.user_id,
       OLD.id,
@@ -243,11 +243,11 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION straylight.remap_asset_object_versions(p_mapping jsonb)
+CREATE OR REPLACE FUNCTION brunn.remap_asset_object_versions(p_mapping jsonb)
 RETURNS bigint
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 DECLARE
@@ -256,7 +256,7 @@ DECLARE
   affected bigint;
   operation_context text;
 BEGIN
-  IF NOT straylight.database_administrator() THEN
+  IF NOT brunn.database_administrator() THEN
     RAISE EXCEPTION 'asset locator recovery requires a database administrator'
       USING ERRCODE = '42501';
   END IF;
@@ -319,14 +319,14 @@ BEGIN
   -- Hold every candidate parent row through validation and remapping. This also
   -- serializes a repeated recovery invocation against the same restored rows.
   PERFORM 1
-  FROM straylight.asset_versions AS version
+  FROM brunn.asset_versions AS version
   WHERE version.object_version_id IS NOT NULL
   ORDER BY version.user_id,version.asset_id,version.version
   FOR UPDATE;
 
   IF EXISTS (
     SELECT 1
-    FROM straylight.asset_versions AS version
+    FROM brunn.asset_versions AS version
     LEFT JOIN pg_temp.asset_object_version_recovery_map AS mapping
       ON mapping.object_key=version.object_key
      AND version.object_version_id IN (
@@ -354,7 +354,7 @@ BEGIN
            version.size_bytes,
            version.object_version_id AS source_version_id,
            mapping.restored_version_id
-    FROM straylight.asset_versions AS version
+    FROM brunn.asset_versions AS version
     JOIN pg_temp.asset_object_version_recovery_map AS mapping
       ON mapping.object_key=version.object_key
      AND mapping.source_version_id=version.object_version_id
@@ -376,12 +376,12 @@ BEGIN
       'hex'
     );
     PERFORM set_config(
-      'straylight.asset_internal_operation',
+      'brunn.asset_internal_operation',
       operation_context,
       true
     );
 
-    UPDATE straylight.asset_versions AS version
+    UPDATE brunn.asset_versions AS version
     SET object_version_id=candidate.restored_version_id
     WHERE version.user_id=candidate.user_id
       AND version.asset_id=candidate.asset_id
@@ -396,12 +396,12 @@ BEGIN
         USING ERRCODE = '40001';
     END IF;
     updated_count := updated_count + affected;
-    PERFORM set_config('straylight.asset_internal_operation','',true);
+    PERFORM set_config('brunn.asset_internal_operation','',true);
   END LOOP;
 
   IF EXISTS (
     SELECT 1
-    FROM straylight.asset_versions AS version
+    FROM brunn.asset_versions AS version
     LEFT JOIN pg_temp.asset_object_version_recovery_map AS mapping
       ON mapping.object_key=version.object_key
      AND mapping.restored_version_id=version.object_version_id
@@ -415,26 +415,26 @@ BEGIN
       USING ERRCODE = '40001';
   END IF;
 
-  PERFORM set_config('straylight.asset_internal_operation','',true);
+  PERFORM set_config('brunn.asset_internal_operation','',true);
   RETURN updated_count;
 EXCEPTION WHEN OTHERS THEN
-  PERFORM set_config('straylight.asset_internal_operation','',true);
+  PERFORM set_config('brunn.asset_internal_operation','',true);
   RAISE;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION straylight.remap_asset_object_versions(jsonb)
+REVOKE ALL ON FUNCTION brunn.remap_asset_object_versions(jsonb)
 FROM PUBLIC,app_rw,app_ro;
 
 -- Replace migration 0039's trigger-suppressed implementation. Candidate
 -- asset/version/record-key parent rows are locked before reference discovery.
 -- A concurrent child insert must therefore wait for this transaction and will
 -- fail its foreign key if reclamation commits.
-CREATE OR REPLACE FUNCTION straylight.expire_unpromoted_stage(p_stage_id uuid)
+CREATE OR REPLACE FUNCTION brunn.expire_unpromoted_stage(p_stage_id uuid)
 RETURNS TABLE(reclaimed_object_key text)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 DECLARE
@@ -447,7 +447,7 @@ DECLARE
 BEGIN
   SELECT stage.id,stage.user_id,stage.scope_id,stage.status,stage.expires_at
   INTO target_stage
-  FROM straylight.stages AS stage
+  FROM brunn.stages AS stage
   WHERE stage.id=p_stage_id;
 
   IF NOT FOUND THEN
@@ -460,7 +460,7 @@ BEGIN
 
   SELECT stage.id,stage.user_id,stage.scope_id,stage.status,stage.expires_at
   INTO target_stage
-  FROM straylight.stages AS stage
+  FROM brunn.stages AS stage
   WHERE stage.id=p_stage_id
   FOR UPDATE;
 
@@ -473,12 +473,12 @@ BEGIN
     RETURN;
   END IF;
 
-  UPDATE straylight.stages
+  UPDATE brunn.stages
   SET status='expired'
   WHERE id=p_stage_id
     AND status IN ('uploading','inspecting','ready','quarantined','failed');
 
-  UPDATE straylight.background_jobs
+  UPDATE brunn.background_jobs
   SET status='canceled',completed_at=clock_timestamp(),
       result=jsonb_build_object('reason','stage_expired'),
       locked_at=NULL,locked_by=NULL
@@ -489,7 +489,7 @@ BEGIN
   <<candidate_loop>>
   FOR candidate_ref IN
     SELECT DISTINCT entry.asset_id,entry.asset_version
-    FROM straylight.staged_entries AS entry
+    FROM brunn.staged_entries AS entry
     WHERE entry.user_id=target_stage.user_id
       AND entry.stage_id=p_stage_id
       AND entry.asset_id IS NOT NULL
@@ -502,8 +502,8 @@ BEGIN
            version.object_key,
            asset.current_version
     INTO candidate
-    FROM straylight.asset_versions AS version
-    JOIN straylight.assets AS asset
+    FROM brunn.asset_versions AS version
+    JOIN brunn.assets AS asset
       ON asset.user_id=version.user_id
      AND asset.id=version.asset_id
     WHERE version.user_id=target_stage.user_id
@@ -517,7 +517,7 @@ BEGIN
 
     IF candidate.previous_version IS NULL THEN
       PERFORM 1
-      FROM straylight.record_keys AS record_key
+      FROM brunn.record_keys AS record_key
       WHERE record_key.user_id=target_stage.user_id
         AND record_key.record_id=candidate.asset_id
         AND record_key.record_kind='asset'
@@ -527,20 +527,20 @@ BEGIN
       END IF;
     END IF;
 
-    DELETE FROM straylight.staged_entries
+    DELETE FROM brunn.staged_entries
     WHERE user_id=target_stage.user_id
       AND stage_id=p_stage_id
       AND asset_id=candidate.asset_id
       AND asset_version=candidate.version;
 
-    IF straylight.foreign_key_reference_exists(
-      'straylight.asset_versions'::regclass,
+    IF brunn.foreign_key_reference_exists(
+      'brunn.asset_versions'::regclass,
       jsonb_build_object(
         'user_id',target_stage.user_id::text,
         'asset_id',candidate.asset_id::text,
         'version',candidate.version::text
       ),
-      ARRAY['straylight.assets'::regclass]
+      ARRAY['brunn.assets'::regclass]
     ) THEN
       CONTINUE candidate_loop;
     END IF;
@@ -549,21 +549,21 @@ BEGIN
        AND (
          EXISTS (
            SELECT 1
-           FROM straylight.asset_versions AS other_version
+           FROM brunn.asset_versions AS other_version
            WHERE other_version.user_id=target_stage.user_id
              AND other_version.asset_id=candidate.asset_id
              AND other_version.version<>candidate.version
          )
-         OR straylight.foreign_key_reference_exists(
-           'straylight.assets'::regclass,
+         OR brunn.foreign_key_reference_exists(
+           'brunn.assets'::regclass,
            jsonb_build_object(
              'user_id',target_stage.user_id::text,
              'id',candidate.asset_id::text
            ),
-           ARRAY['straylight.asset_versions'::regclass]
+           ARRAY['brunn.asset_versions'::regclass]
          )
-         OR straylight.foreign_key_reference_exists(
-           'straylight.record_keys'::regclass,
+         OR brunn.foreign_key_reference_exists(
+           'brunn.record_keys'::regclass,
            jsonb_build_object(
              'user_id',target_stage.user_id::text,
              'record_id',candidate.asset_id::text,
@@ -588,13 +588,13 @@ BEGIN
       'hex'
     );
     PERFORM set_config(
-      'straylight.asset_internal_operation',
+      'brunn.asset_internal_operation',
       operation_context,
       true
     );
 
     IF candidate.previous_version IS NULL THEN
-      DELETE FROM straylight.asset_versions
+      DELETE FROM brunn.asset_versions
       WHERE user_id=target_stage.user_id
         AND asset_id=candidate.asset_id
         AND version=candidate.version;
@@ -604,7 +604,7 @@ BEGIN
           USING ERRCODE = '40001';
       END IF;
 
-      DELETE FROM straylight.assets
+      DELETE FROM brunn.assets
       WHERE user_id=target_stage.user_id
         AND id=candidate.asset_id
         AND current_version=candidate.version;
@@ -614,7 +614,7 @@ BEGIN
           USING ERRCODE = '40001';
       END IF;
 
-      DELETE FROM straylight.record_keys
+      DELETE FROM brunn.record_keys
       WHERE user_id=target_stage.user_id
         AND record_id=candidate.asset_id
         AND record_kind='asset';
@@ -624,7 +624,7 @@ BEGIN
           USING ERRCODE = '40001';
       END IF;
     ELSE
-      UPDATE straylight.assets
+      UPDATE brunn.assets
       SET current_version=candidate.previous_version
       WHERE user_id=target_stage.user_id
         AND id=candidate.asset_id
@@ -635,7 +635,7 @@ BEGIN
           USING ERRCODE = '40001';
       END IF;
 
-      DELETE FROM straylight.asset_versions
+      DELETE FROM brunn.asset_versions
       WHERE user_id=target_stage.user_id
         AND asset_id=candidate.asset_id
         AND version=candidate.version;
@@ -646,14 +646,14 @@ BEGIN
       END IF;
     END IF;
 
-    PERFORM set_config('straylight.asset_internal_operation','',true);
+    PERFORM set_config('brunn.asset_internal_operation','',true);
     reclaimed_keys := array_append(reclaimed_keys,candidate.object_key);
   END LOOP;
 
-  DELETE FROM straylight.staged_entries
+  DELETE FROM brunn.staged_entries
   WHERE user_id=target_stage.user_id AND stage_id=p_stage_id;
 
-  UPDATE straylight.asset_uploads
+  UPDATE brunn.asset_uploads
   SET status='expired',updated_at=clock_timestamp(),
       failure_code='stage_expired'
   WHERE user_id=target_stage.user_id
@@ -665,10 +665,10 @@ BEGIN
   FROM unnest(reclaimed_keys) AS reclaimed(key)
   WHERE reclaimed.key IS NOT NULL;
 EXCEPTION WHEN OTHERS THEN
-  PERFORM set_config('straylight.asset_internal_operation','',true);
+  PERFORM set_config('brunn.asset_internal_operation','',true);
   RAISE;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION straylight.expire_unpromoted_stage(uuid)
+REVOKE ALL ON FUNCTION brunn.expire_unpromoted_stage(uuid)
 FROM PUBLIC,app_rw,app_ro;

@@ -34,9 +34,9 @@ from native_eval import (  # noqa: E402
 )
 
 
-SCHEMA = "straylight-e03-quality-backfill@v1"
+SCHEMA = "brunn-e03-quality-backfill@v1"
 RECONCILIATION_SCHEMA = (
-    "straylight-e03-quality-receipt-reconciliation@v1"
+    "brunn-e03-quality-receipt-reconciliation@v1"
 )
 DEFAULT_MANIFESTS = (
     PROJECT_ROOT / "eval" / "work_cases.json",

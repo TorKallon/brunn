@@ -4,14 +4,14 @@ Status: ready to apply, 2026-08-01
 
 Purpose: resume the 6:30 morning briefing immediately by replacing every
 retired local path (Obsidian vault, `~/.openclaw/workspace/memory/*`) with
-Straylight workspace writes, using only the existing memory tools. No
-Straylight repo changes are required. The structured briefings platform
+Brunn workspace writes, using only the existing memory tools. No
+Brunn repo changes are required. The structured briefings platform
 (`docs/superpowers/specs/2026-08-01-briefings-design.md`) later upgrades the
 same paths; this contract is forward-compatible with it.
 
 ## 1. Paths
 
-| Purpose | Straylight path | Replaces |
+| Purpose | Brunn path | Replaces |
 | --- | --- | --- |
 | Morning briefing note | `Briefings/2026/Morning briefing - <YYYY-MM-DD>.md` | `~/obsidian/notes/Morning briefing - <date>.md` |
 | News dedupe state | `Briefings/State/news-brief-state.md` | `~/.openclaw/workspace/memory/news-brief-state.json` |
@@ -19,7 +19,7 @@ same paths; this contract is forward-compatible with it.
 | Research notes (optional, per run) | `Briefings/Research/<YYYY-MM-DD> - <lane>.md` | `sources/Temp/Morning briefing research - ...` scratch files |
 
 There is no `Home.md` Today-link step and no Obsidian sync step. The briefing
-is read in the Straylight SPA or via `memory.read`.
+is read in the Brunn SPA or via `memory.read`.
 
 ## 2. Formats
 
@@ -58,7 +58,7 @@ Metadata: `{"kind": "briefing_state"}`. Same wrapper pattern for
    trackers. A retried run replays as NoOp instead of duplicating.
 3. **Versioned updates.** The 10:00 health job reads the existing note entry
    and rewrites it with the `## Health / fitness` section added or replaced
-   and the `Updated:` line bumped (same path — Straylight versioning keeps
+   and the `Updated:` line bumped (same path — Brunn versioning keeps
    history). It uses idempotency key `briefing-<date>-health-update`.
 4. **Dedupe procedure** (ports the current logic): read
    `Briefings/State/news-brief-state.md` plus the three most recent
@@ -78,8 +78,8 @@ Merge host-specific script paths from the existing prompt where marked.
 Create and deliver Rourke's unified morning briefing for <today's date,
 America/Los_Angeles> with strict net-new filtering.
 
-Storage: hosted Straylight is the only memory and delivery store. Begin with
-memory.open for this task. If Straylight is unreachable or any read/write
+Storage: hosted Brunn is the only memory and delivery store. Begin with
+memory.open for this task. If Brunn is unreachable or any read/write
 fails, report the failure and stop — do not write local files, do not send an
 undeduped briefing.
 
@@ -122,7 +122,7 @@ idempotency key `briefing-<date>-health-update`, send the concise iMessage.
 
 The cron lives on Aether's host; this repo only defines the contract. To
 apply: update the two cron prompts per §4, run one supervised catch-up
-execution for today, verify the three paths exist in Straylight with expected
+execution for today, verify the three paths exist in Brunn with expected
 content, then re-enable the schedule. The separate stale "MCP readiness"
 checker should be updated to probe the current tool names (`memory.open`,
 `memory.query`, `memory.read`, `memory.write`, `memory.checkpoint`,

@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row, postgres::PgPoolOptions};
 use uuid::Uuid;
 
-use straylight::{
+use brunn::{
     auth::{AuthContext, hash_token},
     db::set_context,
     models::{CredentialId, UserId},
@@ -19,7 +19,7 @@ struct LivePrincipal {
 }
 
 fn live_api_url() -> Option<String> {
-    std::env::var("STRAYLIGHT_TEST_API_URL")
+    std::env::var("BRUNN_TEST_API_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
         .map(|value| value.trim_end_matches('/').to_owned())
@@ -35,14 +35,14 @@ async fn live_principal(pool: &PgPool, label: &str, capabilities: &[&str]) -> Li
         .iter()
         .map(|value| (*value).to_owned())
         .collect::<Vec<_>>();
-    sqlx::query("INSERT INTO straylight.users(id,external_ref,display_name)VALUES($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users(id,external_ref,display_name)VALUES($1,$2,$3)")
         .bind(user_id)
         .bind(format!("task-http-live:{label}:{user_id}"))
         .bind(label)
         .execute(pool)
         .await
         .unwrap();
-    sqlx::query("INSERT INTO straylight.scopes(id,user_id,scope_ref,name)VALUES($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO brunn.scopes(id,user_id,scope_ref,name)VALUES($1,$2,$3,$4)")
         .bind(scope_id)
         .bind(user_id)
         .bind(&scope_ref)
@@ -50,7 +50,7 @@ async fn live_principal(pool: &PgPool, label: &str, capabilities: &[&str]) -> Li
         .execute(pool)
         .await
         .unwrap();
-    sqlx::query("INSERT INTO straylight.api_credentials(id,user_id,label,token_hash,capabilities)VALUES($1,$2,$3,$4,$5)")
+    sqlx::query("INSERT INTO brunn.api_credentials(id,user_id,label,token_hash,capabilities)VALUES($1,$2,$3,$4,$5)")
         .bind(credential_id)
         .bind(user_id)
         .bind(label)
@@ -59,13 +59,15 @@ async fn live_principal(pool: &PgPool, label: &str, capabilities: &[&str]) -> Li
         .execute(pool)
         .await
         .unwrap();
-    sqlx::query("INSERT INTO straylight.credential_scope_grants(credential_id,user_id,scope_id)VALUES($1,$2,$3)")
-        .bind(credential_id)
-        .bind(user_id)
-        .bind(scope_id)
-        .execute(pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "INSERT INTO brunn.credential_scope_grants(credential_id,user_id,scope_id)VALUES($1,$2,$3)",
+    )
+    .bind(credential_id)
+    .bind(user_id)
+    .bind(scope_id)
+    .execute(pool)
+    .await
+    .unwrap();
     LivePrincipal {
         auth: AuthContext {
             credential_id: CredentialId(credential_id),
@@ -91,7 +93,7 @@ async fn live_same_user_principal(
         .map(|value| (*value).to_owned())
         .collect::<Vec<_>>();
     sqlx::query(
-        "INSERT INTO straylight.api_credentials(id,user_id,label,token_hash,capabilities)VALUES($1,$2,$3,$4,$5)",
+        "INSERT INTO brunn.api_credentials(id,user_id,label,token_hash,capabilities)VALUES($1,$2,$3,$4,$5)",
     )
     .bind(credential_id)
     .bind(parent.auth.user_id.0)
@@ -103,9 +105,9 @@ async fn live_same_user_principal(
     .unwrap();
     sqlx::query(
         r#"
-        INSERT INTO straylight.credential_scope_grants(credential_id,user_id,scope_id)
+        INSERT INTO brunn.credential_scope_grants(credential_id,user_id,scope_id)
         SELECT $1,$2,scope.id
-        FROM straylight.scopes AS scope
+        FROM brunn.scopes AS scope
         WHERE scope.user_id=$2 AND scope.scope_ref::text=ANY($3)
         "#,
     )
@@ -155,11 +157,11 @@ fn error_code(value: &Value) -> Option<&str> {
 }
 
 async fn connect_test_pool() -> Option<PgPool> {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping task endpoint database test");
+        eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping task endpoint database test");
         return None;
     };
     let pool = PgPoolOptions::new()
@@ -170,7 +172,7 @@ async fn connect_test_pool() -> Option<PgPool> {
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .expect("apply Straylight migrations");
+        .expect("apply Brunn migrations");
     Some(pool)
 }
 
@@ -183,14 +185,14 @@ async fn test_principal(pool: &PgPool, label: &str, capabilities: &[&str]) -> Au
         .iter()
         .map(|value| (*value).to_owned())
         .collect::<Vec<_>>();
-    sqlx::query("INSERT INTO straylight.users(id,external_ref,display_name)VALUES($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users(id,external_ref,display_name)VALUES($1,$2,$3)")
         .bind(user_id)
         .bind(format!("task-http:{label}:{user_id}"))
         .bind(label)
         .execute(pool)
         .await
         .unwrap();
-    sqlx::query("INSERT INTO straylight.scopes(id,user_id,scope_ref,name)VALUES($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO brunn.scopes(id,user_id,scope_ref,name)VALUES($1,$2,$3,$4)")
         .bind(scope_id)
         .bind(user_id)
         .bind(&scope_ref)
@@ -198,8 +200,16 @@ async fn test_principal(pool: &PgPool, label: &str, capabilities: &[&str]) -> Au
         .execute(pool)
         .await
         .unwrap();
-    sqlx::query("INSERT INTO straylight.api_credentials(id,user_id,label,token_hash,capabilities)VALUES($1,$2,$3,$4,$5)").bind(credential_id).bind(user_id).bind(label).bind(format!("task-http-token-{credential_id}")).bind(&capabilities).execute(pool).await.unwrap();
-    sqlx::query("INSERT INTO straylight.credential_scope_grants(credential_id,user_id,scope_id)VALUES($1,$2,$3)").bind(credential_id).bind(user_id).bind(scope_id).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO brunn.api_credentials(id,user_id,label,token_hash,capabilities)VALUES($1,$2,$3,$4,$5)").bind(credential_id).bind(user_id).bind(label).bind(format!("task-http-token-{credential_id}")).bind(&capabilities).execute(pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO brunn.credential_scope_grants(credential_id,user_id,scope_id)VALUES($1,$2,$3)",
+    )
+    .bind(credential_id)
+    .bind(user_id)
+    .bind(scope_id)
+    .execute(pool)
+    .await
+    .unwrap();
     AuthContext {
         credential_id: CredentialId(credential_id),
         user_id: UserId(user_id),
@@ -238,7 +248,7 @@ fn task_http_routes_and_patch_cors_are_frozen() {
 #[tokio::test]
 async fn live_owner_issues_exact_ios_task_credential_once_and_inventory_stays_content_free() {
     let (Some(pool), Some(base_url)) = (connect_test_pool().await, live_api_url()) else {
-        eprintln!("STRAYLIGHT_TEST_API_URL is unset; skipping live iOS task credential contract");
+        eprintln!("BRUNN_TEST_API_URL is unset; skipping live iOS task credential contract");
         return;
     };
     let client = Client::new();
@@ -296,7 +306,7 @@ async fn live_owner_issues_exact_ios_task_credential_once_and_inventory_stays_co
     let email = format!("{username}@example.com");
     sqlx::query(
         r#"
-        INSERT INTO straylight.web_identities (
+        INSERT INTO brunn.web_identities (
           user_id,username,username_normalized,email,email_normalized,
           password_hash,web_credential_id
         ) VALUES ($1,$2,$2,$3,$3,'$argon2id$fixture',$4)
@@ -316,7 +326,7 @@ async fn live_owner_issues_exact_ios_task_credential_once_and_inventory_stays_co
     );
     assert_eq!(session_token.len(), 47);
     sqlx::query(
-        "INSERT INTO straylight.web_sessions(user_id,credential_id,token_hash,expires_at) VALUES($1,$2,$3,clock_timestamp()+interval '1 hour')",
+        "INSERT INTO brunn.web_sessions(user_id,credential_id,token_hash,expires_at) VALUES($1,$2,$3,clock_timestamp()+interval '1 hour')",
     )
     .bind(owner.auth.user_id.0)
     .bind(owner.auth.credential_id.0)
@@ -325,10 +335,10 @@ async fn live_owner_issues_exact_ios_task_credential_once_and_inventory_stays_co
     .await
     .expect("create owner Web session");
     let mut digest = Sha256::new();
-    digest.update(b"straylight.web-csrf.v1\0");
+    digest.update(b"brunn.web-csrf.v1\0");
     digest.update(session_token.as_bytes());
     let csrf = URL_SAFE_NO_PAD.encode(digest.finalize());
-    let session_cookie = format!("straylight_session={session_token}");
+    let session_cookie = format!("brunn_session={session_token}");
     let missing_csrf = client
         .post(format!("{base_url}/v1/credentials"))
         .header(reqwest::header::COOKIE, &session_cookie)
@@ -343,7 +353,7 @@ async fn live_owner_issues_exact_ios_task_credential_once_and_inventory_stays_co
         .post(format!("{base_url}/v1/credentials"))
         .header(
             reqwest::header::COOKIE,
-            format!("{session_cookie}; straylight_csrf={csrf}"),
+            format!("{session_cookie}; brunn_csrf={csrf}"),
         )
         .header("x-csrf-token", &csrf)
         .json(&body)
@@ -376,7 +386,7 @@ async fn live_owner_issues_exact_ios_task_credential_once_and_inventory_stays_co
     .expect("credential UUID");
 
     let stored = sqlx::query(
-        "SELECT label,token_hash,capabilities FROM straylight.api_credentials WHERE user_id=$1 AND id=$2",
+        "SELECT label,token_hash,capabilities FROM brunn.api_credentials WHERE user_id=$1 AND id=$2",
     )
     .bind(owner.auth.user_id.0)
     .bind(credential_id)
@@ -393,7 +403,7 @@ async fn live_owner_issues_exact_ios_task_credential_once_and_inventory_stays_co
         ["task.write", "notification:manage"]
     );
     let audit = sqlx::query(
-        "SELECT details,content_free FROM straylight.audit_events WHERE user_id=$1 AND action='auth.credential.issue' AND details->>'credential_id'=$2 ORDER BY recorded_at DESC LIMIT 1",
+        "SELECT details,content_free FROM brunn.audit_events WHERE user_id=$1 AND action='auth.credential.issue' AND details->>'credential_id'=$2 ORDER BY recorded_at DESC LIMIT 1",
     )
     .bind(owner.auth.user_id.0)
     .bind(credential_id.to_string())
@@ -524,7 +534,7 @@ async fn live_owner_issues_exact_ios_task_credential_once_and_inventory_stays_co
 #[tokio::test]
 async fn live_deliberate_all_filters_terminal_history_before_count_and_cursor() {
     let (Some(_pool), Some(base_url)) = (connect_test_pool().await, live_api_url()) else {
-        eprintln!("STRAYLIGHT_TEST_API_URL is unset; skipping live deliberate-all contract");
+        eprintln!("BRUNN_TEST_API_URL is unset; skipping live deliberate-all contract");
         return;
     };
     let client = Client::new();
@@ -889,14 +899,14 @@ async fn task_mutations_have_durable_receipts_and_optimistic_versions() {
         return;
     };
     let receipt_table = sqlx::query_scalar::<_, Option<String>>(
-        "SELECT to_regclass('straylight.task_operation_receipts')::text",
+        "SELECT to_regclass('brunn.task_operation_receipts')::text",
     )
     .fetch_one(&pool)
     .await
     .expect("inspect task receipt table");
     assert_eq!(
         receipt_table.as_deref(),
-        Some("straylight.task_operation_receipts")
+        Some("brunn.task_operation_receipts")
     );
     for table in [
         "task_contexts",
@@ -909,7 +919,7 @@ async fn task_mutations_have_durable_receipts_and_optimistic_versions() {
             SELECT EXISTS(
               SELECT 1
               FROM information_schema.columns
-              WHERE table_schema='straylight' AND table_name=$1 AND column_name='version'
+              WHERE table_schema='brunn' AND table_name=$1 AND column_name='version'
             )
             "#,
         )
@@ -920,10 +930,10 @@ async fn task_mutations_have_durable_receipts_and_optimistic_versions() {
         assert!(version_exists, "{table} lacks an optimistic version");
     }
     for column in ["quiet_hours_start", "quiet_hours_end"] {
-        let exists=sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='straylight' AND table_name='task_settings' AND column_name=$1)").bind(column).fetch_one(&pool).await.unwrap();
+        let exists=sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='brunn' AND table_name='task_settings' AND column_name=$1)").bind(column).fetch_one(&pool).await.unwrap();
         assert!(exists, "task_settings lacks {column}");
     }
-    let helper_args=sqlx::query_scalar::<_,i16>("SELECT pronargs FROM pg_proc JOIN pg_namespace ON pg_namespace.oid=pg_proc.pronamespace WHERE nspname='straylight' AND proname='touch_task_project_from_checkpoint'").fetch_one(&pool).await.unwrap();
+    let helper_args=sqlx::query_scalar::<_,i16>("SELECT pronargs FROM pg_proc JOIN pg_namespace ON pg_namespace.oid=pg_proc.pronamespace WHERE nspname='brunn' AND proname='touch_task_project_from_checkpoint'").fetch_one(&pool).await.unwrap();
     assert_eq!(
         helper_args, 3,
         "checkpoint activity helper must not accept caller time"
@@ -939,15 +949,15 @@ async fn generic_memory_principals_cannot_read_or_write_canonical_task_rows() {
     let task_id = Uuid::now_v7();
     let entry_id = Uuid::now_v7();
     let version_id = Uuid::now_v7();
-    let path = format!(".straylight/tasks/{task_id}.md");
+    let path = format!(".brunn/tasks/{task_id}.md");
     let mut fixture = pool.begin().await.unwrap();
     sqlx::query("SET CONSTRAINTS ALL DEFERRED")
         .execute(&mut *fixture)
         .await
         .unwrap();
-    sqlx::query("INSERT INTO straylight.entries(id,user_id,path,title,kind,media_type,current_version)VALUES($1,$2,$3,'Hidden task','markdown','text/markdown',1)").bind(entry_id).bind(auth.user_id.0).bind(&path).execute(&mut *fixture).await.unwrap();
-    sqlx::query("INSERT INTO straylight.entry_versions(id,user_id,entry_id,version,content_sha256,content,size_bytes,metadata)VALUES($1,$2,$3,1,$4,'# Hidden task\n',14,$5)").bind(version_id).bind(auth.user_id.0).bind(entry_id).bind("f".repeat(64)).bind(json!({"kind":"task","schema":"task.v1","task":{"id":task_id,"title":"Hidden task","status":{"value":"open","source":"owner","set_at":"2026-08-27T07:00:00Z"}}})).execute(&mut *fixture).await.unwrap();
-    sqlx::query("INSERT INTO straylight.workspace_changes(user_id,entry_id,path,entry_version,operation,content_sha256)VALUES($1,$2,$3,1,'create',$4)").bind(auth.user_id.0).bind(entry_id).bind(&path).bind("f".repeat(64)).execute(&mut *fixture).await.unwrap();
+    sqlx::query("INSERT INTO brunn.entries(id,user_id,path,title,kind,media_type,current_version)VALUES($1,$2,$3,'Hidden task','markdown','text/markdown',1)").bind(entry_id).bind(auth.user_id.0).bind(&path).execute(&mut *fixture).await.unwrap();
+    sqlx::query("INSERT INTO brunn.entry_versions(id,user_id,entry_id,version,content_sha256,content,size_bytes,metadata)VALUES($1,$2,$3,1,$4,'# Hidden task\n',14,$5)").bind(version_id).bind(auth.user_id.0).bind(entry_id).bind("f".repeat(64)).bind(json!({"kind":"task","schema":"task.v1","task":{"id":task_id,"title":"Hidden task","status":{"value":"open","source":"owner","set_at":"2026-08-27T07:00:00Z"}}})).execute(&mut *fixture).await.unwrap();
+    sqlx::query("INSERT INTO brunn.workspace_changes(user_id,entry_id,path,entry_version,operation,content_sha256)VALUES($1,$2,$3,1,'create',$4)").bind(auth.user_id.0).bind(entry_id).bind(&path).bind("f".repeat(64)).execute(&mut *fixture).await.unwrap();
     fixture.commit().await.unwrap();
     let mut tx = pool.begin().await.unwrap();
     sqlx::query("SET LOCAL ROLE app_rw")
@@ -955,38 +965,43 @@ async fn generic_memory_principals_cannot_read_or_write_canonical_task_rows() {
         .await
         .unwrap();
     set_context(&mut tx, &auth).await.unwrap();
-    let entries=sqlx::query_scalar::<_,i64>("SELECT count(*) FROM straylight.entries WHERE user_id=$1 AND path LIKE '.straylight/tasks/%'").bind(auth.user_id.0).fetch_one(&mut *tx).await.unwrap();
+    let entries = sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM brunn.entries WHERE user_id=$1 AND path LIKE '.brunn/tasks/%'",
+    )
+    .bind(auth.user_id.0)
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
     let versions = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM straylight.entry_versions WHERE user_id=$1 AND entry_id=$2",
+        "SELECT count(*) FROM brunn.entry_versions WHERE user_id=$1 AND entry_id=$2",
     )
     .bind(auth.user_id.0)
     .bind(entry_id)
     .fetch_one(&mut *tx)
     .await
     .unwrap();
-    let changes=sqlx::query_scalar::<_,i64>("SELECT count(*) FROM straylight.workspace_changes WHERE user_id=$1 AND path LIKE '.straylight/tasks/%'").bind(auth.user_id.0).fetch_one(&mut *tx).await.unwrap();
+    let changes=sqlx::query_scalar::<_,i64>("SELECT count(*) FROM brunn.workspace_changes WHERE user_id=$1 AND path LIKE '.brunn/tasks/%'").bind(auth.user_id.0).fetch_one(&mut *tx).await.unwrap();
     assert_eq!((entries, versions, changes), (0, 0, 0));
     let update_hidden = sqlx::query(
-        "UPDATE straylight.entry_versions SET content='tampered' WHERE user_id=$1 AND id=$2",
+        "UPDATE brunn.entry_versions SET content='tampered' WHERE user_id=$1 AND id=$2",
     )
     .bind(auth.user_id.0)
     .bind(version_id)
     .execute(&mut *tx)
     .await
     .unwrap();
-    let delete_hidden =
-        sqlx::query("DELETE FROM straylight.entry_versions WHERE user_id=$1 AND id=$2")
-            .bind(auth.user_id.0)
-            .bind(version_id)
-            .execute(&mut *tx)
-            .await
-            .unwrap();
+    let delete_hidden = sqlx::query("DELETE FROM brunn.entry_versions WHERE user_id=$1 AND id=$2")
+        .bind(auth.user_id.0)
+        .bind(version_id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
     assert_eq!(
         (update_hidden.rows_affected(), delete_hidden.rows_affected()),
         (0, 0),
         "RLS makes known task versions non-addressable to generic memory principals"
     );
-    let version_denied=sqlx::query("INSERT INTO straylight.entry_versions(id,user_id,entry_id,version,content_sha256,content,size_bytes,metadata)VALUES($1,$2,$3,2,$4,'# overwritten\n',14,$5)").bind(Uuid::now_v7()).bind(auth.user_id.0).bind(entry_id).bind("e".repeat(64)).bind(json!({"kind":"task","schema":"task.v1","task":{"id":task_id,"title":"overwritten"}})).execute(&mut *tx).await.expect_err("save without task.write must not append a task version");
+    let version_denied=sqlx::query("INSERT INTO brunn.entry_versions(id,user_id,entry_id,version,content_sha256,content,size_bytes,metadata)VALUES($1,$2,$3,2,$4,'# overwritten\n',14,$5)").bind(Uuid::now_v7()).bind(auth.user_id.0).bind(entry_id).bind("e".repeat(64)).bind(json!({"kind":"task","schema":"task.v1","task":{"id":task_id,"title":"overwritten"}})).execute(&mut *tx).await.expect_err("save without task.write must not append a task version");
     assert_eq!(
         version_denied
             .as_database_error()
@@ -1001,7 +1016,7 @@ async fn generic_memory_principals_cannot_read_or_write_canonical_task_rows() {
         .await
         .unwrap();
     set_context(&mut tx, &auth).await.unwrap();
-    let denied=sqlx::query("INSERT INTO straylight.entries(id,user_id,path,title,kind,media_type,current_version)VALUES($1,$2,$3,'Denied','markdown','text/markdown',1)").bind(Uuid::now_v7()).bind(auth.user_id.0).bind(format!(".straylight/tasks/{}.md",Uuid::now_v7())).execute(&mut *tx).await.expect_err("save without task.write must be denied");
+    let denied=sqlx::query("INSERT INTO brunn.entries(id,user_id,path,title,kind,media_type,current_version)VALUES($1,$2,$3,'Denied','markdown','text/markdown',1)").bind(Uuid::now_v7()).bind(auth.user_id.0).bind(format!(".brunn/tasks/{}.md",Uuid::now_v7())).execute(&mut *tx).await.expect_err("save without task.write must be denied");
     assert_eq!(
         denied
             .as_database_error()
@@ -1015,9 +1030,7 @@ async fn generic_memory_principals_cannot_read_or_write_canonical_task_rows() {
 #[tokio::test]
 async fn live_http_denies_every_task_mutation_and_hides_cross_user_tasks() {
     let (Some(pool), Some(base_url)) = (connect_test_pool().await, live_api_url()) else {
-        eprintln!(
-            "STRAYLIGHT_TEST_API_URL is unset; skipping live task HTTP authorization contract"
-        );
+        eprintln!("BRUNN_TEST_API_URL is unset; skipping live task HTTP authorization contract");
         return;
     };
     let client = Client::new();
@@ -1127,7 +1140,7 @@ async fn live_http_denies_every_task_mutation_and_hides_cross_user_tasks() {
 #[tokio::test]
 async fn live_http_receipts_serialize_replay_before_cas_and_reject_bad_input_atomically() {
     let (Some(pool), Some(base_url)) = (connect_test_pool().await, live_api_url()) else {
-        eprintln!("STRAYLIGHT_TEST_API_URL is unset; skipping live task HTTP idempotency contract");
+        eprintln!("BRUNN_TEST_API_URL is unset; skipping live task HTTP idempotency contract");
         return;
     };
     let client = Client::new();
@@ -1298,14 +1311,14 @@ async fn live_http_receipts_serialize_replay_before_cas_and_reject_bad_input_ato
     );
 
     let baseline_receipts = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM straylight.task_operation_receipts WHERE user_id=$1",
+        "SELECT count(*) FROM brunn.task_operation_receipts WHERE user_id=$1",
     )
     .bind(writer.auth.user_id.0)
     .fetch_one(&pool)
     .await
     .unwrap();
     let baseline_entries =
-        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM straylight.entries WHERE user_id=$1")
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM brunn.entries WHERE user_id=$1")
             .bind(writer.auth.user_id.0)
             .fetch_one(&pool)
             .await
@@ -1355,14 +1368,14 @@ async fn live_http_receipts_serialize_replay_before_cas_and_reject_bad_input_ato
         assert_eq!(error_code(&response), Some("invalid_request"));
     }
     let after_receipts = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM straylight.task_operation_receipts WHERE user_id=$1",
+        "SELECT count(*) FROM brunn.task_operation_receipts WHERE user_id=$1",
     )
     .bind(writer.auth.user_id.0)
     .fetch_one(&pool)
     .await
     .unwrap();
     let after_entries =
-        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM straylight.entries WHERE user_id=$1")
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM brunn.entries WHERE user_id=$1")
             .bind(writer.auth.user_id.0)
             .fetch_one(&pool)
             .await
@@ -1380,7 +1393,7 @@ async fn live_http_receipts_serialize_replay_before_cas_and_reject_bad_input_ato
 #[tokio::test]
 async fn live_portable_task_import_rejects_projection_ranges_before_any_durable_write() {
     let (Some(pool), Some(base_url)) = (connect_test_pool().await, live_api_url()) else {
-        eprintln!("STRAYLIGHT_TEST_API_URL is unset; skipping live portable task range contract");
+        eprintln!("BRUNN_TEST_API_URL is unset; skipping live portable task range contract");
         return;
     };
     let client = Client::new();
@@ -1413,36 +1426,35 @@ async fn live_portable_task_import_rejects_projection_ranges_before_any_durable_
     )
     .await;
     let durable_counts = |pool: PgPool, user_id: Uuid| async move {
-        let entries = sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.entries WHERE user_id=$1",
-        )
-        .bind(user_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+        let entries =
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM brunn.entries WHERE user_id=$1")
+                .bind(user_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         let versions = sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.entry_versions WHERE user_id=$1",
+            "SELECT count(*) FROM brunn.entry_versions WHERE user_id=$1",
         )
         .bind(user_id)
         .fetch_one(&pool)
         .await
         .unwrap();
         let changes = sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.workspace_changes WHERE user_id=$1",
+            "SELECT count(*) FROM brunn.workspace_changes WHERE user_id=$1",
         )
         .bind(user_id)
         .fetch_one(&pool)
         .await
         .unwrap();
         let workspace_receipts = sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.workspace_idempotency_receipts WHERE user_id=$1",
+            "SELECT count(*) FROM brunn.workspace_idempotency_receipts WHERE user_id=$1",
         )
         .bind(user_id)
         .fetch_one(&pool)
         .await
         .unwrap();
         let task_receipts = sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM straylight.task_operation_receipts WHERE user_id=$1",
+            "SELECT count(*) FROM brunn.task_operation_receipts WHERE user_id=$1",
         )
         .bind(user_id)
         .fetch_one(&pool)
@@ -1462,9 +1474,9 @@ async fn live_portable_task_import_rejects_projection_ranges_before_any_durable_
         ("estimate_minutes", json!(0)),
     ] {
         let task_id = Uuid::now_v7();
-        let path = format!(".straylight/tasks/{task_id}.md");
+        let path = format!(".brunn/tasks/{task_id}.md");
         let metadata = json!({
-            "_straylight_import":{"format":"straylight-workspace-import-manifest@v1"},
+            "_brunn_import":{"format":"brunn-workspace-import-manifest@v1"},
             "portable":{"modified_unix_ns":null,"mode":null},
             "client":{
                 "kind":"task",
@@ -1497,7 +1509,7 @@ async fn live_portable_task_import_rejects_projection_ranges_before_any_durable_
         assert_eq!(status, StatusCode::BAD_REQUEST, "{field}: {response}");
         assert_eq!(error_code(&response), Some("invalid_request"));
         let stored = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS(SELECT 1 FROM straylight.entries WHERE user_id=$1 AND path=$2)",
+            "SELECT EXISTS(SELECT 1 FROM brunn.entries WHERE user_id=$1 AND path=$2)",
         )
         .bind(owner.auth.user_id.0)
         .bind(&path)

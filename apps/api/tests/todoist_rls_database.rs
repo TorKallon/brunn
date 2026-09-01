@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use sqlx::{PgPool, Transaction, postgres::PgPoolOptions};
 use uuid::Uuid;
 
-use straylight::{
+use brunn::{
     auth::{AuthContext, hash_token},
     db::set_context,
     models::{CredentialId, UserId},
@@ -23,11 +23,11 @@ struct TodoistTenantSnapshot {
 }
 
 async fn connect_test_pool() -> Option<PgPool> {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping Todoist RLS database test");
+        eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping Todoist RLS database test");
         return None;
     };
     let pool = PgPoolOptions::new()
@@ -38,7 +38,7 @@ async fn connect_test_pool() -> Option<PgPool> {
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .expect("apply Straylight migrations through frozen schema 0074");
+        .expect("apply Brunn migrations through frozen schema 0074");
     Some(pool)
 }
 
@@ -52,14 +52,14 @@ async fn insert_principal(pool: &PgPool, label: &str) -> Principal {
         .map(str::to_owned)
         .collect::<Vec<_>>();
 
-    sqlx::query("INSERT INTO straylight.users(id,external_ref,display_name) VALUES($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users(id,external_ref,display_name) VALUES($1,$2,$3)")
         .bind(user_id)
         .bind(format!("todoist-rls-test:{label}:{user_id}"))
         .bind(format!("Todoist RLS {label}"))
         .execute(pool)
         .await
         .expect("insert Todoist RLS user");
-    sqlx::query("INSERT INTO straylight.scopes(id,user_id,scope_ref,name) VALUES($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO brunn.scopes(id,user_id,scope_ref,name) VALUES($1,$2,$3,$4)")
         .bind(scope_id)
         .bind(user_id)
         .bind(&scope_ref)
@@ -69,7 +69,7 @@ async fn insert_principal(pool: &PgPool, label: &str) -> Principal {
         .expect("insert Todoist RLS scope");
     sqlx::query(
         r#"
-        INSERT INTO straylight.api_credentials(
+        INSERT INTO brunn.api_credentials(
           id,user_id,label,token_hash,capabilities
         ) VALUES($1,$2,$3,$4,$5)
         "#,
@@ -83,7 +83,7 @@ async fn insert_principal(pool: &PgPool, label: &str) -> Principal {
     .await
     .expect("insert Todoist RLS credential");
     sqlx::query(
-        "INSERT INTO straylight.credential_scope_grants(credential_id,user_id,scope_id) VALUES($1,$2,$3)",
+        "INSERT INTO brunn.credential_scope_grants(credential_id,user_id,scope_id) VALUES($1,$2,$3)",
     )
     .bind(credential_id)
     .bind(user_id)
@@ -115,21 +115,21 @@ async fn seed_todoist_tenant(pool: &PgPool, principal: &Principal, label: &str) 
 
     sqlx::query(
         r#"
-        INSERT INTO straylight.entries(
+        INSERT INTO brunn.entries(
           id,user_id,path,title,kind,media_type,current_version
         ) VALUES($1,$2,$3,$4,'markdown','text/markdown',0)
         "#,
     )
     .bind(entry_id)
     .bind(principal.user_id)
-    .bind(format!(".straylight/tasks/{task_id}.md"))
+    .bind(format!(".brunn/tasks/{task_id}.md"))
     .bind(format!("Todoist RLS {label} task"))
     .execute(&mut *tx)
     .await
     .expect("insert Todoist occurrence entry fixture");
     sqlx::query(
         r#"
-        INSERT INTO straylight.entry_versions(
+        INSERT INTO brunn.entry_versions(
           id,user_id,entry_id,version,content_sha256,content,size_bytes,metadata
         ) VALUES($1,$2,$3,1,$4,$5,$6,'{}'::jsonb)
         "#,
@@ -143,7 +143,7 @@ async fn seed_todoist_tenant(pool: &PgPool, principal: &Principal, label: &str) 
     .execute(&mut *tx)
     .await
     .expect("insert Todoist occurrence entry version fixture");
-    sqlx::query("UPDATE straylight.entries SET current_version=1 WHERE user_id=$1 AND id=$2")
+    sqlx::query("UPDATE brunn.entries SET current_version=1 WHERE user_id=$1 AND id=$2")
         .bind(principal.user_id)
         .bind(entry_id)
         .execute(&mut *tx)
@@ -151,7 +151,7 @@ async fn seed_todoist_tenant(pool: &PgPool, principal: &Principal, label: &str) 
         .expect("advance Todoist occurrence entry fixture");
     sqlx::query(
         r#"
-        INSERT INTO straylight.task_todoist_occurrences(
+        INSERT INTO brunn.task_todoist_occurrences(
           user_id,series_id,occurrence_key,task_id,entry_id
         ) VALUES($1,$2,$3,$4,$5)
         "#,
@@ -167,7 +167,7 @@ async fn seed_todoist_tenant(pool: &PgPool, principal: &Principal, label: &str) 
     tx.commit().await.expect("commit Todoist tenant fixture");
     sqlx::query(
         r#"
-        UPDATE straylight.task_integration_config
+        UPDATE brunn.task_integration_config
         SET mode='pull',configuration_generation=$2
         WHERE user_id=$1 AND system='todoist'
         "#,
@@ -179,7 +179,7 @@ async fn seed_todoist_tenant(pool: &PgPool, principal: &Principal, label: &str) 
     .expect("customize Todoist config fixture");
     sqlx::query(
         r#"
-        UPDATE straylight.task_sync_state
+        UPDATE brunn.task_sync_state
         SET cursor=$2,configuration_generation=$3,last_outcome=$4
         WHERE user_id=$1 AND system='todoist'
         "#,
@@ -193,7 +193,7 @@ async fn seed_todoist_tenant(pool: &PgPool, principal: &Principal, label: &str) 
     .expect("customize Todoist sync-state fixture");
     sqlx::query(
         r#"
-        INSERT INTO straylight.task_todoist_projects(
+        INSERT INTO brunn.task_todoist_projects(
           user_id,external_id,name,is_deleted
         ) VALUES($1,$2,$3,false)
         "#,
@@ -260,7 +260,7 @@ async fn snapshot_tenant(pool: &PgPool, user_id: Uuid) -> TodoistTenantSnapshot 
         occurrence: sqlx::query_as(
             r#"
             SELECT series_id,occurrence_key,task_id,entry_id
-            FROM straylight.task_todoist_occurrences
+            FROM brunn.task_todoist_occurrences
             WHERE user_id=$1
             "#,
         )
@@ -271,7 +271,7 @@ async fn snapshot_tenant(pool: &PgPool, user_id: Uuid) -> TodoistTenantSnapshot 
         config: sqlx::query_as(
             r#"
             SELECT mode,configuration_generation
-            FROM straylight.task_integration_config
+            FROM brunn.task_integration_config
             WHERE user_id=$1 AND system='todoist'
             "#,
         )
@@ -282,7 +282,7 @@ async fn snapshot_tenant(pool: &PgPool, user_id: Uuid) -> TodoistTenantSnapshot 
         state: sqlx::query_as(
             r#"
             SELECT cursor,configuration_generation,last_outcome
-            FROM straylight.task_sync_state
+            FROM brunn.task_sync_state
             WHERE user_id=$1 AND system='todoist'
             "#,
         )
@@ -293,7 +293,7 @@ async fn snapshot_tenant(pool: &PgPool, user_id: Uuid) -> TodoistTenantSnapshot 
         project: sqlx::query_as(
             r#"
             SELECT external_id,name,is_deleted
-            FROM straylight.task_todoist_projects
+            FROM brunn.task_todoist_projects
             WHERE user_id=$1
             "#,
         )
@@ -314,18 +314,18 @@ async fn assert_exposed_rows_are_tenant_scoped(
     for (table, visible_sql, other_sql) in [
         (
             "task_todoist_occurrences",
-            "SELECT DISTINCT user_id FROM straylight.task_todoist_occurrences ORDER BY user_id",
-            "SELECT EXISTS(SELECT 1 FROM straylight.task_todoist_occurrences WHERE user_id=$1)",
+            "SELECT DISTINCT user_id FROM brunn.task_todoist_occurrences ORDER BY user_id",
+            "SELECT EXISTS(SELECT 1 FROM brunn.task_todoist_occurrences WHERE user_id=$1)",
         ),
         (
             "task_integration_config",
-            "SELECT DISTINCT user_id FROM straylight.task_integration_config ORDER BY user_id",
-            "SELECT EXISTS(SELECT 1 FROM straylight.task_integration_config WHERE user_id=$1)",
+            "SELECT DISTINCT user_id FROM brunn.task_integration_config ORDER BY user_id",
+            "SELECT EXISTS(SELECT 1 FROM brunn.task_integration_config WHERE user_id=$1)",
         ),
         (
             "task_sync_state",
-            "SELECT DISTINCT user_id FROM straylight.task_sync_state ORDER BY user_id",
-            "SELECT EXISTS(SELECT 1 FROM straylight.task_sync_state WHERE user_id=$1)",
+            "SELECT DISTINCT user_id FROM brunn.task_sync_state ORDER BY user_id",
+            "SELECT EXISTS(SELECT 1 FROM brunn.task_sync_state WHERE user_id=$1)",
         ),
     ] {
         let visible_users = sqlx::query_scalar::<_, Uuid>(visible_sql)
@@ -375,7 +375,7 @@ async fn todoist_tables_enforce_cross_user_rls_and_keep_project_cache_worker_pri
                 &pool,
                 &owner_a.auth,
                 role,
-                "SELECT 1 FROM straylight.task_todoist_projects WHERE user_id=$1",
+                "SELECT 1 FROM brunn.task_todoist_projects WHERE user_id=$1",
                 user_id,
             )
             .await;
@@ -387,12 +387,12 @@ async fn todoist_tables_enforce_cross_user_rls_and_keep_project_cache_worker_pri
     // on INSERT.
     let mut rw_tx = begin_as(&pool, &owner_a.auth, "app_rw").await;
     for statement in [
-        "UPDATE straylight.task_todoist_occurrences SET occurrence_key='cross-user-update' WHERE user_id=$1",
-        "DELETE FROM straylight.task_todoist_occurrences WHERE user_id=$1",
-        "UPDATE straylight.task_integration_config SET mode='off' WHERE user_id=$1",
-        "DELETE FROM straylight.task_integration_config WHERE user_id=$1",
-        "UPDATE straylight.task_sync_state SET cursor='cross-user-update' WHERE user_id=$1",
-        "DELETE FROM straylight.task_sync_state WHERE user_id=$1",
+        "UPDATE brunn.task_todoist_occurrences SET occurrence_key='cross-user-update' WHERE user_id=$1",
+        "DELETE FROM brunn.task_todoist_occurrences WHERE user_id=$1",
+        "UPDATE brunn.task_integration_config SET mode='off' WHERE user_id=$1",
+        "DELETE FROM brunn.task_integration_config WHERE user_id=$1",
+        "UPDATE brunn.task_sync_state SET cursor='cross-user-update' WHERE user_id=$1",
+        "DELETE FROM brunn.task_sync_state WHERE user_id=$1",
     ] {
         let result = sqlx::query(statement)
             .bind(owner_b.user_id)
@@ -411,7 +411,7 @@ async fn todoist_tables_enforce_cross_user_rls_and_keep_project_cache_worker_pri
     let mut occurrence_insert_tx = begin_as(&pool, &owner_a.auth, "app_rw").await;
     let occurrence_insert = sqlx::query(
         r#"
-        INSERT INTO straylight.task_todoist_occurrences(
+        INSERT INTO brunn.task_todoist_occurrences(
           user_id,series_id,occurrence_key,task_id,entry_id
         ) VALUES($1,'cross-user-series','cross-user-insert',$2,$3)
         "#,
@@ -432,7 +432,7 @@ async fn todoist_tables_enforce_cross_user_rls_and_keep_project_cache_worker_pri
         &pool,
         &owner_a.auth,
         "app_rw",
-        "INSERT INTO straylight.task_integration_config(user_id,system,mode) VALUES($1,'cross-user-probe','off')",
+        "INSERT INTO brunn.task_integration_config(user_id,system,mode) VALUES($1,'cross-user-probe','off')",
         owner_b.user_id,
     )
     .await;
@@ -440,7 +440,7 @@ async fn todoist_tables_enforce_cross_user_rls_and_keep_project_cache_worker_pri
         &pool,
         &owner_a.auth,
         "app_rw",
-        "INSERT INTO straylight.task_sync_state(user_id,system) VALUES($1,'cross-user-probe')",
+        "INSERT INTO brunn.task_sync_state(user_id,system) VALUES($1,'cross-user-probe')",
         owner_b.user_id,
     )
     .await;
@@ -449,9 +449,9 @@ async fn todoist_tables_enforce_cross_user_rls_and_keep_project_cache_worker_pri
     // for every read/write verb and for both application roles.
     for role in ["app_rw", "app_ro"] {
         for statement in [
-            "INSERT INTO straylight.task_todoist_projects(user_id,external_id,name) VALUES($1,'cross-user-probe','forbidden')",
-            "UPDATE straylight.task_todoist_projects SET name='forbidden' WHERE user_id=$1",
-            "DELETE FROM straylight.task_todoist_projects WHERE user_id=$1",
+            "INSERT INTO brunn.task_todoist_projects(user_id,external_id,name) VALUES($1,'cross-user-probe','forbidden')",
+            "UPDATE brunn.task_todoist_projects SET name='forbidden' WHERE user_id=$1",
+            "DELETE FROM brunn.task_todoist_projects WHERE user_id=$1",
         ] {
             assert_uuid_statement_denied(&pool, &owner_a.auth, role, statement, owner_b.user_id)
                 .await;
@@ -461,15 +461,15 @@ async fn todoist_tables_enforce_cross_user_rls_and_keep_project_cache_worker_pri
     // app_ro has no mutation privileges at all. Exercise every DML verb on the
     // occurrence ledger and write probes on the two owner-visible state tables.
     for statement in [
-        "INSERT INTO straylight.task_todoist_occurrences(user_id,series_id,occurrence_key,task_id,entry_id) SELECT $1,'ro-cross-user-series','ro-cross-user-insert',gen_random_uuid(),entry_id FROM straylight.task_todoist_occurrences WHERE user_id=$1 LIMIT 1",
-        "UPDATE straylight.task_todoist_occurrences SET occurrence_key='ro-cross-user-update' WHERE user_id=$1",
-        "DELETE FROM straylight.task_todoist_occurrences WHERE user_id=$1",
-        "INSERT INTO straylight.task_integration_config(user_id,system,mode) VALUES($1,'ro-cross-user-probe','off')",
-        "UPDATE straylight.task_integration_config SET mode='off' WHERE user_id=$1",
-        "DELETE FROM straylight.task_integration_config WHERE user_id=$1",
-        "INSERT INTO straylight.task_sync_state(user_id,system) VALUES($1,'ro-cross-user-probe')",
-        "UPDATE straylight.task_sync_state SET cursor='ro-cross-user-update' WHERE user_id=$1",
-        "DELETE FROM straylight.task_sync_state WHERE user_id=$1",
+        "INSERT INTO brunn.task_todoist_occurrences(user_id,series_id,occurrence_key,task_id,entry_id) SELECT $1,'ro-cross-user-series','ro-cross-user-insert',gen_random_uuid(),entry_id FROM brunn.task_todoist_occurrences WHERE user_id=$1 LIMIT 1",
+        "UPDATE brunn.task_todoist_occurrences SET occurrence_key='ro-cross-user-update' WHERE user_id=$1",
+        "DELETE FROM brunn.task_todoist_occurrences WHERE user_id=$1",
+        "INSERT INTO brunn.task_integration_config(user_id,system,mode) VALUES($1,'ro-cross-user-probe','off')",
+        "UPDATE brunn.task_integration_config SET mode='off' WHERE user_id=$1",
+        "DELETE FROM brunn.task_integration_config WHERE user_id=$1",
+        "INSERT INTO brunn.task_sync_state(user_id,system) VALUES($1,'ro-cross-user-probe')",
+        "UPDATE brunn.task_sync_state SET cursor='ro-cross-user-update' WHERE user_id=$1",
+        "DELETE FROM brunn.task_sync_state WHERE user_id=$1",
     ] {
         assert_uuid_statement_denied(&pool, &owner_a.auth, "app_ro", statement, owner_b.user_id)
             .await;

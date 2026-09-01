@@ -1,14 +1,14 @@
+use brunn::retrieval_sql::SIMPLE_ENTRY_LINK_CANDIDATES_SQL;
 use chrono::{Duration, Utc};
 use sqlx::{AssertSqlSafe, PgPool, Postgres, Row, Transaction, postgres::PgPoolOptions};
-use straylight::retrieval_sql::SIMPLE_ENTRY_LINK_CANDIDATES_SQL;
 use uuid::Uuid;
 
 async fn connect_test_pool() -> Option<PgPool> {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping search sort database test");
+        eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping search sort database test");
         return None;
     };
     let pool = PgPoolOptions::new()
@@ -19,7 +19,7 @@ async fn connect_test_pool() -> Option<PgPool> {
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .expect("apply Straylight migrations");
+        .expect("apply Brunn migrations");
     Some(pool)
 }
 
@@ -34,7 +34,7 @@ async fn insert_link_entry(
     let version_id = Uuid::now_v7();
     let content = format!("link fixture {ordinal}");
     sqlx::query(
-        "INSERT INTO straylight.entries \
+        "INSERT INTO brunn.entries \
          (id,user_id,path,title,kind,media_type,current_version) \
          VALUES ($1,$2,$3,$4,'markdown','text/markdown',0)",
     )
@@ -46,7 +46,7 @@ async fn insert_link_entry(
     .await
     .expect("insert link fixture entry");
     sqlx::query(
-        "INSERT INTO straylight.entry_versions \
+        "INSERT INTO brunn.entry_versions \
          (id,user_id,entry_id,version,content_sha256,content,size_bytes) \
          VALUES ($1,$2,$3,1,$4,$5,$6)",
     )
@@ -59,7 +59,7 @@ async fn insert_link_entry(
     .execute(&mut **tx)
     .await
     .expect("insert link fixture version");
-    sqlx::query("UPDATE straylight.entries SET current_version=1 WHERE user_id=$1 AND id=$2")
+    sqlx::query("UPDATE brunn.entries SET current_version=1 WHERE user_id=$1 AND id=$2")
         .bind(user_id)
         .bind(entry_id)
         .execute(&mut **tx)
@@ -94,7 +94,7 @@ async fn non_relevance_sorts_select_before_the_bounded_candidate_cutoff() {
     let user_id = Uuid::now_v7();
     let credential_id = Uuid::now_v7();
     let mut tx = pool.begin().await.expect("begin fixture transaction");
-    sqlx::query("INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
         .bind(user_id)
         .bind(format!("search-sort-test:{user_id}"))
         .bind("Search sort integration test")
@@ -116,7 +116,7 @@ async fn non_relevance_sorts_select_before_the_bounded_candidate_cutoff() {
         let content_hash = format!("{ordinal:064x}");
         let updated_at = base_time + Duration::days(ordinal as i64);
         sqlx::query(
-            "INSERT INTO straylight.entries \
+            "INSERT INTO brunn.entries \
              (id,user_id,path,title,kind,media_type,current_version,updated_at) \
              VALUES ($1,$2,$3,$4,'markdown','text/markdown',0,$5)",
         )
@@ -129,7 +129,7 @@ async fn non_relevance_sorts_select_before_the_bounded_candidate_cutoff() {
         .await
         .expect("insert fixture entry");
         sqlx::query(
-            "INSERT INTO straylight.entry_versions \
+            "INSERT INTO brunn.entry_versions \
              (id,user_id,entry_id,version,content_sha256,content,size_bytes) \
              VALUES ($1,$2,$3,1,$4,$5,$6)",
         )
@@ -142,14 +142,14 @@ async fn non_relevance_sorts_select_before_the_bounded_candidate_cutoff() {
         .execute(&mut *tx)
         .await
         .expect("insert fixture version");
-        sqlx::query("UPDATE straylight.entries SET current_version=1 WHERE user_id=$1 AND id=$2")
+        sqlx::query("UPDATE brunn.entries SET current_version=1 WHERE user_id=$1 AND id=$2")
             .bind(user_id)
             .bind(entry_id)
             .execute(&mut *tx)
             .await
             .expect("activate fixture version");
         sqlx::query(
-            "INSERT INTO straylight.search_chunks \
+            "INSERT INTO brunn.search_chunks \
              (id,user_id,entry_id,entry_version_id,chunk_index,path,heading,content,token_estimate) \
              VALUES ($1,$2,$3,$4,0,$5,'',$6,3)",
         )
@@ -163,7 +163,7 @@ async fn non_relevance_sorts_select_before_the_bounded_candidate_cutoff() {
         .await
         .expect("insert fixture search chunk");
         sqlx::query(
-            "INSERT INTO straylight.workspace_changes \
+            "INSERT INTO brunn.workspace_changes \
              (user_id,entry_id,entry_version,operation,path,content_sha256) \
              VALUES ($1,$2,1,'create',$3,$4)",
         )
@@ -187,7 +187,7 @@ async fn non_relevance_sorts_select_before_the_bounded_candidate_cutoff() {
     .expect("establish validated request context");
 
     let legacy_count = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM straylight.workspace_lexical_candidates('needle')",
+        "SELECT count(*) FROM brunn.workspace_lexical_candidates('needle')",
     )
     .fetch_one(&mut *tx)
     .await
@@ -195,7 +195,7 @@ async fn non_relevance_sorts_select_before_the_bounded_candidate_cutoff() {
     assert!(legacy_count > 0);
 
     let modified = sqlx::query(
-        "SELECT path FROM straylight.workspace_lexical_candidates_v2('needle','last_modified')",
+        "SELECT path FROM brunn.workspace_lexical_candidates_v2('needle','last_modified')",
     )
     .fetch_all(&mut *tx)
     .await
@@ -203,12 +203,11 @@ async fn non_relevance_sorts_select_before_the_bounded_candidate_cutoff() {
     assert_eq!(modified.len(), 64);
     assert_eq!(modified[0].get::<String, _>("path"), "Notes/300.md");
 
-    let title = sqlx::query(
-        "SELECT path FROM straylight.workspace_lexical_candidates_v2('needle','title')",
-    )
-    .fetch_all(&mut *tx)
-    .await
-    .expect("fetch title candidates");
+    let title =
+        sqlx::query("SELECT path FROM brunn.workspace_lexical_candidates_v2('needle','title')")
+            .fetch_all(&mut *tx)
+            .await
+            .expect("fetch title candidates");
     assert_eq!(title.len(), 64);
     assert_eq!(title[0].get::<String, _>("path"), "Notes/001.md");
 
@@ -242,7 +241,7 @@ async fn non_relevance_sorts_select_before_the_bounded_candidate_cutoff() {
         Some("link fixture 30001".to_owned())
     );
 
-    sqlx::query("ANALYZE straylight.entries")
+    sqlx::query("ANALYZE brunn.entries")
         .execute(&mut *tx)
         .await
         .expect("refresh entry statistics for plan assertions");

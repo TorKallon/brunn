@@ -12,7 +12,7 @@ The original D14 proposed a Nyx read-only Tier A pilot, a Tier B read/write
 daily-driver phase, and a two-to-four-week Markdown-authority shadow period
 before Tier C. The owner explicitly rejected that two-step on 2026-07-31:
 Railway has no other active user traffic, Nyx must remain available for testing,
-and Codex plus Aether/OpenClaw are to cut over directly to Straylight and stop
+and Codex plus Aether/OpenClaw are to cut over directly to Brunn and stop
 writing durable memory to the vault.
 
 That decision changes rollout authority, not historical evidence. The E01–E11
@@ -61,7 +61,7 @@ text. The source capture remains read-only throughout.
 | Current service | 13,709 active / 13,838 history; ten deleted current paths retained in history | Pass |
 | Storage | Railway Pro; live/IaC volume 20 GB; filesystem 18.3 GiB, 25% used, 13.6 GiB free; database 4,094,842,547 bytes; HNSW indexes retained as derived accelerators; `corpus_members` retained until restore-backed legacy retirement | Pass for capacity; storage-efficiency audit recommended |
 | Clients | Separate credentials/pinned wrappers; Codex and Aether/OpenClaw final passes | Pass |
-| Authority | Both configured Straylight-only; old live vault/local-memory/report/backup paths absent; post-gateway source inventory unchanged | Pass |
+| Authority | Both configured Brunn-only; old live vault/local-memory/report/backup paths absent; post-gateway source inventory unchanged | Pass |
 
 The earlier HTTP 429 pause was recovered by idempotent replay without resetting
 the database.
@@ -107,7 +107,7 @@ history retained and replacements active.
 ### 4. Agent-memory preservation and client cutover — passed
 
 - Capture current Codex and Aether local durable memory under distinct
-  Straylight namespaces before disabling either old store.
+  Brunn namespaces before disabling either old store.
 - Issue a separate read/write credential per client through the approved local
   secret store; never inline tokens in configuration.
 - Launch the fixed MCP distribution pinned to the deployed revision, with
@@ -118,11 +118,11 @@ history retained and replacements active.
 - Disable Codex local memories and Aether local-memory search/flush plus all
   vault-writing instructions, skills, symlinks, and automations.
 - From fresh processes, prove both clients read and write durable context only
-  through Straylight.
+  through Brunn.
 
 The primary 398-file memory capture and additional 2,793-file dormant Aether
 backup both passed import and replay verification. Separate credentials,
-private roots, fixed launchers, and Straylight-only configuration pass. Codex
+private roots, fixed launchers, and Brunn-only configuration pass. Codex
 passes the executed direct-cutover subset, including stale-write HTTP 409.
 Aether/OpenClaw's strict
 post-archive run passes through its healthy normal gateway: cross-read,
@@ -177,12 +177,12 @@ The direct-cutover decision does not erase the earlier caution:
 
 Those findings are why the deployed build keeps context-shaping treatments off.
 They are not evidence that a second writable authority is safer than an exact,
-audited Straylight cutover.
+audited Brunn cutover.
 
 ## Acceptance and rollback
 
 The operational cutover passes: the intended worker revision, zero-job queue,
-zero missing embeddings, fidelity audits, client canaries, Straylight-only
+zero missing embeddings, fidelity audits, client canaries, Brunn-only
 persistence proof, and fresh one-replica qualification all pass. The
 environment-blocked restore exception is accepted as non-blocking and remains
 future recovery work. Evidence commit

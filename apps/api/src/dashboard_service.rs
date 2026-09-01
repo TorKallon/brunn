@@ -151,8 +151,8 @@ pub async fn dashboard(
         r#"
         WITH current_entries AS MATERIALIZED (
           SELECT entry.kind,version.size_bytes
-          FROM straylight.entries AS entry
-          JOIN straylight.entry_versions AS version
+          FROM brunn.entries AS entry
+          JOIN brunn.entry_versions AS version
             ON version.user_id=entry.user_id
            AND version.entry_id=entry.id
            AND version.version=entry.current_version
@@ -162,10 +162,10 @@ pub async fn dashboard(
           count(*) FILTER (WHERE kind='markdown')::bigint AS text_count,
           coalesce(sum(size_bytes) FILTER (WHERE kind='markdown'),0)::bigint
             AS text_size_bytes,
-          straylight_auth.workspace_generation($1)::bigint AS workspace_generation,
+          brunn_auth.workspace_generation($1)::bigint AS workspace_generation,
           (
             SELECT min(first_recorded_at)
-            FROM straylight.product_activity_minutely
+            FROM brunn.product_activity_minutely
             WHERE user_id=$1
           ) AS activity_tracking_started_at
         FROM current_entries
@@ -177,7 +177,7 @@ pub async fn dashboard(
     let activity_rows = sqlx::query(
         r#"
         SELECT credential_id,bucket_start,operation,operation_count,byte_count
-        FROM straylight.product_activity_minutely
+        FROM brunn.product_activity_minutely
         WHERE user_id=$1 AND bucket_start >= $2 AND bucket_start < $3
         ORDER BY bucket_start,credential_id,operation
         "#,
@@ -198,7 +198,7 @@ pub async fn dashboard(
         })
     })
     .collect::<ApiResult<Vec<_>>>()?;
-    let credential_rows = sqlx::query("SELECT * FROM straylight_auth.dashboard_credentials($1)")
+    let credential_rows = sqlx::query("SELECT * FROM brunn_auth.dashboard_credentials($1)")
         .bind(auth.user_id.0)
         .fetch_all(&mut *tx)
         .await?;

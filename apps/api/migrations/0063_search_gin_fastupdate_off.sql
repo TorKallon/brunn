@@ -6,5 +6,5 @@
 -- and the database had no memory pressure. With fastupdate off, writers
 -- integrate entries directly and readers never inherit the flush; the
 -- one-time clean below drains the current backlog at migration time.
-ALTER INDEX straylight.search_chunks_fts_idx SET (fastupdate = off);
-SELECT gin_clean_pending_list('straylight.search_chunks_fts_idx');
+ALTER INDEX brunn.search_chunks_fts_idx SET (fastupdate = off);
+SELECT gin_clean_pending_list('brunn.search_chunks_fts_idx');

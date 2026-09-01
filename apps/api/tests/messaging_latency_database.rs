@@ -16,7 +16,7 @@ use sqlx::{AssertSqlSafe, PgPool, postgres::PgPoolOptions};
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use straylight::{
+use brunn::{
     AppState, Config,
     auth::{AuthContext, hash_token},
     messaging_protocol::{MessageKind, SendMessageInput, request_hash},
@@ -34,8 +34,8 @@ const TYPICAL_DELTA_LIMIT_BYTES: usize = 8 * 1024;
 
 const MESSAGE_CURSOR_QUERY: &str = r#"
 SELECT message.conversation_id,message.seq,message.sync_cursor
-FROM straylight.messaging_message_index AS message
-JOIN straylight.messaging_participants AS participant
+FROM brunn.messaging_message_index AS message
+JOIN brunn.messaging_participants AS participant
   ON participant.user_id=message.user_id
  AND participant.conversation_id=message.conversation_id
  AND participant.agent_id=$2
@@ -48,8 +48,8 @@ LIMIT $5
 
 const CONVERSATION_CURSOR_QUERY: &str = r#"
 SELECT conversation.conversation_id,conversation.latest_sync_cursor
-FROM straylight.messaging_conversations AS conversation
-JOIN straylight.messaging_participants AS participant
+FROM brunn.messaging_conversations AS conversation
+JOIN brunn.messaging_participants AS participant
   ON participant.user_id=conversation.user_id
  AND participant.conversation_id=conversation.conversation_id
  AND participant.agent_id=$2
@@ -59,7 +59,7 @@ WHERE conversation.user_id=$1
       AND conversation.latest_sync_cursor<=$4)
     OR EXISTS (
       SELECT 1
-      FROM straylight.messaging_message_index AS page_message
+      FROM brunn.messaging_message_index AS page_message
       WHERE page_message.user_id=conversation.user_id
         AND page_message.conversation_id=conversation.conversation_id
         AND page_message.sync_cursor>$3
@@ -91,13 +91,11 @@ struct PlanInspection {
 }
 
 async fn connect_test_state() -> Option<(PgPool, AppState)> {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!(
-            "STRAYLIGHT_TEST_DATABASE_URL is unset; skipping messaging latency database contract"
-        );
+        eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping messaging latency database contract");
         return None;
     };
 
@@ -109,7 +107,7 @@ async fn connect_test_state() -> Option<(PgPool, AppState)> {
     sqlx::migrate!("./migrations")
         .run(&seed_pool)
         .await
-        .expect("apply Straylight migrations");
+        .expect("apply Brunn migrations");
 
     let mut config = Config::from_env().expect("load disposable API configuration");
     config.database_url_rw = database_url.clone();
@@ -153,14 +151,14 @@ async fn seed_fixture(pool: &PgPool) -> Fixture {
     let capabilities = vec!["message.read".to_owned(), "message.write".to_owned()];
     let token = format!("messaging-latency-test-{credential_id}-secret");
 
-    sqlx::query("INSERT INTO straylight.users(id,external_ref,display_name) VALUES($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users(id,external_ref,display_name) VALUES($1,$2,$3)")
         .bind(user_id)
         .bind(format!("messaging-latency-test:{user_id}"))
         .bind("Messaging latency database contract")
         .execute(&mut *tx)
         .await
         .expect("insert messaging latency user");
-    sqlx::query("INSERT INTO straylight.scopes(id,user_id,scope_ref,name) VALUES($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO brunn.scopes(id,user_id,scope_ref,name) VALUES($1,$2,$3,$4)")
         .bind(scope_id)
         .bind(user_id)
         .bind(&scope_ref)
@@ -170,7 +168,7 @@ async fn seed_fixture(pool: &PgPool) -> Fixture {
         .expect("insert messaging latency scope");
     sqlx::query(
         r#"
-        INSERT INTO straylight.api_credentials(
+        INSERT INTO brunn.api_credentials(
           id,user_id,label,token_hash,capabilities
         ) VALUES($1,$2,$3,$4,$5)
         "#,
@@ -185,7 +183,7 @@ async fn seed_fixture(pool: &PgPool) -> Fixture {
     .expect("insert messaging latency credential");
     sqlx::query(
         r#"
-        INSERT INTO straylight.credential_scope_grants(credential_id,user_id,scope_id)
+        INSERT INTO brunn.credential_scope_grants(credential_id,user_id,scope_id)
         VALUES($1,$2,$3)
         "#,
     )
@@ -202,7 +200,7 @@ async fn seed_fixture(pool: &PgPool) -> Fixture {
     ] {
         sqlx::query(
             r#"
-            INSERT INTO straylight.messaging_agents(
+            INSERT INTO brunn.messaging_agents(
               user_id,agent_id,display_name,principal_kind,delivery_mode,
               created_by_credential_id
             ) VALUES($1,$2,$3,$4,'pull',$5)
@@ -219,7 +217,7 @@ async fn seed_fixture(pool: &PgPool) -> Fixture {
     }
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_credential_bindings(
+        INSERT INTO brunn.messaging_credential_bindings(
           user_id,credential_id,agent_id,bound_by_credential_id
         ) VALUES($1,$2,'owner',$2)
         "#,
@@ -239,13 +237,13 @@ async fn seed_fixture(pool: &PgPool) -> Fixture {
 
     sqlx::query(
         r#"
-        INSERT INTO straylight.entries(
+        INSERT INTO brunn.entries(
           id,user_id,path,title,kind,media_type,current_version,created_at,updated_at
         )
         SELECT
           fixture.conversation_id,
           $1,
-          '.straylight/conversations/' || fixture.conversation_id::text || '.md',
+          '.brunn/conversations/' || fixture.conversation_id::text || '.md',
           format('Latency conversation %s',fixture.ordinal),
           'markdown',
           'text/markdown',
@@ -264,7 +262,7 @@ async fn seed_fixture(pool: &PgPool) -> Fixture {
     .expect("insert messaging latency entries");
     sqlx::query(
         r#"
-        INSERT INTO straylight.entry_versions(
+        INSERT INTO brunn.entry_versions(
           user_id,entry_id,version,content_sha256,content,size_bytes,metadata,
           created_by_credential_id,created_at
         )
@@ -295,7 +293,7 @@ async fn seed_fixture(pool: &PgPool) -> Fixture {
     .expect("insert messaging latency entry versions");
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_conversations(
+        INSERT INTO brunn.messaging_conversations(
           user_id,conversation_id,entry_id,path,conversation_kind,direct_key,
           subject,status,created_by_agent_id,last_seq,last_message_at,
           agent_streak,needs_human,latest_sync_cursor,created_at,updated_at
@@ -304,7 +302,7 @@ async fn seed_fixture(pool: &PgPool) -> Fixture {
           $1,
           fixture.conversation_id,
           fixture.conversation_id,
-          '.straylight/conversations/' || fixture.conversation_id::text || '.md',
+          '.brunn/conversations/' || fixture.conversation_id::text || '.md',
           'direct',
           NULL,
           format('Latency conversation %s',fixture.ordinal),
@@ -330,7 +328,7 @@ async fn seed_fixture(pool: &PgPool) -> Fixture {
     .expect("insert messaging latency conversations");
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_participants(
+        INSERT INTO brunn.messaging_participants(
           user_id,conversation_id,agent_id,role,last_read_seq,joined_at,updated_at
         )
         SELECT $1,fixture.conversation_id,member.agent_id,'participant',0,$3,$3
@@ -366,7 +364,7 @@ async fn seed_fixture(pool: &PgPool) -> Fixture {
     }
     let inserted = sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_message_index(
+        INSERT INTO brunn.messaging_message_index(
           user_id,conversation_id,seq,message_id,from_agent_id,client_key,
           request_hash,kind,body_md,refs,expects_reply,sync_cursor,created_at
         )
@@ -405,18 +403,16 @@ async fn seed_fixture(pool: &PgPool) -> Fixture {
     .await
     .expect("insert messaging latency messages");
     assert_eq!(inserted.rows_affected(), SEEDED_MESSAGE_COUNT as u64);
-    sqlx::query(
-        "INSERT INTO straylight.messaging_sync_state(user_id,current_cursor) VALUES($1,$2)",
-    )
-    .bind(user_id)
-    .bind(SEEDED_MESSAGE_COUNT as i64)
-    .execute(&mut *tx)
-    .await
-    .expect("insert messaging latency cursor");
+    sqlx::query("INSERT INTO brunn.messaging_sync_state(user_id,current_cursor) VALUES($1,$2)")
+        .bind(user_id)
+        .bind(SEEDED_MESSAGE_COUNT as i64)
+        .execute(&mut *tx)
+        .await
+        .expect("insert messaging latency cursor");
     tx.commit().await.expect("commit messaging latency fixture");
 
     let stored = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM straylight.messaging_message_index WHERE user_id=$1",
+        "SELECT count(*) FROM brunn.messaging_message_index WHERE user_id=$1",
     )
     .bind(user_id)
     .fetch_one(pool)
@@ -540,15 +536,15 @@ async fn messaging_handlers_meet_latency_payload_and_cursor_plan_gates_at_target
         return;
     };
     let fixture = seed_fixture(&pool).await;
-    sqlx::query("ANALYZE straylight.messaging_message_index")
+    sqlx::query("ANALYZE brunn.messaging_message_index")
         .execute(&pool)
         .await
         .expect("analyze messaging message projection");
-    sqlx::query("ANALYZE straylight.messaging_conversations")
+    sqlx::query("ANALYZE brunn.messaging_conversations")
         .execute(&pool)
         .await
         .expect("analyze messaging conversations");
-    sqlx::query("ANALYZE straylight.messaging_participants")
+    sqlx::query("ANALYZE brunn.messaging_participants")
         .execute(&pool)
         .await
         .expect("analyze messaging participants");

@@ -558,7 +558,7 @@ def audit_runs(
     )
     stable_provenance = accepted[0]["provenance"]
     return {
-        "schema": "straylight-intention-audit@v2",
+        "schema": "brunn-intention-audit@v2",
         "audit_mode": audit_mode,
         "inputs": [
             {

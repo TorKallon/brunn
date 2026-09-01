@@ -203,7 +203,7 @@ class SemanticExperimentInfrastructureTest(unittest.TestCase):
             / "apps/api/migrations/0056_atomic_evaluation_cleanup.sql"
         ).read_text(encoding="utf-8")
         self.assertIn(
-            "CREATE FUNCTION straylight_auth.cleanup_evaluation_user(",
+            "CREATE FUNCTION brunn_auth.cleanup_evaluation_user(",
             migration,
         )
         self.assertIn(
@@ -211,11 +211,11 @@ class SemanticExperimentInfrastructureTest(unittest.TestCase):
             migration,
         )
         self.assertIn(
-            "DELETE FROM straylight.search_chunks",
+            "DELETE FROM brunn.search_chunks",
             migration,
         )
         self.assertIn(
-            "UPDATE straylight.api_credentials",
+            "UPDATE brunn.api_credentials",
             migration,
         )
         self.assertIn(
@@ -232,7 +232,7 @@ class SemanticExperimentInfrastructureTest(unittest.TestCase):
             manifest_sha256 = "b" * 64
             selected = ["case-a", "case-b"]
             artifact = {
-                "schema": "straylight-e09-step-policy@v1",
+                "schema": "brunn-e09-step-policy@v1",
                 "status": "approved_one_step_bounded_subset",
                 "pass": True,
                 "policy": {
@@ -510,7 +510,7 @@ class SemanticExperimentInfrastructureTest(unittest.TestCase):
             patch(
                 "eval.semantic_http_probe.run_contract",
                 return_value={
-                    "schema": "straylight-semantic-http-probe@v1",
+                    "schema": "brunn-semantic-http-probe@v1",
                     "status": "passed",
                     "pass": True,
                     "error": None,

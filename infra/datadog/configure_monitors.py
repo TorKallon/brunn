@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create or update the source-controlled Straylight Datadog monitors."""
+"""Create or update the source-controlled Brunn Datadog monitors."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 
-CONFIG = Path(__file__).with_name("straylight-production-monitors.json")
+CONFIG = Path(__file__).with_name("brunn-production-monitors.json")
 
 
 def parse_args() -> argparse.Namespace:
@@ -76,8 +76,8 @@ def request(
 def main() -> int:
     args = parse_args()
     environment = os.environ.get("DD_ENV", "production").strip() or "production"
-    service = os.environ.get("DD_SERVICE", "straylight").strip() or "straylight"
-    notify = os.environ.get("STRAYLIGHT_DATADOG_NOTIFY", "").strip()
+    service = os.environ.get("DD_SERVICE", "brunn").strip() or "brunn"
+    notify = os.environ.get("BRUNN_DATADOG_NOTIFY", "").strip()
     notify_suffix = f"\n\n{notify}" if notify else ""
     replacements = {
         "__DD_ENV__": environment,

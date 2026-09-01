@@ -11,13 +11,13 @@ DECLARE
   ]::text[];
 BEGIN
   WITH restored AS (
-    UPDATE straylight.api_credentials AS credential
+    UPDATE brunn.api_credentials AS credential
     SET capabilities = owner_capabilities
     WHERE credential.capabilities @> ARRAY['credential:manage']::text[]
       AND credential.capabilities IS DISTINCT FROM owner_capabilities
     RETURNING credential.user_id, credential.id
   )
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, actor_ref, action, details, content_free
   )
   SELECT
@@ -33,7 +33,7 @@ BEGIN
 END;
 $$;
 
-ALTER TABLE straylight.api_credentials
+ALTER TABLE brunn.api_credentials
   ADD CONSTRAINT api_credentials_owner_full_capabilities_check CHECK (
     NOT capabilities @> ARRAY['credential:manage']::text[]
     OR capabilities @> ARRAY[

@@ -67,7 +67,7 @@ pub async fn process_account_export(state: &AppState, worker_id: &str) -> ApiRes
             tracing::warn!(export_id=%job.id, user_id=%job.user_id, ?error, "account export failed");
             let row = sqlx::query(
                 r#"
-                UPDATE straylight.account_exports
+                UPDATE brunn.account_exports
                 SET status=CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'queued' END,
                     failure_code=$1,
                     available_at=clock_timestamp()+interval '5 seconds',
@@ -133,7 +133,7 @@ pub async fn process_account_deletion(state: &AppState, worker_id: &str) -> ApiR
             );
             let row = sqlx::query(
                 r#"
-                UPDATE straylight.account_deletion_requests
+                UPDATE brunn.account_deletion_requests
                 SET failure_attempts=failure_attempts+1,
                     status=CASE WHEN failure_attempts+1 >= max_failure_attempts
                                 THEN 'failed' ELSE status END,
@@ -184,7 +184,7 @@ async fn claim_account_deletion(
                  AND (terminal_result->>'canonical_purged_at')::timestamptz
                        < backup_erasure_watermark_at
                ) AS backup_erasure_verified
-        FROM straylight.account_deletion_requests
+        FROM brunn.account_deletion_requests
         WHERE (
             status IN ('queued','running')
             OR (
@@ -227,7 +227,7 @@ async fn claim_account_deletion(
     };
     sqlx::query(
         r#"
-        UPDATE straylight.account_deletion_requests
+        UPDATE brunn.account_deletion_requests
         SET locked_at=clock_timestamp(),locked_by=$1
         WHERE user_id=$2 AND id=$3
         "#,
@@ -246,8 +246,8 @@ async fn prepare_account_deletion(pool: &PgPool, job: &AccountDeletionJob) -> Ap
     let defaults = sqlx::query(
         r#"
         SELECT scope.id AS scope_id,policy.id AS policy_id,policy.current_version
-        FROM straylight.scopes AS scope
-        JOIN straylight.policies AS policy
+        FROM brunn.scopes AS scope
+        JOIN brunn.policies AS policy
           ON policy.user_id=scope.user_id AND policy.is_default
         WHERE scope.user_id=$1 AND scope.scope_ref='scope:root'
         "#,
@@ -265,7 +265,7 @@ async fn prepare_account_deletion(pool: &PgPool, job: &AccountDeletionJob) -> Ap
 
     sqlx::query(
         r#"
-        INSERT INTO straylight.source_episodes (
+        INSERT INTO brunn.source_episodes (
           id,user_id,scope_id,source_ref,source_kind,source_version,title,
           captured_at,content_hash,native_locator,metadata,policy_id,policy_version
         ) VALUES (
@@ -286,7 +286,7 @@ async fn prepare_account_deletion(pool: &PgPool, job: &AccountDeletionJob) -> Ap
     .await?;
     sqlx::query(
         r#"
-        INSERT INTO straylight.evidence_items (
+        INSERT INTO brunn.evidence_items (
           id,user_id,scope_id,source_episode_id,evidence_kind,locator,
           text_content,content_hash,observed_at,policy_id,policy_version
         ) VALUES (
@@ -312,7 +312,7 @@ async fn prepare_account_deletion(pool: &PgPool, job: &AccountDeletionJob) -> Ap
     // no per-record deletion phase to stage.
     sqlx::query(
         r#"
-        UPDATE straylight.account_deletion_requests
+        UPDATE brunn.account_deletion_requests
         SET status='running',records_total=0,records_completed=0,
             started_at=coalesce(started_at,clock_timestamp()),
             failure_code=NULL,locked_at=NULL,locked_by=NULL
@@ -339,8 +339,8 @@ async fn advance_account_deletion(state: &AppState, job: &AccountDeletionJob) ->
         r#"
         SELECT EXISTS(
           SELECT 1
-          FROM straylight.account_deletion_fences AS fence
-          JOIN straylight.users AS user_row ON user_row.id=fence.user_id
+          FROM brunn.account_deletion_fences AS fence
+          JOIN brunn.users AS user_row ON user_row.id=fence.user_id
           WHERE fence.user_id=$1 AND fence.request_id=$2
             AND user_row.account_status='deleting'
         )
@@ -373,7 +373,7 @@ async fn advance_account_deletion(state: &AppState, job: &AccountDeletionJob) ->
     redact_account_for_retention(&mut tx, job).await?;
     sqlx::query(
         r#"
-        UPDATE straylight.account_exports
+        UPDATE brunn.account_exports
         SET status='deleted',object_key=NULL,object_version_id=NULL,
             completed_at=coalesce(completed_at,clock_timestamp())
         WHERE user_id=$1
@@ -384,7 +384,7 @@ async fn advance_account_deletion(state: &AppState, job: &AccountDeletionJob) ->
     .await?;
     sqlx::query(
         r#"
-        UPDATE straylight.account_deletion_requests
+        UPDATE brunn.account_deletion_requests
         SET status='awaiting_backup_expiry',records_total=0,records_completed=0,
             failure_code=NULL,
             terminal_result=jsonb_build_object(
@@ -418,17 +418,17 @@ async fn redact_account_for_retention(
     tx: &mut Transaction<'_, Postgres>,
     job: &AccountDeletionJob,
 ) -> ApiResult<()> {
-    sqlx::query("SELECT set_config('straylight.account_deletion_request_id',$1,true)")
+    sqlx::query("SELECT set_config('brunn.account_deletion_request_id',$1,true)")
         .bind(job.id.to_string())
         .execute(&mut **tx)
         .await?;
-    sqlx::query_scalar::<_, Value>("SELECT straylight.purge_account_user_rows($1)")
+    sqlx::query_scalar::<_, Value>("SELECT brunn.purge_account_user_rows($1)")
         .bind(job.user_id)
         .fetch_one(&mut **tx)
         .await?;
     sqlx::query(
         r#"
-        UPDATE straylight.api_credentials
+        UPDATE brunn.api_credentials
         SET label=CASE WHEN id=$2
                        THEN 'Deletion status credential'
                        ELSE 'Deleted credential' END,
@@ -447,7 +447,7 @@ async fn redact_account_for_retention(
     .await?;
     sqlx::query(
         r#"
-        UPDATE straylight.account_deletion_requests
+        UPDATE brunn.account_deletion_requests
         SET reason='deleted',
             confirmation_hash=encode(public.digest('','sha256'),'hex')
         WHERE user_id=$1
@@ -458,7 +458,7 @@ async fn redact_account_for_retention(
     .await?;
     sqlx::query(
         r#"
-        UPDATE straylight.users
+        UPDATE brunn.users
         SET external_ref='deleting:' || id::text,
             display_name='Deleting account'
         WHERE id=$1 AND account_status='deleting'
@@ -472,17 +472,17 @@ async fn redact_account_for_retention(
 
 async fn finalize_account_deletion(pool: &PgPool, job: &AccountDeletionJob) -> ApiResult<()> {
     let mut tx = pool.begin().await?;
-    sqlx::query("SELECT set_config('straylight.account_deletion_request_id',$1,true)")
+    sqlx::query("SELECT set_config('brunn.account_deletion_request_id',$1,true)")
         .bind(job.id.to_string())
         .execute(&mut *tx)
         .await?;
-    sqlx::query_scalar::<_, Value>("SELECT straylight.purge_account_user_rows($1)")
+    sqlx::query_scalar::<_, Value>("SELECT brunn.purge_account_user_rows($1)")
         .bind(job.user_id)
         .fetch_one(&mut *tx)
         .await?;
     sqlx::query(
         r#"
-        UPDATE straylight.audit_events
+        UPDATE brunn.audit_events
         SET actor_ref=NULL,request_id=NULL,
             details=jsonb_build_object('redacted_by_account_deletion',$2::text),
             content_free=true
@@ -495,7 +495,7 @@ async fn finalize_account_deletion(pool: &PgPool, job: &AccountDeletionJob) -> A
     .await?;
     sqlx::query(
         r#"
-        UPDATE straylight.api_credentials
+        UPDATE brunn.api_credentials
         SET label='Deleted credential',
             token_hash=encode(public.digest(
               'deleted:' || id::text || ':' || $2::text,'sha256'
@@ -510,7 +510,7 @@ async fn finalize_account_deletion(pool: &PgPool, job: &AccountDeletionJob) -> A
     .await?;
     sqlx::query(
         r#"
-        UPDATE straylight.account_exports
+        UPDATE brunn.account_exports
         SET status='deleted',object_key=NULL,object_version_id=NULL,
             failure_code=NULL
         WHERE user_id=$1
@@ -521,7 +521,7 @@ async fn finalize_account_deletion(pool: &PgPool, job: &AccountDeletionJob) -> A
     .await?;
     sqlx::query(
         r#"
-        UPDATE straylight.account_deletion_requests
+        UPDATE brunn.account_deletion_requests
         SET reason='deleted',
             confirmation_hash=encode(public.digest('','sha256'),'hex')
         WHERE user_id=$1
@@ -532,7 +532,7 @@ async fn finalize_account_deletion(pool: &PgPool, job: &AccountDeletionJob) -> A
     .await?;
     sqlx::query(
         r#"
-        UPDATE straylight.users
+        UPDATE brunn.users
         SET external_ref='deleted:' || id::text,
             display_name='Deleted account',
             account_status='deleted',deleted_at=clock_timestamp()
@@ -544,7 +544,7 @@ async fn finalize_account_deletion(pool: &PgPool, job: &AccountDeletionJob) -> A
     .await?;
     let completion = sqlx::query(
         r#"
-        UPDATE straylight.account_deletion_requests
+        UPDATE brunn.account_deletion_requests
         SET status='completed',completed_at=clock_timestamp(),
             failure_code=NULL,locked_at=NULL,locked_by=NULL,
             terminal_result=coalesce(terminal_result,'{}'::jsonb) || jsonb_build_object(
@@ -578,7 +578,7 @@ async fn finalize_account_deletion(pool: &PgPool, job: &AccountDeletionJob) -> A
 
 async fn clear_account_deletion_lock(pool: &PgPool, job: &AccountDeletionJob) -> ApiResult<()> {
     sqlx::query(
-        "UPDATE straylight.account_deletion_requests SET locked_at=NULL,locked_by=NULL WHERE user_id=$1 AND id=$2",
+        "UPDATE brunn.account_deletion_requests SET locked_at=NULL,locked_by=NULL WHERE user_id=$1 AND id=$2",
     )
     .bind(job.user_id)
     .bind(job.id)
@@ -613,7 +613,7 @@ async fn recover_stale_exports(pool: &PgPool, lease: Duration) -> ApiResult<()> 
     let lease_seconds = i64::try_from(lease.as_secs()).unwrap_or(i64::MAX);
     sqlx::query(
         r#"
-        UPDATE straylight.account_exports
+        UPDATE brunn.account_exports
         SET status=CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'queued' END,
             failure_code='worker_lease_expired',
             available_at=clock_timestamp(),
@@ -636,7 +636,7 @@ async fn claim_export(pool: &PgPool, worker_id: &str) -> ApiResult<Option<Export
     let row = sqlx::query(
         r#"
         SELECT id,user_id
-        FROM straylight.account_exports
+        FROM brunn.account_exports
         WHERE status='queued' AND available_at <= clock_timestamp()
         ORDER BY created_at,id
         FOR UPDATE SKIP LOCKED
@@ -655,7 +655,7 @@ async fn claim_export(pool: &PgPool, worker_id: &str) -> ApiResult<Option<Export
     };
     sqlx::query(
         r#"
-        UPDATE straylight.account_exports
+        UPDATE brunn.account_exports
         SET status='running',attempts=attempts+1,
             started_at=coalesce(started_at,clock_timestamp()),
             completed_at=NULL,locked_at=clock_timestamp(),locked_by=$1
@@ -687,6 +687,56 @@ async fn build_export(state: &AppState, job: &ExportJob) -> ApiResult<ExportResu
     result
 }
 
+const ACCOUNT_EXPORT_OBJECT_REFERENCES_SQL: &str = r#"
+WITH object_references AS (
+  SELECT bucket::text AS bucket,
+         object_key,
+         object_version_id,
+         content_hash::text AS content_hash,
+         size_bytes,
+         'asset_version'::text AS reference_kind,
+         asset_id::text || ':' || version::text AS reference_ref
+  FROM brunn.asset_versions
+  WHERE user_id=$1
+    AND NOT (
+      object_key::text = user_id::text || '/deleted-assets/'
+        || asset_id::text || '/' || version::text
+      AND content_hash::text =
+        'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+      AND size_bytes=0
+      AND media_type::text='application/x-brunn-deleted'
+      AND metadata ? 'redacted_by_deletion_job'
+    )
+  UNION ALL
+  SELECT $2::text AS bucket,
+         object_key,
+         object_version_id,
+         content_sha256::text AS content_hash,
+         size_bytes,
+         'entry_version'::text AS reference_kind,
+         entry_id::text || ':' || version::text AS reference_ref
+  FROM brunn.entry_versions
+  WHERE user_id=$1
+    AND object_key IS NOT NULL
+    AND object_version_id IS NOT NULL
+)
+SELECT bucket,object_key,object_version_id,
+       min(content_hash) AS content_hash,
+       min(size_bytes) AS size_bytes,
+       count(DISTINCT content_hash)::bigint AS content_hash_count,
+       count(DISTINCT size_bytes)::bigint AS size_count,
+       jsonb_agg(
+         jsonb_build_object(
+           'kind',reference_kind,
+           'ref',reference_ref
+         )
+         ORDER BY reference_kind,reference_ref
+       ) AS object_references
+FROM object_references
+GROUP BY bucket,object_key,object_version_id
+ORDER BY bucket,object_key,object_version_id NULLS FIRST
+"#;
+
 async fn build_export_inner(
     state: &AppState,
     pool: &PgPool,
@@ -710,7 +760,7 @@ async fn build_export_inner(
         .execute(&mut *tx)
         .await?;
     let user = sqlx::query_scalar::<_, Value>(
-        "SELECT to_jsonb(user_row) FROM straylight.users AS user_row WHERE id=$1",
+        "SELECT to_jsonb(user_row) FROM brunn.users AS user_row WHERE id=$1",
     )
     .bind(job.user_id)
     .fetch_optional(&mut *tx)
@@ -725,7 +775,7 @@ async fn build_export_inner(
         JOIN information_schema.tables AS table_row
           ON table_row.table_schema=column_row.table_schema
          AND table_row.table_name=column_row.table_name
-        WHERE column_row.table_schema='straylight'
+        WHERE column_row.table_schema='brunn'
           AND column_row.column_name='user_id'
           AND table_row.table_type='BASE TABLE'
         ORDER BY column_row.table_name
@@ -749,7 +799,7 @@ async fn build_export_inner(
         }
         let projection = account_export_projection(table);
         let query = format!(
-            "SELECT {projection} FROM straylight.\"{table}\" AS table_row \
+            "SELECT {projection} FROM brunn.\"{table}\" AS table_row \
              WHERE user_id=$1 ORDER BY ctid"
         );
         let path = root.join("tables").join(format!("{table}.jsonl"));
@@ -776,48 +826,11 @@ async fn build_export_inner(
         table_rows.insert(table.clone(), count);
     }
 
-    let object_rows = sqlx::query(
-        r#"
-        WITH object_references AS (
-          SELECT bucket::text AS bucket,
-                 object_key,
-                 object_version_id,
-                 content_hash::text AS content_hash,
-                 size_bytes,
-                 'asset_version'::text AS reference_kind,
-                 asset_id::text || ':' || version::text AS reference_ref
-	          FROM straylight.asset_versions
-	          WHERE user_id=$1
-	            AND NOT (
-	              object_key::text = user_id::text || '/deleted-assets/'
-	                || asset_id::text || '/' || version::text
-	              AND content_hash::text =
-	                'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
-	              AND size_bytes=0
-	              AND media_type::text='application/x-straylight-deleted'
-	              AND metadata ? 'redacted_by_deletion_job'
-	            )
-	        )
-        SELECT bucket,object_key,object_version_id,
-               min(content_hash) AS content_hash,
-               min(size_bytes) AS size_bytes,
-               count(DISTINCT content_hash)::bigint AS content_hash_count,
-               count(DISTINCT size_bytes)::bigint AS size_count,
-               jsonb_agg(
-                 jsonb_build_object(
-                   'kind',reference_kind,
-                   'ref',reference_ref
-                 )
-                 ORDER BY reference_kind,reference_ref
-               ) AS object_references
-        FROM object_references
-        GROUP BY bucket,object_key,object_version_id
-        ORDER BY bucket,object_key,object_version_id NULLS FIRST
-        "#,
-    )
-    .bind(job.user_id)
-    .fetch_all(&mut *tx)
-    .await?;
+    let object_rows = sqlx::query(ACCOUNT_EXPORT_OBJECT_REFERENCES_SQL)
+        .bind(job.user_id)
+        .bind(&state.config.s3_bucket)
+        .fetch_all(&mut *tx)
+        .await?;
     tx.commit().await?;
 
     let mut objects = Vec::with_capacity(object_rows.len());
@@ -866,7 +879,7 @@ async fn build_export_inner(
     }
 
     let manifest = json!({
-        "format": "straylight-account-export",
+        "format": "brunn-account-export",
         "version": 1,
         "export_id": format!("export:{}", job.id),
         "user_id": format!("user:{}", job.user_id),
@@ -898,7 +911,7 @@ async fn publish_account_export(
 ) -> ApiResult<ExportResult> {
     let (content_hash, size_bytes) = hash_file(archive_path).await?;
     let mut tx = pool.begin().await?;
-    sqlx::query("SELECT straylight.assert_storage_write_allowed($1)")
+    sqlx::query("SELECT brunn.assert_storage_write_allowed($1)")
         .bind(job.user_id)
         .execute(&mut *tx)
         .await?;
@@ -976,7 +989,7 @@ async fn publish_account_export(
     let ttl_seconds = i64::try_from(state.config.account_export_ttl.as_secs()).unwrap_or(i64::MAX);
     let published = sqlx::query(
         r#"
-        UPDATE straylight.account_exports
+        UPDATE brunn.account_exports
         SET status='ready',object_key=$1,object_version_id=$2,
             content_hash=$3,size_bytes=$4,
             table_count=$5,object_count=$6,completed_at=clock_timestamp(),
@@ -1130,7 +1143,7 @@ async fn compensate_export_object(state: &AppState, job: &ExportJob, object_key:
             r#"
             SELECT EXISTS(
               SELECT 1
-              FROM straylight.account_exports
+              FROM brunn.account_exports
               WHERE user_id=$1 AND object_key=$2
                 AND status='ready'
             )
@@ -1183,7 +1196,7 @@ async fn create_archive(root: PathBuf, archive_path: PathBuf) -> ApiResult<()> {
         let encoder = GzEncoder::new(output, Compression::default());
         let mut archive = tar::Builder::new(encoder);
         archive
-            .append_dir_all("straylight-export", &root)
+            .append_dir_all("brunn-export", &root)
             .map_err(|error| {
                 ApiError::Internal(format!("could not build export archive: {error}"))
             })?;
@@ -1211,7 +1224,7 @@ async fn expire_one_export(state: &AppState) -> ApiResult<bool> {
     let row = sqlx::query(
         r#"
         SELECT id,user_id,object_key
-        FROM straylight.account_exports
+        FROM brunn.account_exports
         WHERE status='ready' AND expires_at <= clock_timestamp()
         ORDER BY expires_at,id
         FOR UPDATE SKIP LOCKED
@@ -1233,7 +1246,7 @@ async fn expire_one_export(state: &AppState) -> ApiResult<bool> {
     }
     sqlx::query(
         r#"
-        UPDATE straylight.account_exports
+        UPDATE brunn.account_exports
         SET status='expired',object_key=NULL,object_version_id=NULL,
             completed_at=coalesce(completed_at,clock_timestamp())
         WHERE user_id=$1 AND id=$2 AND status='ready'
@@ -1291,6 +1304,18 @@ mod tests {
         assert!(safe_identifier("asset_versions"));
         assert!(!safe_identifier("asset_versions;DROP TABLE"));
         assert!(!safe_identifier(""));
+    }
+
+    #[test]
+    fn account_export_includes_legacy_and_simple_workspace_binary_objects() {
+        assert!(ACCOUNT_EXPORT_OBJECT_REFERENCES_SQL.contains("FROM brunn.asset_versions"));
+        assert!(ACCOUNT_EXPORT_OBJECT_REFERENCES_SQL.contains("FROM brunn.entry_versions"));
+        assert!(ACCOUNT_EXPORT_OBJECT_REFERENCES_SQL.contains("UNION ALL"));
+        assert!(ACCOUNT_EXPORT_OBJECT_REFERENCES_SQL.contains("object_key IS NOT NULL"));
+        assert!(ACCOUNT_EXPORT_OBJECT_REFERENCES_SQL.contains("object_version_id IS NOT NULL"));
+        assert!(ACCOUNT_EXPORT_OBJECT_REFERENCES_SQL.contains("'entry_version'::text"));
+        assert!(ACCOUNT_EXPORT_OBJECT_REFERENCES_SQL.contains("count(DISTINCT content_hash)"));
+        assert!(ACCOUNT_EXPORT_OBJECT_REFERENCES_SQL.contains("count(DISTINCT size_bytes)"));
     }
 
     #[test]

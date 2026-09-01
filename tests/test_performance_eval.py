@@ -254,7 +254,7 @@ class PerformanceEvalTests(unittest.TestCase):
 
     def test_query_count_summary_and_budget_reject_one_extra_statement(self):
         budgets = {
-            "schema": "straylight-query-budgets@v1",
+            "schema": "brunn-query-budgets@v1",
             "operations": {
                 "read": {"comparison": "exact", "count": 11},
                 "search": {"comparison": "at_most", "max": 23},
@@ -391,7 +391,7 @@ class PerformanceEvalTests(unittest.TestCase):
             },
         }
         budgets = {
-            "schema": "straylight-query-budgets@v1",
+            "schema": "brunn-query-budgets@v1",
             "operations": {
                 "read": {"comparison": "exact", "count": 11},
                 "checkpoint": {"comparison": "at_most", "max": 28},

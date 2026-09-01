@@ -1,9 +1,9 @@
-import type { StraylightApi } from "./api";
+import type { BrunnApi } from "./api";
 import type { ServiceStatus } from "./types";
 
 export const SERVICE_STATUS_QUERY_KEY = ["service-status"] as const;
 
-export function serviceStatusQuery(api: Pick<StraylightApi, "status">) {
+export function serviceStatusQuery(api: Pick<BrunnApi, "status">) {
   return {
     queryKey: SERVICE_STATUS_QUERY_KEY,
     queryFn: () => api.status(),

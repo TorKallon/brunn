@@ -13,7 +13,7 @@ verdict; after the E03 defect is repaired and its quality backfill passes, the
 experimental intent below remains unchanged.
 
 **Resolved nuisance posture (2026-07-28):** E02 rejected D02, so every future
-E09 stack must hold `STRAYLIGHT_VERBATIM_SPANS=false` and every measured
+E09 stack must hold `BRUNN_VERBATIM_SPANS=false` and every measured
 service/performance command must assert
 `--expect-feature-flag verbatim_spans=off`. D02 is not an E09 variable, and an
 E09 result cannot rehabilitate it.

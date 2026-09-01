@@ -1,7 +1,7 @@
 {
   "benchmark_version": "rupture-ops-v0.1",
-  "name": "Straylight Rupture Ops workload evaluation",
-  "report_title": "Straylight Rupture Ops workload evaluation",
+  "name": "Brunn Rupture Ops workload evaluation",
+  "report_title": "Brunn Rupture Ops workload evaluation",
   "report_date": "2026-07-11",
   "evaluation_model": "subject_plus_product_work",
   "grading_mode": "concept_tokens_v1",
@@ -9,7 +9,7 @@
   "generalization": {
     "purpose": "Evaluate an agent that learns an evolving subject, tracks a concrete instance, advances goals and decisions, builds durable products, and verifies results.",
     "planes": ["subject", "instance", "work", "product", "validation"],
-    "fixture_rule": "Game-specific entities and values are concrete test data, not privileged Straylight schema."
+    "fixture_rule": "Game-specific entities and values are concrete test data, not privileged Brunn schema."
   },
   "corpus_root": "eval/corpus-rupture-ops-v0.1",
   "model": "gpt-5.6-sol",

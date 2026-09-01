@@ -380,7 +380,7 @@ describe("agent-first task surfaces", () => {
       screen.queryByText(/source and date filters apply to this server page/i),
     ).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Status"), "waiting");
-    await user.selectOptions(screen.getByLabelText("Project"), "straylight");
+    await user.selectOptions(screen.getByLabelText("Project"), "brunn");
     await user.selectOptions(screen.getByLabelText("Context"), "phone");
     await user.selectOptions(screen.getByLabelText("Date type"), "soft");
     await user.selectOptions(screen.getByLabelText("Source"), "todoist");
@@ -400,7 +400,7 @@ describe("agent-first task surfaces", () => {
           url.searchParams.get("deliberate_all") === "true" &&
           url.searchParams.get("include_waiting") === "true" &&
           url.searchParams.get("include_parked") === "true" &&
-          url.searchParams.get("project") === "straylight" &&
+          url.searchParams.get("project") === "brunn" &&
           url.searchParams.get("context") === "phone" &&
           url.searchParams.get("status") === "waiting" &&
           url.searchParams.get("date_type") === "soft" &&
@@ -521,7 +521,7 @@ describe("agent-first task surfaces", () => {
           data: { task: taskDetail.task, action: "drop", replayed: false },
         };
       },
-      "GET /api/v1/workspace/projects/straylight/state": {
+      "GET /api/v1/workspace/projects/brunn/state": {
         status: "complete",
         data: taskProjectState,
       },
@@ -547,8 +547,8 @@ describe("agent-first task surfaces", () => {
       ),
     );
 
-    renderApp("/projects/straylight");
-    expect(await screen.findByRole("heading", { name: "Straylight" })).toBeInTheDocument();
+    renderApp("/projects/brunn");
+    expect(await screen.findByRole("heading", { name: "Brunn" })).toBeInTheDocument();
     expect(screen.getByText("Ship agent-first tasks")).toBeInTheDocument();
     expect(screen.getByText("Finish gate 12c")).toBeInTheDocument();
     expect(screen.getByText("Wait for review")).toBeInTheDocument();

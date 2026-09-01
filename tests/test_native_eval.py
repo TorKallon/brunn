@@ -86,8 +86,8 @@ class FakeNativeHandler(BaseHTTPRequestHandler):
             "method": self.command,
             "path": self.path,
             "authorization": self.headers.get("Authorization"),
-            "run": self.headers.get("X-Straylight-Eval-Run"),
-            "case": self.headers.get("X-Straylight-Eval-Case"),
+            "run": self.headers.get("X-Brunn-Eval-Run"),
+            "case": self.headers.get("X-Brunn-Eval-Case"),
             "body": body,
         })
 
@@ -98,7 +98,7 @@ class FakeNativeHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Content-Length", str(len(self.asset_bytes)))
-            self.send_header("X-CarryState-SHA256", f"sha256:{digest}")
+            self.send_header("X-Brunn-State-SHA256", f"sha256:{digest}")
             self.end_headers()
             self.wfile.write(self.asset_bytes)
         elif self.path == "/v1/admin/eval/imports/import:1":
@@ -255,7 +255,7 @@ class FakeNativeHandler(BaseHTTPRequestHandler):
                 "data": {
                     "items": [{
                         "reference": "entry:child",
-                        "path": ".straylight/checkpoints/child.md",
+                        "path": ".brunn/checkpoints/child.md",
                         "text": "# Child checkpoint",
                         "metadata": {
                             "kind": "checkpoint",
@@ -378,7 +378,7 @@ class NativeEvaluationTests(unittest.TestCase):
             ])
             with patch.dict(
                 os.environ,
-                {"STRAYLIGHT_EVAL_RETRIEVAL_MODES": "exact,lexical"},
+                {"BRUNN_EVAL_RETRIEVAL_MODES": "exact,lexical"},
             ):
                 _, _, open_payload = operation_request(open_args, {})
                 _, _, query_payload = operation_request(
@@ -1379,7 +1379,7 @@ class NativeEvaluationTests(unittest.TestCase):
                 "--run-id", "run",
                 "--case-id", "case",
             ]
-            env = {**os.environ, "STRAYLIGHT_API_URL": url, "STRAYLIGHT_EVAL_TOKEN": "case-token"}
+            env = {**os.environ, "BRUNN_API_URL": url, "BRUNN_EVAL_TOKEN": "case-token"}
             commands = [
                 ["open"],
                 ["query", "--scope", "Alpha", "--goal", "continue", "--limit", "4",
@@ -1524,7 +1524,7 @@ class NativeEvaluationTests(unittest.TestCase):
                 "--case-id", "case",
                 "resume",
             ]
-            env = {**os.environ, "STRAYLIGHT_API_URL": url, "STRAYLIGHT_EVAL_TOKEN": "case-token"}
+            env = {**os.environ, "BRUNN_API_URL": url, "BRUNN_EVAL_TOKEN": "case-token"}
             first = subprocess.run(command, env=env, text=True, capture_output=True, check=False)
             second = subprocess.run(command, env=env, text=True, capture_output=True, check=False)
             self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
@@ -1552,7 +1552,7 @@ class NativeEvaluationTests(unittest.TestCase):
                 "--run-id", "run",
                 "--case-id", "case",
             ]
-            env = {**os.environ, "STRAYLIGHT_API_URL": url, "STRAYLIGHT_EVAL_TOKEN": "case-token"}
+            env = {**os.environ, "BRUNN_API_URL": url, "BRUNN_EVAL_TOKEN": "case-token"}
             opened = subprocess.Popen(
                 [*base, "open"], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
             )
@@ -1588,7 +1588,7 @@ class NativeEvaluationTests(unittest.TestCase):
                 "--protocol", "legacy",
                 "--run-id", "run", "--case-id", "read-only",
             ]
-            env = {**os.environ, "STRAYLIGHT_API_URL": url, "STRAYLIGHT_EVAL_TOKEN": "read-token"}
+            env = {**os.environ, "BRUNN_API_URL": url, "BRUNN_EVAL_TOKEN": "read-token"}
             opened = subprocess.run([*base, "open"], env=env, text=True, capture_output=True, check=False)
             self.assertEqual(opened.returncode, 0)
             denied = subprocess.run(
@@ -1617,7 +1617,7 @@ class NativeEvaluationTests(unittest.TestCase):
             )
             wrapper = (run_dir / "memory").read_text()
             self.assertNotIn("--corpus", wrapper)
-            self.assertNotIn("STRAYLIGHT_EVAL_TOKEN", wrapper)
+            self.assertNotIn("BRUNN_EVAL_TOKEN", wrapper)
             self.assertNotIn("secret", wrapper.casefold())
             self.assertIn("native_memory.py", wrapper)
 
@@ -1750,7 +1750,7 @@ class NativeEvaluationTests(unittest.TestCase):
         plan = run_mutation_hook(
             script,
             "plan",
-            case_id="straylight-api-gate-transition",
+            case_id="brunn-api-gate-transition",
             base_root=base_root,
             seed="e06-draw1",
         )
@@ -1765,14 +1765,14 @@ class NativeEvaluationTests(unittest.TestCase):
             }
             environment = {
                 **os.environ,
-                "STRAYLIGHT_API_URL": url,
-                "STRAYLIGHT_EVAL_TOKEN": "case-token",
-                "STRAYLIGHT_EVAL_RUN": "e06-a-draw1",
+                "BRUNN_API_URL": url,
+                "BRUNN_EVAL_TOKEN": "case-token",
+                "BRUNN_EVAL_RUN": "e06-a-draw1",
             }
             receipt = run_mutation_hook(
                 script,
                 "apply",
-                case_id="straylight-api-gate-transition",
+                case_id="brunn-api-gate-transition",
                 base_root=base_root,
                 seed="e06-draw1",
                 mirror_root=Path(temporary),
@@ -1867,8 +1867,8 @@ class NativeEvaluationTests(unittest.TestCase):
 
     def test_native_transition_reads_child_checkpoint_over_http(self):
         with tempfile.TemporaryDirectory() as temporary, fake_server() as (url, handler):
-            old_url = os.environ.get("STRAYLIGHT_API_URL")
-            os.environ["STRAYLIGHT_API_URL"] = url
+            old_url = os.environ.get("BRUNN_API_URL")
+            os.environ["BRUNN_API_URL"] = url
             try:
                 handler.child = {
                     "checkpoint_id": "checkpoint:aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa",
@@ -1926,14 +1926,14 @@ class NativeEvaluationTests(unittest.TestCase):
                 self.assertTrue(any(item["path"] == "/v1/sessions/session:s1" for item in handler.requests))
             finally:
                 if old_url is None:
-                    os.environ.pop("STRAYLIGHT_API_URL", None)
+                    os.environ.pop("BRUNN_API_URL", None)
                 else:
-                    os.environ["STRAYLIGHT_API_URL"] = old_url
+                    os.environ["BRUNN_API_URL"] = old_url
 
     def test_simple_native_transition_reads_durable_checkpoint_entry(self):
         with tempfile.TemporaryDirectory() as temporary, fake_server() as (url, handler):
-            old_url = os.environ.get("STRAYLIGHT_API_URL")
-            os.environ["STRAYLIGHT_API_URL"] = url
+            old_url = os.environ.get("BRUNN_API_URL")
+            os.environ["BRUNN_API_URL"] = url
             try:
                 handler.child = {
                     "checkpoint_id": "checkpoint:aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa",
@@ -2004,14 +2004,14 @@ class NativeEvaluationTests(unittest.TestCase):
                 ))
             finally:
                 if old_url is None:
-                    os.environ.pop("STRAYLIGHT_API_URL", None)
+                    os.environ.pop("BRUNN_API_URL", None)
                 else:
-                    os.environ["STRAYLIGHT_API_URL"] = old_url
+                    os.environ["BRUNN_API_URL"] = old_url
 
     def test_native_transition_resolves_evidence_refs_to_source_paths(self):
         with tempfile.TemporaryDirectory() as temporary, fake_server() as (url, handler):
-            old_url = os.environ.get("STRAYLIGHT_API_URL")
-            os.environ["STRAYLIGHT_API_URL"] = url
+            old_url = os.environ.get("BRUNN_API_URL")
+            os.environ["BRUNN_API_URL"] = url
             try:
                 prior_ref = "source:11111111-1111-7111-8111-111111111111"
                 delta_ref = "evidence:22222222-2222-7222-8222-222222222222"
@@ -2076,9 +2076,9 @@ class NativeEvaluationTests(unittest.TestCase):
                 ))
             finally:
                 if old_url is None:
-                    os.environ.pop("STRAYLIGHT_API_URL", None)
+                    os.environ.pop("BRUNN_API_URL", None)
                 else:
-                    os.environ["STRAYLIGHT_API_URL"] = old_url
+                    os.environ["BRUNN_API_URL"] = old_url
 
 
 if __name__ == "__main__":

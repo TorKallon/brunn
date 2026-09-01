@@ -610,7 +610,7 @@ async fn flush_principal_entry_usage(
         set_context(&mut tx, &auth).await?;
         sqlx::query(
             r#"
-            SELECT straylight_auth.write_entry_usage($1,$2,$3,$4,$5)
+            SELECT brunn_auth.write_entry_usage($1,$2,$3,$4,$5)
             "#,
         )
         .bind(principal_key.user_id)
@@ -688,7 +688,7 @@ async fn flush_principal_activity(
         if !bucket_starts.is_empty() {
             sqlx::query(
                 r#"
-                SELECT straylight_auth.write_product_activity(
+                SELECT brunn_auth.write_product_activity(
                   $1,$2,$3,$4,$5,$6,$7,$8
                 )
                 "#,
@@ -707,7 +707,7 @@ async fn flush_principal_activity(
         if let Some(delta) = &credential {
             sqlx::query(
                 r#"
-                SELECT straylight_auth.write_credential_activity($1,$2,$3,$4,$5)
+                SELECT brunn_auth.write_credential_activity($1,$2,$3,$4,$5)
                 "#,
             )
             .bind(principal_key.user_id)

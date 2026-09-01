@@ -1,4 +1,4 @@
-# Straylight Alpha Readiness
+# Brunn Alpha Readiness
 
 Status: **direct Railway owner cutover and repository publication complete as
 of 2026-07-31**. The simplified API is live and
@@ -22,7 +22,7 @@ contracts.
 The owner selected one direct production cutover on Railway. Nyx is reserved
 for operation, testing, and restore rehearsal; there is no Nyx pilot and no
 read-only/read-write two-step. Completion means Codex and Aether/OpenClaw use
-Straylight only for durable memory and no longer write to the vault.
+Brunn only for durable memory and no longer write to the vault.
 
 1. Railway serves the simplified API at build
    `39761166d21b0cfa44d11e3ba18a52112693d0cd`. Health/readiness pass, 56/56
@@ -44,7 +44,7 @@ Straylight only for durable memory and no longer write to the vault.
 5. Codex passes fresh open/read/write/replay/checkpoint and stale-409 canaries.
    Aether/OpenClaw passes its strict post-archive cross-read, byte-identical
    replay, checkpoint/resume, no-delivery, and no-API-key-reasoning canary from
-   its healthy normal gateway. Both are configured Straylight-only.
+   its healthy normal gateway. Both are configured Brunn-only.
 6. Reasoning uses the ChatGPT-authenticated Codex plan and fails closed.
    API-key billing is limited to embeddings; the conservative upper-bound
    estimate is $3.61, below the $20 notification threshold. Actual embedding
@@ -90,16 +90,16 @@ that result or any E01–E11 outcome.
 ## Owner Decisions
 
 Settled choices are recorded here even when their implementation still depends
-on an unsettled provider or public identity.
+on an external provider or owner action.
 
 | Decision | Status | Recorded direction |
 | --- | --- | --- |
-| Public identity | Alpha identity settled | Keep Straylight for this alpha at `straylight.rourkem.com`; a permanent public identity and dedicated domain are deferred. |
+| Public identity | Permanent identity selected; domain held | Brunn is the permanent identity. `brunn.ai` was registered at Cloudflare on 2026-08-31; the coordinated DNS and service cutover is part of the big-bang rename, followed by a 30-day redirect from the former host. |
 | Deployment | Selected and operationally complete | Railway Pro is the only production target. Its confirmed $20/month minimum is infrastructure spend, not embeddings. Nyx is operator/test/restore infrastructure, not a pilot. |
 | Object storage | Selected and audited | Use MinIO only for local development. Production external versioned S3 passed overlay/export fidelity. |
 | Recovery | Backup passed; drill environment-blocked | Checksummed PostgreSQL dump plus retained versioned S3 are available. Locked Nyx prevented Docker access, so no restore container was created; retain the drill as future recovery evidence without blocking this direct owner cutover. |
 | Monitoring | Approved in part | Datadog metrics and structured logs are approved. Alert recipients, escalation path, and retention still need exact values. Browser RUM remains outside the alpha. |
-| Source control | Created; noisy automation removed | Private `TorKallon/straylight` repository on GitHub with `main`. The noisy scheduled Dependabot configuration was removed and 21 bot PRs closed. GitHub rejects every CI job before execution for account billing/spending-limit reasons, so CI remains disabled until billing is repaired rather than recreating failed-build emails. |
+| Source control | Created; noisy automation removed | Private `TorKallon/brunn` repository on GitHub with `main`. The noisy scheduled Dependabot configuration was removed and 21 bot PRs closed. GitHub rejects every CI job before execution for account billing/spending-limit reasons, so CI remains disabled until billing is repaired rather than recreating failed-build emails. |
 | Alpha cohort | Approved | Owner first, then only people the owner explicitly invites. No public signup. Every person receives a separate user account and credential. |
 | Operating visibility | Approved | Begin with the owner's real usage. Keep source-use rankings visible in the Control UI and aggregate model, embedding, storage, and request consumption prominent in Datadog. Set hard spend limits only after observing the initial workload. |
 | Policy and support | Deferred outside owner cutover | Final invited-user retention, privacy wording, and support expectations do not gate this owner-only cutover. |
@@ -162,16 +162,16 @@ The autonomous candidate passed:
   overflow, clipped controls, or read-only mutation affordances.
 
 The paired semantic harness recovered 179/180 deterministic claims in
-Straylight versus 175/180 through direct files. Across 45 cases, Straylight
+Brunn versus 175/180 through direct files. Across 45 cases, Brunn
 used 0.7% more cumulative input, 11.8% less uncached input, and 15.1% fewer
-agent tool calls. The sole Straylight miss contained every required fact and
+agent tool calls. The sole Brunn miss contained every required fact and
 source but placed two facts in adjacent claim slots; the exact result and
 targeted rerun are retained in
 `results/2026-07-23-alpha-candidate-comparison.md`.
 
 The final coordinated backup after the non-root PostgreSQL hardening is:
 
-`/tmp/straylight-alpha-final-nonroot-tBJjCI6P/20260724T020519Z-2271caa1-a30e-43eb-be8b-4dfdbb69a24a`
+`/tmp/brunn-alpha-final-nonroot-tBJjCI6P/20260724T020519Z-2271caa1-a30e-43eb-be8b-4dfdbb69a24a`
 
 It passed checksum, database inventory, database invariant, object-version,
 runtime image, and Compose hash verification. Its isolated restore passed

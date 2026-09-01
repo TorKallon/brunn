@@ -33,10 +33,10 @@ use crate::{
 const SESSION_TTL_DAYS: i64 = 30;
 const SESSION_TTL_SECONDS: i64 = SESSION_TTL_DAYS * 24 * 60 * 60;
 const RESET_TTL_MINUTES: i64 = 30;
-const SESSION_COOKIE_PRODUCTION: &str = "__Host-straylight_session";
-const CSRF_COOKIE_PRODUCTION: &str = "__Host-straylight_csrf";
-const SESSION_COOKIE_DEVELOPMENT: &str = "straylight_session";
-const CSRF_COOKIE_DEVELOPMENT: &str = "straylight_csrf";
+const SESSION_COOKIE_PRODUCTION: &str = "__Host-brunn_session";
+const CSRF_COOKIE_PRODUCTION: &str = "__Host-brunn_csrf";
+const SESSION_COOKIE_DEVELOPMENT: &str = "brunn_session";
+const CSRF_COOKIE_DEVELOPMENT: &str = "brunn_csrf";
 const CSRF_HEADER: HeaderName = HeaderName::from_static("x-csrf-token");
 const MIN_PASSWORD_CHARS: usize = 15;
 const MAX_PASSWORD_CHARS: usize = 1024;
@@ -64,8 +64,8 @@ const BLOCKED_PASSWORDS: &[&str] = &[
     "passwordpassword",
     "princessprincess",
     "qwertyuiopasdfgh",
-    "straylight2026",
-    "straylightstraylight",
+    "brunn2026",
+    "brunnbrunn",
     "sunshinesunshine",
     "thisisapassword",
     "trustno1trustno1",
@@ -157,7 +157,7 @@ pub async fn login(
     let token = generate_token("sws_");
     let expires_at = Utc::now() + ChronoDuration::days(SESSION_TTL_DAYS);
     let created =
-        sqlx::query_scalar::<_, Uuid>("SELECT straylight_auth.create_web_session($1,$2,$3,$4,$5)")
+        sqlx::query_scalar::<_, Uuid>("SELECT brunn_auth.create_web_session($1,$2,$3,$4,$5)")
             .bind(identity.user_id)
             .bind(hash_secret(&token))
             .bind(expires_at)
@@ -211,7 +211,7 @@ pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
     };
     require_csrf(&headers, &state, &token)?;
     if valid_session_token(&token) {
-        let _ = sqlx::query_scalar::<_, bool>("SELECT straylight_auth.revoke_web_session($1)")
+        let _ = sqlx::query_scalar::<_, bool>("SELECT brunn_auth.revoke_web_session($1)")
             .bind(hash_secret(&token))
             .fetch_one(&state.auth_pool)
             .await?;
@@ -257,28 +257,27 @@ pub async fn forgot_password(
     let token = generate_token("swr_");
     let expires_at = Utc::now() + ChronoDuration::minutes(RESET_TTL_MINUTES);
     let reset_url = reset_url(&state.config.public_url, &token);
-    let reset_id = match sqlx::query_scalar::<_, Uuid>(
-        "SELECT straylight_auth.issue_password_reset($1,$2,$3,$4)",
-    )
-    .bind(identity.user_id)
-    .bind(hash_secret(&token))
-    .bind(expires_at)
-    .bind(&identity.email)
-    .fetch_one(&state.auth_pool)
-    .await
-    {
-        Ok(reset_id) => reset_id,
-        Err(_) => {
-            metrics::counter!("auth.password_reset_requests", "result" => "database_failed")
-                .increment(1);
-            tracing::warn!(
-                provider = "resend",
-                failure = "reset_persistence",
-                "password reset email delivery failed"
-            );
-            return Ok(forgot_password_response(started).await);
-        }
-    };
+    let reset_id =
+        match sqlx::query_scalar::<_, Uuid>("SELECT brunn_auth.issue_password_reset($1,$2,$3,$4)")
+            .bind(identity.user_id)
+            .bind(hash_secret(&token))
+            .bind(expires_at)
+            .bind(&identity.email)
+            .fetch_one(&state.auth_pool)
+            .await
+        {
+            Ok(reset_id) => reset_id,
+            Err(_) => {
+                metrics::counter!("auth.password_reset_requests", "result" => "database_failed")
+                    .increment(1);
+                tracing::warn!(
+                    provider = "resend",
+                    failure = "reset_persistence",
+                    "password reset email delivery failed"
+                );
+                return Ok(forgot_password_response(started).await);
+            }
+        };
     let delivery_state = state.clone();
     tokio::spawn(async move {
         let delivery =
@@ -296,12 +295,11 @@ pub async fn reset_password(
     state.preauth_rate_limiter.check()?;
     validate_reset_token(&request.token)?;
     let password_hash = hash_password(&state, request.password).await?;
-    let consumed =
-        sqlx::query_scalar::<_, Uuid>("SELECT straylight_auth.consume_password_reset($1,$2)")
-            .bind(hash_secret(&request.token))
-            .bind(password_hash)
-            .fetch_optional(&state.auth_pool)
-            .await;
+    let consumed = sqlx::query_scalar::<_, Uuid>("SELECT brunn_auth.consume_password_reset($1,$2)")
+        .bind(hash_secret(&request.token))
+        .bind(password_hash)
+        .fetch_optional(&state.auth_pool)
+        .await;
     match consumed {
         Ok(Some(_)) => {
             metrics::counter!("auth.password_resets", "result" => "success").increment(1);
@@ -327,7 +325,7 @@ pub async fn authenticate_session(
     if !valid_session_token(token) {
         return Ok(None);
     }
-    let row = sqlx::query("SELECT * FROM straylight_auth.authenticate_web_session($1)")
+    let row = sqlx::query("SELECT * FROM brunn_auth.authenticate_web_session($1)")
         .bind(hash_secret(token))
         .fetch_optional(&state.auth_pool)
         .await?;
@@ -393,7 +391,7 @@ fn auth_envelope(session: &AuthenticatedWebSession) -> Json<ApiEnvelope<Value>> 
 }
 
 async fn lookup_identity(state: &AppState, identifier: &str) -> ApiResult<Option<WebIdentity>> {
-    let row = sqlx::query("SELECT * FROM straylight_auth.lookup_web_identity($1)")
+    let row = sqlx::query("SELECT * FROM brunn_auth.lookup_web_identity($1)")
         .bind(identifier)
         .fetch_optional(&state.auth_pool)
         .await?;
@@ -414,7 +412,7 @@ async fn consume_rate_limit(
     user_id: Option<Uuid>,
 ) -> ApiResult<bool> {
     Ok(
-        sqlx::query_scalar("SELECT straylight_auth.consume_web_auth_rate_limit($1,$2,$3)")
+        sqlx::query_scalar("SELECT brunn_auth.consume_web_auth_rate_limit($1,$2,$3)")
             .bind(kind)
             .bind(identifier_hash)
             .bind(user_id)
@@ -424,7 +422,7 @@ async fn consume_rate_limit(
 }
 
 async fn clear_rate_limit(state: &AppState, kind: &str, identifier_hash: &str) -> ApiResult<()> {
-    sqlx::query("SELECT straylight_auth.clear_web_auth_rate_limit($1,$2)")
+    sqlx::query("SELECT brunn_auth.clear_web_auth_rate_limit($1,$2)")
         .bind(kind)
         .bind(identifier_hash)
         .execute(&state.auth_pool)
@@ -452,9 +450,9 @@ async fn send_reset_email(
     let mut payload = json!({
         "from": from,
         "to": [recipient],
-        "subject": "Reset your Straylight password",
+        "subject": "Reset your Brunn password",
         "text": format!(
-            "Use this link within 30 minutes to reset your Straylight password:\n\n{reset_url}\n\nIf you did not request this, you can ignore this email."
+            "Use this link within 30 minutes to reset your Brunn password:\n\n{reset_url}\n\nIf you did not request this, you can ignore this email."
         )
     });
     if let Some(reply_to) = state.config.auth_email_reply_to.as_deref() {
@@ -528,7 +526,7 @@ fn prepare_new_password(value: &str) -> ApiResult<String> {
 
 fn validate_normalized_password(normalized: &str) -> ApiResult<()> {
     let normalized_lower = normalized.to_lowercase();
-    let estimate = zxcvbn(normalized, &["straylight"]);
+    let estimate = zxcvbn(normalized, &["brunn"]);
     if normalized.chars().count() < MIN_PASSWORD_CHARS
         || BLOCKED_PASSWORDS.contains(&normalized_lower.as_str())
         || is_predictable_password(&normalized_lower)
@@ -687,7 +685,7 @@ fn hash_secret(value: &str) -> String {
 fn identifier_rate_key(secret: &str, kind: &str, identifier: &str) -> ApiResult<String> {
     let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
         .map_err(|_| ApiError::Internal("could not initialize auth rate limiter".to_owned()))?;
-    mac.update(b"straylight.web-auth-rate.v1\0");
+    mac.update(b"brunn.web-auth-rate.v1\0");
     mac.update(kind.as_bytes());
     mac.update(b"\0");
     mac.update(identifier.as_bytes());
@@ -711,7 +709,7 @@ fn resolved_user_rate_key(state: &AppState, kind: &str, user_id: Uuid) -> ApiRes
 
 fn derive_csrf(session_token: &str) -> String {
     let mut digest = Sha256::new();
-    digest.update(b"straylight.web-csrf.v1\0");
+    digest.update(b"brunn.web-csrf.v1\0");
     digest.update(session_token.as_bytes());
     URL_SAFE_NO_PAD.encode(digest.finalize())
 }
@@ -887,7 +885,7 @@ mod tests {
     #[test]
     fn reset_secret_is_only_in_the_fragment() {
         let token = generate_token("swr_");
-        let url = reset_url("https://straylight.rourkem.com", &token);
+        let url = reset_url("https://brunn.ai", &token);
         let parsed = reqwest::Url::parse(&url).unwrap();
         assert_eq!(parsed.path(), "/reset-password");
         assert!(parsed.query().is_none());
@@ -901,7 +899,7 @@ mod tests {
         for password in [
             "short",
             "passwordpassword1",
-            "straylightpassword",
+            "brunnpassword",
             "correct horse battery staple",
             "12345678901234567890",
         ] {

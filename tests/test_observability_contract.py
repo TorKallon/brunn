@@ -7,9 +7,9 @@ from pathlib import Path
 
 
 REPO = Path(__file__).resolve().parents[1]
-DASHBOARD = REPO / "infra/datadog/straylight-production-dashboard.json"
+DASHBOARD = REPO / "infra/datadog/brunn-production-dashboard.json"
 PERCENTILES = REPO / "infra/datadog/distribution-percentiles.json"
-MONITORS = REPO / "infra/datadog/straylight-production-monitors.json"
+MONITORS = REPO / "infra/datadog/brunn-production-monitors.json"
 HTTP_CHECK = REPO / "deploy/railway/datadog-agent/http_check.yaml"
 DATADOG_DOCKERFILE = REPO / "deploy/railway/datadog-agent/Dockerfile"
 RUST_SOURCE = REPO / "apps/api/src"
@@ -76,11 +76,11 @@ class ObservabilityContractTests(unittest.TestCase):
             variables,
         )
 
-    def test_every_straylight_dashboard_metric_has_a_rust_emitter(self):
+    def test_every_brunn_dashboard_metric_has_a_rust_emitter(self):
         metric_names = {
             match
             for value in strings(self.dashboard)
-            for match in re.findall(r"straylight\.([a-z0-9_.]+)", value)
+            for match in re.findall(r"brunn\.([a-z0-9_.]+)", value)
         }
         self.assertGreaterEqual(len(metric_names), 45)
         missing = sorted(
@@ -146,7 +146,7 @@ class ObservabilityContractTests(unittest.TestCase):
         invalid: list[str] = []
         for query in strings(self.dashboard):
             metric_match = re.search(
-                r"(?:straylight|datadog\.dogstatsd\.client)\.[a-z0-9_.]+",
+                r"(?:brunn|datadog\.dogstatsd\.client)\.[a-z0-9_.]+",
                 query,
             )
             if metric_match is None:
@@ -161,7 +161,7 @@ class ObservabilityContractTests(unittest.TestCase):
             group = re.search(r"\bby \{([^}]+)\}", query)
             if group:
                 query_tags.update(tag.strip() for tag in group.group(1).split(","))
-            emitter_name = metric.removeprefix("straylight.")
+            emitter_name = metric.removeprefix("brunn.")
             unsupported = query_tags - emitted_tags.get(emitter_name, set()) - global_tags
             if unsupported:
                 invalid.append(f"{metric}: {sorted(unsupported)}")
@@ -172,7 +172,7 @@ class ObservabilityContractTests(unittest.TestCase):
             metric
             for query in strings(self.dashboard)
             for metric in re.findall(
-                r"\bp[0-9.]+:(straylight\.[a-z0-9_.]+)",
+                r"\bp[0-9.]+:(brunn\.[a-z0-9_.]+)",
                 query,
             )
         }
@@ -183,13 +183,13 @@ class ObservabilityContractTests(unittest.TestCase):
         names = [monitor["name"] for monitor in self.monitors]
         self.assertEqual(len(names), len(set(names)))
         for monitor in self.monitors:
-            self.assertTrue(monitor["name"].startswith("[Straylight] "))
+            self.assertTrue(monitor["name"].startswith("[Brunn] "))
             self.assertIn("__DD_ENV__", monitor["query"])
             self.assertIn("__DD_SERVICE__", monitor["query"])
             self.assertIn("__NOTIFY__", monitor["message"])
             self.assertTrue(monitor["options"]["notify_audit"])
             metric = re.search(
-                r"((?:straylight|datadog\.dogstatsd\.client|network\.http)\.[a-z0-9_.]+)",
+                r"((?:brunn|datadog\.dogstatsd\.client|network\.http)\.[a-z0-9_.]+)",
                 monitor["query"],
             )
             service_check = re.search(r'\"(http\.can_connect)\"', monitor["query"])
@@ -198,8 +198,8 @@ class ObservabilityContractTests(unittest.TestCase):
                 self.assertEqual("service check", monitor["type"])
                 continue
             self.assertIsNotNone(metric, monitor["name"])
-            if metric.group(1).startswith("straylight."):
-                emitter_name = metric.group(1).removeprefix("straylight.")
+            if metric.group(1).startswith("brunn."):
+                emitter_name = metric.group(1).removeprefix("brunn.")
                 self.assertIn(f'"{emitter_name}"', self.rust, monitor["name"])
 
     def test_public_edge_http_check_is_bounded_and_outside_in(self):
@@ -210,8 +210,8 @@ class ObservabilityContractTests(unittest.TestCase):
             self.datadog_dockerfile,
         )
         required = [
-            "url: https://straylight.rourkem.com/healthz",
-            "url: https://straylight.rourkem.com/api/ready",
+            "url: https://brunn.ai/healthz",
+            "url: https://brunn.ai/api/ready",
             "http_response_status_code: 200",
             "content_match: '^ok\\s*$'",
             "content_match: '\"status\"\\s*:\\s*\"ready\"'",
@@ -222,7 +222,7 @@ class ObservabilityContractTests(unittest.TestCase):
             "connect_timeout: 3",
             "read_timeout: 3",
             "min_collection_interval: 15",
-            "service: straylight",
+            "service: brunn",
             "component:public-edge",
             "probe:public-edge",
             "platform:railway",
@@ -230,11 +230,11 @@ class ObservabilityContractTests(unittest.TestCase):
         ]
         for setting in required:
             self.assertIn(setting, self.http_check)
-        self.assertEqual(2, self.http_check.count("  - name: straylight-public-"))
+        self.assertEqual(2, self.http_check.count("  - name: brunn-public-"))
 
     def test_public_edge_monitors_use_agent_7812_http_check_signals(self):
         by_name = {monitor["name"]: monitor for monitor in self.monitors}
-        connectivity = by_name["[Straylight] Public edge connectivity"]
+        connectivity = by_name["[Brunn] Public edge connectivity"]
         self.assertEqual("service check", connectivity["type"])
         self.assertIn('"http.can_connect"', connectivity["query"])
         self.assertIn("probe:public-edge", connectivity["query"])
@@ -250,7 +250,7 @@ class ObservabilityContractTests(unittest.TestCase):
         )
         self.assertTrue(connectivity["options"]["notify_no_data"])
 
-        latency = by_name["[Straylight] Public edge response is slow"]
+        latency = by_name["[Brunn] Public edge response is slow"]
         self.assertEqual("metric alert", latency["type"])
         self.assertIn("network.http.response_time", latency["query"])
         self.assertEqual(1, latency["options"]["thresholds"]["critical"])
@@ -258,8 +258,8 @@ class ObservabilityContractTests(unittest.TestCase):
     def test_open_and_search_critical_alerts_match_performance_gates(self):
         by_name = {monitor["name"]: monitor for monitor in self.monitors}
         gates = {
-            "[Straylight] Simplified workspace open is slow": 5000,
-            "[Straylight] Simplified workspace search is slow": 3000,
+            "[Brunn] Simplified workspace open is slow": 5000,
+            "[Brunn] Simplified workspace search is slow": 3000,
         }
         for name, gate_ms in gates.items():
             monitor = by_name[name]

@@ -2,7 +2,7 @@
 -- credentials general credential-management authority. The caller may clean
 -- up only its own cryptographically derived evaluation identity.
 
-CREATE FUNCTION straylight_auth.cleanup_evaluation_user(
+CREATE FUNCTION brunn_auth.cleanup_evaluation_user(
   p_user_id uuid,
   p_credential_id uuid
 )
@@ -15,7 +15,7 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
@@ -27,16 +27,16 @@ DECLARE
   revoked_credentials bigint;
   cleanup_time timestamptz := clock_timestamp();
 BEGIN
-  IF NOT straylight_auth.context_is_valid()
-     OR straylight_auth.current_user_id() IS DISTINCT FROM p_user_id
-     OR straylight_auth.current_credential_id() IS DISTINCT FROM p_credential_id
-     OR NOT straylight_auth.has_capability('delete') THEN
+  IF NOT brunn_auth.context_is_valid()
+     OR brunn_auth.current_user_id() IS DISTINCT FROM p_user_id
+     OR brunn_auth.current_credential_id() IS DISTINCT FROM p_credential_id
+     OR NOT brunn_auth.has_capability('delete') THEN
     RAISE EXCEPTION 'evaluation cleanup requires its own delete-capable credential'
       USING ERRCODE = '42501';
   END IF;
 
   SELECT user_row.external_ref INTO target_external_ref
-  FROM straylight.users AS user_row
+  FROM brunn.users AS user_row
   WHERE user_row.id = p_user_id;
 
   IF target_external_ref IS NULL
@@ -45,7 +45,7 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
-  DELETE FROM straylight.jobs AS job
+  DELETE FROM brunn.jobs AS job
   WHERE job.user_id = p_user_id
     AND job.status <> 'running';
   GET DIAGNOSTICS removed_jobs = ROW_COUNT;
@@ -54,7 +54,7 @@ BEGIN
   -- DELETE predicate after waiting for that update and leaves the running row.
   -- Refuse the whole transaction rather than racing fixture cleanup.
   SELECT count(*) INTO active_jobs
-  FROM straylight.jobs AS job
+  FROM brunn.jobs AS job
   WHERE job.user_id = p_user_id;
 
   IF active_jobs <> 0 THEN
@@ -62,18 +62,18 @@ BEGIN
       USING ERRCODE = '55006';
   END IF;
 
-  DELETE FROM straylight.search_chunks AS chunk
+  DELETE FROM brunn.search_chunks AS chunk
   WHERE chunk.user_id = p_user_id;
   GET DIAGNOSTICS removed_chunks = ROW_COUNT;
 
-  UPDATE straylight.entries AS entry
+  UPDATE brunn.entries AS entry
   SET deleted_at = coalesce(entry.deleted_at, cleanup_time),
       updated_at = cleanup_time
   WHERE entry.user_id = p_user_id
     AND entry.deleted_at IS NULL;
   GET DIAGNOSTICS removed_entries = ROW_COUNT;
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, scope_id, credential_id, action, details, content_free
   ) VALUES (
     p_user_id,
@@ -88,7 +88,7 @@ BEGIN
     true
   );
 
-  UPDATE straylight.api_credentials AS credential
+  UPDATE brunn.api_credentials AS credential
   SET disabled_at = coalesce(credential.disabled_at, cleanup_time)
   WHERE credential.user_id = p_user_id
     AND credential.disabled_at IS NULL;
@@ -103,9 +103,9 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION straylight_auth.cleanup_evaluation_user(
+REVOKE ALL ON FUNCTION brunn_auth.cleanup_evaluation_user(
   uuid, uuid
 ) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION straylight_auth.cleanup_evaluation_user(
+GRANT EXECUTE ON FUNCTION brunn_auth.cleanup_evaluation_user(
   uuid, uuid
 ) TO app_rw;

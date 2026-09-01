@@ -21,18 +21,18 @@ class RecoveryContractTests(unittest.TestCase):
         self.assertNotIn("session_replication_role", migration)
         self.assertNotIn("DISABLE TRIGGER", migration.upper())
         self.assertIn(
-            "CREATE OR REPLACE FUNCTION straylight.remap_asset_object_versions",
+            "CREATE OR REPLACE FUNCTION brunn.remap_asset_object_versions",
             migration,
         )
         self.assertIn("FOR UPDATE OF version,asset", migration)
         self.assertIn(
-            "straylight.foreign_key_reference_exists(\n"
-            "      'straylight.asset_versions'::regclass",
+            "brunn.foreign_key_reference_exists(\n"
+            "      'brunn.asset_versions'::regclass",
             migration,
         )
         self.assertIn(
             "REVOKE ALL ON FUNCTION "
-            "straylight.remap_asset_object_versions(jsonb)",
+            "brunn.remap_asset_object_versions(jsonb)",
             migration,
         )
 
@@ -41,18 +41,18 @@ class RecoveryContractTests(unittest.TestCase):
             ROOT / "apps/api/src/object_store/backup.rs"
         ).read_text()
         for expected in (
-            "straylight-object-version-restore-map@v2",
+            "brunn-object-version-restore-map@v2",
             "write_json_atomic(mapping_path",
             "reconcile_restore_journal",
             "restore_object_multipart",
             "abort_all_multipart_uploads",
-            "straylight.remap_asset_object_versions($1::jsonb)",
+            "brunn.remap_asset_object_versions($1::jsonb)",
             "database_references_verified",
             "verify_remote_object(store, source",
         ):
             self.assertIn(expected, recovery)
         self.assertNotIn(
-            "UPDATE straylight.asset_versions version\n"
+            "UPDATE brunn.asset_versions version\n"
             "         SET object_version_id=",
             recovery,
         )
@@ -68,7 +68,7 @@ class RecoveryContractTests(unittest.TestCase):
             "e3b0c44298fc1c149afbf4c8996fb924"
             "27ae41e4649b934ca495991b7852b855",
             "size_bytes=0",
-            "application/x-straylight-deleted",
+            "application/x-brunn-deleted",
             "redacted_by_deletion_job",
         )
         for marker in markers:
@@ -76,7 +76,7 @@ class RecoveryContractTests(unittest.TestCase):
             self.assertIn(marker.replace("size_bytes=0", "size_bytes = 0"), reference_inventory)
             self.assertIn(marker, account_export)
         self.assertGreaterEqual(
-            recovery.count("application/x-straylight-deleted"),
+            recovery.count("application/x-brunn-deleted"),
             6,
         )
         self.assertNotIn("WHERE size_bytes > 0", reference_inventory)
@@ -86,7 +86,7 @@ class RecoveryContractTests(unittest.TestCase):
             ROOT / "scripts/managed-s3-restore-drill.sh"
         ).read_text()
         for expected in (
-            "STRAYLIGHT_MANAGED_RESTORE_STATE_ROOT",
+            "BRUNN_MANAGED_RESTORE_STATE_ROOT",
             "restore_state_key",
             "database_references_verified",
             "re-verifying restored object bytes after database remap",
@@ -105,7 +105,7 @@ class RecoveryContractTests(unittest.TestCase):
             (backup / "object-store/manifest.json").write_text(
                 json.dumps(
                     {
-                        "format": "straylight-object-version-archive@v1",
+                        "format": "brunn-object-version-archive@v1",
                         "created_at": "2026-07-24T00:00:00Z",
                         "source_bucket": "recovery-test",
                         "bucket_versioning": "Enabled",
@@ -135,7 +135,7 @@ class RecoveryContractTests(unittest.TestCase):
             (backup / "manifest.json").write_text(
                 json.dumps(
                     {
-                        "format": "straylight-managed-s3-coordinated-backup@v1",
+                        "format": "brunn-managed-s3-coordinated-backup@v1",
                         "backup_id": "minimal",
                         "created_at": "2026-07-24T00:00:00Z",
                         "completed_at": "2026-07-24T00:01:00Z",
@@ -157,7 +157,7 @@ class RecoveryContractTests(unittest.TestCase):
                 "database-invariants.json": b'{"safe":true}\n',
                 "database-object-references.json": json.dumps(
                     {
-                        "format": "straylight-database-object-references@v1",
+                        "format": "brunn-database-object-references@v1",
                         "object_bucket": "recovery-test",
                         "references": [
                             {
@@ -226,7 +226,7 @@ class RecoveryContractTests(unittest.TestCase):
             now = datetime.now(timezone.utc).replace(microsecond=0)
             expired = self._write_manifest(
                 backups / "expired",
-                "straylight-managed-s3-coordinated-backup@v1",
+                "brunn-managed-s3-coordinated-backup@v1",
                 now - timedelta(days=3),
                 now - timedelta(days=1),
             )
@@ -244,7 +244,7 @@ class RecoveryContractTests(unittest.TestCase):
 
             current = self._write_manifest(
                 backups / "current",
-                "straylight-managed-s3-coordinated-backup@v1",
+                "brunn-managed-s3-coordinated-backup@v1",
                 now - timedelta(hours=12),
                 now + timedelta(days=2),
             )
@@ -290,7 +290,7 @@ class RecoveryContractTests(unittest.TestCase):
         (directory / "restore-drill-receipt.json").write_text(
             json.dumps(
                 {
-                    "format": "straylight-restore-drill-receipt@v1",
+                    "format": "brunn-restore-drill-receipt@v1",
                     "status": "pass",
                     "backup_id": backup_id,
                     "backup_manifest_sha256": f"sha256:{manifest_sha256}",

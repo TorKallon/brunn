@@ -1,10 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const baseURL = process.env.STRAYLIGHT_GATE12_BASE_URL;
+const baseURL = process.env.BRUNN_GATE12_BASE_URL;
 
 if (!baseURL) {
   throw new Error(
-    "STRAYLIGHT_GATE12_BASE_URL is required and must point at the disposable Web stack",
+    "BRUNN_GATE12_BASE_URL is required and must point at the disposable Web stack",
   );
 }
 

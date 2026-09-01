@@ -14,9 +14,9 @@ RUN rm -rf node_modules \
 
 FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:af85d11ce7ef10172855a6e3649e3e8125b1b9e3ca41849ec2918036f05cb212 AS runtime
 
-ARG STRAYLIGHT_BUILD_REVISION=unknown
-LABEL org.opencontainers.image.title="Straylight MCP Adapter" \
-      org.opencontainers.image.revision="${STRAYLIGHT_BUILD_REVISION}"
+ARG BRUNN_BUILD_REVISION=unknown
+LABEL org.opencontainers.image.title="Brunn MCP Adapter" \
+      org.opencontainers.image.revision="${BRUNN_BUILD_REVISION}"
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=production-dependencies /app/package.json ./

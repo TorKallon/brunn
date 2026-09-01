@@ -34,7 +34,7 @@ from binary_asset_fixture import (  # noqa: E402
 class BinaryAssetConformanceTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls._temporary = tempfile.TemporaryDirectory(prefix="carrystate-binary-tests-")
+        cls._temporary = tempfile.TemporaryDirectory(prefix="brunn-state-binary-tests-")
         cls.root = Path(cls._temporary.name)
         cls.fixture_root = cls.root / "fixture"
         cls.manifest = generate_fixture(cls.fixture_root)
@@ -512,7 +512,7 @@ class BinaryAssetReasoningCardTest(unittest.TestCase):
         self.assertEqual(self.document["benchmark_version"], "1.0")
         self.assertEqual(
             self.document["fixture"]["format"],
-            "carrystate-binary-fixture-v1",
+            "brunn-state-binary-fixture-v1",
         )
         self.assertEqual(self.document["scorecard"]["priority"], "quality_first")
         self.assertTrue(
@@ -554,7 +554,7 @@ class BinaryAssetReasoningCardTest(unittest.TestCase):
         self.assertEqual(
             set(self.document["conditions"]),
             {
-                "carrystate",
+                "brunn-state",
                 "matched-filesystem",
                 "operational-filesystem",
             },
@@ -582,7 +582,7 @@ class BinaryAssetReasoningCardTest(unittest.TestCase):
                 self.assertGreaterEqual(len(card["forbidden"]), 1)
 
     def test_all_card_evidence_resolves_in_fixture(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="carrystate-card-fixture-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="brunn-state-card-fixture-") as temporary:
             root = Path(temporary)
             manifest = generate_fixture(root)
             for card in self.document["cards"]:

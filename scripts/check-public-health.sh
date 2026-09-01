@@ -16,7 +16,7 @@ case "$host" in
     ;;
 esac
 
-temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/straylight-public-health.XXXXXX")
+temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/brunn-public-health.XXXXXX")
 cleanup() {
   status=$?
   trap - EXIT INT TERM
@@ -29,10 +29,10 @@ trap cleanup EXIT INT TERM
 # application tier. Exercise both the Nginx-local route and the API readiness
 # proxy repeatedly, rejecting Railway's five-second upstream dial/retry path
 # even when a second replica eventually answers.
-probe_count=${STRAYLIGHT_PUBLIC_HEALTH_PROBES:-24}
+probe_count=${BRUNN_PUBLIC_HEALTH_PROBES:-24}
 case "$probe_count" in
   ''|*[!0-9]*|0)
-    echo "STRAYLIGHT_PUBLIC_HEALTH_PROBES must be a positive integer" >&2
+    echo "BRUNN_PUBLIC_HEALTH_PROBES must be a positive integer" >&2
     exit 64
     ;;
 esac

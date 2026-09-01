@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 const apiProxyTarget =
-  process.env.STRAYLIGHT_API_PROXY_TARGET?.trim() || "http://127.0.0.1:8080";
+  process.env.BRUNN_API_PROXY_TARGET?.trim() || "http://127.0.0.1:8080";
 
 export default defineConfig({
   plugins: [react()],

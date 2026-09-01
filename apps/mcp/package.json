@@ -1,10 +1,10 @@
 {
-  "name": "@straylight/mcp-server",
+  "name": "@brunn/mcp-server",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "straylight-mcp": "dist/index.js"
+    "brunn-mcp": "dist/index.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

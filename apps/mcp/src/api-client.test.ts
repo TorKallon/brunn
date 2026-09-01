@@ -5,26 +5,26 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { StraylightApiClient, StraylightApiError } from "./api-client.js";
+import { BrunnApiClient, BrunnApiError } from "./api-client.js";
 
 const ONE_FAST_RETRY = { retryBackoffMs: [0] as const };
 const EXHAUST_FAST_RETRIES = { retryBackoffMs: [0, 0, 0, 0, 0, 0] as const };
 
 test("retry schedule configuration fails closed on malformed or excessive overrides", () => {
-  const original = process.env.STRAYLIGHT_MCP_RETRY_BACKOFF_MS;
+  const original = process.env.BRUNN_MCP_RETRY_BACKOFF_MS;
   try {
     for (const value of ["1,,2", "1,2,3,4,5,6,7", "-1,2"]) {
-      process.env.STRAYLIGHT_MCP_RETRY_BACKOFF_MS = value;
+      process.env.BRUNN_MCP_RETRY_BACKOFF_MS = value;
       assert.throws(
-        () => new StraylightApiClient("http://straylight.test", "read-token"),
-        /STRAYLIGHT_MCP_RETRY_BACKOFF_MS/,
+        () => new BrunnApiClient("http://brunn.test", "read-token"),
+        /BRUNN_MCP_RETRY_BACKOFF_MS/,
       );
     }
   } finally {
     if (original === undefined) {
-      delete process.env.STRAYLIGHT_MCP_RETRY_BACKOFF_MS;
+      delete process.env.BRUNN_MCP_RETRY_BACKOFF_MS;
     } else {
-      process.env.STRAYLIGHT_MCP_RETRY_BACKOFF_MS = original;
+      process.env.BRUNN_MCP_RETRY_BACKOFF_MS = original;
     }
   }
 });
@@ -42,8 +42,8 @@ test("API client binds credentials and optional evaluation headers", async () =>
     calls.push({
       url: String(input),
       authorization: headers.get("authorization"),
-      evalRun: headers.get("x-straylight-eval-run"),
-      evalCase: headers.get("x-straylight-eval-case"),
+      evalRun: headers.get("x-brunn-eval-run"),
+      evalCase: headers.get("x-brunn-eval-case"),
       body: JSON.parse(String(init?.body)),
     });
     return new Response(JSON.stringify({ status: "complete", data: { session_id: "session:1" } }), {
@@ -51,13 +51,13 @@ test("API client binds credentials and optional evaluation headers", async () =>
       headers: { "content-type": "application/json" },
     });
   };
-  const client = new StraylightApiClient(
-    "http://straylight.test/",
+  const client = new BrunnApiClient(
+    "http://brunn.test/",
     "secret-token",
     fakeFetch,
     {
-      "x-straylight-eval-run": "run-1",
-      "x-straylight-eval-case": "case-1",
+      "x-brunn-eval-run": "run-1",
+      "x-brunn-eval-case": "case-1",
     },
   );
 
@@ -65,7 +65,7 @@ test("API client binds credentials and optional evaluation headers", async () =>
 
   assert.equal(response.status, 200);
   assert.deepEqual(calls, [{
-    url: "http://straylight.test/v1/memory/open",
+    url: "http://brunn.test/v1/memory/open",
     authorization: "Bearer secret-token",
     evalRun: "run-1",
     evalCase: "case-1",
@@ -76,8 +76,8 @@ test("API client binds credentials and optional evaluation headers", async () =>
 
 test("API client exposes the paginated workspace change feed", async () => {
   const calls: string[] = [];
-  const client = new StraylightApiClient(
-    "http://straylight.test/",
+  const client = new BrunnApiClient(
+    "http://brunn.test/",
     "read-token",
     async (input) => {
       calls.push(String(input));
@@ -98,7 +98,7 @@ test("API client exposes the paginated workspace change feed", async () => {
 
   assert.equal(response.status, 200);
   assert.deepEqual(calls, [
-    "http://straylight.test/v1/workspace/changes?since_generation=240&limit=200",
+    "http://brunn.test/v1/workspace/changes?since_generation=240&limit=200",
   ]);
 });
 
@@ -106,11 +106,11 @@ test("API client preserves structured service failures", async () => {
   const fakeFetch: typeof fetch = async () => new Response(JSON.stringify({
     error: { code: "capability_denied", message: "checkpoint requires write access" },
   }), { status: 403 });
-  const client = new StraylightApiClient("http://straylight.test", "read-only", fakeFetch);
+  const client = new BrunnApiClient("http://brunn.test", "read-only", fakeFetch);
 
   await assert.rejects(
     client.request("/v1/memory/checkpoint", {}),
-    (error: unknown) => error instanceof StraylightApiError
+    (error: unknown) => error instanceof BrunnApiError
       && error.status === 403
       && (error.body.error as { code: string }).code === "capability_denied",
   );
@@ -126,8 +126,8 @@ test("idempotent checkpoint recovers a commit followed by lost 502 response", as
   const bodies: string[] = [];
   let durableCommits = 0;
   const committedKeys = new Set<string>();
-  const client = new StraylightApiClient(
-    "http://straylight.test",
+  const client = new BrunnApiClient(
+    "http://brunn.test",
     "write-token",
     async (_input, init) => {
       const serialized = String(init?.body);
@@ -164,8 +164,8 @@ test("idempotent checkpoint recovers a commit followed by lost 502 response", as
 
 test("read requests recover from connection resets", async () => {
   let calls = 0;
-  const client = new StraylightApiClient(
-    "http://straylight.test",
+  const client = new BrunnApiClient(
+    "http://brunn.test",
     "read-token",
     async () => {
       calls += 1;
@@ -190,8 +190,8 @@ test("read requests recover from connection resets", async () => {
 
 test("plain Railway Application not found responses are transient", async () => {
   let calls = 0;
-  const client = new StraylightApiClient(
-    "http://straylight.test",
+  const client = new BrunnApiClient(
+    "http://brunn.test",
     "read-token",
     async () => {
       calls += 1;
@@ -216,8 +216,8 @@ test("plain Railway Application not found responses are transient", async () => 
 test("Railway Application not found recovers beyond the legacy three-attempt window", async () => {
   let calls = 0;
   const bodies: string[] = [];
-  const client = new StraylightApiClient(
-    "http://straylight.test",
+  const client = new BrunnApiClient(
+    "http://brunn.test",
     "read-token",
     async (_input, init) => {
       calls += 1;
@@ -253,8 +253,8 @@ test("capture and write retry only with an idempotency key", async () => {
     },
   ]) {
     let keyedCalls = 0;
-    const keyed = new StraylightApiClient(
-      "http://straylight.test",
+    const keyed = new BrunnApiClient(
+      "http://brunn.test",
       "write-token",
       async () => {
         keyedCalls += 1;
@@ -273,8 +273,8 @@ test("capture and write retry only with an idempotency key", async () => {
     assert.equal(keyedCalls, 2);
 
     let unkeyedCalls = 0;
-    const unkeyed = new StraylightApiClient(
-      "http://straylight.test",
+    const unkeyed = new BrunnApiClient(
+      "http://brunn.test",
       "write-token",
       async () => {
         unkeyedCalls += 1;
@@ -287,7 +287,7 @@ test("capture and write retry only with an idempotency key", async () => {
     await assert.rejects(
       unkeyed.request(fixture.path, fixture.body),
       (error: unknown) => {
-        if (!(error instanceof StraylightApiError)) {
+        if (!(error instanceof BrunnApiError)) {
           return false;
         }
         const detail = error.body.error as Record<string, unknown>;
@@ -306,8 +306,8 @@ test("capture and write retry only with an idempotency key", async () => {
 test("notification event identity makes transient publication retry-safe", async () => {
   let calls = 0;
   const bodies: string[] = [];
-  const client = new StraylightApiClient(
-    "http://straylight.test",
+  const client = new BrunnApiClient(
+    "http://brunn.test",
     "write-token",
     async (_input, init) => {
       calls += 1;
@@ -342,8 +342,8 @@ test("notification event identity makes transient publication retry-safe", async
 test("exhausted idempotent mutation returns sanitized ambiguous outcome", async () => {
   let calls = 0;
   const secret = "private Railway response payload";
-  const client = new StraylightApiClient(
-    "http://straylight.test",
+  const client = new BrunnApiClient(
+    "http://brunn.test",
     "write-token",
     async () => {
       calls += 1;
@@ -364,7 +364,7 @@ test("exhausted idempotent mutation returns sanitized ambiguous outcome", async 
       state: { objective: "persist state" },
     }),
     (error: unknown) => {
-      if (!(error instanceof StraylightApiError)) {
+      if (!(error instanceof BrunnApiError)) {
         return false;
       }
       const detail = error.body.error as Record<string, unknown>;
@@ -385,8 +385,8 @@ test("exhausted idempotent mutation returns sanitized ambiguous outcome", async 
 test("exhausted reads return sanitized upstream unavailable errors", async () => {
   let calls = 0;
   const secret = "private upstream diagnostic payload";
-  const client = new StraylightApiClient(
-    "http://straylight.test",
+  const client = new BrunnApiClient(
+    "http://brunn.test",
     "read-token",
     async () => {
       calls += 1;
@@ -408,7 +408,7 @@ test("exhausted reads return sanitized upstream unavailable errors", async () =>
       queries: [{ query: "stable service" }],
     }),
     (error: unknown) => {
-      if (!(error instanceof StraylightApiError)) {
+      if (!(error instanceof BrunnApiError)) {
         return false;
       }
       const detail = error.body.error as Record<string, unknown>;
@@ -426,8 +426,8 @@ test("exhausted reads return sanitized upstream unavailable errors", async () =>
 test("oversized declared JSON responses are rejected before their body is read", async () => {
   let calls = 0;
   const secret = "declared oversized private response";
-  const client = new StraylightApiClient(
-    "http://straylight.test",
+  const client = new BrunnApiClient(
+    "http://brunn.test",
     "write-token",
     async () => {
       calls += 1;
@@ -441,7 +441,7 @@ test("oversized declared JSON responses are rejected before their body is read",
   await assert.rejects(
     client.request("/v1/workspace/unknown-mutation", { value: "unsafe" }),
     (error: unknown) => {
-      if (!(error instanceof StraylightApiError)) {
+      if (!(error instanceof BrunnApiError)) {
         return false;
       }
       assert.equal((error.body.error as Record<string, unknown>).code, "ambiguous_outcome");
@@ -456,8 +456,8 @@ test("oversized chunked JSON responses are cancelled at the byte boundary", asyn
   let calls = 0;
   let cancelled = false;
   const chunk = new Uint8Array(1024 * 1024);
-  const client = new StraylightApiClient(
-    "http://straylight.test",
+  const client = new BrunnApiClient(
+    "http://brunn.test",
     "write-token",
     async () => {
       calls += 1;
@@ -474,7 +474,7 @@ test("oversized chunked JSON responses are cancelled at the byte boundary", asyn
 
   await assert.rejects(
     client.request("/v1/workspace/unknown-mutation", { value: "unsafe" }),
-    (error: unknown) => error instanceof StraylightApiError
+    (error: unknown) => error instanceof BrunnApiError
       && (error.body.error as Record<string, unknown>).code === "ambiguous_outcome",
   );
   assert.equal(calls, 1);
@@ -485,8 +485,8 @@ test("malformed successful and nontransient responses never expose upstream text
   for (const status of [200, 400, 500]) {
     let calls = 0;
     const secret = `private malformed response ${status}`;
-    const client = new StraylightApiClient(
-      "http://straylight.test",
+    const client = new BrunnApiClient(
+      "http://brunn.test",
       "read-token",
       async () => {
         calls += 1;
@@ -503,7 +503,7 @@ test("malformed successful and nontransient responses never expose upstream text
     await assert.rejects(
       client.request("/v1/status"),
       (error: unknown) => {
-        if (!(error instanceof StraylightApiError)) {
+        if (!(error instanceof BrunnApiError)) {
           return false;
         }
         const detail = error.body.error as Record<string, unknown>;
@@ -526,8 +526,8 @@ test("malformed successful and nontransient responses never expose upstream text
 
 test("an empty successful response cannot masquerade as a JSON envelope", async () => {
   let calls = 0;
-  const client = new StraylightApiClient(
-    "http://straylight.test",
+  const client = new BrunnApiClient(
+    "http://brunn.test",
     "read-token",
     async () => {
       calls += 1;
@@ -543,7 +543,7 @@ test("an empty successful response cannot masquerade as a JSON envelope", async 
 
   await assert.rejects(
     client.request("/v1/status"),
-    (error: unknown) => error instanceof StraylightApiError
+    (error: unknown) => error instanceof BrunnApiError
       && (error.body.error as Record<string, unknown>).code === "upstream_unavailable"
       && error.body.request_id === "request:empty-7",
   );
@@ -552,8 +552,8 @@ test("an empty successful response cannot masquerade as a JSON envelope", async 
 
 test("mixed transient attempts retain the last observed request ID", async () => {
   let calls = 0;
-  const client = new StraylightApiClient(
-    "http://straylight.test",
+  const client = new BrunnApiClient(
+    "http://brunn.test",
     "read-token",
     async () => {
       calls += 1;
@@ -572,7 +572,7 @@ test("mixed transient attempts retain the last observed request ID", async () =>
 
   await assert.rejects(
     client.request("/v1/status"),
-    (error: unknown) => error instanceof StraylightApiError
+    (error: unknown) => error instanceof BrunnApiError
       && error.body.request_id === "request:first-observed",
   );
   assert.equal(calls, 7);
@@ -580,8 +580,8 @@ test("mixed transient attempts retain the last observed request ID", async () =>
 
 test("a stalled response body is deadline-bounded, aborts fetch, and retains header identity", async () => {
   let requestSignal: AbortSignal | undefined;
-  const client = new StraylightApiClient(
-    "http://straylight.test",
+  const client = new BrunnApiClient(
+    "http://brunn.test",
     "read-token",
     async (_input, init) => {
       requestSignal = init?.signal ?? undefined;
@@ -602,7 +602,7 @@ test("a stalled response body is deadline-bounded, aborts fetch, and retains hea
   const started = performance.now();
   await assert.rejects(
     client.request("/v1/status"),
-    (error: unknown) => error instanceof StraylightApiError
+    (error: unknown) => error instanceof BrunnApiError
       && error.body.request_id === "request:headers-before-stall",
   );
   assert.equal(performance.now() - started < 200, true);
@@ -612,8 +612,8 @@ test("a stalled response body is deadline-bounded, aborts fetch, and retains hea
 test("the absolute deadline includes retry backoff and aborts the final attempt", async () => {
   let calls = 0;
   const signals: AbortSignal[] = [];
-  const client = new StraylightApiClient(
-    "http://straylight.test",
+  const client = new BrunnApiClient(
+    "http://brunn.test",
     "read-token",
     async (_input, init) => {
       calls += 1;
@@ -630,7 +630,7 @@ test("the absolute deadline includes retry backoff and aborts the final attempt"
   );
 
   const started = performance.now();
-  await assert.rejects(client.request("/v1/status"), StraylightApiError);
+  await assert.rejects(client.request("/v1/status"), BrunnApiError);
   assert.equal(calls, 2);
   assert.equal(performance.now() - started < 200, true);
   assert.equal(signals.at(-1)?.aborted, true);
@@ -638,8 +638,8 @@ test("the absolute deadline includes retry backoff and aborts the final attempt"
 
 test("unknown mutations are never retried even when their body resembles an idempotency key", async () => {
   let calls = 0;
-  const client = new StraylightApiClient(
-    "http://straylight.test",
+  const client = new BrunnApiClient(
+    "http://brunn.test",
     "write-token",
     async () => {
       calls += 1;
@@ -649,7 +649,7 @@ test("unknown mutations are never retried even when their body resembles an idem
 
   await assert.rejects(
     client.request("/v1/workspace/unknown-mutation", { idempotency_key: "looks-safe" }),
-    (error: unknown) => error instanceof StraylightApiError
+    (error: unknown) => error instanceof BrunnApiError
       && (error.body.error as Record<string, unknown>).retryable === false,
   );
   assert.equal(calls, 1);
@@ -658,8 +658,8 @@ test("unknown mutations are never retried even when their body resembles an idem
 test("briefing publication retries only when carrying its stable idempotency key", async () => {
   for (const keyed of [true, false]) {
     let calls = 0;
-    const client = new StraylightApiClient(
-      "http://straylight.test",
+    const client = new BrunnApiClient(
+      "http://brunn.test",
       "write-token",
       async () => {
         calls += 1;
@@ -683,7 +683,7 @@ test("briefing publication retries only when carrying its stable idempotency key
     } else {
       await assert.rejects(
         client.request("/v1/workspace/briefings/publish", request),
-        StraylightApiError,
+        BrunnApiError,
       );
       assert.equal(calls, 1);
     }
@@ -691,7 +691,7 @@ test("briefing publication retries only when carrying its stable idempotency key
 });
 
 test("API client fetches one exact historical version without returning bytes", async () => {
-  const assetRoot = await mkdtemp(join(tmpdir(), "carrystate-client-assets-"));
+  const assetRoot = await mkdtemp(join(tmpdir(), "brunn-state-client-assets-"));
   const assetRef = "entry:019f8505-da09-7d14-afd0-a9e27e47fdb7";
   const sessionId = "session:019f8505-fad9-7150-8f07-722426dab1db";
   const bytes = Buffer.from([0, 255, 100, 0, 33, 17, 42, 99]);
@@ -725,14 +725,14 @@ test("API client fetches one exact historical version without returning bytes", 
       headers: {
         "content-length": String(bytes.byteLength),
         "content-type": "application/octet-stream",
-        "x-carrystate-asset-ref": assetRef,
-        "x-carrystate-asset-version": "3",
-        "x-carrystate-sha256": digest,
+        "x-brunn-state-asset-ref": assetRef,
+        "x-brunn-state-asset-version": "3",
+        "x-brunn-state-sha256": digest,
       },
     });
   };
-  const client = new StraylightApiClient(
-    "http://straylight.test",
+  const client = new BrunnApiClient(
+    "http://brunn.test",
     "read-token",
     fakeFetch,
     {},
@@ -754,13 +754,13 @@ test("API client fetches one exact historical version without returning bytes", 
     assert.equal(rendered.includes(bytes.toString("base64")), false);
     assert.deepEqual(calls, [
       {
-        url: `http://straylight.test/v1/workspace/binaries/${encodeURIComponent(assetRef)}`
+        url: `http://brunn.test/v1/workspace/binaries/${encodeURIComponent(assetRef)}`
           + "?version=3",
         authorization: "Bearer read-token",
         hasDeadline: true,
       },
       {
-        url: `http://straylight.test/v1/workspace/binaries/${encodeURIComponent(assetRef)}`
+        url: `http://brunn.test/v1/workspace/binaries/${encodeURIComponent(assetRef)}`
           + "/content?version=3",
         authorization: "Bearer read-token",
         hasDeadline: true,
@@ -786,7 +786,7 @@ test("API client rejects metadata that does not match the requested version", as
       media_type: "application/octet-stream",
     }), { status: 200 });
   };
-  const client = new StraylightApiClient("http://straylight.test", "read-token", fakeFetch);
+  const client = new BrunnApiClient("http://brunn.test", "read-token", fakeFetch);
 
   await assert.rejects(
     client.fetchAsset(assetRef, "session:1", 2),
@@ -795,14 +795,14 @@ test("API client rejects metadata that does not match the requested version", as
   assert.equal(fetchCalls, 1);
   assert.equal(
     requestedUrl,
-    `http://straylight.test/v1/workspace/binaries/${encodeURIComponent(assetRef)}?version=2`,
+    `http://brunn.test/v1/workspace/binaries/${encodeURIComponent(assetRef)}?version=2`,
   );
 });
 
 test("ordinary API requests have a bounded deadline", async () => {
   const fakeFetch: typeof fetch = async () => new Promise<Response>(() => undefined);
-  const client = new StraylightApiClient(
-    "http://straylight.test",
+  const client = new BrunnApiClient(
+    "http://brunn.test",
     "read-token",
     fakeFetch,
     {},
@@ -814,7 +814,7 @@ test("ordinary API requests have a bounded deadline", async () => {
   await assert.rejects(
     client.request("/v1/status"),
     (error: unknown) => {
-      if (!(error instanceof StraylightApiError)) {
+      if (!(error instanceof BrunnApiError)) {
         return false;
       }
       const detail = error.body.error as Record<string, unknown>;
@@ -830,8 +830,8 @@ test("ordinary API requests have a bounded deadline", async () => {
 test("asset fetch failures never echo upstream payloads", async () => {
   const assetRef = "entry:019f8505-da09-7d14-afd0-a9e27e47fdb7";
   const secret = Buffer.from("upstream binary payload").toString("base64");
-  const metadataFailureClient = new StraylightApiClient(
-    "http://straylight.test",
+  const metadataFailureClient = new BrunnApiClient(
+    "http://brunn.test",
     "read-token",
     async () => new Response(JSON.stringify({
       error: { code: "upstream", message: secret },
@@ -841,14 +841,14 @@ test("asset fetch failures never echo upstream payloads", async () => {
   await assert.rejects(
     metadataFailureClient.fetchAsset(assetRef, "session:1"),
     (error: unknown) => {
-      if (!(error instanceof StraylightApiError)) {
+      if (!(error instanceof BrunnApiError)) {
         return false;
       }
       assert.equal(JSON.stringify(error.body).includes(secret), false);
       assert.deepEqual(error.body, {
         error: {
           code: "asset_metadata_failed",
-          message: "CarryState asset metadata request returned HTTP 500",
+          message: "Brunn State asset metadata request returned HTTP 500",
         },
       });
       return true;
@@ -856,8 +856,8 @@ test("asset fetch failures never echo upstream payloads", async () => {
   );
 
   let calls = 0;
-  const downloadFailureClient = new StraylightApiClient(
-    "http://straylight.test",
+  const downloadFailureClient = new BrunnApiClient(
+    "http://brunn.test",
     "read-token",
     async () => {
       calls += 1;
@@ -876,14 +876,14 @@ test("asset fetch failures never echo upstream payloads", async () => {
   await assert.rejects(
     downloadFailureClient.fetchAsset(assetRef, "session:1"),
     (error: unknown) => {
-      if (!(error instanceof StraylightApiError)) {
+      if (!(error instanceof BrunnApiError)) {
         return false;
       }
       assert.equal(JSON.stringify(error.body).includes(secret), false);
       assert.deepEqual(error.body, {
         error: {
           code: "asset_download_failed",
-          message: "CarryState asset download request returned HTTP 502",
+          message: "Brunn State asset download request returned HTTP 502",
         },
       });
       return true;
@@ -892,20 +892,20 @@ test("asset fetch failures never echo upstream payloads", async () => {
 });
 
 test("staging rejects oversized files before reading or sending them", async () => {
-  const importRoot = await mkdtemp(join(tmpdir(), "straylight-mcp-stage-"));
+  const importRoot = await mkdtemp(join(tmpdir(), "brunn-mcp-stage-"));
   const oversizedPath = join(importRoot, "oversized.bin");
-  const previousImportRoot = process.env.STRAYLIGHT_MCP_IMPORT_ROOT;
+  const previousImportRoot = process.env.BRUNN_MCP_IMPORT_ROOT;
   let fetchCalls = 0;
 
   try {
     await writeFile(oversizedPath, "");
     await truncate(oversizedPath, (64 * 1024 * 1024) + 1);
-    process.env.STRAYLIGHT_MCP_IMPORT_ROOT = importRoot;
+    process.env.BRUNN_MCP_IMPORT_ROOT = importRoot;
     const fakeFetch: typeof fetch = async () => {
       fetchCalls += 1;
       throw new Error("fetch must not run for an invalid stage request");
     };
-    const client = new StraylightApiClient("http://straylight.test", "write-token", fakeFetch);
+    const client = new BrunnApiClient("http://brunn.test", "write-token", fakeFetch);
 
     await assert.rejects(
       client.stage("scope:primary", undefined, [{ path: "oversized.bin" }]),
@@ -914,17 +914,17 @@ test("staging rejects oversized files before reading or sending them", async () 
     assert.equal(fetchCalls, 0);
   } finally {
     if (previousImportRoot === undefined) {
-      delete process.env.STRAYLIGHT_MCP_IMPORT_ROOT;
+      delete process.env.BRUNN_MCP_IMPORT_ROOT;
     } else {
-      process.env.STRAYLIGHT_MCP_IMPORT_ROOT = previousImportRoot;
+      process.env.BRUNN_MCP_IMPORT_ROOT = previousImportRoot;
     }
     await rm(importRoot, { recursive: true, force: true });
   }
 });
 
 test("staging preserves nested logical paths and requests binary descriptions", async () => {
-  const importRoot = await mkdtemp(join(tmpdir(), "straylight-mcp-paths-"));
-  const previousImportRoot = process.env.STRAYLIGHT_MCP_IMPORT_ROOT;
+  const importRoot = await mkdtemp(join(tmpdir(), "brunn-mcp-paths-"));
+  const previousImportRoot = process.env.BRUNN_MCP_IMPORT_ROOT;
   const nested = join(importRoot, "Trips", "Receipts");
   const filePath = join(nested, "scan.png");
   let form: FormData | undefined;
@@ -933,9 +933,9 @@ test("staging preserves nested logical paths and requests binary descriptions", 
   try {
     await mkdir(nested, { recursive: true });
     await writeFile(filePath, Buffer.from("fixture"));
-    process.env.STRAYLIGHT_MCP_IMPORT_ROOT = importRoot;
-    const client = new StraylightApiClient(
-      "http://straylight.test",
+    process.env.BRUNN_MCP_IMPORT_ROOT = importRoot;
+    const client = new BrunnApiClient(
+      "http://brunn.test",
       "write-token",
       async (_input, init) => {
         form = init?.body as FormData;
@@ -974,9 +974,9 @@ test("staging preserves nested logical paths and requests binary descriptions", 
     assert.equal(hadDeadline, true);
   } finally {
     if (previousImportRoot === undefined) {
-      delete process.env.STRAYLIGHT_MCP_IMPORT_ROOT;
+      delete process.env.BRUNN_MCP_IMPORT_ROOT;
     } else {
-      process.env.STRAYLIGHT_MCP_IMPORT_ROOT = previousImportRoot;
+      process.env.BRUNN_MCP_IMPORT_ROOT = previousImportRoot;
     }
     await rm(importRoot, { recursive: true, force: true });
   }
@@ -984,8 +984,8 @@ test("staging preserves nested logical paths and requests binary descriptions", 
 
 test("explicit HTTP methods are preserved for bodyless GET and JSON POST PATCH PUT", async () => {
   const calls: Array<{ method: string; url: string; body: string | undefined }> = [];
-  const client = new StraylightApiClient(
-    "http://straylight.test",
+  const client = new BrunnApiClient(
+    "http://brunn.test",
     "task-token",
     async (input, init) => {
       calls.push({
@@ -1013,7 +1013,7 @@ test("explicit HTTP methods are preserved for bodyless GET and JSON POST PATCH P
       completed_via: "agent:codex",
     },
   });
-  await client.request("PUT", "/v1/workspace/projects/straylight/interest", {
+  await client.request("PUT", "/v1/workspace/projects/brunn/interest", {
     expected_version: 1,
     idempotency_key: "interest:1",
     interest: "hot",
@@ -1022,17 +1022,17 @@ test("explicit HTTP methods are preserved for bodyless GET and JSON POST PATCH P
   assert.deepEqual(calls, [
     {
       method: "GET",
-      url: "http://straylight.test/v1/workspace/tasks/candidates?view=next",
+      url: "http://brunn.test/v1/workspace/tasks/candidates?view=next",
       body: undefined,
     },
     {
       method: "POST",
-      url: "http://straylight.test/v1/workspace/tasks/capture",
+      url: "http://brunn.test/v1/workspace/tasks/capture",
       body: JSON.stringify({ idempotency_key: "capture:1" }),
     },
     {
       method: "PATCH",
-      url: "http://straylight.test/v1/workspace/tasks/019f8800-0000-7000-8000-000000000001",
+      url: "http://brunn.test/v1/workspace/tasks/019f8800-0000-7000-8000-000000000001",
       body: JSON.stringify({
         expected_version: 1,
         idempotency_key: "update:1",
@@ -1045,7 +1045,7 @@ test("explicit HTTP methods are preserved for bodyless GET and JSON POST PATCH P
     },
     {
       method: "PUT",
-      url: "http://straylight.test/v1/workspace/projects/straylight/interest",
+      url: "http://brunn.test/v1/workspace/projects/brunn/interest",
       body: JSON.stringify({
         expected_version: 1,
         idempotency_key: "interest:1",
@@ -1082,8 +1082,8 @@ test("explicit task mutations retry only with a durable idempotency key", async 
     },
   ]) {
     let keyedCalls = 0;
-    const keyed = new StraylightApiClient(
-      "http://straylight.test",
+    const keyed = new BrunnApiClient(
+      "http://brunn.test",
       "task-token",
       async () => {
         keyedCalls += 1;
@@ -1099,8 +1099,8 @@ test("explicit task mutations retry only with a durable idempotency key", async 
     assert.equal(keyedCalls, 2, `${fixture.method} ${fixture.path} should retry with a key`);
 
     let unkeyedCalls = 0;
-    const unkeyed = new StraylightApiClient(
-      "http://straylight.test",
+    const unkeyed = new BrunnApiClient(
+      "http://brunn.test",
       "task-token",
       async () => {
         unkeyedCalls += 1;
@@ -1114,7 +1114,7 @@ test("explicit task mutations retry only with a durable idempotency key", async 
     await assert.rejects(
       unkeyed.request(fixture.method, fixture.path, unkeyedBody),
       (error: unknown) => {
-        if (!(error instanceof StraylightApiError)) {
+        if (!(error instanceof BrunnApiError)) {
           return false;
         }
         const detail = error.body.error as Record<string, unknown>;

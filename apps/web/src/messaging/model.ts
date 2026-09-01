@@ -85,7 +85,7 @@ export function conversationTitle(
 }
 
 export function agentName(agentId: string | null | undefined, agents: MessagingAgent[]) {
-  if (!agentId) return "Straylight";
+  if (!agentId) return "Brunn";
   return agents.find((agent) => agent.agent_id === agentId)?.display_name ?? agentId;
 }
 

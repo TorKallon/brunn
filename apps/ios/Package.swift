@@ -3,18 +3,18 @@
 import PackageDescription
 
 let package = Package(
-    name: "StraylightCore",
+    name: "BrunnCore",
     platforms: [
         .macOS(.v14),
         .iOS(.v17),
     ],
     products: [
-        .library(name: "StraylightCore", targets: ["StraylightCore"]),
+        .library(name: "BrunnCore", targets: ["BrunnCore"]),
     ],
     targets: [
         .target(
-            name: "StraylightCore",
-            path: "Straylight",
+            name: "BrunnCore",
+            path: "Brunn",
             exclude: [
                 "App",
                 "Features",
@@ -25,9 +25,9 @@ let package = Package(
             sources: ["API", "Domain"]
         ),
         .testTarget(
-            name: "StraylightCoreTests",
-            dependencies: ["StraylightCore"],
-            path: "StraylightCoreTests"
+            name: "BrunnCoreTests",
+            dependencies: ["BrunnCore"],
+            path: "BrunnCoreTests"
         ),
     ]
 )

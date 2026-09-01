@@ -1,4 +1,4 @@
-ALTER TABLE straylight.users
+ALTER TABLE brunn.users
   ADD COLUMN account_status text NOT NULL DEFAULT 'active'
     CHECK (account_status IN ('active', 'deleting', 'deleted')),
   ADD COLUMN storage_limit_bytes bigint NOT NULL DEFAULT 10737418240
@@ -19,8 +19,8 @@ ALTER TABLE straylight.users
     OR (account_status = 'deleted' AND deletion_requested_at IS NOT NULL AND deleted_at IS NOT NULL)
   );
 
-CREATE TABLE straylight.user_usage_daily (
-  user_id uuid NOT NULL REFERENCES straylight.users(id),
+CREATE TABLE brunn.user_usage_daily (
+  user_id uuid NOT NULL REFERENCES brunn.users(id),
   usage_date date NOT NULL DEFAULT (clock_timestamp() AT TIME ZONE 'UTC')::date,
   embedding_input_chars bigint NOT NULL DEFAULT 0 CHECK (embedding_input_chars >= 0),
   model_input_chars bigint NOT NULL DEFAULT 0 CHECK (model_input_chars >= 0),
@@ -30,7 +30,7 @@ CREATE TABLE straylight.user_usage_daily (
   PRIMARY KEY (user_id, usage_date)
 );
 
-CREATE TABLE straylight.account_exports (
+CREATE TABLE brunn.account_exports (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   requested_by_credential_id uuid NOT NULL,
@@ -38,7 +38,7 @@ CREATE TABLE straylight.account_exports (
     'queued', 'running', 'ready', 'failed', 'expired', 'deleted'
   )),
   object_key text,
-  content_hash straylight.sha256_hex,
+  content_hash brunn.sha256_hex,
   size_bytes bigint CHECK (size_bytes IS NULL OR size_bytes >= 0),
   table_count integer CHECK (table_count IS NULL OR table_count >= 0),
   object_count integer CHECK (object_count IS NULL OR object_count >= 0),
@@ -49,24 +49,24 @@ CREATE TABLE straylight.account_exports (
   expires_at timestamptz NOT NULL DEFAULT clock_timestamp() + interval '24 hours',
   UNIQUE (user_id, id),
   FOREIGN KEY (user_id, requested_by_credential_id)
-    REFERENCES straylight.api_credentials(user_id, id),
+    REFERENCES brunn.api_credentials(user_id, id),
   CHECK (completed_at IS NULL OR completed_at >= created_at),
   CHECK (expires_at > created_at)
 );
 
 CREATE INDEX account_exports_claim_idx
-  ON straylight.account_exports (status, created_at)
+  ON brunn.account_exports (status, created_at)
   WHERE status IN ('queued', 'running');
 
-CREATE TABLE straylight.account_deletion_requests (
+CREATE TABLE brunn.account_deletion_requests (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   requested_by_credential_id uuid NOT NULL,
   status text NOT NULL CHECK (status IN (
     'queued', 'running', 'awaiting_backup_expiry', 'completed', 'failed', 'canceled'
   )),
-  confirmation_hash straylight.sha256_hex NOT NULL,
-  reason straylight.nonempty_text NOT NULL,
+  confirmation_hash brunn.sha256_hex NOT NULL,
+  reason brunn.nonempty_text NOT NULL,
   records_total bigint NOT NULL DEFAULT 0 CHECK (records_total >= 0),
   records_completed bigint NOT NULL DEFAULT 0 CHECK (records_completed >= 0),
   backup_expiry_due_at timestamptz NOT NULL,
@@ -77,98 +77,98 @@ CREATE TABLE straylight.account_deletion_requests (
   completed_at timestamptz,
   UNIQUE (user_id, id),
   FOREIGN KEY (user_id, requested_by_credential_id)
-    REFERENCES straylight.api_credentials(user_id, id),
+    REFERENCES brunn.api_credentials(user_id, id),
   CHECK (records_completed <= records_total),
   CHECK (completed_at IS NULL OR completed_at >= created_at)
 );
 
 CREATE UNIQUE INDEX account_deletion_one_active_idx
-  ON straylight.account_deletion_requests (user_id)
+  ON brunn.account_deletion_requests (user_id)
   WHERE status IN ('queued', 'running', 'awaiting_backup_expiry');
 
 CREATE INDEX account_deletion_claim_idx
-  ON straylight.account_deletion_requests (status, created_at)
+  ON brunn.account_deletion_requests (status, created_at)
   WHERE status IN ('queued', 'running', 'awaiting_backup_expiry');
 
 CREATE INDEX background_jobs_running_lease_idx
-  ON straylight.background_jobs (locked_at, created_at)
+  ON brunn.background_jobs (locked_at, created_at)
   WHERE status = 'running';
 
-ALTER TABLE straylight.user_usage_daily ENABLE ROW LEVEL SECURITY;
-ALTER TABLE straylight.user_usage_daily FORCE ROW LEVEL SECURITY;
-ALTER TABLE straylight.account_exports ENABLE ROW LEVEL SECURITY;
-ALTER TABLE straylight.account_exports FORCE ROW LEVEL SECURITY;
-ALTER TABLE straylight.account_deletion_requests ENABLE ROW LEVEL SECURITY;
-ALTER TABLE straylight.account_deletion_requests FORCE ROW LEVEL SECURITY;
+ALTER TABLE brunn.user_usage_daily ENABLE ROW LEVEL SECURITY;
+ALTER TABLE brunn.user_usage_daily FORCE ROW LEVEL SECURITY;
+ALTER TABLE brunn.account_exports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE brunn.account_exports FORCE ROW LEVEL SECURITY;
+ALTER TABLE brunn.account_deletion_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE brunn.account_deletion_requests FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY user_usage_daily_self_select
-  ON straylight.user_usage_daily
+  ON brunn.user_usage_daily
   FOR SELECT TO app_rw, app_ro
-  USING (straylight_auth.can_access_user(user_id));
+  USING (brunn_auth.can_access_user(user_id));
 
 CREATE POLICY user_usage_daily_self_insert
-  ON straylight.user_usage_daily
+  ON brunn.user_usage_daily
   FOR INSERT TO app_rw
-  WITH CHECK (straylight_auth.can_access_user(user_id));
+  WITH CHECK (brunn_auth.can_access_user(user_id));
 
 CREATE POLICY user_usage_daily_self_update
-  ON straylight.user_usage_daily
+  ON brunn.user_usage_daily
   FOR UPDATE TO app_rw
-  USING (straylight_auth.can_access_user(user_id))
-  WITH CHECK (straylight_auth.can_access_user(user_id));
+  USING (brunn_auth.can_access_user(user_id))
+  WITH CHECK (brunn_auth.can_access_user(user_id));
 
 CREATE POLICY account_exports_self_select
-  ON straylight.account_exports
+  ON brunn.account_exports
   FOR SELECT TO app_rw, app_ro
-  USING (straylight_auth.can_access_user(user_id));
+  USING (brunn_auth.can_access_user(user_id));
 
 CREATE POLICY account_exports_self_insert
-  ON straylight.account_exports
+  ON brunn.account_exports
   FOR INSERT TO app_rw
   WITH CHECK (
-    straylight_auth.can_access_user(user_id)
-    AND straylight_auth.has_capability('status')
+    brunn_auth.can_access_user(user_id)
+    AND brunn_auth.has_capability('status')
     AND status = 'queued'
   );
 
 CREATE POLICY account_deletions_self_select
-  ON straylight.account_deletion_requests
+  ON brunn.account_deletion_requests
   FOR SELECT TO app_rw, app_ro
-  USING (straylight_auth.can_access_user(user_id));
+  USING (brunn_auth.can_access_user(user_id));
 
 CREATE POLICY account_deletions_self_insert
-  ON straylight.account_deletion_requests
+  ON brunn.account_deletion_requests
   FOR INSERT TO app_rw
   WITH CHECK (
-    straylight_auth.can_access_user(user_id)
-    AND straylight_auth.has_capability('credential:manage')
+    brunn_auth.can_access_user(user_id)
+    AND brunn_auth.has_capability('credential:manage')
     AND status = 'queued'
   );
 
-GRANT SELECT, INSERT, UPDATE ON straylight.user_usage_daily TO app_rw;
-GRANT SELECT ON straylight.user_usage_daily TO app_ro;
-GRANT SELECT, INSERT ON straylight.account_exports TO app_rw;
-GRANT SELECT ON straylight.account_exports TO app_ro;
-GRANT SELECT, INSERT ON straylight.account_deletion_requests TO app_rw;
-GRANT SELECT ON straylight.account_deletion_requests TO app_ro;
+GRANT SELECT, INSERT, UPDATE ON brunn.user_usage_daily TO app_rw;
+GRANT SELECT ON brunn.user_usage_daily TO app_ro;
+GRANT SELECT, INSERT ON brunn.account_exports TO app_rw;
+GRANT SELECT ON brunn.account_exports TO app_ro;
+GRANT SELECT, INSERT ON brunn.account_deletion_requests TO app_rw;
+GRANT SELECT ON brunn.account_deletion_requests TO app_ro;
 
-CREATE FUNCTION straylight_auth.require_admin()
+CREATE FUNCTION brunn_auth.require_admin()
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 BEGIN
-  IF NOT straylight_auth.context_is_valid()
-     OR NOT straylight_auth.has_capability('admin') THEN
+  IF NOT brunn_auth.context_is_valid()
+     OR NOT brunn_auth.has_capability('admin') THEN
     RAISE EXCEPTION 'authenticated administrative capability is required'
       USING ERRCODE = '42501';
   END IF;
 END;
 $$;
 
-CREATE FUNCTION straylight_auth.admin_issue_credential(
+CREATE FUNCTION brunn_auth.admin_issue_credential(
   p_user_id uuid,
   p_label text,
   p_token_hash text,
@@ -178,7 +178,7 @@ CREATE FUNCTION straylight_auth.admin_issue_credential(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
@@ -190,7 +190,7 @@ DECLARE
   created_credential_id uuid;
   matched_scope_count integer;
 BEGIN
-  PERFORM straylight_auth.require_admin();
+  PERFORM brunn_auth.require_admin();
 
   IF p_capabilities IS NULL
      OR cardinality(p_capabilities) = 0
@@ -217,7 +217,7 @@ BEGIN
 
   IF NOT EXISTS (
     SELECT 1
-    FROM straylight.users
+    FROM brunn.users
     WHERE id = p_user_id AND account_status = 'active'
   ) THEN
     RAISE EXCEPTION 'active recovery user not found'
@@ -225,7 +225,7 @@ BEGIN
   END IF;
 
   SELECT count(*) INTO matched_scope_count
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = p_user_id
     AND scope_row.scope_ref::text = ANY(p_scope_refs);
   IF matched_scope_count <> cardinality(p_scope_refs) THEN
@@ -233,26 +233,26 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  INSERT INTO straylight.api_credentials (
+  INSERT INTO brunn.api_credentials (
     user_id, label, token_hash, capabilities
   ) VALUES (
     p_user_id, p_label, p_token_hash, p_capabilities
   )
   RETURNING id INTO created_credential_id;
 
-  INSERT INTO straylight.credential_scope_grants (
+  INSERT INTO brunn.credential_scope_grants (
     credential_id, user_id, scope_id
   )
   SELECT created_credential_id, p_user_id, scope_row.id
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = p_user_id
     AND scope_row.scope_ref::text = ANY(p_scope_refs);
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, credential_id, action, details, content_free
   ) VALUES (
-    straylight_auth.current_user_id(),
-    straylight_auth.current_credential_id(),
+    brunn_auth.current_user_id(),
+    brunn_auth.current_credential_id(),
     'admin.credential.recover',
     jsonb_build_object(
       'target_user_id', p_user_id,
@@ -266,7 +266,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION straylight_auth.admin_provision_user(
+CREATE FUNCTION brunn_auth.admin_provision_user(
   p_external_ref text,
   p_display_name text,
   p_credential_label text,
@@ -282,7 +282,7 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
@@ -298,7 +298,7 @@ DECLARE
   initial_revision_id uuid := gen_random_uuid();
   manifest_id uuid := gen_random_uuid();
 BEGIN
-  PERFORM straylight_auth.require_admin();
+  PERFORM brunn_auth.require_admin();
 
   IF p_external_ref IS NULL OR btrim(p_external_ref) = ''
      OR length(p_external_ref) > 200
@@ -311,51 +311,51 @@ BEGIN
   END IF;
 
   IF EXISTS (
-    SELECT 1 FROM straylight.users WHERE external_ref = p_external_ref
+    SELECT 1 FROM brunn.users WHERE external_ref = p_external_ref
   ) THEN
     RAISE EXCEPTION 'external_ref already exists'
       USING ERRCODE = '23505';
   END IF;
 
-  INSERT INTO straylight.users (external_ref, display_name)
+  INSERT INTO brunn.users (external_ref, display_name)
   VALUES (p_external_ref, p_display_name)
   RETURNING id INTO created_user_id;
 
   SELECT id INTO root_scope_id
-  FROM straylight.scopes
+  FROM brunn.scopes
   WHERE user_id = created_user_id AND scope_ref = 'scope:root';
 
   SELECT id INTO default_policy_id
-  FROM straylight.policies
+  FROM brunn.policies
   WHERE user_id = created_user_id AND is_default;
 
-  INSERT INTO straylight.api_credentials (
+  INSERT INTO brunn.api_credentials (
     user_id, label, token_hash, capabilities
   ) VALUES (
     created_user_id, p_credential_label, p_token_hash, owner_capabilities
   )
   RETURNING id INTO created_credential_id;
 
-  INSERT INTO straylight.credential_scope_grants (
+  INSERT INTO brunn.credential_scope_grants (
     credential_id, user_id, scope_id
   ) VALUES (
     created_credential_id, created_user_id, root_scope_id
   );
 
-  INSERT INTO straylight.corpus_revisions (
+  INSERT INTO brunn.corpus_revisions (
     id, user_id, scope_id, parent_revision_id, revision_number, manifest_hash
   ) VALUES (
     initial_revision_id, created_user_id, root_scope_id, NULL, 1, p_empty_manifest_hash
   );
 
-  INSERT INTO straylight.active_manifests (
+  INSERT INTO brunn.active_manifests (
     id, user_id, scope_id, active_corpus_revision_id, manifest_hash, generation
   ) VALUES (
     manifest_id, created_user_id, root_scope_id,
     initial_revision_id, p_empty_manifest_hash, 1
   );
 
-  INSERT INTO straylight.active_manifest_history (
+  INSERT INTO brunn.active_manifest_history (
     id, user_id, scope_id, manifest_id, generation, corpus_revision_id,
     manifest_hash, change_kind
   ) VALUES (
@@ -363,11 +363,11 @@ BEGIN
     initial_revision_id, p_empty_manifest_hash, 'initial'
   );
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, credential_id, action, details, content_free
   ) VALUES (
-    straylight_auth.current_user_id(),
-    straylight_auth.current_credential_id(),
+    brunn_auth.current_user_id(),
+    brunn_auth.current_credential_id(),
     'admin.user.provision',
     jsonb_build_object(
       'target_user_id', created_user_id,
@@ -385,24 +385,24 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION straylight_auth.require_admin() FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight_auth.admin_issue_credential(
+REVOKE ALL ON FUNCTION brunn_auth.require_admin() FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn_auth.admin_issue_credential(
   uuid, text, text, text[], text[]
 ) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight_auth.admin_provision_user(
+REVOKE ALL ON FUNCTION brunn_auth.admin_provision_user(
   text, text, text, text, text
 ) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION straylight_auth.require_admin() TO app_rw;
-GRANT EXECUTE ON FUNCTION straylight_auth.admin_issue_credential(
+GRANT EXECUTE ON FUNCTION brunn_auth.require_admin() TO app_rw;
+GRANT EXECUTE ON FUNCTION brunn_auth.admin_issue_credential(
   uuid, text, text, text[], text[]
 ) TO app_rw;
-GRANT EXECUTE ON FUNCTION straylight_auth.admin_provision_user(
+GRANT EXECUTE ON FUNCTION brunn_auth.admin_provision_user(
   text, text, text, text, text
 ) TO app_rw;
 
-COMMENT ON TABLE straylight.user_usage_daily IS
+COMMENT ON TABLE brunn.user_usage_daily IS
   'Per-user UTC quota counters. Reservations fail closed and are never used for retrieval ranking.';
-COMMENT ON TABLE straylight.account_exports IS
+COMMENT ON TABLE brunn.account_exports IS
   'Asynchronous complete user export packages with short-lived object storage.';
-COMMENT ON TABLE straylight.account_deletion_requests IS
+COMMENT ON TABLE brunn.account_deletion_requests IS
   'Auditable account deletion orchestration including bounded backup-retention completion.';

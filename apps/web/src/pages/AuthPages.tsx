@@ -34,10 +34,10 @@ function AuthLayout({
   return (
     <main className="login-layout">
       <section className="login-panel" aria-labelledby="auth-title">
-        <div className="brand brand-login" aria-label="Straylight">
-          <img className="brand-mark" src="/straylight-mark.png" alt="" aria-hidden="true" />
+        <div className="brand brand-login" aria-label="Brunn">
+          <img className="brand-mark" src="/brunn-mark.png" alt="" aria-hidden="true" />
           <div>
-            <strong>Straylight</strong>
+            <strong>brunn</strong>
             <span>Memory &amp; briefings</span>
           </div>
         </div>
@@ -351,7 +351,7 @@ export function ResetPasswordPage() {
   }
 
   return (
-    <AuthLayout title="Choose a new password" description="Set a new password for your Straylight account.">
+    <AuthLayout title="Choose a new password" description="Set a new password for your Brunn account.">
       <form className="auth-form" onSubmit={submit} aria-busy={resetMutation.isPending} noValidate>
         <PasswordField
           id="new-password"
@@ -420,7 +420,7 @@ function loginErrorMessage(error: unknown): string {
     if (error.status === 401) return "The email or password is incorrect.";
     if (error.status === 400) return "Enter a valid email address.";
     if (error.status === 429) return "Too many sign-in attempts. Wait a moment and try again.";
-    if (error.status === 0) return "Straylight could not be reached. Check your connection and try again.";
+    if (error.status === 0) return "Brunn could not be reached. Check your connection and try again.";
   }
   return "Sign-in is temporarily unavailable. Try again shortly.";
 }
@@ -428,7 +428,7 @@ function loginErrorMessage(error: unknown): string {
 function recoveryErrorMessage(error: unknown, action: "request" | "reset"): string {
   if (error instanceof ApiError) {
     if (error.status === 429) return "Too many requests. Wait a moment and try again.";
-    if (error.status === 0) return "Straylight could not be reached. Check your connection and try again.";
+    if (error.status === 0) return "Brunn could not be reached. Check your connection and try again.";
     if (
       action === "reset"
       && (error.code === "invalid_password_reset" || [401, 404, 410].includes(error.status))

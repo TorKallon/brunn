@@ -6,17 +6,17 @@ import { appendFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { z } from "zod/v4";
 
-import { type ApiResponse, StraylightApiClient, StraylightApiError } from "./api-client.js";
+import { type ApiResponse, BrunnApiClient, BrunnApiError } from "./api-client.js";
 import { registerMessagingTools } from "./messaging-tools.js";
 import { compactReasoningResponse } from "./reasoning-view.js";
 
 const reference = z.string().min(1);
 const entryReference = z.string()
   .regex(/^entry:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
-  .describe("Exact entry:... reference copied from a Straylight response; never infer or invent one.");
+  .describe("Exact entry:... reference copied from a Brunn response; never infer or invent one.");
 const assetReference = z.string()
   .regex(/^entry:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
-  .describe("Exact entry:... binary reference copied from a Straylight response.");
+  .describe("Exact entry:... binary reference copied from a Brunn response.");
 const jsonObject = z.record(z.string(), z.unknown());
 const MAX_CHECKPOINT_BYTES = 4 * 1024 * 1024;
 const MAX_CHECKPOINT_ITEMS = 4_096;
@@ -47,7 +47,7 @@ const checkpointState = z.object({
     .max(100)
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u)
     .optional()
-    .describe("Optional registered Straylight project slug for durable checkpoint linkage."),
+    .describe("Optional registered Brunn project slug for durable checkpoint linkage."),
   current_state: z.union([
     checkpointText,
     z.array(checkpointText).max(MAX_CHECKPOINT_ITEMS),
@@ -205,7 +205,7 @@ const notificationTarget = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("entry"),
     entry_ref: z.string().min(1).max(500).describe(
-      "Exact entry:... reference returned by Straylight; never infer one from a title or path.",
+      "Exact entry:... reference returned by Brunn; never infer one from a title or path.",
     ),
   }),
 ]);
@@ -381,7 +381,7 @@ const contextOperation = z.union([
     description: z.string().min(1).max(1_000).optional(),
     source: taskWriteSource,
     confirm_new: z.boolean().default(false).describe(
-      "Leave false initially. Set true only after Straylight returns suggested_existing and the owner confirms a new context.",
+      "Leave false initially. Set true only after Brunn returns suggested_existing and the owner confirms a new context.",
     ),
     idempotency_key: taskIdempotencyKey,
   }).strict(),
@@ -450,10 +450,10 @@ const taskSettingsOperation = z.union([
 function createReadItem(maxChars: number) {
   return z.object({
     ref: reference.optional().describe(
-      "Exact record reference copied verbatim from a CarryState response. Never infer or invent a reference.",
+      "Exact record reference copied verbatim from a Brunn State response. Never infer or invent a reference.",
     ),
     path: z.string().min(1).optional().describe(
-      "Exact source path copied verbatim from a CarryState response. Never synthesize a filename from a title or topic.",
+      "Exact source path copied verbatim from a Brunn State response. Never synthesize a filename from a title or topic.",
     ),
     view: z.enum([
       "current_state",
@@ -470,32 +470,32 @@ function createReadItem(maxChars: number) {
   });
 }
 
-export interface StraylightMcpServerOptions {
+export interface BrunnMcpServerOptions {
   surface?: "local" | "remote";
   includeStructuredContent?: boolean;
   messagingEnabled?: boolean;
   maxReadChars?: number;
 }
 
-export function createStraylightMcpServer(
-  client: StraylightApiClient,
-  options: StraylightMcpServerOptions = {},
+export function createBrunnMcpServer(
+  client: BrunnApiClient,
+  options: BrunnMcpServerOptions = {},
 ): McpServer {
   const surface = options.surface ?? "local";
   const includeStructuredContent = options.includeStructuredContent
-    ?? process.env.STRAYLIGHT_MCP_INCLUDE_STRUCTURED_CONTENT === "1";
+    ?? process.env.BRUNN_MCP_INCLUDE_STRUCTURED_CONTENT === "1";
   const messagingEnabled = options.messagingEnabled
-    ?? process.env.STRAYLIGHT_MESSAGING_ENABLED === "true";
+    ?? process.env.BRUNN_MESSAGING_ENABLED === "true";
   const maxReadChars = options.maxReadChars ?? (surface === "remote" ? 120_000 : 500_000);
   const server = new McpServer({
-    name: "straylight",
+    name: "Brunn",
     version: "0.1.0",
   }, surface === "remote" ? {
     instructions:
-      "Straylight is the durable context store. Start substantive work with memory.open for the actual task, " +
+      "Brunn is the durable context store. Start substantive work with memory.open for the actual task, " +
       "then use memory.query and memory.read only for relevant evidence. Persist source material with " +
       "memory.capture, durable current state or corrections with memory.write, and resumable work with " +
-      "memory.checkpoint. If Straylight is unavailable, fail closed instead of inventing or substituting context.",
+      "memory.checkpoint. If Brunn is unavailable, fail closed instead of inventing or substituting context.",
   } : {});
 
   function registerJsonTool<Shape extends z.ZodRawShape>(
@@ -634,7 +634,7 @@ if (surface === "local") {
       ),
       files: z.array(z.object({
         path: z.string().min(1).describe(
-          "Path below STRAYLIGHT_MCP_IMPORT_ROOT; it is retained as the logical vault path unless name is supplied.",
+          "Path below BRUNN_MCP_IMPORT_ROOT; it is retained as the logical vault path unless name is supplied.",
         ),
         name: z.string().min(1).optional().describe(
           "Optional logical vault path override. This is not merely a basename.",
@@ -653,7 +653,7 @@ if (surface === "local") {
 
 registerJsonTool(
   "document.publish",
-  "Publish or revise a polished, human-facing Markdown document and return its direct Straylight links. " +
+  "Publish or revise a polished, human-facing Markdown document and return its direct Brunn links. " +
   "Use this when the user asks to show, open, or read a plan, document, detailed analysis, vacation " +
   "information, feature specification, or comparable long-form material; the request phrasing is the " +
   "publication trigger. Do not use it for routine replies, raw imports, internal evidence, or uncurated " +
@@ -681,7 +681,7 @@ registerJsonTool(
 
 registerJsonTool(
   "document.get",
-  "Retrieve one intentionally published human-facing Markdown document and its direct Straylight links. " +
+  "Retrieve one intentionally published human-facing Markdown document and its direct Brunn links. " +
   "Omit version for the stable latest document; request a positive version only for an explicit historical " +
   "revision. Return the response's stable `url` field by default instead of an entry reference; return " +
   "`version_url` only for an explicitly requested historical revision.",
@@ -757,7 +757,7 @@ if (surface === "local") {
 
 registerJsonTool(
   "briefing.publish",
-  "Publish or revise one typed briefing edition; Straylight renders the canonical Markdown entry " +
+  "Publish or revise one typed briefing edition; Brunn renders the canonical Markdown entry " +
   "and updates the delivered-story ledger. Republishing the same date and edition revises the " +
   "same entry.",
   {
@@ -809,7 +809,7 @@ registerJsonTool(
 
 registerJsonTool(
   "notification.publish",
-  "Publish one durable user alert for the authenticated owner. Straylight deduplicates by " +
+  "Publish one durable user alert for the authenticated owner. Brunn deduplicates by " +
   "event_key, records the private inbox detail, and independently queues eligible device deliveries.",
   {
     event_key: z.string().min(1).max(200).describe(
@@ -955,7 +955,7 @@ registerJsonTool(
 registerJsonTool(
   "task.corrections",
   "Read a bounded, recent corrections log for enrichment feedback. Consult this before task.capture; "
-  + "Straylight records corrections but never turns them into hidden learned logic.",
+  + "Brunn records corrections but never turns them into hidden learned logic.",
   {
     task_ref: taskRef.optional().describe(
       "Optional exact task_ref filter when reviewing corrections for one task.",
@@ -1238,12 +1238,12 @@ function registerJsonToolOnServer<Shape extends z.ZodRawShape>(
         ...(includeStructuredContent ? { structuredContent: body } : {}),
       };
     } catch (error) {
-      const body = error instanceof StraylightApiError
+      const body = error instanceof BrunnApiError
         ? error.body
         : { error: { code: "adapter_error", message: errorMessage(error) } };
       await traceOperation(
         name,
-        error instanceof StraylightApiError ? error.status : 0,
+        error instanceof BrunnApiError ? error.status : 0,
         0,
         body,
         body,
@@ -1296,13 +1296,13 @@ function registerJsonToolOnServer<Shape extends z.ZodRawShape>(
 }
 
 async function runStdioServer(): Promise<void> {
-  const client = new StraylightApiClient(
-    process.env.STRAYLIGHT_API_URL ?? "http://api:18110",
-    requiredEnvironment("STRAYLIGHT_API_TOKEN"),
+  const client = new BrunnApiClient(
+    process.env.BRUNN_API_URL ?? "http://api:18110",
+    requiredEnvironment("BRUNN_API_TOKEN"),
     fetch,
     evaluationHeaders(),
   );
-  await createStraylightMcpServer(client).connect(new StdioServerTransport());
+  await createBrunnMcpServer(client).connect(new StdioServerTransport());
 }
 
 if (
@@ -1358,11 +1358,11 @@ function serializedUtf8Length(value: unknown): number {
 
 function evaluationHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
-  if (process.env.STRAYLIGHT_EVAL_RUN) {
-    headers["x-straylight-eval-run"] = process.env.STRAYLIGHT_EVAL_RUN;
+  if (process.env.BRUNN_EVAL_RUN) {
+    headers["x-brunn-eval-run"] = process.env.BRUNN_EVAL_RUN;
   }
-  if (process.env.STRAYLIGHT_EVAL_CASE) {
-    headers["x-straylight-eval-case"] = process.env.STRAYLIGHT_EVAL_CASE;
+  if (process.env.BRUNN_EVAL_CASE) {
+    headers["x-brunn-eval-case"] = process.env.BRUNN_EVAL_CASE;
   }
   return headers;
 }
@@ -1374,7 +1374,7 @@ async function traceOperation(
   response: Record<string, unknown>,
   rendered: Record<string, unknown>,
 ): Promise<void> {
-  const tracePath = process.env.STRAYLIGHT_MCP_TRACE_PATH;
+  const tracePath = process.env.BRUNN_MCP_TRACE_PATH;
   if (!tracePath) {
     return;
   }

@@ -1,13 +1,13 @@
-# Hosted ChatGPT and Claude access
+# Brunn hosted ChatGPT and Claude access
 
 Status: production gateway live; ChatGPT Chat/Work account setup and mobile use
 supported when the plugin is available to the account; Claude account install
 pending its required interactive approval, 2026-08-27
 
-Straylight exposes one authenticated Streamable HTTP MCP resource at:
+Brunn exposes one authenticated Streamable HTTP MCP resource at:
 
 ```text
-https://straylight.rourkem.com/mcp
+https://brunn.ai/mcp
 ```
 
 The same endpoint is used for ChatGPT Chat, Work, and Claude custom connectors.
@@ -22,20 +22,20 @@ authorization code flow, S256 PKCE, dynamic client registration, RFC 8707
 resource binding, and RFC 9728 protected-resource metadata.
 
 The MCP route permits browser access only from the exact HTTPS origins in
-`STRAYLIGHT_MCP_ALLOWED_ORIGINS`. Requests without an `Origin` remain valid for
+`BRUNN_MCP_ALLOWED_ORIGINS`. Requests without an `Origin` remain valid for
 non-browser MCP clients. Browser preflights run before bearer authentication,
 and authenticated or 401 responses expose only the MCP session and OAuth
 challenge headers required by browser clients. Protected-resource metadata is
 public and remains readable from any origin.
 
-Every product gets a distinct Straylight `read_write` credential scoped to
+Every product gets a distinct Brunn `read_write` credential scoped to
 `scope:root`. The approval page rejects read-only credentials and owner tokens
 with `admin` or `credential:manage`. It verifies a pasted credential through
 `/v1/me`, does not persist or log it, and returns only encrypted gateway access
-and refresh tokens to the connector. Revoking the dedicated Straylight
+and refresh tokens to the connector. Revoking the dedicated Brunn
 credential revokes its actual data access without affecting another client.
 
-The persistent `STRAYLIGHT_MCP_SEALING_KEY` is a 32-byte random Railway secret.
+The persistent `BRUNN_MCP_SEALING_KEY` is a 32-byte random Railway secret.
 Rotating it invalidates all remote registrations and sessions. Preserve it
 across ordinary deployments.
 
@@ -78,10 +78,10 @@ The service requires:
 
 ```text
 PORT=8080
-STRAYLIGHT_API_URL=http://api.railway.internal:8080
-STRAYLIGHT_MCP_PUBLIC_URL=https://straylight.rourkem.com
-STRAYLIGHT_MCP_ALLOWED_ORIGINS=https://chatgpt.com,https://claude.ai,https://straylight.rourkem.com
-STRAYLIGHT_MCP_SEALING_KEY=<base64 for exactly 32 random bytes>
+BRUNN_API_URL=http://api.railway.internal:8080
+BRUNN_MCP_PUBLIC_URL=https://brunn.ai
+BRUNN_MCP_ALLOWED_ORIGINS=https://chatgpt.com,https://claude.ai,https://brunn.ai
+BRUNN_MCP_SEALING_KEY=<base64 for exactly 32 random bytes>
 ```
 
 Deploy `mcp` before `web`, then verify health, discovery, an unauthenticated
@@ -93,10 +93,10 @@ not print or persist it:
 
 ```bash
 cd apps/mcp
-STRAYLIGHT_REMOTE_TOKEN="$(security find-generic-password -s straylight.rourkem.com -a CLIENT_ACCOUNT -w)" \
-STRAYLIGHT_REMOTE_LABEL="client label" \
-STRAYLIGHT_REMOTE_CANARY_PATH="operations/canaries/client.md" \
-STRAYLIGHT_REMOTE_MARKER="UNIQUE_MARKER" \
+BRUNN_REMOTE_TOKEN="$(security find-generic-password -s brunn.ai -a CLIENT_ACCOUNT -w)" \
+BRUNN_REMOTE_LABEL="client label" \
+BRUNN_REMOTE_CANARY_PATH="operations/canaries/client.md" \
+BRUNN_REMOTE_MARKER="UNIQUE_MARKER" \
 node scripts/remote-canary.mjs
 ```
 
@@ -111,7 +111,7 @@ account- or policy-dependent.
 This creates the cloud/account connection used by new Chat and Work
 conversations. OpenAI documents account-available plugins as usable on mobile,
 although web/desktop are the documented browse and install surfaces. On the
-same account, open a new mobile Chat or Work conversation and select Straylight
+same account, open a new mobile Chat or Work conversation and select Brunn
 from Plugins or `@` autocomplete. A local Codex stdio configuration or a local
 plugin-creator personal-marketplace entry does not create this account-level
 connection and is not a mobile provisioning path.
@@ -124,7 +124,7 @@ tool access to always available when the client offers that setting.
 Anthropic's supported prefilled installer is:
 
 ```text
-https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Straylight&connectorUrl=https%3A%2F%2Fstraylight.rourkem.com%2Fmcp
+https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Brunn&connectorUrl=https%3A%2F%2Fbrunn.ai%2Fmcp
 ```
 
 It may be opened on any device with the intended Claude account. Anthropic

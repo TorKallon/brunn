@@ -3,14 +3,14 @@ use sha2::{Digest, Sha256};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use uuid::Uuid;
 
-use straylight::{document_service::get_document_in_tx, error::ApiError};
+use brunn::{document_service::get_document_in_tx, error::ApiError};
 
 async fn connect_test_pool() -> Option<PgPool> {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping document endpoint test");
+        eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping document endpoint test");
         return None;
     };
     let pool = PgPoolOptions::new()
@@ -21,13 +21,13 @@ async fn connect_test_pool() -> Option<PgPool> {
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .expect("apply Straylight migrations");
+        .expect("apply Brunn migrations");
     Some(pool)
 }
 
 async fn insert_test_user(pool: &PgPool) -> Uuid {
     let user_id = Uuid::now_v7();
-    sqlx::query("INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
         .bind(user_id)
         .bind(format!("document-endpoint-test:{user_id}"))
         .bind("Document endpoint test")
@@ -48,7 +48,7 @@ async fn insert_entry_version(
     let mut tx = pool.begin().await.expect("begin entry insert");
     sqlx::query(
         r#"
-        INSERT INTO straylight.entries (
+        INSERT INTO brunn.entries (
           id,user_id,path,title,kind,media_type,current_version
         ) VALUES ($1,$2,'Documents/trip-plan.md','Trip plan','markdown','text/markdown',$3)
         ON CONFLICT (user_id,(lower(normalize(path, NFC)))) DO UPDATE
@@ -63,7 +63,7 @@ async fn insert_entry_version(
     .expect("insert or advance entry");
     sqlx::query(
         r#"
-        INSERT INTO straylight.entry_versions (
+        INSERT INTO brunn.entry_versions (
           id,user_id,entry_id,version,content_sha256,content,size_bytes,metadata
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
         "#,
@@ -133,15 +133,9 @@ async fn reads_only_marked_history_and_unmarked_current_head_unpublishes() {
     .await;
 
     let mut tx = pool.begin().await.expect("begin hidden-head read");
-    let error = get_document_in_tx(
-        &mut tx,
-        user_id,
-        "https://straylight.example",
-        "trip-plan",
-        None,
-    )
-    .await
-    .expect_err("an unmarked current head must unpublish the stable route");
+    let error = get_document_in_tx(&mut tx, user_id, "https://brunn.example", "trip-plan", None)
+        .await
+        .expect_err("an unmarked current head must unpublish the stable route");
     assert!(matches!(
         error,
         ApiError::Public {
@@ -151,22 +145,16 @@ async fn reads_only_marked_history_and_unmarked_current_head_unpublishes() {
     ));
     tx.rollback().await.expect("rollback hidden-head read");
 
-    sqlx::query("UPDATE straylight.entries SET current_version=3 WHERE user_id=$1 AND id=$2")
+    sqlx::query("UPDATE brunn.entries SET current_version=3 WHERE user_id=$1 AND id=$2")
         .bind(user_id)
         .bind(entry_id)
         .execute(&pool)
         .await
         .expect("restore marked current head");
     let mut tx = pool.begin().await.expect("begin document reads");
-    let current = get_document_in_tx(
-        &mut tx,
-        user_id,
-        "https://straylight.example",
-        "trip-plan",
-        None,
-    )
-    .await
-    .expect("current document loads");
+    let current = get_document_in_tx(&mut tx, user_id, "https://brunn.example", "trip-plan", None)
+        .await
+        .expect("current document loads");
     assert_eq!(current["version"], 3);
     assert_eq!(current["current_version"], 3);
     assert_eq!(current["body_md"], "Current body.");
@@ -183,13 +171,13 @@ async fn reads_only_marked_history_and_unmarked_current_head_unpublishes() {
     );
     assert_eq!(
         current["version_url"],
-        "https://straylight.example/documents/trip-plan?version=3",
+        "https://brunn.example/documents/trip-plan?version=3",
     );
 
     let historical = get_document_in_tx(
         &mut tx,
         user_id,
-        "https://straylight.example",
+        "https://brunn.example",
         "trip-plan",
         Some(2),
     )
@@ -201,7 +189,7 @@ async fn reads_only_marked_history_and_unmarked_current_head_unpublishes() {
         let error = get_document_in_tx(
             &mut tx,
             reader,
-            "https://straylight.example",
+            "https://brunn.example",
             "trip-plan",
             version,
         )

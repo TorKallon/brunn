@@ -7,7 +7,7 @@ own Dxx implementation and status exposure
 
 Every experiment runs from a clean detached worktree at one immutable full
 revision. One coordinator builds the shared local image once; agents must not
-rebuild the static `straylight-api:local` tag concurrently. Every subsequent
+rebuild the static `brunn-api:local` tag concurrently. Every subsequent
 Compose command uses `--no-build`, a unique project name, and a private env
 file/port allocation:
 
@@ -156,7 +156,7 @@ One narrow exception exists for a predeclared longitudinal extension such as
 E04. Supply both
 `--case-extension-plan eval/e04_case_extension_plan.json` and its frozen
 `--case-extension-plan-sha256
-5a50d84dafdd8dacd845e99e19b3146f26feacafc2bafb82f5aa1b89dde0843a`.
+13a4a41c3dc123c91e83e0006e98704d88e3fccafc7f32c998941c415c77e275`.
 The aggregator verifies the plan file hash, each exact parent-manifest hash and
 raw case list, the manifest's ordered active-case base list, the strict
 extension subset, and the declared base/extension draw counts. Retired cases
@@ -184,7 +184,7 @@ strict-majority collapsed across draws before the exact one-sided test.
 
 E04's checker reads the saved `service_operations[].source_paths`; answer
 citations do not count as returned context. It emits
-`straylight-accepted-source-context-audit@v1`:
+`brunn-accepted-source-context-audit@v1`:
 
 ```bash
 python3 eval/audit_accepted_sources.py \

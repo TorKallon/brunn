@@ -206,7 +206,7 @@ class CheckpointQueryDiagnosticTest(unittest.TestCase):
                 data = ready.body["data"]
                 data["runtime_features"]["semantic_lane"] = False
                 data["embedding_provider"] = "hashing"
-                data["embedding_model"] = "straylight-hashing-v1"
+                data["embedding_model"] = "brunn-hashing-v1"
                 data["dependencies"]["embeddings"] = "degraded"
                 return ready
 
@@ -230,7 +230,7 @@ class CheckpointQueryDiagnosticTest(unittest.TestCase):
                 data = ready.body["data"]
                 data["runtime_features"]["semantic_lane"] = False
                 data["embedding_provider"] = "hashing"
-                data["embedding_model"] = "straylight-hashing-v1"
+                data["embedding_model"] = "brunn-hashing-v1"
                 data["dependencies"]["embeddings"] = "degraded"
                 if self.field == "embeddings":
                     data["dependencies"]["embeddings"] = self.value

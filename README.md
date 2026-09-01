@@ -1,10 +1,13 @@
-# Straylight
+# Brunn
 
-Straylight is an agent-first workspace and memory layer. It gives agents a
+Brunn is an agent-first workspace and memory layer. It gives agents a
 source-preserving place to learn, resume complex work, inspect artifacts,
 reason across changing state, and leave useful durable checkpoints. The core
 product is a multi-user online workspace with exact entry versions and a cheap
 change cursor, not a globally snapshot-isolated database.
+
+Pronounced **brunn** — one syllable, /brʊn/. The name comes from Old Norse
+*brunnr*, “well”: a place where durable memory is held and drawn up again.
 
 The product stack is Rust, PostgreSQL with pgvector, versioned S3-compatible
 object storage, OpenAI text embeddings, a TypeScript SPA, and a typed
@@ -27,7 +30,7 @@ operator/test host, not a pilot or second production workspace.
 The verified history, exact fresh source overlay, current agent memory, and an
 additional dormant Aether backup corpus are imported and replay-verified.
 Codex and Aether/OpenClaw passed production canaries and are configured
-Straylight-only. The final web and permanent one-replica worker deployments
+Brunn-only. The final web and permanent one-replica worker deployments
 pass. All 12,727 queued jobs completed with zero queued, running, or failed;
 126,536 search chunks have zero missing embeddings. The database volume is now
 20 GB with 13.6 GiB free. A restore drill was environment-blocked before
@@ -38,7 +41,7 @@ aggregate status is recorded in
 ## Start the local alpha
 
 ```bash
-cd /Users/Shared/projects/straylight
+cd /Users/Shared/projects/brunn
 cp .env.example .env
 # Replace every placeholder in .env, then keep it private.
 chmod 600 .env
@@ -65,7 +68,10 @@ tailnet-accessible human surface.
 - `apps/web`: TypeScript/React audit and control SPA
 - `apps/mcp`: typed local stdio adapter plus the OAuth-protected hosted MCP
   gateway used by account-level ChatGPT and Claude connectors
+- `apps/ios`: native SwiftUI client, shared Brunn types, and XcodeGen project
 - `infra`: Postgres role initialization and pinned MinIO build/policy
+- `deploy`: hosted-service configuration, including Railway and Datadog Agent
+- `assets/brand`: canonical Night Signal masters and selection reference
 - `docs/Brand.md`: the Night Signal design system — identity, color tokens,
   typography, motifs, and platform mappings; every UI change on any surface
   (web SPA, iOS app, future clients) must follow it
@@ -78,6 +84,7 @@ tailnet-accessible human surface.
 - `docs/Operations.md`: local operation, verification, and evaluation
 - `eval`: frozen main, Rupture Ops, personal coordination, and transition suites
 - `tests`: deterministic harness tests and destructive live API smoke
+- `.github/workflows`: CI, integration, and supply-chain verification
 
 ## Verify
 
@@ -112,8 +119,8 @@ revision, prior-source, delta-source, and checkpoint lineage. This does not
 prove perfect parity, but it found no material retrieval-driven degradation.
 RuptureOps context overfetch remains the leading quality risk.
 
-Mean uncached model input was 24,260 tokens for simplified Straylight, 24,092
-for legacy Straylight, and 25,168 for direct Markdown. The simplified path is
+Mean uncached model input was 24,260 tokens for simplified Brunn, 24,092
+for legacy Brunn, and 25,168 for direct Markdown. The simplified path is
 effectively tied with legacy and 3.6% below files.
 
 At the accumulated 3,340-entry production reproduction, the legacy service
@@ -128,8 +135,8 @@ See `results/2026-07-27-simplification-final-evaluation.md`.
 ### 2026-07-23 alpha hardening candidate (historical)
 
 The complete post-hardening run recovered 179/180 deterministic claims through
-Straylight versus 175/180 through direct files. Across 45 paired cases,
-Straylight used 0.7% more cumulative input, 11.8% less uncached input, and
+Brunn versus 175/180 through direct files. Across 45 paired cases,
+Brunn used 0.7% more cumulative input, 11.8% less uncached input, and
 15.1% fewer agent tool calls. The single strict miss contained every required
 fact and source but placed two facts in adjacent claim slots.
 
@@ -155,16 +162,16 @@ mix. The full HTTP representation remains the audit view.
 The pre-change state is commit `10787b1`. Its API and web images, exact API
 executable, deployed web bundle, MCP distribution, Compose file, checksums, and
 image archive are preserved under
-`/Users/Shared/projects/straylight-baselines/20260722T222352-0700-10787b1`.
+`/Users/Shared/projects/brunn-baselines/20260722T222352-0700-10787b1`.
 
-| Suite | Filesystem | Native Straylight |
+| Suite | Filesystem | Native Brunn |
 | --- | ---: | ---: |
 | Main active work | 13/13 cases, 52/52 claims | **13/13, 52/52** |
 | Personal coordination | 14/15, 59/60 | **15/15, 60/60** |
 | Rupture Ops | 12/12, 48/48 | **12/12, 48/48** |
 | Changed-evidence transitions | 5/5, 20/20 | **5/5, 20/20** |
 
-Across the 40 ordinary cards, final Straylight passes 40/40 cases and 160/160
+Across the 40 ordinary cards, final Brunn passes 40/40 cases and 160/160
 claims. Regraded with the same matcher, the saved pre-change service run passed
 38/40 and 158/160. Average API calls fell from 3.53 to 2.72 (-23%),
 model-visible service output from 47,177
@@ -173,7 +180,7 @@ to 32,623 characters (-31%), cumulative input from 138,414 to 115,319 tokens
 fresh-agent runs, so they establish the aggregate outcome rather than assigning
 every individual movement to one retrieval change.
 
-Against the fresh filesystem run, final Straylight uses 10.7% more cumulative
+Against the fresh filesystem run, final Brunn uses 10.7% more cumulative
 input because tool-result history is replayed into later cached turns, but
 12.3% less uncached input. Its model-visible service output is 79.5% exact
 source text and 20.5% metadata. The filesystem personal miss is a mechanically
@@ -201,10 +208,10 @@ Current result files:
 
 The v0.3 transition suite is the current decisive gate. It starts from a persisted revision-N checkpoint, adds one revision-N+1 evidence or constraint delta, and asks a genuinely fresh agent to advance the work and commit a source-preserving child checkpoint.
 
-Five cards cover Warmind, Charlemagne, Star Rupture, Switzerland, and Straylight. The comparison is:
+Five cards cover Warmind, Charlemagne, Star Rupture, Switzerland, and Brunn. The comparison is:
 
 1. **Filesystem rebuild:** prior checkpoint, full frozen corpus, and delta through ordinary files.
-2. **Straylight checkpoint resume:** snapshot-pinned `open`, optional batched hybrid retrieval/read, and an immutable child checkpoint.
+2. **Brunn checkpoint resume:** snapshot-pinned `open`, optional batched hybrid retrieval/read, and an immutable child checkpoint.
 
 ```bash
 python3 transition_eval.py validate
@@ -219,7 +226,7 @@ python3 transition_eval.py run \
 Current result:
 
 - Both conditions pass 5/5 cards and 20/20 claims.
-- Native Straylight commits 5/5 correctly linked, source-preserving child
+- Native Brunn commits 5/5 correctly linked, source-preserving child
   checkpoints.
 - Native resume averages 75,013 cumulative input tokens versus 97,105 for
   filesystem reconstruction, 20,126 uncached tokens versus 22,456, and 2.8
@@ -242,14 +249,14 @@ The primary v0.2 suite compares three access surfaces:
 
 1. **Fixed handoff pack:** one task-specific context file with no follow-up access.
 2. **Filesystem agent:** the frozen corpus with ordinary search, file reads, and scripts.
-3. **Straylight workspace agent:** `open`, `query`, exact `read`, ordinary
+3. **Brunn workspace agent:** `open`, `query`, exact `read`, ordinary
    `write`/`capture`, and persistent `checkpoint` operations. Computation and
    verification use the agent's native tools after source retrieval.
 
-The frozen corpus contains 73 notes and text artifacts from Warmind, Charlemagne, Star Rupture, Switzerland trip planning, Straylight, Metis, N24 RaceWatch, and Home Network Improvements. The 14 tasks score 56 claims across continuation, learning, supersession, incident work, quantitative planning, source authority, constraint changes, artifact safety, and trust-aware handoffs.
+The frozen corpus contains 73 notes and text artifacts from Warmind, Charlemagne, Star Rupture, Switzerland trip planning, Brunn, Metis, N24 RaceWatch, and Home Network Improvements. The 14 tasks score 56 claims across continuation, learning, supersession, incident work, quantitative planning, source authority, constraint changes, artifact safety, and trust-aware handoffs.
 
 ```bash
-cd /Users/Shared/projects/straylight
+cd /Users/Shared/projects/brunn
 python3 -m unittest discover -s tests -v
 python3 agent_work_eval.py validate
 python3 agent_work_eval.py run \
@@ -263,7 +270,7 @@ python3 agent_work_eval.py run \
 ### Result
 
 - Filesystem: 12/14 cases and 55/56 claims.
-- Native Straylight: 14/14 cases, 56/56 claims, and 14/14 persisted
+- Native Brunn: 14/14 cases, 56/56 claims, and 14/14 persisted
   checkpoints.
 - Native used 38.3K mean uncached input versus 34.1K for filesystem access,
   while returning 128.7K recorded command characters versus 348.5K.
@@ -288,7 +295,7 @@ baseline while adding 12 cards and 48 claims.
 This is a concrete fixture for the generalized **subject-plus-product** work
 model: learn a subject, track one changing instance, maintain goals and
 decisions, build durable artifacts or applications, and verify the resulting
-work. Game-specific entities remain fixture data rather than core Straylight
+work. Game-specific entities remain fixture data rather than core Brunn
 types. The cards cover:
 
 - lossless archive import, deduplication, and selective promotion;
@@ -307,7 +314,7 @@ artifacts plus retained binary map, icon, and audio assets for a future
 multimodal lane. The current scored cards do not require binary interpretation.
 
 ```bash
-cd /Users/Shared/projects/straylight
+cd /Users/Shared/projects/brunn
 python3 agent_work_eval.py --manifest eval/rupture_ops_cases.json validate
 python3 agent_work_eval.py --manifest eval/rupture_ops_cases.json run \
   --filesystem-native \
@@ -317,7 +324,7 @@ python3 agent_work_eval.py --manifest eval/rupture_ops_cases.json run \
   --report results/2026-07-12-native-rupture-regraded-v1.md
 ```
 
-Result: filesystem passed 6/12 cases and 41/48 claims; native Straylight
+Result: filesystem passed 6/12 cases and 41/48 claims; native Brunn
 passed 11/12 and 47/48 and persisted 12/12 checkpoints.
 
 Primary files:
@@ -362,7 +369,7 @@ python3 agent_work_eval.py --manifest eval/personal_coordination_cases.json run 
   --out results/2026-07-12-native-personal-regraded-v1.json
 ```
 
-Result: filesystem passed 13/15 cases and 58/60 claims; native Straylight
+Result: filesystem passed 13/15 cases and 58/60 claims; native Brunn
 passed 14/15 and 59/60, persisted 14/14 eligible checkpoints, and persisted
 none for the read-only card.
 
@@ -377,8 +384,8 @@ Primary files:
 The earlier deterministic harness remains as a narrower regression test for evidence availability. It compares direct file selection, a one-shot context pack, and a deterministic workspace policy over 20 questions and 53 evidence items.
 
 ```bash
-python3 straylight_eval.py validate --vault eval/corpus-v0.1
-python3 straylight_eval.py run \
+python3 brunn_eval.py validate --vault eval/corpus-v0.1
+python3 brunn_eval.py run \
   --vault eval/corpus-v0.1 \
   --baseline results/2026-07-10-v0.1.json \
   --out results/2026-07-10-v0.2.json
@@ -388,12 +395,15 @@ The retrieval lane is not the product evaluation. Its tuned workspace, direct, a
 
 ## Frozen data
 
-- Agent-work corpus SHA-256: `b08ded20cdc2f1437da8cc0db5b217de0f84e89a33814995307fd81681be0bc2`
-- Rupture Ops indexed-corpus SHA-256: `aa9c33e39777f0899dacecee61a94f5fd11ec1315f7a6e820a41bc217e1a9803`
-- Rupture Ops full artifact-tree SHA-256: `aa434eb3ffd5f4b6b9c766000d34ec6c30fd14b5ec6f94a4ff625306396b7b50`
-- Personal coordination manifest SHA-256: `af92c68c6ac5abefb0d93d42d4445ab3cd3616b8b1283292125cc5a946aa77a6`
-- Personal coordination indexed-corpus SHA-256: `1f2d62e8f27d2309bdb9353ff349277e038a58b4753c6f3199fd608e9c97ff18`
-- Personal coordination artifact-tree SHA-256: `1f2d62e8f27d2309bdb9353ff349277e038a58b4753c6f3199fd608e9c97ff18`
-- Retrieval corpus SHA-256: `7e92b3cc21ff20c80964e89d84eb44aad0bb38b4b7d5fe70105850ce8455c1bf`
+- Agent-work manifest SHA-256: `1479abf13d157d843bdfbba9a7ccb80c7821935f1747f6bf5e1af6f92f26273d`
+- Agent-work indexed-corpus SHA-256: `c6ead8b64fd859d6fcf187e15593d8829d3c82efead51488c4eb98533ec6096c`
+- Agent-work artifact-tree SHA-256: `c14ed7d0800e47088c6282d87e315738a92e228a9a669420dd4a49a77410cbfa`
+- Rupture Ops manifest SHA-256: `5a55ce52ba88d5fd286b22fe92a2013762789c09ee98a9ac24cdc858a08371a2`
+- Rupture Ops indexed-corpus SHA-256: `f58627c8c1c1a4d50044ca946ab7a909722914a287a3e040dde3867417a725fe`
+- Rupture Ops full artifact-tree SHA-256: `ec693c7f31481a70d07754b2eaa2b6a1ca09114954f653db151fa4fe10fc6a37`
+- Personal coordination manifest SHA-256: `b6482bfc873a967f470985019afff5ef3b23df00de106cc0f38de3438ee60ece`
+- Personal coordination indexed-corpus SHA-256: `b481b734c73e73242553cd16df6f698dffb311258ab643a2741c40ff229352ea`
+- Personal coordination artifact-tree SHA-256: `b481b734c73e73242553cd16df6f698dffb311258ab643a2741c40ff229352ea`
+- Retrieval corpus SHA-256: `86d5865077cec0b98f418b93b87ca847b04ee06cc492aad3b46f12fd0a52d822`
 
 These fixtures contain local personal and project context selected for evaluation. Review them before publishing or moving this directory to a remote repository.

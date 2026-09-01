@@ -1,4 +1,4 @@
-//! The dreamer's HTTP client for the Straylight API.
+//! The dreamer's HTTP client for the Brunn API.
 //!
 //! The dreamer shares this crate's code but never its database authority:
 //! every workspace effect goes through the public API. Two tokens exist —

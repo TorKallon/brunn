@@ -12,7 +12,7 @@ use tower::ServiceExt;
 use url::Url;
 use uuid::Uuid;
 
-use straylight::{AppState, Config, auth::hash_token, router};
+use brunn::{AppState, Config, auth::hash_token, router};
 
 const MESSAGING_ROOT: &str = "/v1/workspace/messaging";
 const CLIENT_KEY_PREFIX: &str = "01ARZ3NDEKTSV4RRFFQ69G5FA";
@@ -43,11 +43,11 @@ fn database_url_as_role(database_url: &str, role: &str) -> String {
 }
 
 async fn connect_test_state() -> Option<(PgPool, AppState)> {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping messaging endpoint contract");
+        eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping messaging endpoint contract");
         return None;
     };
 
@@ -59,11 +59,11 @@ async fn connect_test_state() -> Option<(PgPool, AppState)> {
     sqlx::migrate!("./migrations")
         .run(&seed_pool)
         .await
-        .expect("apply Straylight migrations");
+        .expect("apply Brunn migrations");
 
     // The endpoint contract intentionally uses the production router and AppState.
     // Its isolated-stack invocation supplies the normal disposable object-store
-    // configuration in addition to STRAYLIGHT_TEST_DATABASE_URL.
+    // configuration in addition to BRUNN_TEST_DATABASE_URL.
     let mut config = Config::from_env().expect("load disposable API configuration");
     let app_database_url = database_url_as_role(&database_url, "app_rw");
     config.database_url_rw = app_database_url.clone();
@@ -81,14 +81,14 @@ async fn connect_test_state() -> Option<(PgPool, AppState)> {
 async fn insert_user(pool: &PgPool, label: &str) -> (Uuid, Uuid) {
     let user_id = Uuid::now_v7();
     let scope_id = Uuid::now_v7();
-    sqlx::query("INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
         .bind(user_id)
         .bind(format!("messaging-endpoint-test:{label}:{user_id}"))
         .bind(format!("Messaging endpoint {label}"))
         .execute(pool)
         .await
         .expect("insert messaging endpoint user");
-    sqlx::query("INSERT INTO straylight.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO brunn.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)")
         .bind(scope_id)
         .bind(user_id)
         .bind(format!("scope:messaging-endpoint-{scope_id}"))
@@ -114,7 +114,7 @@ async fn insert_credential(
         .collect::<Vec<_>>();
     sqlx::query(
         r#"
-        INSERT INTO straylight.api_credentials (
+        INSERT INTO brunn.api_credentials (
           id,user_id,label,token_hash,capabilities
         ) VALUES ($1,$2,$3,$4,$5)
         "#,
@@ -129,7 +129,7 @@ async fn insert_credential(
     .expect("insert messaging endpoint credential");
     sqlx::query(
         r#"
-        INSERT INTO straylight.credential_scope_grants (
+        INSERT INTO brunn.credential_scope_grants (
           credential_id,user_id,scope_id
         ) VALUES ($1,$2,$3)
         "#,
@@ -152,7 +152,7 @@ async fn insert_agent(
 ) {
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_agents (
+        INSERT INTO brunn.messaging_agents (
           user_id,agent_id,display_name,principal_kind,delivery_mode,
           created_by_credential_id
         ) VALUES ($1,$2,$3,$4,'pull',$5)
@@ -177,7 +177,7 @@ async fn bind_credential(
 ) {
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_credential_bindings (
+        INSERT INTO brunn.messaging_credential_bindings (
           user_id,credential_id,agent_id,bound_by_credential_id
         ) VALUES ($1,$2,$3,$4)
         "#,
@@ -196,7 +196,7 @@ async fn insert_web_session(pool: &PgPool, user_id: Uuid, credential_id: Uuid) -
     let email = format!("{username}@example.test");
     sqlx::query(
         r#"
-        INSERT INTO straylight.web_identities (
+        INSERT INTO brunn.web_identities (
           user_id,username,username_normalized,email,email_normalized,
           password_hash,web_credential_id
         ) VALUES ($1,$2,$2,$3,$3,'$argon2id$fixture',$4)
@@ -211,7 +211,7 @@ async fn insert_web_session(pool: &PgPool, user_id: Uuid, credential_id: Uuid) -
     .expect("insert messaging binding Web identity");
     let session_token = format!("sws_{}{}", credential_id.simple(), "0".repeat(11));
     sqlx::query(
-        "INSERT INTO straylight.web_sessions(user_id,credential_id,token_hash,expires_at) VALUES($1,$2,$3,clock_timestamp()+interval '1 hour')",
+        "INSERT INTO brunn.web_sessions(user_id,credential_id,token_hash,expires_at) VALUES($1,$2,$3,clock_timestamp()+interval '1 hour')",
     )
     .bind(user_id)
     .bind(credential_id)
@@ -220,7 +220,7 @@ async fn insert_web_session(pool: &PgPool, user_id: Uuid, credential_id: Uuid) -
     .await
     .expect("insert messaging binding Web session");
     let mut digest = Sha256::new();
-    digest.update(b"straylight.web-csrf.v1\0");
+    digest.update(b"brunn.web-csrf.v1\0");
     digest.update(session_token.as_bytes());
     (session_token, URL_SAFE_NO_PAD.encode(digest.finalize()))
 }
@@ -355,9 +355,7 @@ async fn request_web(
     let cookie_prefix = if production_cookies { "__Host-" } else { "" };
     let mut builder = Request::builder().method(method.clone()).uri(uri).header(
         header::COOKIE,
-        format!(
-            "{cookie_prefix}straylight_session={session_token}; {cookie_prefix}straylight_csrf={csrf}"
-        ),
+        format!("{cookie_prefix}brunn_session={session_token}; {cookie_prefix}brunn_csrf={csrf}"),
     );
     let body = if let Some(body) = body {
         builder = builder
@@ -457,7 +455,7 @@ async fn messaging_registry_binds_active_credentials_and_rejects_disabled_creden
     .await;
     bind_credential(&pool, user_id, owner.id, "owner", owner.id).await;
     sqlx::query(
-        "UPDATE straylight.api_credentials SET disabled_at=clock_timestamp() WHERE user_id=$1 AND id=$2",
+        "UPDATE brunn.api_credentials SET disabled_at=clock_timestamp() WHERE user_id=$1 AND id=$2",
     )
     .bind(user_id)
     .bind(disabled.id)
@@ -494,7 +492,7 @@ async fn messaging_registry_binds_active_credentials_and_rejects_disabled_creden
     let active_binding = sqlx::query_scalar::<_, bool>(
         r#"
         SELECT EXISTS(
-          SELECT 1 FROM straylight.messaging_credential_bindings
+          SELECT 1 FROM brunn.messaging_credential_bindings
           WHERE user_id=$1 AND credential_id=$2
             AND agent_id='credential-binding-target'
         )
@@ -560,7 +558,7 @@ async fn messaging_registry_binds_active_credentials_and_rejects_disabled_creden
         "messaging_not_found",
     );
     let disabled_binding = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM straylight.messaging_credential_bindings WHERE user_id=$1 AND credential_id=$2)",
+        "SELECT EXISTS(SELECT 1 FROM brunn.messaging_credential_bindings WHERE user_id=$1 AND credential_id=$2)",
     )
     .bind(user_id)
     .bind(disabled.id)
@@ -969,7 +967,7 @@ async fn messaging_routes_enforce_the_flag_identity_idempotency_sync_and_authori
     let owner_read_after_sync = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT last_read_seq
-        FROM straylight.messaging_participants
+        FROM brunn.messaging_participants
         WHERE conversation_id=$1 AND agent_id='owner'
         "#,
     )

@@ -9,7 +9,7 @@
 -- their early-termination bound. Everything else is unchanged from
 -- migration 0067.
 
-CREATE OR REPLACE FUNCTION straylight.workspace_lexical_candidates_v2(
+CREATE OR REPLACE FUNCTION brunn.workspace_lexical_candidates_v2(
   p_query text,
   p_sort text
 )
@@ -21,18 +21,18 @@ RETURNS TABLE (
   score double precision,
   title text,
   current_version bigint,
-  content_sha256 straylight.sha256_hex,
+  content_sha256 brunn.sha256_hex,
   updated_at timestamptz
 )
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
   WITH context AS (
-    SELECT straylight_auth.setting_uuid('app.current_user_id') AS user_id
-    WHERE straylight_auth.context_is_valid()
+    SELECT brunn_auth.setting_uuid('app.current_user_id') AS user_id
+    WHERE brunn_auth.context_is_valid()
   ), requested AS (
     SELECT websearch_to_tsquery('english', p_query) AS query,
            CASE
@@ -43,7 +43,7 @@ AS $$
     SELECT DISTINCT recent.entry_id
     FROM (
       SELECT change.entry_id
-      FROM straylight.workspace_changes AS change
+      FROM brunn.workspace_changes AS change
       CROSS JOIN context
       WHERE change.user_id=context.user_id
       ORDER BY change.generation DESC
@@ -58,11 +58,11 @@ AS $$
     FROM recent_entry_ids AS recent
     CROSS JOIN context
     CROSS JOIN requested
-    JOIN straylight.search_chunks AS chunk
+    JOIN brunn.search_chunks AS chunk
       ON chunk.user_id=context.user_id
      AND chunk.entry_id=recent.entry_id
     WHERE chunk.search_vector @@ requested.query
-      AND chunk.path NOT LIKE '.straylight/checkpoints/%'
+      AND chunk.path NOT LIKE '.brunn/checkpoints/%'
   ), recent_density AS MATERIALIZED (
     SELECT count(DISTINCT entry_id) AS matching_entries
     FROM recent_matches
@@ -73,7 +73,7 @@ AS $$
     -- 4096 sample semantics at a fraction of the cost because it never
     -- touches search_vector.
     SELECT chunk.id,chunk.entry_id
-    FROM straylight.search_chunks AS chunk
+    FROM brunn.search_chunks AS chunk
     CROSS JOIN context
     CROSS JOIN requested
     CROSS JOIN recent_density
@@ -83,7 +83,7 @@ AS $$
       )
       AND chunk.user_id=context.user_id
       AND chunk.search_vector @@ requested.query
-      AND chunk.path NOT LIKE '.straylight/checkpoints/%'
+      AND chunk.path NOT LIKE '.brunn/checkpoints/%'
     LIMIT 4096
   ), index_match_ids AS MATERIALIZED (
     -- Rank only the newest quarter of the pool: detoasting tsvectors for
@@ -97,7 +97,7 @@ AS $$
            ts_rank_cd(chunk.search_vector,requested.query,32)::double precision AS score
     FROM index_match_ids AS candidate
     CROSS JOIN requested
-    JOIN straylight.search_chunks AS chunk
+    JOIN brunn.search_chunks AS chunk
       ON chunk.id=candidate.id
   ), bounded_matches AS MATERIALIZED (
     SELECT recent.id,recent.entry_id,recent.score
@@ -127,9 +127,9 @@ AS $$
     FROM entry_scores AS scored
     CROSS JOIN context
     CROSS JOIN requested
-    JOIN straylight.entries AS entry
+    JOIN brunn.entries AS entry
       ON entry.user_id=context.user_id AND entry.id=scored.entry_id
-    JOIN straylight.entry_versions AS version
+    JOIN brunn.entry_versions AS version
       ON version.user_id=entry.user_id
      AND version.entry_id=entry.id
      AND version.version=entry.current_version
@@ -159,7 +159,7 @@ AS $$
          ranked.content_sha256,ranked.updated_at
   FROM ranked
   JOIN context ON true
-  JOIN straylight.search_chunks AS chunk
+  JOIN brunn.search_chunks AS chunk
     ON chunk.user_id=context.user_id AND chunk.id=ranked.id
   ORDER BY
     CASE WHEN p_sort='best_match' THEN ranked.entry_score END DESC NULLS LAST,
@@ -171,7 +171,7 @@ AS $$
     ranked.section_rank,ranked.score DESC,ranked.id;
 $$;
 
-REVOKE ALL ON FUNCTION straylight.workspace_lexical_candidates_v2(text,text)
+REVOKE ALL ON FUNCTION brunn.workspace_lexical_candidates_v2(text,text)
   FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION straylight.workspace_lexical_candidates_v2(text,text)
+GRANT EXECUTE ON FUNCTION brunn.workspace_lexical_candidates_v2(text,text)
   TO app_ro,app_rw;

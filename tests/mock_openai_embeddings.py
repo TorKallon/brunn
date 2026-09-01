@@ -24,11 +24,11 @@ TOKEN = re.compile(r"[A-Za-z0-9_-]+")
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 55200
 DEFAULT_DIMENSIONS = 1536
-DEFAULT_STATE = Path("/tmp/straylight-embedding-mock-55200.pid")
-DEFAULT_LOG = Path("/tmp/straylight-embedding-mock-55200.log")
-DEFAULT_CONFIG = Path("/tmp/straylight-embedding-mock-55200.json")
-STATE_SCHEMA = "straylight-mock-openai-embeddings-state@v1"
-HEALTH_SCHEMA = "straylight-mock-openai-embeddings-health@v1"
+DEFAULT_STATE = Path("/tmp/brunn-embedding-mock-55200.pid")
+DEFAULT_LOG = Path("/tmp/brunn-embedding-mock-55200.log")
+DEFAULT_CONFIG = Path("/tmp/brunn-embedding-mock-55200.json")
+STATE_SCHEMA = "brunn-mock-openai-embeddings-state@v1"
+HEALTH_SCHEMA = "brunn-mock-openai-embeddings-health@v1"
 INSTANCE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 CONTROL_PATH: Path | None = None
 RUNTIME_IDENTITY: dict[str, Any] | None = None
@@ -47,7 +47,7 @@ def embedding(text: str, dimensions: int) -> list[float]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "StraylightEmbeddingMock/1"
+    server_version = "BrunnEmbeddingMock/1"
 
     def do_GET(self) -> None:
         if self.path == "/health":

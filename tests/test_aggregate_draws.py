@@ -42,7 +42,7 @@ def aggregate(paths, *args, **kwargs):
 
 def response_character_metrics(characters):
     return {
-        "schema": "straylight-agent-response-character-metrics@v1",
+        "schema": "brunn-agent-response-character-metrics@v1",
         "service_result_chars": characters + 50,
         "service_source_text_chars": characters,
         "service_metadata_chars": 50,
@@ -85,14 +85,14 @@ def draw_payload(run_id, rows):
             "persisted_checkpoint": {"objective": "resume"},
         })
     runtime_snapshot = {
-        "schema": "straylight-service-runtime-snapshot@v1",
+        "schema": "brunn-service-runtime-snapshot@v1",
         "captured_at": "2026-07-27T12:00:30-07:00",
         "status": "ready",
         "build_revision": REVISION,
         "runtime_features": {},
     }
     image = {
-        "schema": "straylight-service-image-fingerprint@v1",
+        "schema": "brunn-service-image-fingerprint@v1",
         "api_container": f"api-{run_id}",
         "api_container_id": f"container-{run_id}",
         "api_container_started_at": "2026-07-27T12:00:20-07:00",
@@ -101,7 +101,7 @@ def draw_payload(run_id, rows):
         "api_image_revision": REVISION,
     }
     image_provenance = {
-        "schema": "straylight-service-image-provenance@v1",
+        "schema": "brunn-service-image-provenance@v1",
         "stable": True,
         "before": image,
         "after": dict(image),
@@ -144,7 +144,7 @@ def draw_payload(run_id, rows):
             "auth_status": "Logged in using ChatGPT",
         },
         "run_ledger": {
-            "schema": "straylight-eval-run-ledger@v1",
+            "schema": "brunn-eval-run-ledger@v1",
             "run_id": run_id,
             "captured_at": "2026-07-27T12:01:00-07:00",
             "source": {
@@ -217,7 +217,7 @@ def set_service_image(payload, image_id):
     image = dict(payload["service_image_provenance"]["before"])
     image["api_image_id"] = image_id
     provenance = {
-        "schema": "straylight-service-image-provenance@v1",
+        "schema": "brunn-service-image-provenance@v1",
         "stable": True,
         "before": image,
         "after": dict(image),
@@ -258,7 +258,7 @@ def set_mutation_binding(payload, *, seed, plans, script_sha256="e" * 64):
     receipts = {}
     for case_id, plan in plans.items():
         receipts[case_id] = {
-            "schema": "straylight-e06-mutation-receipt@v1",
+            "schema": "brunn-e06-mutation-receipt@v1",
             "case_id": case_id,
             "seed": seed,
             "paths": list(plan["source_refs"]),
@@ -320,7 +320,7 @@ def mutation_plans(seed, *, variant=""):
         })
     return {
         "case-a": {
-            "schema": "straylight-e06-mutation-plan@v1",
+            "schema": "brunn-e06-mutation-plan@v1",
             "case_id": "case-a",
             "seed": seed,
             "delta_path": "Deltas/case-a.md",
@@ -335,7 +335,7 @@ def mutation_plans(seed, *, variant=""):
 
 def step_policy_payload(selected_case_ids):
     value = {
-        "schema": "straylight-e09-step-policy@v1",
+        "schema": "brunn-e09-step-policy@v1",
         "status": "approved_one_step_bounded_subset",
         "pass": True,
         "policy": {
@@ -1428,7 +1428,7 @@ class AggregateDrawTests(unittest.TestCase):
             ]
             parent_sha256 = hashlib.sha256(parent_body).hexdigest()
             plan = {
-                "schema": "straylight-case-extension-plan@v1",
+                "schema": "brunn-case-extension-plan@v1",
                 "experiment_id": "E04-test",
                 "suites": [{
                     "suite": parent["benchmark_version"],
@@ -1524,8 +1524,8 @@ class AggregateDrawTests(unittest.TestCase):
         project_root = Path(__file__).resolve().parents[1]
         plan_path = project_root / "eval/e04_case_extension_plan.json"
         expected_sha256 = (
-            "5a50d84dafdd8dacd845e99e19b3146f"
-            "26feacafc2bafb82f5aa1b89dde0843a"
+            "13a4a41c3dc123c91e83e0006e98704d"
+            "88e3fccafc7f32c998941c415c77e275"
         )
         self.assertEqual(
             hashlib.sha256(plan_path.read_bytes()).hexdigest(),
@@ -1561,7 +1561,7 @@ class AggregateDrawTests(unittest.TestCase):
                         [("case-a", "service_api", 4, True, 100)],
                     )
                     snapshot = {
-                        "schema": "straylight-service-runtime-snapshot@v1",
+                        "schema": "brunn-service-runtime-snapshot@v1",
                         "captured_at": "2026-07-27T12:00:30-07:00",
                         "status": "ready",
                         "build_revision": REVISION,

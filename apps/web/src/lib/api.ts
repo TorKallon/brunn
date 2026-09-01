@@ -68,7 +68,7 @@ import type {
 
 const API_ROOT = "/api/v1";
 const MAX_BROWSER_DOWNLOAD_BYTES = 64 * 1024 * 1024;
-export const SESSION_INVALIDATED_EVENT = "straylight:session-invalidated";
+export const SESSION_INVALIDATED_EVENT = "brunn:session-invalidated";
 const PUBLIC_AUTH_PATHS = new Set([
   "/auth/login",
   "/auth/forgot-password",
@@ -111,7 +111,7 @@ async function parseBody(response: Response): Promise<unknown> {
   return response.json();
 }
 
-export interface StraylightApi {
+export interface BrunnApi {
   authSession(): Promise<ApiEnvelope<AuthSessionData>>;
   login(email: string, password: string): Promise<ApiEnvelope<AuthSessionData>>;
   logout(): Promise<ApiEnvelope<AuthCompletionData>>;
@@ -275,7 +275,7 @@ export interface StraylightApi {
   usage(): Promise<ApiEnvelope<DataUsage>>;
 }
 
-export function createApiClient(): StraylightApi {
+export function createApiClient(): BrunnApi {
   async function request<T>(
     path: string,
     init: RequestInit = {},
@@ -383,7 +383,7 @@ export function createApiClient(): StraylightApi {
       throw new ApiError(
         413,
         "browser_download_too_large",
-        "This asset is too large for a browser download. Use the Straylight CLI or MCP asset fetch instead.",
+        "This asset is too large for a browser download. Use the Brunn CLI or MCP asset fetch instead.",
       );
     }
     if (expected && expected.sizeBytes > MAX_BROWSER_DOWNLOAD_BYTES) {
@@ -391,12 +391,12 @@ export function createApiClient(): StraylightApi {
       throw new ApiError(
         413,
         "browser_download_too_large",
-        "This asset is too large for a browser download. Use the Straylight CLI or MCP asset fetch instead.",
+        "This asset is too large for a browser download. Use the Brunn CLI or MCP asset fetch instead.",
       );
     }
     const bytes = await readBoundedDownload(response);
     const responseHash = normalizeSha256(
-      response.headers.get("x-carrystate-sha256"),
+      response.headers.get("x-brunn-state-sha256"),
     );
     if (expected) {
       const expectedHash = normalizeSha256(expected.contentHash);
@@ -744,7 +744,7 @@ function notifyInvalidSession(response: Response, path: string): void {
 
 function readCsrfToken(): string | null {
   const cookies = document.cookie.split(";");
-  for (const name of ["__Host-straylight_csrf", "straylight_csrf"]) {
+  for (const name of ["__Host-brunn_csrf", "brunn_csrf"]) {
     const prefix = `${name}=`;
     const cookie = cookies.map((value) => value.trim()).find((value) => value.startsWith(prefix));
     if (!cookie) continue;
@@ -785,7 +785,7 @@ async function readBoundedDownload(response: Response): Promise<ArrayBuffer> {
         throw new ApiError(
           413,
           "browser_download_too_large",
-          "This asset is too large for a browser download. Use the Straylight CLI or MCP asset fetch instead.",
+          "This asset is too large for a browser download. Use the Brunn CLI or MCP asset fetch instead.",
         );
       }
       chunks.push(item.value);

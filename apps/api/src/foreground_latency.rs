@@ -7,7 +7,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 const WINDOW: Duration = Duration::from_secs(60);
-pub const SNAPSHOT_SCHEMA: &str = "straylight-foreground-latency@v1";
+pub const SNAPSHOT_SCHEMA: &str = "brunn-foreground-latency@v1";
 
 #[derive(Clone, Copy, Debug)]
 pub enum ForegroundOperation {

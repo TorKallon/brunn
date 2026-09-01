@@ -74,15 +74,15 @@ class NativeApiClient:
         case_id: str | None = None,
         timeout: float = 120.0,
     ) -> None:
-        self.base_url = (base_url or os.environ.get("STRAYLIGHT_API_URL") or "").rstrip("/")
-        self.token = token or os.environ.get("STRAYLIGHT_EVAL_TOKEN") or ""
+        self.base_url = (base_url or os.environ.get("BRUNN_API_URL") or "").rstrip("/")
+        self.token = token or os.environ.get("BRUNN_EVAL_TOKEN") or ""
         self.run_id = run_id
         self.case_id = case_id
         self.timeout = timeout
         if not self.base_url:
-            raise ValueError("STRAYLIGHT_API_URL is required for native evaluation")
+            raise ValueError("BRUNN_API_URL is required for native evaluation")
         if not self.token:
-            raise ValueError("STRAYLIGHT_EVAL_TOKEN is required for native evaluation")
+            raise ValueError("BRUNN_EVAL_TOKEN is required for native evaluation")
 
     def request(
         self,
@@ -100,9 +100,9 @@ class NativeApiClient:
             data = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
             headers["Content-Type"] = "application/json"
         if self.run_id:
-            headers["X-Straylight-Eval-Run"] = self.run_id
+            headers["X-Brunn-Eval-Run"] = self.run_id
         if self.case_id:
-            headers["X-Straylight-Eval-Case"] = self.case_id
+            headers["X-Brunn-Eval-Case"] = self.case_id
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
         started = time.monotonic()
         try:
@@ -176,9 +176,9 @@ class NativeApiClient:
             "Content-Type": content_type,
         }
         if self.run_id:
-            headers["X-Straylight-Eval-Run"] = self.run_id
+            headers["X-Brunn-Eval-Run"] = self.run_id
         if self.case_id:
-            headers["X-Straylight-Eval-Case"] = self.case_id
+            headers["X-Brunn-Eval-Case"] = self.case_id
         request = urllib.request.Request(url, data=body, headers=headers, method="POST")
         started = time.monotonic()
         try:
@@ -274,16 +274,16 @@ class NativeApiClient:
             "Authorization": f"Bearer {self.token}",
         }
         if self.run_id:
-            headers["X-Straylight-Eval-Run"] = self.run_id
+            headers["X-Brunn-Eval-Run"] = self.run_id
         if self.case_id:
-            headers["X-Straylight-Eval-Case"] = self.case_id
+            headers["X-Brunn-Eval-Case"] = self.case_id
         request = urllib.request.Request(url, headers=headers, method="GET")
         digest = hashlib.sha256()
         size = 0
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 response_hash = (
-                    response.headers.get("X-CarryState-SHA256") or ""
+                    response.headers.get("X-Brunn-State-SHA256") or ""
                 ).removeprefix("sha256:").casefold()
                 content_length = response.headers.get("Content-Length")
                 if response_hash != expected_digest:
@@ -391,7 +391,7 @@ def encode_multipart(
     seed = "\0".join(
         [*(f"{key}={value}" for key, value in fields), *(str(path) for _, path in files)]
     )
-    boundary = f"carrystate-eval-{hashlib.sha256(seed.encode()).hexdigest()[:32]}"
+    boundary = f"brunn-state-eval-{hashlib.sha256(seed.encode()).hexdigest()[:32]}"
     output = bytearray()
     for name, value in fields:
         output.extend(f"--{boundary}\r\n".encode())
@@ -463,7 +463,7 @@ def provision_binary_assets(
         digest.update(hashlib.sha256(path.read_bytes()).digest())
     stable_import_id = f"eval-binary:{digest.hexdigest()}"
     client = NativeApiClient(
-        base_url=os.environ.get("STRAYLIGHT_API_URL"),
+        base_url=os.environ.get("BRUNN_API_URL"),
         token=token,
         run_id=run_id,
         case_id=case_id,
@@ -690,7 +690,7 @@ def wait_for_indexes(
             return latest
         time.sleep(poll_seconds)
     raise TimeoutError(
-        f"Straylight indexes were not ready after {timeout_seconds:.1f}s: "
+        f"Brunn indexes were not ready after {timeout_seconds:.1f}s: "
         f"{json.dumps(recursively_redact_secrets(latest.body), sort_keys=True)[:1000]}"
     )
 
@@ -728,7 +728,7 @@ def provision_evaluation(
     for batch_index, batch_documents in enumerate(document_batches):
         final_batch = batch_index + 1 == len(document_batches)
         payload = {
-            "schema": "straylight-eval-import@v1",
+            "schema": "brunn-eval-import@v1",
             "run_id": run_id,
             "case_id": case_id,
             "authorization_scope": authorization_scope,

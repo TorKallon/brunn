@@ -5,7 +5,7 @@
 -- the allowlist by exactly the two task capabilities the provisioning path
 -- passes; everything else is unchanged from migration 0031.
 
-CREATE OR REPLACE FUNCTION straylight_auth.bootstrap_evaluation_user(
+CREATE OR REPLACE FUNCTION brunn_auth.bootstrap_evaluation_user(
   p_external_ref text,
   p_display_name text,
   p_credential_label text,
@@ -20,7 +20,7 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
@@ -29,14 +29,14 @@ DECLARE
     'checkpoint', 'save', 'stage', 'correct', 'delete', 'dream',
     'task.read', 'task.write'
   ];
-  caller_user_id uuid := straylight_auth.current_user_id();
-  caller_credential_id uuid := straylight_auth.current_credential_id();
+  caller_user_id uuid := brunn_auth.current_user_id();
+  caller_credential_id uuid := brunn_auth.current_credential_id();
   existing_user_id uuid;
   existing_credential_id uuid;
   existing_credential_user_id uuid;
 BEGIN
   IF p_external_ref !~ '^eval-user:[0-9a-f]{64}$'
-     OR p_display_name NOT LIKE 'Straylight evaluation: %'
+     OR p_display_name NOT LIKE 'Brunn evaluation: %'
      OR p_credential_label NOT IN (
        'Evaluation provisioning',
        'Evaluation read-only',
@@ -56,14 +56,14 @@ BEGIN
   END IF;
 
   SELECT id INTO existing_user_id
-  FROM straylight.users
+  FROM brunn.users
   WHERE external_ref = p_external_ref;
 
   SELECT id, api_credentials.user_id INTO existing_credential_id, existing_credential_user_id
-  FROM straylight.api_credentials
+  FROM brunn.api_credentials
   WHERE token_hash = p_token_hash;
 
-  IF NOT straylight_auth.has_any_capability(ARRAY['admin'])
+  IF NOT brunn_auth.has_any_capability(ARRAY['admin'])
      AND NOT coalesce(
        existing_user_id = caller_user_id
        AND existing_credential_id = caller_credential_id
@@ -76,7 +76,7 @@ BEGIN
 
   RETURN QUERY
   SELECT *
-  FROM straylight_auth.bootstrap_user(
+  FROM brunn_auth.bootstrap_user(
     p_external_ref,
     p_display_name,
     p_credential_label,

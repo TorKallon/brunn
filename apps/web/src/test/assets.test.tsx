@@ -14,7 +14,7 @@ const binary = {
   media_type: "image/jpeg",
   updated_at: "2026-07-24T18:30:00Z",
   metadata: {
-    companion_path: ".straylight/binaries/train.md",
+    companion_path: ".brunn/binaries/train.md",
     description_status: "provided",
     provenance: "Scanned original",
   },
@@ -91,7 +91,7 @@ describe("workspace binaries", () => {
             "Content-Type": "image/jpeg",
             "Content-Length": "3",
             "Content-Disposition": 'attachment; filename="train.jpg"',
-            "X-CarryState-SHA256":
+            "X-Brunn-State-SHA256":
               "6e568e1f67fba258184c78181539e5e8fdee447e49bb706fc0ea34fbf12336a5",
           },
         });

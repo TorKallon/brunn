@@ -1,4 +1,4 @@
-# Straylight Alpha Launch Runbook
+# Brunn Alpha Launch Runbook
 
 Status: retained single-host qualification procedure; not the approved managed
 production path. Do not launch until `Alpha Readiness.md` records a go decision
@@ -41,7 +41,7 @@ command:
 
 ```bash
 make production-secrets \
-  SECRETS_DIR=/approved/private/path/straylight-secrets \
+  SECRETS_DIR=/approved/private/path/brunn-secrets \
   OPENAI_KEY_FILE=/approved/private/path/openai.key \
   RESEND_KEY_FILE=/approved/private/path/resend.key \
   DATADOG_KEY_FILE=/approved/private/path/datadog.key
@@ -62,7 +62,7 @@ The validator requires a real candidate commit, immutable candidate images,
 digest-pinned database/object-store/Agent images, file-backed secrets, an
 approved HTTPS hostname, and the frozen reasoning/token configuration.
 
-The Straylight PostgreSQL image contains pinned PostgreSQL 17 and pgvector
+The Brunn PostgreSQL image contains pinned PostgreSQL 17 and pgvector
 0.8.5 builds. A new cluster is initialized with built-in `C.UTF-8` collation
 and page checksums. Its healthcheck fails closed if either invariant changes.
 Never mount a libc-created data directory into the Alpine image; move existing
@@ -125,7 +125,7 @@ docker compose \
   > operator-output/initial-owner.json
 ```
 
-The token appears only in that file and is stored only as a hash by Straylight.
+The token appears only in that file and is stored only as a hash by Brunn.
 Move it to the approved password manager, remove the local output, and use the
 owner credential only for credential administration. Create separate
 read/write and read-only agent tokens in the SPA.
@@ -153,7 +153,7 @@ The API sends the single-use, 30-minute link through Resend; it stores only a
 hash of the reset secret, and completing the reset revokes every existing Web
 UI session. Keep `resend_api_key` in the production secret bundle and keep
 `AUTH_EMAIL_FROM`, optional `AUTH_EMAIL_REPLY_TO`, and
-`STRAYLIGHT_PUBLIC_URL` in the non-secret production environment file.
+`BRUNN_PUBLIC_URL` in the non-secret production environment file.
 Successful sign-in creates persistent session and CSRF cookies with a 30-day
 absolute lifetime. Logout, password reset, identity reconfiguration, principal
 disablement, and account lifecycle fences still revoke those sessions early.
@@ -260,7 +260,7 @@ fingerprinted candidate whose full quality and token harness passed. Replace
 all revision-tagged image references and `DD_VERSION` together.
 
 For an application-only rollback, restore every image reference and
-`STRAYLIGHT_RELEASE_REVISION` to the prior fingerprinted candidate and rerun
+`BRUNN_RELEASE_REVISION` to the prior fingerprinted candidate and rerun
 the production validator. Database migrations are forward-only; never run
 ad-hoc down migrations. If a migration or canonical-data change must be
 reversed, stop the deployment and restore the coordinated pre-upgrade bundle

@@ -3,25 +3,25 @@
 /// PostgreSQL installs them there; `performance_eval.py` fingerprints those
 /// bodies and the installed `pg_proc.prosrc` before asserting their plans.
 pub const SIMPLE_LEXICAL_CANDIDATES_SQL: &str =
-    "SELECT * FROM straylight.workspace_lexical_candidates_v2($1,$2)";
+    "SELECT * FROM brunn.workspace_lexical_candidates_v2($1,$2)";
 
 pub const SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL: &str = r#"
 WITH generation AS (
-  SELECT straylight_auth.workspace_generation($1) AS workspace_generation
+  SELECT brunn_auth.workspace_generation($1) AS workspace_generation
 )
 SELECT generation.workspace_generation,candidate.*
 FROM generation
-LEFT JOIN LATERAL straylight.workspace_lexical_candidates_v2($2,$3) AS candidate
+LEFT JOIN LATERAL brunn.workspace_lexical_candidates_v2($2,$3) AS candidate
   ON true
 "#;
 
 pub const SIMPLE_SEMANTIC_CANDIDATES_SQL: &str =
-    "SELECT * FROM straylight.workspace_semantic_candidates_v2($1,$2)";
+    "SELECT * FROM brunn.workspace_semantic_candidates_v2($1,$2)";
 
 pub const SIMPLE_ENTRY_LINK_CANDIDATES_SQL: &str = r#"
 WITH candidates AS MATERIALIZED (
   SELECT entry.id
-  FROM straylight.entries AS entry
+  FROM brunn.entries AS entry
   WHERE entry.user_id=$1
     AND entry.deleted_at IS NULL
     AND lower(normalize(regexp_replace(entry.path,'^.*/',''), NFC))=ANY($2)
@@ -32,10 +32,10 @@ SELECT entry.id,entry.path,entry.title,entry.kind,entry.media_type,
        version.id AS version_id,version.content_sha256,version.content,
        version.object_key,version.object_version_id,version.size_bytes,
        version.metadata,
-       straylight_auth.workspace_generation(entry.user_id) AS workspace_generation
+       brunn_auth.workspace_generation(entry.user_id) AS workspace_generation
 FROM candidates AS candidate
-JOIN straylight.entries AS entry ON entry.id=candidate.id
-JOIN straylight.entry_versions AS version
+JOIN brunn.entries AS entry ON entry.id=candidate.id
+JOIN brunn.entry_versions AS version
   ON version.user_id=entry.user_id
  AND version.entry_id=entry.id
  AND version.version=entry.current_version
@@ -50,11 +50,11 @@ mod tests {
         for (sql, function) in [
             (
                 SIMPLE_LEXICAL_CANDIDATES_SQL,
-                "straylight.workspace_lexical_candidates_v2",
+                "brunn.workspace_lexical_candidates_v2",
             ),
             (
                 SIMPLE_SEMANTIC_CANDIDATES_SQL,
-                "straylight.workspace_semantic_candidates_v2",
+                "brunn.workspace_semantic_candidates_v2",
             ),
         ] {
             assert!(sql.starts_with("SELECT * FROM "));
@@ -65,11 +65,11 @@ mod tests {
 
         assert!(
             SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL
-                .contains("LEFT JOIN LATERAL straylight.workspace_lexical_candidates_v2($2,$3)")
+                .contains("LEFT JOIN LATERAL brunn.workspace_lexical_candidates_v2($2,$3)")
         );
         assert!(
             SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL
-                .contains("straylight_auth.workspace_generation($1)")
+                .contains("brunn_auth.workspace_generation($1)")
         );
         assert!(!SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL.contains(';'));
         assert!(SIMPLE_ENTRY_LINK_CANDIDATES_SQL.contains("entry.user_id=$1"));

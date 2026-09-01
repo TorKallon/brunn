@@ -365,7 +365,7 @@ pub async fn validate_source_entries_in_tx(
     let resolved = sqlx::query_scalar::<_, Uuid>(
         r#"
         SELECT id
-        FROM straylight.entries
+        FROM brunn.entries
         WHERE user_id=$1 AND id=ANY($2) AND deleted_at IS NULL
         FOR SHARE
         "#,
@@ -396,8 +396,8 @@ pub async fn get_document_in_tx(
         r#"
         SELECT entry.id,entry.path,entry.current_version,
                version.version,version.created_at
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
         WHERE entry.user_id=$1
@@ -439,7 +439,7 @@ pub async fn get_document_in_tx(
     let selected = sqlx::query(
         r#"
         SELECT id,content,metadata,created_at
-        FROM straylight.entry_versions
+        FROM brunn.entry_versions
         WHERE user_id=$1 AND entry_id=$2 AND version=$3
           AND content IS NOT NULL
           AND metadata->>'kind'='human_document'
@@ -639,12 +639,12 @@ mod tests {
         );
         assert_eq!(document_entry_path("trip-plan"), "Documents/trip-plan.md",);
         assert_eq!(
-            document_url("https://straylight.example/", "trip-plan", None),
-            "https://straylight.example/documents/trip-plan",
+            document_url("https://brunn.example/", "trip-plan", None),
+            "https://brunn.example/documents/trip-plan",
         );
         assert_eq!(
-            document_url("https://straylight.example", "trip-plan", Some(3)),
-            "https://straylight.example/documents/trip-plan?version=3",
+            document_url("https://brunn.example", "trip-plan", Some(3)),
+            "https://brunn.example/documents/trip-plan?version=3",
         );
     }
 

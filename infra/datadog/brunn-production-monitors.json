@@ -1,0 +1,256 @@
+[
+  {
+    "name": "[Brunn] Public edge connectivity",
+    "type": "service check",
+    "query": "\"http.can_connect\".over(\"env:__DD_ENV__\", \"service:__DD_SERVICE__\", \"probe:public-edge\", \"platform:railway\").by(\"host\", \"instance\", \"url\").last(3).count_by_status()",
+    "message": "A public Brunn health or API-readiness endpoint failed from the Railway Datadog Agent. These probes resolve the public domain and traverse Railway's public edge; use the instance and URL tags to distinguish edge-to-web from edge-to-API failure before retrying writes.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:brunn", "probe:public-edge"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "notify_no_data": true,
+      "no_data_timeframe": 2,
+      "renotify_interval": 15,
+      "new_group_delay": 60,
+      "thresholds": {"ok": 2, "warning": 1, "critical": 2}
+    }
+  },
+  {
+    "name": "[Brunn] Public edge response is slow",
+    "type": "metric alert",
+    "query": "avg(last_5m):max:network.http.response_time{env:__DD_ENV__,service:__DD_SERVICE__,probe:public-edge,platform:railway} > 1",
+    "message": "A public Brunn health or API-readiness endpoint exceeded the one-second response-time gate from the Railway Datadog Agent. Correlate the instance and URL tags with web, API, database, and Railway edge telemetry.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:brunn", "probe:public-edge"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "notify_no_data": false,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "thresholds": {"warning": 0.5, "critical": 1}
+    }
+  },
+  {
+    "name": "[Brunn] API heartbeat missing",
+    "type": "metric alert",
+    "query": "avg(last_5m):avg:brunn.runtime.alive{env:__DD_ENV__,service:__DD_SERVICE__,component:api} < 1",
+    "message": "The Brunn API has stopped reporting its runtime heartbeat. Check deployment health, container state, and dependency readiness.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:brunn"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "notify_no_data": true,
+      "no_data_timeframe": 5,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "thresholds": {"critical": 1}
+    }
+  },
+  {
+    "name": "[Brunn] Worker heartbeat missing",
+    "type": "metric alert",
+    "query": "avg(last_5m):avg:brunn.runtime.alive{env:__DD_ENV__,service:__DD_SERVICE__,component:worker} < 1",
+    "message": "The Brunn worker has stopped reporting its runtime heartbeat. Durable jobs may no longer be advancing.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:brunn"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "notify_no_data": true,
+      "no_data_timeframe": 5,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "thresholds": {"critical": 1}
+    }
+  },
+  {
+    "name": "[Brunn] HTTP 5xx responses",
+    "type": "query alert",
+    "query": "sum(last_5m):sum:brunn.http.requests{env:__DD_ENV__,service:__DD_SERVICE__,status_class:5xx}.as_count() >= 5",
+    "message": "Brunn returned server errors. Correlate request IDs with structured API logs before retrying writes.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:brunn"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "thresholds": {"warning": 1, "critical": 5}
+    }
+  },
+  {
+    "name": "[Brunn] Canonical dependency unavailable",
+    "type": "query alert",
+    "query": "max(last_5m):max:brunn.dependency.state{env:__DD_ENV__,service:__DD_SERVICE__,state:unavailable} by {dependency} >= 1",
+    "message": "A canonical Brunn dependency is unavailable. Readiness should be failing closed for the affected dependency.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:brunn"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "new_group_delay": 60,
+      "thresholds": {"critical": 1}
+    }
+  },
+  {
+    "name": "[Brunn] Database pool saturation",
+    "type": "query alert",
+    "query": "avg(last_10m):max:brunn.db.pool.utilization{env:__DD_ENV__,service:__DD_SERVICE__} by {pool} > 0.9",
+    "message": "A Brunn database pool is near saturation. Inspect in-flight requests and database latency before changing pool sizes.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:brunn"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": true,
+      "renotify_interval": 30,
+      "new_group_delay": 60,
+      "thresholds": {"warning": 0.8, "critical": 0.9}
+    }
+  },
+  {
+    "name": "[Brunn] Durable queue stalled",
+    "type": "query alert",
+    "query": "max(last_5m):max:brunn.worker.queue.oldest_age_seconds{env:__DD_ENV__,service:__DD_SERVICE__} by {queue,status} > 900",
+    "message": "A durable Brunn queue has old unfinished work. Inspect queue state, worker leases, and bounded retry status.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:brunn"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "new_group_delay": 60,
+      "thresholds": {"warning": 300, "critical": 900}
+    }
+  },
+  {
+    "name": "[Brunn] Model request degraded",
+    "type": "query alert",
+    "query": "sum(last_10m):sum:brunn.model.requests{env:__DD_ENV__ AND service:__DD_SERVICE__ AND status IN (degraded_unavailable,invalid_output)} by {purpose,model,status}.as_count() >= 1",
+    "message": "A capture or dreaming model request degraded or returned invalid structured output. Canonical writes must remain gated.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:brunn"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "new_group_delay": 60,
+      "thresholds": {"critical": 1}
+    }
+  },
+  {
+    "name": "[Brunn] Embedding request failures",
+    "type": "query alert",
+    "query": "sum(last_10m):sum:brunn.embedding.requests{env:__DD_ENV__,service:__DD_SERVICE__,result:error} by {provider,model}.as_count() >= 3",
+    "message": "Embedding requests are failing. Inspect provider status and indexing backlog; do not silently switch embedding semantics.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:brunn"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "new_group_delay": 60,
+      "thresholds": {"warning": 1, "critical": 3}
+    }
+  },
+  {
+    "name": "[Brunn] Object integrity failure",
+    "type": "query alert",
+    "query": "sum(last_5m):sum:brunn.object_store.integrity_failures{env:__DD_ENV__,service:__DD_SERVICE__} by {failure}.as_count() >= 1",
+    "message": "Stored bytes did not match their committed hash. Treat this as a data-integrity incident and preserve the evidence.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:brunn"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 15,
+      "new_group_delay": 60,
+      "thresholds": {"critical": 1}
+    }
+  },
+  {
+    "name": "[Brunn] Telemetry snapshot failure",
+    "type": "query alert",
+    "query": "sum(last_10m):sum:brunn.telemetry.snapshot.errors{env:__DD_ENV__,service:__DD_SERVICE__} by {snapshot}.as_count() >= 3",
+    "message": "Brunn cannot collect an operational snapshot. Runtime behavior may still be healthy, but observability is incomplete.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:brunn"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "new_group_delay": 60,
+      "thresholds": {"warning": 1, "critical": 3}
+    }
+  },
+  {
+    "name": "[Brunn] DogStatsD packets dropped",
+    "type": "query alert",
+    "query": "sum(last_10m):sum:datadog.dogstatsd.client.packets_dropped{env:__DD_ENV__,service:__DD_SERVICE__}.as_count() >= 1",
+    "message": "The Brunn metrics exporter dropped DogStatsD packets. Operational telemetry is incomplete.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:brunn"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "thresholds": {"critical": 1}
+    }
+  },
+  {
+    "name": "[Brunn] Simplified workspace open is slow",
+    "type": "query alert",
+    "query": "percentile(last_10m):p95:brunn.simple.open.duration_ms{env:__DD_ENV__,service:__DD_SERVICE__,component:api} > 5000",
+    "message": "Simplified workspace open p95 exceeded the documented five-second performance gate. Inspect workspace route latency, retrieval lane timeouts, database pool pressure, and deployment version.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:brunn"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "thresholds": {"warning": 3000, "critical": 5000}
+    }
+  },
+  {
+    "name": "[Brunn] Simplified retrieval lanes repeatedly timed out",
+    "type": "query alert",
+    "query": "sum(last_10m):sum:brunn.simple.retrieval.lane_timeout{env:__DD_ENV__,service:__DD_SERVICE__,component:api} by {lane}.as_count() >= 3",
+    "message": "A simplified retrieval lane repeatedly exceeded its bounded deadline. Inspect the affected lane and workspace search route latency. A single timeout warns for visibility; three in ten minutes is critical.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:brunn"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "new_group_delay": 60,
+      "thresholds": {"warning": 1, "critical": 3}
+    }
+  },
+  {
+    "name": "[Brunn] Simplified workspace search is slow",
+    "type": "query alert",
+    "query": "percentile(last_10m):p95:brunn.http.request.duration_ms{env:__DD_ENV__,service:__DD_SERVICE__,component:api,route:/v1/workspace/search} > 3000",
+    "message": "Workspace search p95 exceeded the documented three-second performance gate. This catches broad-query regressions even when individual retrieval lanes eventually return.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:brunn"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "thresholds": {"warning": 1500, "critical": 3000}
+    }
+  },
+  {
+    "name": "[Brunn] Simplified jobs repeatedly retrying",
+    "type": "query alert",
+    "query": "sum(last_15m):sum:brunn.simple.jobs.processed{env:__DD_ENV__,service:__DD_SERVICE__,component:worker,result:retry} by {kind}.as_count() >= 5",
+    "message": "A simplified workspace job kind is repeatedly returning to retry. Inspect worker logs, embedding or model dependencies, and job duration before increasing retry limits. This metric does not distinguish the terminal fifth failure.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:brunn"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "new_group_delay": 60,
+      "thresholds": {"warning": 2, "critical": 5}
+    }
+  }
+]

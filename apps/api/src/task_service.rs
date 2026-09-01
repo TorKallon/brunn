@@ -29,7 +29,7 @@ use crate::{
     },
 };
 
-pub(crate) const TASK_ENTRY_PREFIX: &str = ".straylight/tasks/";
+pub(crate) const TASK_ENTRY_PREFIX: &str = ".brunn/tasks/";
 pub(crate) const TASK_SCHEMA: &str = "task.v1";
 
 #[derive(Clone, Debug)]
@@ -131,7 +131,7 @@ pub(crate) fn validate_task_entry(path: &str, metadata: &Value) -> ApiResult<boo
         return Ok(false);
     }
     let path_task_id = managed_task_path.ok_or_else(|| {
-        ApiError::invalid("task metadata is allowed only at .straylight/tasks/<uuid>.md")
+        ApiError::invalid("task metadata is allowed only at .brunn/tasks/<uuid>.md")
     })?;
     if metadata.get("schema").and_then(Value::as_str) != Some(TASK_SCHEMA) {
         return Err(ApiError::invalid("task metadata schema must be task.v1"));
@@ -172,17 +172,17 @@ pub(crate) async fn delete_task_projection_in_tx(
     user_id: Uuid,
     entry_id: Uuid,
 ) -> ApiResult<()> {
-    sqlx::query("DELETE FROM straylight.task_todoist_occurrences WHERE user_id=$1 AND entry_id=$2")
+    sqlx::query("DELETE FROM brunn.task_todoist_occurrences WHERE user_id=$1 AND entry_id=$2")
         .bind(user_id)
         .bind(entry_id)
         .execute(&mut **tx)
         .await?;
-    sqlx::query("DELETE FROM straylight.task_external_refs WHERE user_id=$1 AND entry_id=$2")
+    sqlx::query("DELETE FROM brunn.task_external_refs WHERE user_id=$1 AND entry_id=$2")
         .bind(user_id)
         .bind(entry_id)
         .execute(&mut **tx)
         .await?;
-    sqlx::query("DELETE FROM straylight.task_index WHERE user_id=$1 AND entry_id=$2")
+    sqlx::query("DELETE FROM brunn.task_index WHERE user_id=$1 AND entry_id=$2")
         .bind(user_id)
         .bind(entry_id)
         .execute(&mut **tx)
@@ -313,8 +313,8 @@ pub(crate) async fn context_suggestions_in_tx(
     let rows = sqlx::query(
         r#"
         SELECT context.slug,alias.alias
-        FROM straylight.task_contexts AS context
-        LEFT JOIN straylight.task_context_aliases AS alias
+        FROM brunn.task_contexts AS context
+        LEFT JOIN brunn.task_context_aliases AS alias
           ON alias.user_id=context.user_id AND alias.context_slug=context.slug
         WHERE context.user_id=$1 AND context.archived_at IS NULL
         ORDER BY context.slug,alias.alias
@@ -392,7 +392,7 @@ pub(crate) async fn create_context_in_tx(
         .unwrap_or_else(|| display_name(&slug));
     sqlx::query(
         r#"
-        INSERT INTO straylight.task_contexts (
+        INSERT INTO brunn.task_contexts (
           user_id,slug,display_name,description,created_by
         ) VALUES ($1,$2,$3,$4,$5)
         "#,
@@ -406,7 +406,7 @@ pub(crate) async fn create_context_in_tx(
     .await?;
     sqlx::query(
         r#"
-        INSERT INTO straylight.task_audit_events (
+        INSERT INTO brunn.task_audit_events (
           user_id,credential_id,action,details
         ) VALUES ($1,$2,'context.create',$3)
         "#,
@@ -440,7 +440,7 @@ pub(crate) async fn merge_contexts_in_tx(
     let rows = sqlx::query(
         r#"
         SELECT slug,archived_at
-        FROM straylight.task_contexts
+        FROM brunn.task_contexts
         WHERE user_id=$1 AND slug=ANY($2)
         ORDER BY slug
         "#,
@@ -463,10 +463,10 @@ pub(crate) async fn merge_contexts_in_tx(
         r#"
         SELECT task.task_id,entry.id AS entry_id,entry.path,entry.current_version,
                version.content,version.metadata
-        FROM straylight.task_index AS task
-        JOIN straylight.entries AS entry
+        FROM brunn.task_index AS task
+        JOIN brunn.entries AS entry
           ON entry.user_id=task.user_id AND entry.id=task.entry_id
-        JOIN straylight.entry_versions AS version
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
@@ -499,7 +499,7 @@ pub(crate) async fn merge_contexts_in_tx(
             simple_core::upsert_markdown_in_tx(tx, user_id, Some(credential_id), prepared).await?;
         sqlx::query(
             r#"
-            INSERT INTO straylight.task_corrections (
+            INSERT INTO brunn.task_corrections (
               user_id,task_id,entry_id,entry_version,field_name,
               previous_value,previous_source,corrected_value,corrected_source,
               reason,credential_id
@@ -523,7 +523,7 @@ pub(crate) async fn merge_contexts_in_tx(
     }
     sqlx::query(
         r#"
-        UPDATE straylight.task_context_aliases
+        UPDATE brunn.task_context_aliases
         SET context_slug=$3,reason='merge'
         WHERE user_id=$1 AND context_slug=$2
         "#,
@@ -535,7 +535,7 @@ pub(crate) async fn merge_contexts_in_tx(
     .await?;
     sqlx::query(
         r#"
-        INSERT INTO straylight.task_context_aliases (
+        INSERT INTO brunn.task_context_aliases (
           user_id,alias,context_slug,reason
         ) VALUES ($1,$2,$3,'merge')
         ON CONFLICT (user_id,alias) DO UPDATE SET
@@ -550,7 +550,7 @@ pub(crate) async fn merge_contexts_in_tx(
     .await?;
     sqlx::query(
         r#"
-        UPDATE straylight.task_contexts
+        UPDATE brunn.task_contexts
         SET archived_at=$3,updated_at=$3,version=version+1
         WHERE user_id=$1 AND slug=$2
         "#,
@@ -562,7 +562,7 @@ pub(crate) async fn merge_contexts_in_tx(
     .await?;
     sqlx::query(
         r#"
-        UPDATE straylight.task_surface_defaults AS defaults
+        UPDATE brunn.task_surface_defaults AS defaults
         SET contexts=(
           SELECT array_agg(value ORDER BY first_ordinal)
           FROM (
@@ -583,7 +583,7 @@ pub(crate) async fn merge_contexts_in_tx(
     .await?;
     sqlx::query(
         r#"
-        INSERT INTO straylight.task_audit_events (
+        INSERT INTO brunn.task_audit_events (
           user_id,credential_id,action,details
         ) VALUES ($1,$2,'context.merge',$3)
         "#,
@@ -667,13 +667,13 @@ async fn sync_task_identity_projection_in_tx(
     entry_id: Uuid,
     task: &Value,
 ) -> ApiResult<()> {
-    sqlx::query("DELETE FROM straylight.task_todoist_occurrences WHERE user_id=$1 AND task_id=$2")
+    sqlx::query("DELETE FROM brunn.task_todoist_occurrences WHERE user_id=$1 AND task_id=$2")
         .bind(user_id)
         .bind(task_id)
         .execute(&mut **tx)
         .await?;
     sqlx::query(
-        "DELETE FROM straylight.task_external_refs WHERE user_id=$1 AND system='todoist' AND task_id=$2",
+        "DELETE FROM brunn.task_external_refs WHERE user_id=$1 AND system='todoist' AND task_id=$2",
     )
     .bind(user_id)
     .bind(task_id)
@@ -714,7 +714,7 @@ async fn sync_task_identity_projection_in_tx(
         if let (Some(series_id), Some(occurrence_key)) = (series_id, occurrence_key) {
             let inserted = sqlx::query(
                 r#"
-                INSERT INTO straylight.task_todoist_occurrences(
+                INSERT INTO brunn.task_todoist_occurrences(
                   user_id,series_id,occurrence_key,task_id,entry_id
                 ) VALUES($1,$2,$3,$4,$5)
                 ON CONFLICT(user_id,series_id,occurrence_key) DO UPDATE SET
@@ -742,7 +742,7 @@ async fn sync_task_identity_projection_in_tx(
         }
         sqlx::query(
             r#"
-            INSERT INTO straylight.task_external_refs(
+            INSERT INTO brunn.task_external_refs(
               user_id,system,external_id,task_id,entry_id,series_id,
               occurrence_key,metadata
             ) VALUES($1,'todoist',$2,$3,$4,$5,$6,$7)
@@ -785,7 +785,7 @@ async fn sync_task_projection_in_tx(
     let version_created_at = sqlx::query_scalar::<_, DateTime<Utc>>(
         r#"
         SELECT created_at
-        FROM straylight.entry_versions
+        FROM brunn.entry_versions
         WHERE user_id=$1 AND entry_id=$2 AND version=$3
         "#,
     )
@@ -814,7 +814,7 @@ async fn sync_task_projection_in_tx(
         .unwrap_or("derived");
         sqlx::query(
             r#"
-            INSERT INTO straylight.task_projects (
+            INSERT INTO brunn.task_projects (
               user_id,slug,title,created_by,last_activity_at
             ) VALUES ($1,$2,$3,$4,$5)
             ON CONFLICT (user_id,slug) DO UPDATE SET
@@ -845,7 +845,7 @@ async fn sync_task_projection_in_tx(
     for context in &projection.required_contexts {
         sqlx::query(
             r#"
-            INSERT INTO straylight.task_contexts (
+            INSERT INTO brunn.task_contexts (
               user_id,slug,display_name,created_by
             ) VALUES ($1,$2,$3,$4)
             ON CONFLICT (user_id,slug) DO NOTHING
@@ -861,7 +861,7 @@ async fn sync_task_projection_in_tx(
 
     sqlx::query(
         r#"
-        INSERT INTO straylight.task_index (
+        INSERT INTO brunn.task_index (
           user_id,task_id,entry_id,entry_version,title,status,ready_at,
           soft_due,hard_due,hard_due_lead_days,cost_amount_cents,cost_period,
           cost_flag,cost_since,required_contexts,project_slug,estimate_minutes,
@@ -974,7 +974,7 @@ async fn sync_checkpoint_link_in_tx(
         let exists = sqlx::query_scalar::<_, bool>(
             r#"
             SELECT EXISTS(
-              SELECT 1 FROM straylight.task_projects
+              SELECT 1 FROM brunn.task_projects
               WHERE user_id=$1 AND slug=$2 AND archived_at IS NULL
             )
             "#,
@@ -993,7 +993,7 @@ async fn sync_checkpoint_link_in_tx(
         let rows = sqlx::query(
             r#"
             SELECT slug,hub_path,repo_path
-            FROM straylight.task_projects
+            FROM brunn.task_projects
             WHERE user_id=$1 AND archived_at IS NULL
             "#,
         )
@@ -1031,7 +1031,7 @@ async fn sync_checkpoint_link_in_tx(
     if let Some((project_slug, attribution, matched_path)) = match_result {
         sqlx::query(
             r#"
-            INSERT INTO straylight.task_checkpoint_links (
+            INSERT INTO brunn.task_checkpoint_links (
               user_id,checkpoint_entry_id,project_slug,attribution,matched_path
             ) VALUES ($1,$2,$3,$4,$5)
             ON CONFLICT (user_id,checkpoint_entry_id) DO UPDATE SET
@@ -1048,7 +1048,7 @@ async fn sync_checkpoint_link_in_tx(
         .bind(matched_path)
         .execute(&mut **tx)
         .await?;
-        sqlx::query("SELECT straylight.touch_task_project_from_checkpoint($1,$2,$3)")
+        sqlx::query("SELECT brunn.touch_task_project_from_checkpoint($1,$2,$3)")
             .bind(user_id)
             .bind(checkpoint_entry_id)
             .bind(project_slug)
@@ -1056,7 +1056,7 @@ async fn sync_checkpoint_link_in_tx(
             .await?;
     } else {
         sqlx::query(
-            "DELETE FROM straylight.task_checkpoint_links WHERE user_id=$1 AND checkpoint_entry_id=$2",
+            "DELETE FROM brunn.task_checkpoint_links WHERE user_id=$1 AND checkpoint_entry_id=$2",
         )
         .bind(user_id)
         .bind(checkpoint_entry_id)
@@ -1754,7 +1754,7 @@ async fn begin_receipt<T: Serialize>(
     if let Some(row) = sqlx::query(
         r#"
         SELECT request_hash,status,receipt
-        FROM straylight.task_operation_receipts
+        FROM brunn.task_operation_receipts
         WHERE user_id=$1 AND operation_kind=$2 AND idempotency_key=$3
         "#,
     )
@@ -1788,7 +1788,7 @@ async fn begin_receipt<T: Serialize>(
     }
     sqlx::query(
         r#"
-        INSERT INTO straylight.task_operation_receipts (
+        INSERT INTO brunn.task_operation_receipts (
           user_id,operation_kind,idempotency_key,request_hash,
           created_by_credential_id
         ) VALUES ($1,$2,$3,$4,$5)
@@ -1814,7 +1814,7 @@ async fn finalize_receipt(
 ) -> ApiResult<()> {
     let updated = sqlx::query(
         r#"
-        UPDATE straylight.task_operation_receipts
+        UPDATE brunn.task_operation_receipts
         SET status='committed',task_id=$4,receipt=$5,committed_at=clock_timestamp()
         WHERE user_id=$1 AND operation_kind=$2 AND idempotency_key=$3
           AND status='pending' AND created_by_credential_id=$6
@@ -2006,12 +2006,12 @@ async fn resolve_context_in_tx(
         r#"
         SELECT context_slug FROM (
           SELECT slug AS context_slug,0 AS priority
-          FROM straylight.task_contexts
+          FROM brunn.task_contexts
           WHERE user_id=$1 AND slug=$2 AND archived_at IS NULL
           UNION ALL
           SELECT aliases.context_slug,1
-          FROM straylight.task_context_aliases AS aliases
-          JOIN straylight.task_contexts AS context
+          FROM brunn.task_context_aliases AS aliases
+          JOIN brunn.task_contexts AS context
             ON context.user_id=aliases.user_id AND context.slug=aliases.context_slug
           WHERE aliases.user_id=$1 AND lower(aliases.alias)=lower($3)
             AND context.archived_at IS NULL
@@ -2037,12 +2037,12 @@ async fn resolve_project_in_tx(
         r#"
         SELECT project_slug FROM (
           SELECT slug AS project_slug,0 AS priority
-          FROM straylight.task_projects
+          FROM brunn.task_projects
           WHERE user_id=$1 AND slug=$2 AND archived_at IS NULL
           UNION ALL
           SELECT aliases.project_slug,1
-          FROM straylight.task_project_aliases AS aliases
-          JOIN straylight.task_projects AS project
+          FROM brunn.task_project_aliases AS aliases
+          JOIN brunn.task_projects AS project
             ON project.user_id=aliases.user_id AND project.slug=aliases.project_slug
           WHERE aliases.user_id=$1 AND lower(aliases.alias)=lower($3)
             AND project.archived_at IS NULL
@@ -2256,13 +2256,12 @@ pub(crate) async fn capture_tasks(
             prepared,
         )
         .await?;
-        let projection = sqlx::query(
-            "SELECT title,task FROM straylight.task_index WHERE user_id=$1 AND task_id=$2",
-        )
-        .bind(auth.user_id.0)
-        .bind(task_id)
-        .fetch_one(&mut *tx)
-        .await?;
+        let projection =
+            sqlx::query("SELECT title,task FROM brunn.task_index WHERE user_id=$1 AND task_id=$2")
+                .bind(auth.user_id.0)
+                .bind(task_id)
+                .fetch_one(&mut *tx)
+                .await?;
         let projected_task: Value = projection.get("task");
         response_items.push(json!({
             "client_ref": item.client_ref,
@@ -2332,10 +2331,10 @@ async fn fetch_task_row(
                task.task,task.provenance,task.source_timestamps,task.created_at,
                task.updated_at,entry.path,entry.current_version,version.content,
                version.metadata
-        FROM straylight.task_index AS task
-        JOIN straylight.entries AS entry
+        FROM brunn.task_index AS task
+        JOIN brunn.entries AS entry
           ON entry.user_id=task.user_id AND entry.id=task.entry_id
-        JOIN straylight.entry_versions AS version
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id AND version.entry_id=entry.id
          AND version.version=entry.current_version
         WHERE task.user_id=$1 AND task.task_id=$2
@@ -2345,10 +2344,10 @@ async fn fetch_task_row(
                task.task,task.provenance,task.source_timestamps,task.created_at,
                task.updated_at,entry.path,entry.current_version,version.content,
                version.metadata
-        FROM straylight.task_index AS task
-        JOIN straylight.entries AS entry
+        FROM brunn.task_index AS task
+        JOIN brunn.entries AS entry
           ON entry.user_id=task.user_id AND entry.id=task.entry_id
-        JOIN straylight.entry_versions AS version
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id AND version.entry_id=entry.id
          AND version.version=entry.current_version
         WHERE task.user_id=$1 AND task.task_id=$2
@@ -2733,7 +2732,7 @@ async fn insert_corrections_in_tx(
         let id = Uuid::now_v7();
         sqlx::query(
             r#"
-            INSERT INTO straylight.task_corrections (
+            INSERT INTO brunn.task_corrections (
               id,user_id,task_id,entry_id,entry_version,field_name,
               previous_value,previous_source,corrected_value,corrected_source,
               reason,credential_id
@@ -2765,7 +2764,7 @@ async fn owner_local_date_in_tx(
     now: DateTime<Utc>,
 ) -> ApiResult<(NaiveDate, String)> {
     let timezone = sqlx::query_scalar::<_, String>(
-        "SELECT timezone FROM straylight.task_settings WHERE user_id=$1",
+        "SELECT timezone FROM brunn.task_settings WHERE user_id=$1",
     )
     .bind(user_id)
     .fetch_one(&mut **tx)
@@ -3183,7 +3182,7 @@ pub(crate) async fn update_task(
                 .execute(&mut *tx)
                 .await?;
             let pins = sqlx::query_scalar::<_, i64>(
-                "SELECT count(*) FROM straylight.task_index WHERE user_id=$1 AND today_pin=$2 AND task_id<>$3",
+                "SELECT count(*) FROM brunn.task_index WHERE user_id=$1 AND today_pin=$2 AND task_id<>$3",
             )
             .bind(auth.user_id.0)
             .bind(today)
@@ -3310,7 +3309,7 @@ pub(crate) async fn update_task(
     };
     sqlx::query(
         r#"
-        INSERT INTO straylight.task_audit_events (
+        INSERT INTO brunn.task_audit_events (
           user_id,task_id,credential_id,action,details
         ) VALUES ($1,$2,$3,$4,$5)
         "#,
@@ -3330,7 +3329,7 @@ pub(crate) async fn update_task(
         Some(
             sqlx::query_scalar::<_, i64>(
                 r#"
-                SELECT count(*) FROM straylight.task_index
+                SELECT count(*) FROM brunn.task_index
                 WHERE user_id=$1 AND status='done'
                   AND (done_at AT TIME ZONE $2)::date=(clock_timestamp() AT TIME ZONE $2)::date
                 "#,
@@ -3463,8 +3462,8 @@ SELECT task.task_id,task.entry_id,task.entry_version,task.title,task.status,
        task.required_contexts,task.project_slug,task.parked,task.today_pin,
        task.triaged_at,task.created_at,task.provenance,task.source_timestamps,
        project.interest_override,project.interest_set_at,project.last_activity_at
-FROM straylight.task_index AS task
-LEFT JOIN straylight.task_projects AS project
+FROM brunn.task_index AS task
+LEFT JOIN brunn.task_projects AS project
   ON project.user_id=task.user_id AND project.slug=task.project_slug
 WHERE task.user_id=$1 AND task.status IN ('open','waiting')
   AND ($2::boolean OR task.status='open')
@@ -3487,8 +3486,8 @@ SELECT task.task_id,task.entry_id,task.entry_version,task.title,task.status,
        task.triaged_at,task.done_at,task.dropped_at,task.created_at,
        task.provenance,task.source_timestamps,
        project.interest_override,project.interest_set_at,project.last_activity_at
-FROM straylight.task_index AS task
-LEFT JOIN straylight.task_projects AS project
+FROM brunn.task_index AS task
+LEFT JOIN brunn.task_projects AS project
   ON project.user_id=task.user_id AND project.slug=task.project_slug
 WHERE task.user_id=$1
   AND task.created_at <= $2::timestamptz
@@ -3968,7 +3967,7 @@ pub(crate) async fn task_candidates(
     } else {
         Some(
             sqlx::query_scalar::<_, i64>(
-                "SELECT count(*) FROM straylight.task_index WHERE user_id=$1 AND status IN ('open','waiting') AND ($2::text IS NULL OR project_slug=$2) AND created_at<=$3",
+                "SELECT count(*) FROM brunn.task_index WHERE user_id=$1 AND status IN ('open','waiting') AND ($2::text IS NULL OR project_slug=$2) AND created_at<=$3",
             )
             .bind(auth.user_id.0)
             .bind(&project)
@@ -3978,7 +3977,7 @@ pub(crate) async fn task_candidates(
         )
     };
     let settings = sqlx::query(
-        "SELECT hard_lead_days,soft_window_days FROM straylight.task_settings WHERE user_id=$1",
+        "SELECT hard_lead_days,soft_window_days FROM brunn.task_settings WHERE user_id=$1",
     )
     .bind(auth.user_id.0)
     .fetch_one(&mut *tx)
@@ -4143,7 +4142,7 @@ pub(crate) async fn task_corrections(
     let cursor = match query.cursor {
         Some(id) => Some(
             sqlx::query_scalar::<_, DateTime<Utc>>(
-                "SELECT created_at FROM straylight.task_corrections WHERE user_id=$1 AND id=$2",
+                "SELECT created_at FROM brunn.task_corrections WHERE user_id=$1 AND id=$2",
             )
             .bind(auth.user_id.0)
             .bind(id)
@@ -4157,7 +4156,7 @@ pub(crate) async fn task_corrections(
         r#"
         SELECT id,task_id,entry_version,field_name,previous_value,previous_source,
                corrected_value,corrected_source,reason,created_at
-        FROM straylight.task_corrections
+        FROM brunn.task_corrections
         WHERE user_id=$1 AND ($2::uuid IS NULL OR task_id=$2)
           AND ($3::timestamptz IS NULL OR (created_at,id)<($3,$4))
         ORDER BY created_at DESC,id DESC
@@ -4283,7 +4282,7 @@ pub(crate) async fn task_done_summary(
     let cursor_done_at = match query.cursor {
         Some(task_id) => Some(
             sqlx::query_scalar::<_, DateTime<Utc>>(
-                "SELECT done_at FROM straylight.task_index WHERE user_id=$1 AND task_id=$2 AND status='done'",
+                "SELECT done_at FROM brunn.task_index WHERE user_id=$1 AND task_id=$2 AND status='done'",
             )
             .bind(auth.user_id.0)
             .bind(task_id)
@@ -4295,7 +4294,7 @@ pub(crate) async fn task_done_summary(
     };
     let total = sqlx::query_scalar::<_, i64>(
         r#"
-        SELECT count(*) FROM straylight.task_index
+        SELECT count(*) FROM brunn.task_index
         WHERE user_id=$1 AND status='done'
           AND (done_at AT TIME ZONE $2)::date BETWEEN $3 AND $4
           AND done_at <= $5
@@ -4311,7 +4310,7 @@ pub(crate) async fn task_done_summary(
     let rows = sqlx::query(
         r#"
         SELECT task_id,entry_id,entry_version,title,done_at,task
-        FROM straylight.task_index
+        FROM brunn.task_index
         WHERE user_id=$1 AND status='done'
           AND (done_at AT TIME ZONE $2)::date BETWEEN $3 AND $4
           AND done_at <= $5
@@ -4356,7 +4355,7 @@ pub(crate) async fn task_done_summary(
         .collect::<Vec<_>>();
     let done_today_count = sqlx::query_scalar::<_, i64>(
         r#"
-        SELECT count(*) FROM straylight.task_index
+        SELECT count(*) FROM brunn.task_index
         WHERE user_id=$1 AND status='done'
           AND (done_at AT TIME ZONE $2)::date=$3
           AND done_at <= $4
@@ -4492,12 +4491,12 @@ pub(crate) async fn list_contexts(
                context.created_by,context.version,context.created_at,context.updated_at,
                COALESCE(array_agg(alias.alias ORDER BY lower(alias.alias))
                  FILTER (WHERE alias.alias IS NOT NULL),'{}'::text[]) AS aliases,
-               (SELECT count(*) FROM straylight.task_index AS task
+               (SELECT count(*) FROM brunn.task_index AS task
                 WHERE task.user_id=context.user_id
                   AND task.required_contexts @> ARRAY[context.slug]::text[]
                   AND task.status IN ('open','waiting')) AS active_task_count
-        FROM straylight.task_contexts AS context
-        LEFT JOIN straylight.task_context_aliases AS alias
+        FROM brunn.task_contexts AS context
+        LEFT JOIN brunn.task_context_aliases AS alias
           ON alias.user_id=context.user_id AND alias.context_slug=context.slug
         WHERE context.user_id=$1
           AND ($2 OR context.archived_at IS NULL)
@@ -4514,7 +4513,7 @@ pub(crate) async fn list_contexts(
     .fetch_all(&mut *tx)
     .await?;
     let defaults = sqlx::query(
-        "SELECT surface,contexts,version,updated_at FROM straylight.task_surface_defaults WHERE user_id=$1 ORDER BY surface",
+        "SELECT surface,contexts,version,updated_at FROM brunn.task_surface_defaults WHERE user_id=$1 ORDER BY surface",
     )
     .bind(auth.user_id.0)
     .fetch_all(&mut *tx)
@@ -4626,7 +4625,7 @@ pub(crate) async fn create_context(
         ReceiptStart::New => {}
     }
     if sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM straylight.task_contexts WHERE user_id=$1 AND slug=$2)",
+        "SELECT EXISTS(SELECT 1 FROM brunn.task_contexts WHERE user_id=$1 AND slug=$2)",
     )
     .bind(auth.user_id.0)
     .bind(&slug)
@@ -4681,9 +4680,9 @@ pub(crate) async fn create_context(
         let collision = sqlx::query_scalar::<_, bool>(
             r#"
             SELECT EXISTS(
-              SELECT 1 FROM straylight.task_contexts WHERE user_id=$1 AND slug=$2
+              SELECT 1 FROM brunn.task_contexts WHERE user_id=$1 AND slug=$2
               UNION ALL
-              SELECT 1 FROM straylight.task_context_aliases WHERE user_id=$1 AND lower(alias)=lower($3)
+              SELECT 1 FROM brunn.task_context_aliases WHERE user_id=$1 AND lower(alias)=lower($3)
             )
             "#,
         )
@@ -4700,7 +4699,7 @@ pub(crate) async fn create_context(
             ));
         }
         sqlx::query(
-            "INSERT INTO straylight.task_context_aliases(user_id,alias,context_slug,reason) VALUES ($1,$2,$3,$4)",
+            "INSERT INTO brunn.task_context_aliases(user_id,alias,context_slug,reason) VALUES ($1,$2,$3,$4)",
         )
         .bind(auth.user_id.0)
         .bind(&normalized)
@@ -4771,7 +4770,7 @@ pub(crate) async fn merge_contexts(
         ));
     }
     let locked = sqlx::query(
-        "SELECT slug,version FROM straylight.task_contexts WHERE user_id=$1 AND slug=ANY($2) ORDER BY slug FOR UPDATE",
+        "SELECT slug,version FROM brunn.task_contexts WHERE user_id=$1 AND slug=ANY($2) ORDER BY slug FOR UPDATE",
     )
     .bind(auth.user_id.0)
     .bind(vec![from.clone(), into.clone()])
@@ -4812,7 +4811,7 @@ pub(crate) async fn merge_contexts(
     )
     .await?;
     sqlx::query(
-        "UPDATE straylight.task_contexts SET version=version+1,updated_at=clock_timestamp() WHERE user_id=$1 AND slug=$2",
+        "UPDATE brunn.task_contexts SET version=version+1,updated_at=clock_timestamp() WHERE user_id=$1 AND slug=$2",
     )
     .bind(auth.user_id.0)
     .bind(normalize_slug(&request.into)?)
@@ -4820,7 +4819,7 @@ pub(crate) async fn merge_contexts(
     .await?;
     if let Some(reason) = &request.reason {
         sqlx::query(
-            "INSERT INTO straylight.task_audit_events(user_id,credential_id,action,details) VALUES ($1,$2,'context.merge.reason',$3)",
+            "INSERT INTO brunn.task_audit_events(user_id,credential_id,action,details) VALUES ($1,$2,'context.merge.reason',$3)",
         )
         .bind(auth.user_id.0)
         .bind(auth.credential_id.0)
@@ -4879,7 +4878,7 @@ pub(crate) async fn archive_context(
         ReceiptStart::New => {}
     }
     let current = sqlx::query_scalar::<_, i64>(
-        "SELECT version FROM straylight.task_contexts WHERE user_id=$1 AND slug=$2 FOR UPDATE",
+        "SELECT version FROM brunn.task_contexts WHERE user_id=$1 AND slug=$2 FOR UPDATE",
     )
     .bind(auth.user_id.0)
     .bind(&slug)
@@ -4895,7 +4894,7 @@ pub(crate) async fn archive_context(
     }
     let next = current + 1;
     sqlx::query(
-        "UPDATE straylight.task_contexts SET archived_at=CASE WHEN $3 THEN clock_timestamp() ELSE NULL END,updated_at=clock_timestamp(),version=$4 WHERE user_id=$1 AND slug=$2",
+        "UPDATE brunn.task_contexts SET archived_at=CASE WHEN $3 THEN clock_timestamp() ELSE NULL END,updated_at=clock_timestamp(),version=$4 WHERE user_id=$1 AND slug=$2",
     )
     .bind(auth.user_id.0)
     .bind(&slug)
@@ -4904,7 +4903,7 @@ pub(crate) async fn archive_context(
     .execute(&mut *tx)
     .await?;
     sqlx::query(
-        "INSERT INTO straylight.task_audit_events(user_id,credential_id,action,details) VALUES ($1,$2,'context.archive',$3)",
+        "INSERT INTO brunn.task_audit_events(user_id,credential_id,action,details) VALUES ($1,$2,'context.archive',$3)",
     )
     .bind(auth.user_id.0)
     .bind(auth.credential_id.0)
@@ -4972,13 +4971,13 @@ pub(crate) async fn set_available_contexts(
         ReceiptStart::New => {}
     }
     let settings_version = sqlx::query_scalar::<_, i64>(
-        "SELECT version FROM straylight.task_settings WHERE user_id=$1 FOR UPDATE",
+        "SELECT version FROM brunn.task_settings WHERE user_id=$1 FOR UPDATE",
     )
     .bind(auth.user_id.0)
     .fetch_one(&mut *tx)
     .await?;
     let current = sqlx::query_scalar::<_, i64>(
-        "SELECT version FROM straylight.task_surface_defaults WHERE user_id=$1 AND surface=$2 FOR UPDATE",
+        "SELECT version FROM brunn.task_surface_defaults WHERE user_id=$1 AND surface=$2 FOR UPDATE",
     )
     .bind(auth.user_id.0)
     .bind(&surface)
@@ -4992,7 +4991,7 @@ pub(crate) async fn set_available_contexts(
         ));
     }
     let existing = sqlx::query_scalar::<_, String>(
-        "SELECT slug FROM straylight.task_contexts WHERE user_id=$1 AND slug=ANY($2) AND archived_at IS NULL",
+        "SELECT slug FROM brunn.task_contexts WHERE user_id=$1 AND slug=ANY($2) AND archived_at IS NULL",
     )
     .bind(auth.user_id.0)
     .bind(&contexts)
@@ -5012,7 +5011,7 @@ pub(crate) async fn set_available_contexts(
     }
     let version = sqlx::query_scalar::<_, i64>(
         r#"
-        INSERT INTO straylight.task_surface_defaults(user_id,surface,contexts,version)
+        INSERT INTO brunn.task_surface_defaults(user_id,surface,contexts,version)
         VALUES ($1,$2,$3,1)
         ON CONFLICT (user_id,surface) DO UPDATE SET
           contexts=EXCLUDED.contexts,version=task_surface_defaults.version+1,
@@ -5027,14 +5026,14 @@ pub(crate) async fn set_available_contexts(
     .await?;
     let next_settings_version = settings_version + 1;
     sqlx::query(
-        "UPDATE straylight.task_settings SET version=$2,updated_at=clock_timestamp() WHERE user_id=$1",
+        "UPDATE brunn.task_settings SET version=$2,updated_at=clock_timestamp() WHERE user_id=$1",
     )
     .bind(auth.user_id.0)
     .bind(next_settings_version)
     .execute(&mut *tx)
     .await?;
     sqlx::query(
-        "INSERT INTO straylight.task_audit_events(user_id,credential_id,action,details) VALUES ($1,$2,'context.set_available',$3)",
+        "INSERT INTO brunn.task_audit_events(user_id,credential_id,action,details) VALUES ($1,$2,'context.set_available',$3)",
     )
     .bind(auth.user_id.0)
     .bind(auth.credential_id.0)
@@ -5188,7 +5187,7 @@ pub(crate) async fn register_project(
         ReceiptStart::New => {}
     }
     let existing = sqlx::query(
-        "SELECT version,archived_at FROM straylight.task_projects WHERE user_id=$1 AND slug=$2 FOR UPDATE",
+        "SELECT version,archived_at FROM brunn.task_projects WHERE user_id=$1 AND slug=$2 FOR UPDATE",
     )
     .bind(auth.user_id.0)
     .bind(&slug)
@@ -5213,7 +5212,7 @@ pub(crate) async fn register_project(
         let next = current + 1;
         sqlx::query(
             r#"
-            UPDATE straylight.task_projects SET
+            UPDATE brunn.task_projects SET
               title=$3,description=$4,hub_path=$5,repo_path=$6,
               archived_at=CASE
                 WHEN $7::boolean IS NULL THEN archived_at
@@ -5245,7 +5244,7 @@ pub(crate) async fn register_project(
         }
         sqlx::query(
             r#"
-            INSERT INTO straylight.task_projects(
+            INSERT INTO brunn.task_projects(
               user_id,slug,title,description,hub_path,repo_path,archived_at,created_by
             ) VALUES ($1,$2,$3,$4,$5,$6,CASE WHEN $7 THEN clock_timestamp() ELSE NULL END,$8)
             "#,
@@ -5262,7 +5261,7 @@ pub(crate) async fn register_project(
         .await?;
         1
     };
-    sqlx::query("DELETE FROM straylight.task_project_aliases WHERE user_id=$1 AND project_slug=$2")
+    sqlx::query("DELETE FROM brunn.task_project_aliases WHERE user_id=$1 AND project_slug=$2")
         .bind(auth.user_id.0)
         .bind(&slug)
         .execute(&mut *tx)
@@ -5274,9 +5273,9 @@ pub(crate) async fn register_project(
         let collision = sqlx::query_scalar::<_, bool>(
             r#"
             SELECT EXISTS(
-              SELECT 1 FROM straylight.task_projects WHERE user_id=$1 AND slug=$2
+              SELECT 1 FROM brunn.task_projects WHERE user_id=$1 AND slug=$2
               UNION ALL
-              SELECT 1 FROM straylight.task_project_aliases WHERE user_id=$1 AND lower(alias)=lower($2)
+              SELECT 1 FROM brunn.task_project_aliases WHERE user_id=$1 AND lower(alias)=lower($2)
             )
             "#,
         )
@@ -5292,7 +5291,7 @@ pub(crate) async fn register_project(
             ));
         }
         sqlx::query(
-            "INSERT INTO straylight.task_project_aliases(user_id,alias,project_slug,reason) VALUES ($1,$2,$3,$4)",
+            "INSERT INTO brunn.task_project_aliases(user_id,alias,project_slug,reason) VALUES ($1,$2,$3,$4)",
         )
         .bind(auth.user_id.0)
         .bind(alias)
@@ -5302,7 +5301,7 @@ pub(crate) async fn register_project(
         .await?;
     }
     sqlx::query(
-        "INSERT INTO straylight.task_audit_events(user_id,credential_id,action,details) VALUES ($1,$2,'project.register',$3)",
+        "INSERT INTO brunn.task_audit_events(user_id,credential_id,action,details) VALUES ($1,$2,'project.register',$3)",
     )
     .bind(auth.user_id.0)
     .bind(auth.credential_id.0)
@@ -5310,7 +5309,7 @@ pub(crate) async fn register_project(
     .execute(&mut *tx)
     .await?;
     let archived = sqlx::query_scalar::<_, bool>(
-        "SELECT archived_at IS NOT NULL FROM straylight.task_projects WHERE user_id=$1 AND slug=$2",
+        "SELECT archived_at IS NOT NULL FROM brunn.task_projects WHERE user_id=$1 AND slug=$2",
     )
     .bind(auth.user_id.0)
     .bind(&slug)
@@ -5404,24 +5403,24 @@ pub(crate) async fn list_projects(
                COALESCE(aliases.values,'{}'::text[]) AS aliases,
                COALESCE(tasks.open_task_count,0) AS open_task_count,
                checkpoints.last_checkpoint_at
-        FROM straylight.task_projects AS project
+        FROM brunn.task_projects AS project
         LEFT JOIN LATERAL(
           SELECT array_agg(alias ORDER BY alias) AS values
-          FROM straylight.task_project_aliases
+          FROM brunn.task_project_aliases
           WHERE user_id=project.user_id AND project_slug=project.slug
         ) AS aliases ON true
         LEFT JOIN LATERAL(
-          SELECT count(*) AS open_task_count FROM straylight.task_index
+          SELECT count(*) AS open_task_count FROM brunn.task_index
           WHERE user_id=project.user_id AND project_slug=project.slug
             AND status IN ('open','waiting')
             AND created_at <= $4
         ) AS tasks ON true
         LEFT JOIN LATERAL(
           SELECT max(version.created_at) AS last_checkpoint_at
-          FROM straylight.task_checkpoint_links AS link
-          JOIN straylight.entries AS entry
+          FROM brunn.task_checkpoint_links AS link
+          JOIN brunn.entries AS entry
             ON entry.user_id=link.user_id AND entry.id=link.checkpoint_entry_id
-          JOIN straylight.entry_versions AS version
+          JOIN brunn.entry_versions AS version
             ON version.user_id=entry.user_id
            AND version.entry_id=entry.id
            AND version.version=entry.current_version
@@ -5509,7 +5508,7 @@ pub(crate) async fn set_project_interest(
         ReceiptStart::New => {}
     }
     let current = sqlx::query_scalar::<_, i64>(
-        "SELECT version FROM straylight.task_projects WHERE user_id=$1 AND slug=$2 FOR UPDATE",
+        "SELECT version FROM brunn.task_projects WHERE user_id=$1 AND slug=$2 FOR UPDATE",
     )
     .bind(auth.user_id.0)
     .bind(&slug)
@@ -5525,9 +5524,9 @@ pub(crate) async fn set_project_interest(
     }
     let version = current + 1;
     sqlx::query(
-        "UPDATE straylight.task_projects SET interest_override=$3,interest_set_by=$4,interest_set_at=clock_timestamp(),version=$5,updated_at=clock_timestamp() WHERE user_id=$1 AND slug=$2",
+        "UPDATE brunn.task_projects SET interest_override=$3,interest_set_by=$4,interest_set_at=clock_timestamp(),version=$5,updated_at=clock_timestamp() WHERE user_id=$1 AND slug=$2",
     ).bind(auth.user_id.0).bind(&slug).bind(&request.interest).bind(&source).bind(version).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO straylight.task_audit_events(user_id,credential_id,action,details) VALUES ($1,$2,'project.set_interest',$3)")
+    sqlx::query("INSERT INTO brunn.task_audit_events(user_id,credential_id,action,details) VALUES ($1,$2,'project.set_interest',$3)")
         .bind(auth.user_id.0).bind(auth.credential_id.0).bind(json!({"slug":slug,"interest":request.interest,"source":source,"version":version})).execute(&mut *tx).await?;
     let receipt = json!({"project":{"slug":slug,"interest":request.interest,"interest_set_at":Utc::now(),"version":version},"replayed":false});
     finalize_receipt(
@@ -5570,8 +5569,8 @@ SELECT task.task_id,task.entry_id,task.entry_version,task.title,task.status,
        task.triaged_at,task.created_at,task.updated_at,task.waiting_on,
        task.provenance,task.source_timestamps,
        project.interest_override,project.interest_set_at,project.last_activity_at
-FROM straylight.task_index AS task
-JOIN straylight.task_projects AS project
+FROM brunn.task_index AS task
+JOIN brunn.task_projects AS project
   ON project.user_id=task.user_id AND project.slug=task.project_slug
 WHERE task.user_id=$1 AND task.project_slug=$2
   AND task.status IN ('open','waiting') AND task.created_at<=$3
@@ -5588,16 +5587,16 @@ pub(crate) async fn project_state(
     validate_project_path_slug(&slug)?;
     let as_of = parse_project_state_as_of(raw.as_deref())?.unwrap_or_else(Utc::now);
     let mut tx = state.begin_read(&auth).await?;
-    let project=sqlx::query("SELECT title,interest_override,interest_set_at,last_activity_at,version FROM straylight.task_projects WHERE user_id=$1 AND slug=$2 AND archived_at IS NULL")
+    let project=sqlx::query("SELECT title,interest_override,interest_set_at,last_activity_at,version FROM brunn.task_projects WHERE user_id=$1 AND slug=$2 AND archived_at IS NULL")
         .bind(auth.user_id.0).bind(&slug).fetch_optional(&mut *tx).await?
         .ok_or_else(||ApiError::not_found("project_not_found",&slug))?;
     let checkpoint=sqlx::query(
         r#"
         SELECT link.checkpoint_entry_id,link.attribution,link.matched_path,link.linked_at,
                entry.current_version,version.metadata,version.created_at AS checkpoint_at
-        FROM straylight.task_checkpoint_links AS link
-        JOIN straylight.entries AS entry ON entry.user_id=link.user_id AND entry.id=link.checkpoint_entry_id
-        JOIN straylight.entry_versions AS version ON version.user_id=entry.user_id AND version.entry_id=entry.id AND version.version=entry.current_version
+        FROM brunn.task_checkpoint_links AS link
+        JOIN brunn.entries AS entry ON entry.user_id=link.user_id AND entry.id=link.checkpoint_entry_id
+        JOIN brunn.entry_versions AS version ON version.user_id=entry.user_id AND version.entry_id=entry.id AND version.version=entry.current_version
         WHERE link.user_id=$1 AND link.project_slug=$2 AND version.created_at<=$3
         ORDER BY version.created_at DESC,link.checkpoint_entry_id DESC LIMIT 1
         "#,
@@ -5609,7 +5608,7 @@ pub(crate) async fn project_state(
         .fetch_all(&mut *tx)
         .await?;
     let contexts = sqlx::query_scalar::<_, String>(
-        "SELECT slug FROM straylight.task_contexts WHERE user_id=$1 AND archived_at IS NULL",
+        "SELECT slug FROM brunn.task_contexts WHERE user_id=$1 AND archived_at IS NULL",
     )
     .bind(auth.user_id.0)
     .fetch_all(&mut *tx)
@@ -5617,7 +5616,7 @@ pub(crate) async fn project_state(
     .into_iter()
     .collect::<BTreeSet<_>>();
     let settings = sqlx::query(
-        "SELECT hard_lead_days,soft_window_days FROM straylight.task_settings WHERE user_id=$1",
+        "SELECT hard_lead_days,soft_window_days FROM brunn.task_settings WHERE user_id=$1",
     )
     .bind(auth.user_id.0)
     .fetch_one(&mut *tx)
@@ -5667,7 +5666,7 @@ pub(crate) async fn project_state(
         .iter()
         .filter(|row| row.get::<bool, _>("parked"))
         .count();
-    let rollups=sqlx::query("SELECT count(*) FILTER(WHERE status='open') AS open_count,count(*) FILTER(WHERE status='waiting') AS waiting_count,count(*) FILTER(WHERE status='done' AND done_at<=$3) AS done_count,count(*) FILTER(WHERE status='dropped' AND dropped_at<=$3) AS dropped_count FROM straylight.task_index WHERE user_id=$1 AND project_slug=$2 AND created_at<=$3")
+    let rollups=sqlx::query("SELECT count(*) FILTER(WHERE status='open') AS open_count,count(*) FILTER(WHERE status='waiting') AS waiting_count,count(*) FILTER(WHERE status='done' AND done_at<=$3) AS done_count,count(*) FILTER(WHERE status='dropped' AND dropped_at<=$3) AS dropped_count FROM brunn.task_index WHERE user_id=$1 AND project_slug=$2 AND created_at<=$3")
         .bind(auth.user_id.0).bind(&slug).bind(as_of).fetch_one(&mut *tx).await?;
     let explicit = project.get::<Option<String>, _>("interest_override");
     let set_at = project.get::<Option<DateTime<Utc>>, _>("interest_set_at");
@@ -5728,14 +5727,14 @@ async fn settings_json_in_tx(
                soft_window_days,triage_after_days,waiting_followup_days,
                quiet_hours_start,quiet_hours_end,quiet_override_enabled,
                quiet_override_within_hours,version,updated_at
-        FROM straylight.task_settings WHERE user_id=$1
+        FROM brunn.task_settings WHERE user_id=$1
         "#,
     )
     .bind(user_id)
     .fetch_one(&mut **tx)
     .await?;
     let surfaces = sqlx::query(
-        "SELECT surface,contexts,version FROM straylight.task_surface_defaults WHERE user_id=$1 ORDER BY surface",
+        "SELECT surface,contexts,version FROM brunn.task_surface_defaults WHERE user_id=$1 ORDER BY surface",
     )
     .bind(user_id)
     .fetch_all(&mut **tx)
@@ -5792,7 +5791,7 @@ pub(crate) async fn task_guard_status(
     let row = sqlx::query(
         r#"
         SELECT last_run_at,last_outcome,last_error_code,next_run_at
-        FROM straylight.task_guard_state
+        FROM brunn.task_guard_state
         WHERE user_id=$1
         "#,
     )
@@ -5907,7 +5906,7 @@ pub(crate) async fn update_task_settings(
         ReceiptStart::New => {}
     }
     let current = sqlx::query_scalar::<_, i64>(
-        "SELECT version FROM straylight.task_settings WHERE user_id=$1 FOR UPDATE",
+        "SELECT version FROM brunn.task_settings WHERE user_id=$1 FOR UPDATE",
     )
     .bind(auth.user_id.0)
     .fetch_one(&mut *tx)
@@ -5922,7 +5921,7 @@ pub(crate) async fn update_task_settings(
     let version = current + 1;
     sqlx::query(
         r#"
-        UPDATE straylight.task_settings SET
+        UPDATE brunn.task_settings SET
           timezone=COALESCE($2,timezone),hard_lead_days=COALESCE($3,hard_lead_days),
           hard_second_lead_hours=COALESCE($4,hard_second_lead_hours),
           due_day_local_time=COALESCE($5,due_day_local_time),soft_window_days=COALESCE($6,soft_window_days),
@@ -5960,18 +5959,18 @@ pub(crate) async fn update_task_settings(
                 .collect::<ApiResult<Vec<_>>>()?;
             contexts.sort();
             contexts.dedup();
-            let active=sqlx::query_scalar::<_,String>("SELECT slug FROM straylight.task_contexts WHERE user_id=$1 AND slug=ANY($2) AND archived_at IS NULL")
+            let active=sqlx::query_scalar::<_,String>("SELECT slug FROM brunn.task_contexts WHERE user_id=$1 AND slug=ANY($2) AND archived_at IS NULL")
                 .bind(auth.user_id.0).bind(&contexts).fetch_all(&mut *tx).await?.into_iter().collect::<BTreeSet<_>>();
             if contexts.iter().any(|context| !active.contains(context)) {
                 return Err(ApiError::invalid(
                     "surface_defaults contains an unknown or archived context",
                 ));
             }
-            sqlx::query("INSERT INTO straylight.task_surface_defaults(user_id,surface,contexts) VALUES ($1,$2,$3) ON CONFLICT(user_id,surface) DO UPDATE SET contexts=EXCLUDED.contexts,version=task_surface_defaults.version+1,updated_at=clock_timestamp()")
+            sqlx::query("INSERT INTO brunn.task_surface_defaults(user_id,surface,contexts) VALUES ($1,$2,$3) ON CONFLICT(user_id,surface) DO UPDATE SET contexts=EXCLUDED.contexts,version=task_surface_defaults.version+1,updated_at=clock_timestamp()")
                 .bind(auth.user_id.0).bind(surface).bind(contexts).execute(&mut *tx).await?;
         }
     }
-    sqlx::query("INSERT INTO straylight.task_audit_events(user_id,credential_id,action,details) VALUES ($1,$2,'task.settings.update',$3)")
+    sqlx::query("INSERT INTO brunn.task_audit_events(user_id,credential_id,action,details) VALUES ($1,$2,'task.settings.update',$3)")
         .bind(auth.user_id.0).bind(auth.credential_id.0).bind(json!({"version":version})).execute(&mut *tx).await?;
     let settings = settings_json_in_tx(&mut tx, auth.user_id.0).await?;
     let receipt = json!({"settings":settings,"replayed":false});
@@ -6124,7 +6123,7 @@ async fn cache_todoist_project_in_tx(
     if deleted && name.trim().is_empty() {
         sqlx::query(
             r#"
-            UPDATE straylight.task_todoist_projects
+            UPDATE brunn.task_todoist_projects
             SET is_deleted=true,updated_at=clock_timestamp()
             WHERE user_id=$1 AND external_id=$2
             "#,
@@ -6137,7 +6136,7 @@ async fn cache_todoist_project_in_tx(
     }
     sqlx::query(
         r#"
-        INSERT INTO straylight.task_todoist_projects(
+        INSERT INTO brunn.task_todoist_projects(
           user_id,external_id,name,is_deleted
         ) VALUES($1,$2,$3,$4)
         ON CONFLICT(user_id,external_id) DO UPDATE SET
@@ -6160,7 +6159,7 @@ async fn todoist_project_slug_in_tx(
     external_project_id: &str,
 ) -> ApiResult<String> {
     let name = sqlx::query_scalar::<_, String>(
-        "SELECT name FROM straylight.task_todoist_projects WHERE user_id=$1 AND external_id=$2",
+        "SELECT name FROM brunn.task_todoist_projects WHERE user_id=$1 AND external_id=$2",
     )
     .bind(user_id)
     .bind(external_project_id)
@@ -6174,18 +6173,18 @@ async fn todoist_project_slug_in_tx(
         r#"
         SELECT project_slug FROM (
           SELECT project.slug AS project_slug,0 AS priority
-          FROM straylight.task_projects AS project
+          FROM brunn.task_projects AS project
           WHERE project.user_id=$1 AND project.archived_at IS NULL
             AND ($2::text IS NOT NULL AND project.slug=$2)
           UNION ALL
           SELECT project.slug,1
-          FROM straylight.task_projects AS project
+          FROM brunn.task_projects AS project
           WHERE project.user_id=$1 AND project.archived_at IS NULL
             AND lower(project.title)=lower($3)
           UNION ALL
           SELECT alias.project_slug,2
-          FROM straylight.task_project_aliases AS alias
-          JOIN straylight.task_projects AS project
+          FROM brunn.task_project_aliases AS alias
+          JOIN brunn.task_projects AS project
             ON project.user_id=alias.user_id AND project.slug=alias.project_slug
           WHERE alias.user_id=$1 AND lower(alias.alias)=lower($3)
             AND project.archived_at IS NULL
@@ -6213,7 +6212,7 @@ async fn remap_todoist_project_tasks_in_tx(
     let task_ids = sqlx::query_scalar::<_, Uuid>(
         r#"
         SELECT task_id
-        FROM straylight.task_external_refs
+        FROM brunn.task_external_refs
         WHERE user_id=$1 AND system='todoist'
           AND metadata->>'project_id'=$2
         ORDER BY task_id
@@ -6268,7 +6267,7 @@ async fn todoist_context_slug_in_tx(
     .await?;
     sqlx::query(
         r#"
-        INSERT INTO straylight.task_context_aliases(
+        INSERT INTO brunn.task_context_aliases(
           user_id,alias,context_slug,reason
         ) VALUES($1,$2,$3,'todoist')
         ON CONFLICT(user_id,alias) DO NOTHING
@@ -6663,7 +6662,7 @@ async fn todoist_recurrence_is_authoritative_in_tx(
     task_id: Uuid,
 ) -> ApiResult<bool> {
     let task = sqlx::query_scalar::<_, Value>(
-        "SELECT task FROM straylight.task_index WHERE user_id=$1 AND task_id=$2",
+        "SELECT task FROM brunn.task_index WHERE user_id=$1 AND task_id=$2",
     )
     .bind(user_id)
     .bind(task_id)
@@ -6748,7 +6747,7 @@ async fn todoist_external_ref_in_tx(
     Ok(sqlx::query(
         r#"
         SELECT task_id,series_id,occurrence_key
-        FROM straylight.task_external_refs
+        FROM brunn.task_external_refs
         WHERE user_id=$1 AND system='todoist' AND external_id=$2
         "#,
     )
@@ -6772,7 +6771,7 @@ async fn todoist_occurrence_in_tx(
     Ok(sqlx::query(
         r#"
         SELECT task_id,entry_id
-        FROM straylight.task_todoist_occurrences
+        FROM brunn.task_todoist_occurrences
         WHERE user_id=$1 AND series_id=$2 AND occurrence_key=$3
         "#,
     )
@@ -6794,7 +6793,7 @@ async fn record_todoist_occurrence_in_tx(
 ) -> ApiResult<()> {
     sqlx::query(
         r#"
-        INSERT INTO straylight.task_todoist_occurrences(
+        INSERT INTO brunn.task_todoist_occurrences(
           user_id,series_id,occurrence_key,task_id,entry_id
         ) VALUES($1,$2,$3,$4,$5)
         ON CONFLICT(user_id,series_id,occurrence_key) DO NOTHING
@@ -6823,7 +6822,7 @@ async fn record_todoist_external_ref_in_tx(
 ) -> ApiResult<()> {
     sqlx::query(
         r#"
-        INSERT INTO straylight.task_external_refs(
+        INSERT INTO brunn.task_external_refs(
           user_id,system,external_id,task_id,entry_id,series_id,
           occurrence_key,metadata
         ) VALUES($1,'todoist',$2,$3,$4,$5,$6,$7)
@@ -6860,7 +6859,7 @@ pub async fn materialize_next_todoist_occurrence_in_tx(
     let occurrence = sqlx::query(
         r#"
         SELECT series_id,occurrence_key
-        FROM straylight.task_todoist_occurrences
+        FROM brunn.task_todoist_occurrences
         WHERE user_id=$1 AND task_id=$2
         "#,
     )
@@ -6916,7 +6915,7 @@ pub async fn materialize_next_todoist_occurrence_in_tx(
         .and_then(Value::as_str)
         .map(ToOwned::to_owned);
     let timezone_name = sqlx::query_scalar::<_, String>(
-        "SELECT timezone FROM straylight.task_settings WHERE user_id=$1",
+        "SELECT timezone FROM brunn.task_settings WHERE user_id=$1",
     )
     .bind(user_id)
     .fetch_one(&mut **tx)
@@ -7639,7 +7638,7 @@ pub async fn apply_todoist_sync_in_tx(
             {
                 let external = external.as_ref().expect("checked external");
                 let current_status = sqlx::query_scalar::<_, String>(
-                    "SELECT status FROM straylight.task_index WHERE user_id=$1 AND task_id=$2",
+                    "SELECT status FROM brunn.task_index WHERE user_id=$1 AND task_id=$2",
                 )
                 .bind(user_id)
                 .bind(external.task_id)
@@ -7810,7 +7809,7 @@ pub async fn apply_todoist_sync_in_tx(
     }
     sqlx::query(
         r#"
-        INSERT INTO straylight.task_audit_events(
+        INSERT INTO brunn.task_audit_events(
           user_id,credential_id,action,details
         ) VALUES($1,$2,'todoist.pull.apply',$3)
         "#,
@@ -7836,12 +7835,12 @@ async fn todoist_status_json_in_tx(
     user_id: Uuid,
     environment_enabled: bool,
 ) -> ApiResult<Value> {
-    let config=sqlx::query("SELECT mode,configuration_generation,updated_at FROM straylight.task_integration_config WHERE user_id=$1 AND system='todoist'")
+    let config=sqlx::query("SELECT mode,configuration_generation,updated_at FROM brunn.task_integration_config WHERE user_id=$1 AND system='todoist'")
         .bind(user_id).fetch_one(&mut **tx).await?;
-    let sync=sqlx::query("SELECT configuration_generation,last_run_at,last_outcome,last_error_code,next_run_at,updated_at FROM straylight.task_sync_state WHERE user_id=$1 AND system='todoist'")
+    let sync=sqlx::query("SELECT configuration_generation,last_run_at,last_outcome,last_error_code,next_run_at,updated_at FROM brunn.task_sync_state WHERE user_id=$1 AND system='todoist'")
         .bind(user_id).fetch_optional(&mut **tx).await?;
     let token_configured =
-        sqlx::query_scalar::<_, bool>("SELECT straylight.task_todoist_token_configured($1)")
+        sqlx::query_scalar::<_, bool>("SELECT brunn.task_todoist_token_configured($1)")
             .bind(user_id)
             .fetch_one(&mut **tx)
             .await?;
@@ -7882,7 +7881,7 @@ async fn require_todoist_web_owner_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
 ) -> ApiResult<()> {
-    let result = sqlx::query("SELECT straylight.require_todoist_web_owner($1)")
+    let result = sqlx::query("SELECT brunn.require_todoist_web_owner($1)")
         .bind(user_id)
         .execute(&mut **tx)
         .await;
@@ -7937,7 +7936,7 @@ pub(crate) async fn configure_todoist(
     }
 
     let row = sqlx::query(
-        "SELECT mode,configuration_generation FROM straylight.task_integration_config WHERE user_id=$1 AND system='todoist' FOR UPDATE",
+        "SELECT mode,configuration_generation FROM brunn.task_integration_config WHERE user_id=$1 AND system='todoist' FOR UPDATE",
     )
     .bind(auth.user_id.0)
     .fetch_one(&mut *tx)
@@ -7959,7 +7958,7 @@ pub(crate) async fn configure_todoist(
     if changed {
         sqlx::query(
             r#"
-            UPDATE straylight.task_integration_config
+            UPDATE brunn.task_integration_config
             SET mode=$2,configuration_generation=$3,updated_at=clock_timestamp()
             WHERE user_id=$1 AND system='todoist'
             "#,
@@ -7971,14 +7970,14 @@ pub(crate) async fn configure_todoist(
         .await?;
     }
     let token_configured =
-        sqlx::query_scalar::<_, bool>("SELECT straylight.task_todoist_token_configured($1)")
+        sqlx::query_scalar::<_, bool>("SELECT brunn.task_todoist_token_configured($1)")
             .bind(auth.user_id.0)
             .fetch_one(&mut *tx)
             .await?;
     let import_once_complete = !changed
         && request.mode == "import_once"
         && sqlx::query_scalar::<_, Option<String>>(
-            "SELECT last_outcome FROM straylight.task_sync_state WHERE user_id=$1 AND system='todoist'",
+            "SELECT last_outcome FROM brunn.task_sync_state WHERE user_id=$1 AND system='todoist'",
         )
         .bind(auth.user_id.0)
         .fetch_one(&mut *tx)
@@ -7992,7 +7991,7 @@ pub(crate) async fn configure_todoist(
     if changed {
         sqlx::query(
             r#"
-            UPDATE straylight.task_sync_state
+            UPDATE brunn.task_sync_state
             SET configuration_generation=$2,last_outcome=NULL,last_error_code=NULL,
                 next_run_at=CASE WHEN $3 THEN clock_timestamp() ELSE NULL END,
                 manual_requested_at=NULL,lease_owner=NULL,lease_expires_at=NULL,
@@ -8008,7 +8007,7 @@ pub(crate) async fn configure_todoist(
     } else if !eligible {
         sqlx::query(
             r#"
-            UPDATE straylight.task_sync_state
+            UPDATE brunn.task_sync_state
             SET next_run_at=NULL,manual_requested_at=NULL,
                 lease_owner=NULL,lease_expires_at=NULL,updated_at=clock_timestamp()
             WHERE user_id=$1 AND system='todoist'
@@ -8019,7 +8018,7 @@ pub(crate) async fn configure_todoist(
         .await?;
     }
     sqlx::query(
-        "INSERT INTO straylight.task_audit_events(user_id,credential_id,action,details) VALUES($1,$2,'todoist.configure',$3)",
+        "INSERT INTO brunn.task_audit_events(user_id,credential_id,action,details) VALUES($1,$2,'todoist.configure',$3)",
     )
     .bind(auth.user_id.0)
     .bind(auth.credential_id.0)
@@ -8077,8 +8076,8 @@ pub(crate) async fn pull_todoist(
         r#"
         SELECT config.mode,config.configuration_generation,
                state.last_outcome,state.configuration_generation AS state_generation
-        FROM straylight.task_integration_config AS config
-        JOIN straylight.task_sync_state AS state
+        FROM brunn.task_integration_config AS config
+        JOIN brunn.task_sync_state AS state
           ON state.user_id=config.user_id AND state.system=config.system
         WHERE config.user_id=$1 AND config.system='todoist'
         FOR UPDATE OF config,state
@@ -8092,7 +8091,7 @@ pub(crate) async fn pull_todoist(
     let state_generation: i64 = row.get("state_generation");
     let last_outcome: Option<String> = row.get("last_outcome");
     let token_configured =
-        sqlx::query_scalar::<_, bool>("SELECT straylight.task_todoist_token_configured($1)")
+        sqlx::query_scalar::<_, bool>("SELECT brunn.task_todoist_token_configured($1)")
             .bind(auth.user_id.0)
             .fetch_one(&mut *tx)
             .await?;
@@ -8105,7 +8104,7 @@ pub(crate) async fn pull_todoist(
     if eligible {
         sqlx::query(
             r#"
-            UPDATE straylight.task_sync_state
+            UPDATE brunn.task_sync_state
             SET manual_requested_at=COALESCE(manual_requested_at,clock_timestamp()),
                 next_run_at=COALESCE(next_run_at,clock_timestamp()),
                 updated_at=clock_timestamp()
@@ -8118,7 +8117,7 @@ pub(crate) async fn pull_todoist(
     } else {
         sqlx::query(
             r#"
-            UPDATE straylight.task_sync_state
+            UPDATE brunn.task_sync_state
             SET next_run_at=NULL,manual_requested_at=NULL,
                 lease_owner=NULL,lease_expires_at=NULL,updated_at=clock_timestamp()
             WHERE user_id=$1 AND system='todoist'
@@ -8129,7 +8128,7 @@ pub(crate) async fn pull_todoist(
         .await?;
     }
     sqlx::query(
-        "INSERT INTO straylight.task_audit_events(user_id,credential_id,action,details) VALUES($1,$2,'todoist.pull.request',$3)",
+        "INSERT INTO brunn.task_audit_events(user_id,credential_id,action,details) VALUES($1,$2,'todoist.pull.request',$3)",
     )
     .bind(auth.user_id.0)
     .bind(auth.credential_id.0)
@@ -8475,7 +8474,7 @@ mod tests {
                 "id": task_id,
                 "title": "Downgrade Charlemagne",
                 "status": cell(json!("open"), "owner"),
-                "project": cell(json!("straylight"), "agent:codex"),
+                "project": cell(json!("brunn"), "agent:codex"),
                 "soft_due": cell(json!("2026-08-31"), "agent:codex"),
                 "cost_of_delay": cell(json!({
                     "amount_cents": 700,
@@ -8520,7 +8519,7 @@ mod tests {
             "task": {
                 "id": task_id,
                 "title": "Wrong source",
-                "project": cell(json!("straylight"), "model")
+                "project": cell(json!("brunn"), "model")
             }
         });
         assert!(
@@ -8532,7 +8531,7 @@ mod tests {
     fn portable_import_uses_lossless_client_metadata() {
         let task_id = Uuid::now_v7();
         let metadata = json!({
-            "_straylight_import": {"format": "straylight-workspace-import-manifest@v1"},
+            "_brunn_import": {"format": "brunn-workspace-import-manifest@v1"},
             "client": {
                 "kind": "task",
                 "schema": "task.v1",
@@ -8553,7 +8552,7 @@ mod tests {
             "task": {
                 "id": task_id,
                 "title": "Precedence",
-                "project": cell(json!("straylight"), "owner"),
+                "project": cell(json!("brunn"), "owner"),
                 "soft_due": cell(json!("2026-08-30"), "agent:first"),
                 "required_contexts": cell(json!(["home"]), "todoist")
             }

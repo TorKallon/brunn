@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://straylight.local/schemas/owner-link-leak-request-v1.json",
-  "title": "Straylight owner link-case leak request v1",
+  "$id": "https://brunn.local/schemas/owner-link-leak-request-v1.json",
+  "title": "Brunn owner link-case leak request v1",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "checks"],
   "properties": {
-    "schema": {"const": "straylight-owner-link-leak-request@v1"},
+    "schema": {"const": "brunn-owner-link-leak-request@v1"},
     "checks": {
       "type": "array",
       "minItems": 1,

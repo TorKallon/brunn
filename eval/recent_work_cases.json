@@ -1,7 +1,7 @@
 {
   "benchmark_version": "recent-work-v0.3",
-  "name": "Straylight recent work and Aether operations evaluation",
-  "report_title": "Straylight recent work and Aether operations evaluation",
+  "name": "Brunn recent work and Aether operations evaluation",
+  "report_title": "Brunn recent work and Aether operations evaluation",
   "report_date": "2026-07-26",
   "evaluation_model": "recent_personal_and_agent_operations",
   "grading_mode": "concept_tokens_v1",
@@ -272,7 +272,7 @@
       "workload": "Recent Work",
       "scope": "Recent Work",
       "capability": "current_truth_over_historical_checkpoint",
-      "task": "Assess Straylight's current owner readiness using both status notes. Explain which source controls, identify the production failure mechanisms, and state the approved direction without letting the older green checkpoint win.",
+      "task": "Assess Brunn's current owner readiness using both status notes. Explain which source controls, identify the production failure mechanisms, and state the approved direction without letting the older green checkpoint win.",
       "claim_slots": {
         "c1": "current-source authority",
         "c2": "retrieval failure",
@@ -280,10 +280,10 @@
         "c4": "approved simplification"
       },
       "rubric": [
-        {"id": "c1", "checks": [{"any": ["2026-07-26T12:00:00-07:00"]}, {"any": ["historical evidence"]}, {"any": ["must not override the newer current-status note", "must not override the newer conclusion"]}], "sources_any": ["Projects/Straylight current status.md", "Projects/Straylight stale checkpoint.md"]},
-        {"id": "c2", "checks": [{"any": ["broad memory.open and lexical retrieval are slow"]}, {"any": ["30-second database timeout"]}, {"any": ["one successful retrieval lane can be lost when a later lane fails", "later lane failure can discard an earlier successful lane", "later lane failure can cause one successful retrieval lane to be lost"]}], "sources_any": ["Projects/Straylight current status.md"]},
-        {"id": "c3", "checks": [{"any": ["normal writes copy a full corpus membership manifest"]}, {"any": ["not ready for dependable owner use at 10x corpus growth"]}], "sources_any": ["Projects/Straylight current status.md"]},
-        {"id": "c4", "checks": [{"any": ["current Markdown files the workspace truth"]}, {"any": ["version only changed files"]}, {"any": ["indexes and derived views rebuildable"]}, {"any": ["checkpoint with exact path, version, and hash references"]}, {"any": ["retain coherent source hydration"]}], "sources_any": ["Projects/Straylight current status.md"]}
+        {"id": "c1", "checks": [{"any": ["2026-07-26T12:00:00-07:00"]}, {"any": ["historical evidence"]}, {"any": ["must not override the newer current-status note", "must not override the newer conclusion"]}], "sources_any": ["Projects/Brunn current status.md", "Projects/Brunn stale checkpoint.md"]},
+        {"id": "c2", "checks": [{"any": ["broad memory.open and lexical retrieval are slow"]}, {"any": ["30-second database timeout"]}, {"any": ["one successful retrieval lane can be lost when a later lane fails", "later lane failure can discard an earlier successful lane", "later lane failure can cause one successful retrieval lane to be lost"]}], "sources_any": ["Projects/Brunn current status.md"]},
+        {"id": "c3", "checks": [{"any": ["normal writes copy a full corpus membership manifest"]}, {"any": ["not ready for dependable owner use at 10x corpus growth"]}], "sources_any": ["Projects/Brunn current status.md"]},
+        {"id": "c4", "checks": [{"any": ["current Markdown files the workspace truth"]}, {"any": ["version only changed files"]}, {"any": ["indexes and derived views rebuildable"]}, {"any": ["checkpoint with exact path, version, and hash references"]}, {"any": ["retain coherent source hydration"]}], "sources_any": ["Projects/Brunn current status.md"]}
       ],
       "forbidden": ["open the owner alpha immediately", "current retrieval is healthy", "the ready endpoint proves owner readiness"]
     },

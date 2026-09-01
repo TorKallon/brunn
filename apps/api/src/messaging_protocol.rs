@@ -13,15 +13,15 @@ pub const SUBJECT_LIMIT_CHARS: usize = 240;
 pub const CORRELATION_ID_LIMIT_CHARS: usize = 200;
 pub const MAX_MESSAGES_PER_CONVERSATION: i64 = 500;
 pub const MAX_CANONICAL_CONVERSATION_BYTES: usize = 12 * 1024 * 1024;
-pub const CONVERSATION_ENTRY_PREFIX: &str = ".straylight/conversations/";
-pub const WORKSPACE_IMPORT_FORMAT: &str = "straylight-workspace-import-manifest@v1";
+pub const CONVERSATION_ENTRY_PREFIX: &str = ".brunn/conversations/";
+pub const WORKSPACE_IMPORT_FORMAT: &str = "brunn-workspace-import-manifest@v1";
 pub const CONTINUATION_SYSTEM_BODY: &str =
     "This conversation continues from the preceding 500-message entry.";
 
-const HEADER_PREFIX: &str = "<!-- straylight-conversation-v1 ";
-const MESSAGE_PREFIX: &str = "<!-- straylight-message-v1 ";
+const HEADER_PREFIX: &str = "<!-- brunn-conversation-v1 ";
+const MESSAGE_PREFIX: &str = "<!-- brunn-message-v1 ";
 const COMMENT_SUFFIX: &str = " -->\n";
-const MESSAGE_END: &str = "\n<!-- /straylight-message-v1 -->\n";
+const MESSAGE_END: &str = "\n<!-- /brunn-message-v1 -->\n";
 
 static AGENT_ID: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$").expect("messaging agent id regex"));
@@ -452,8 +452,7 @@ pub fn validate_conversation_entry(
         effective.get("schema").and_then(Value::as_str) == Some("conversation.v1");
     let path_id = conversation_id_from_path(path).ok_or_else(|| {
         ProtocolError::Invalid(
-            "conversation metadata is allowed only at .straylight/conversations/<uuid>.md"
-                .to_owned(),
+            "conversation metadata is allowed only at .brunn/conversations/<uuid>.md".to_owned(),
         )
     })?;
     if !declared_kind || !declared_schema {
@@ -486,7 +485,7 @@ pub fn is_conversation_candidate(path: &str, metadata: &Value) -> bool {
 
 pub fn is_workspace_import(metadata: &Value) -> bool {
     metadata
-        .get("_straylight_import")
+        .get("_brunn_import")
         .and_then(|value| value.get("format"))
         .and_then(Value::as_str)
         == Some(WORKSPACE_IMPORT_FORMAT)

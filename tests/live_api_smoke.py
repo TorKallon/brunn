@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Repeatable, destructive smoke test for the live Straylight HTTP API.
+"""Repeatable, destructive smoke test for the live Brunn HTTP API.
 
 The test intentionally writes uniquely named data inside a freshly provisioned
 evaluation user. It uses only the Python standard library, reads credentials
@@ -158,7 +158,7 @@ def parse_env_file(path: Path) -> dict[str, str]:
 def effective_env(path: Path) -> dict[str, str]:
     values = parse_env_file(path)
     for key, value in os.environ.items():
-        if key in values or key.startswith("STRAYLIGHT_"):
+        if key in values or key.startswith("BRUNN_"):
             values[key] = value
     return values
 
@@ -194,7 +194,7 @@ class ApiClient:
             raise ValueError(f"API path must start with '/': {path}")
         request_headers = {
             "Accept": "application/json",
-            "User-Agent": "straylight-live-api-smoke/1",
+            "User-Agent": "brunn-live-api-smoke/1",
         }
         if headers:
             request_headers.update(headers)
@@ -314,7 +314,7 @@ def encode_multipart(
     fields: Mapping[str, str],
     files: Sequence[tuple[str, str, str, bytes]],
 ) -> tuple[str, bytes]:
-    boundary = f"----straylight-live-smoke-{uuid.uuid4().hex}"
+    boundary = f"----brunn-live-smoke-{uuid.uuid4().hex}"
     chunks: list[bytes] = []
 
     def append(value: str) -> None:
@@ -372,8 +372,8 @@ class LiveApiSmoke:
         self.poll_interval = poll_interval
         self.run_id = f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{uuid.uuid4().hex[:10]}"
         self.marker = f"slsmoke{uuid.uuid4().hex}"
-        self.rw_token = self._required_env("STRAYLIGHT_DEV_READ_WRITE_TOKEN")
-        self.ro_token = self._required_env("STRAYLIGHT_DEV_READ_ONLY_TOKEN")
+        self.rw_token = self._required_env("BRUNN_DEV_READ_WRITE_TOKEN")
+        self.ro_token = self._required_env("BRUNN_DEV_READ_ONLY_TOKEN")
         self.public = ApiClient(self.base_url, sanitizer, timeout=timeout)
         self.rw = ApiClient(self.base_url, sanitizer, token=self.rw_token, timeout=timeout)
         self.ro = ApiClient(self.base_url, sanitizer, token=self.ro_token, timeout=timeout)
@@ -600,7 +600,7 @@ class LiveApiSmoke:
                 "POST",
                 "/v1/workspace/admin/eval/import",
                 json_body={
-                    "schema": "straylight-eval-import@v1",
+                    "schema": "brunn-eval-import@v1",
                     "run_id": f"smoke-{self.run_id}",
                     "case_id": case,
                     "authorization_scope": f"smoke-isolation-{case}",
@@ -650,7 +650,7 @@ def build_parser() -> argparse.ArgumentParser:
     default_env = Path(__file__).resolve().parents[1] / ".env"
     parser = argparse.ArgumentParser(
         description=(
-            "Run the destructive Straylight live API smoke against a local stack. "
+            "Run the destructive Brunn live API smoke against a local stack. "
             "Secrets are read from a dotenv file and never printed."
         )
     )

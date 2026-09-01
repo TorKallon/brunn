@@ -7,6 +7,8 @@ use base64::{
 
 use crate::error::{ApiError, ApiResult};
 
+pub const DEFAULT_APNS_APP_ID: &str = "com.rourkem.brunn";
+
 #[derive(Clone)]
 pub struct Config {
     pub deployment_environment: String,
@@ -93,17 +95,17 @@ pub struct Config {
 
 impl Config {
     pub fn admin_database_url_from_env() -> ApiResult<String> {
-        required_any_or_file(&["DATABASE_URL_ADMIN", "STRAYLIGHT_ADMIN_DATABASE_URL"])
+        required_any_or_file(&["DATABASE_URL_ADMIN", "BRUNN_ADMIN_DATABASE_URL"])
     }
 
     pub fn from_env() -> ApiResult<Self> {
-        let deployment_environment = env_default("STRAYLIGHT_ENV", "development");
+        let deployment_environment = env_default("BRUNN_ENV", "development");
         if !matches!(
             deployment_environment.as_str(),
             "development" | "production"
         ) {
             return Err(ApiError::configuration(
-                "STRAYLIGHT_ENV must be development or production",
+                "BRUNN_ENV must be development or production",
             ));
         }
         let non_production_default = if deployment_environment == "production" {
@@ -112,201 +114,186 @@ impl Config {
             "true"
         };
         let bind = env_parse_value(
-            "STRAYLIGHT_BIND",
-            first_env(&["STRAYLIGHT_BIND", "STRAYLIGHT_BIND_ADDR"])
+            "BRUNN_BIND",
+            first_env(&["BRUNN_BIND", "BRUNN_BIND_ADDR"])
                 .unwrap_or_else(|| "0.0.0.0:8080".to_owned()),
         )?;
-        let database_url_rw =
-            required_any_or_file(&["DATABASE_URL_RW", "STRAYLIGHT_DATABASE_URL"])?;
+        let database_url_rw = required_any_or_file(&["DATABASE_URL_RW", "BRUNN_DATABASE_URL"])?;
         let database_url_ro =
-            first_env_or_file(&["DATABASE_URL_RO", "STRAYLIGHT_READ_ONLY_DATABASE_URL"])?
+            first_env_or_file(&["DATABASE_URL_RO", "BRUNN_READ_ONLY_DATABASE_URL"])?
                 .unwrap_or_else(|| database_url_rw.clone());
         let continuation_secret = required_any_or_file(&[
-            "STRAYLIGHT_CONTINUATION_SECRET",
-            "STRAYLIGHT_CONTINUATION_SIGNING_KEY",
+            "BRUNN_CONTINUATION_SECRET",
+            "BRUNN_CONTINUATION_SIGNING_KEY",
         ])?;
         if continuation_secret.len() < 32 {
             return Err(ApiError::configuration(
-                "STRAYLIGHT_CONTINUATION_SECRET must contain at least 32 characters",
+                "BRUNN_CONTINUATION_SECRET must contain at least 32 characters",
             ));
         }
-        let s3_endpoint = first_env(&["STRAYLIGHT_S3_ENDPOINT", "STRAYLIGHT_MINIO_ENDPOINT"]);
-        let s3_access_key =
-            first_env_or_file(&["STRAYLIGHT_S3_ACCESS_KEY", "STRAYLIGHT_MINIO_ACCESS_KEY"])?;
-        let s3_secret_key =
-            first_env_or_file(&["STRAYLIGHT_S3_SECRET_KEY", "STRAYLIGHT_MINIO_SECRET_KEY"])?;
+        let s3_endpoint = first_env(&["BRUNN_S3_ENDPOINT", "BRUNN_MINIO_ENDPOINT"]);
+        let s3_access_key = first_env_or_file(&["BRUNN_S3_ACCESS_KEY", "BRUNN_MINIO_ACCESS_KEY"])?;
+        let s3_secret_key = first_env_or_file(&["BRUNN_S3_SECRET_KEY", "BRUNN_MINIO_SECRET_KEY"])?;
         validate_explicit_s3_credentials(&s3_access_key, &s3_secret_key)?;
-        let s3_force_path_style = first_env_parse(&[
-            "STRAYLIGHT_S3_FORCE_PATH_STYLE",
-            "STRAYLIGHT_MINIO_FORCE_PATH_STYLE",
-        ])?
-        .unwrap_or(s3_endpoint.is_some());
-        let s3_create_bucket = first_env_parse(&[
-            "STRAYLIGHT_S3_CREATE_BUCKET",
-            "STRAYLIGHT_MINIO_CREATE_BUCKET",
-        ])?
-        .unwrap_or(deployment_environment != "production");
+        let s3_force_path_style =
+            first_env_parse(&["BRUNN_S3_FORCE_PATH_STYLE", "BRUNN_MINIO_FORCE_PATH_STYLE"])?
+                .unwrap_or(s3_endpoint.is_some());
+        let s3_create_bucket =
+            first_env_parse(&["BRUNN_S3_CREATE_BUCKET", "BRUNN_MINIO_CREATE_BUCKET"])?
+                .unwrap_or(deployment_environment != "production");
+        let apns_app_id = first_env(&["BRUNN_APNS_APP_ID"]).map(|value| value.trim().to_owned());
+        let apns_app_id_was_explicit = apns_app_id.is_some();
 
         let config = Self {
             deployment_environment,
             evaluation_api_enabled: env_parse(
-                "STRAYLIGHT_EVALUATION_API_ENABLED",
+                "BRUNN_EVALUATION_API_ENABLED",
                 non_production_default,
             )?,
-            supersession_demotion: env_parse("STRAYLIGHT_SUPERSESSION_DEMOTION", "false")?,
-            supersession_demotion_weight: env_parse(
-                "STRAYLIGHT_SUPERSESSION_DEMOTION_WEIGHT",
-                "1.5",
-            )?,
-            intention_ledger: env_parse("STRAYLIGHT_INTENTION_LEDGER", "false")?,
-            read_path_roundtrip_v1: env_parse("STRAYLIGHT_READ_PATH_ROUNDTRIP_V1", "false")?,
-            lexical_single_scan: env_parse("STRAYLIGHT_LEXICAL_SINGLE_SCAN", "false")?,
-            resume_deltas: env_parse("STRAYLIGHT_RESUME_DELTAS", "false")?,
+            supersession_demotion: env_parse("BRUNN_SUPERSESSION_DEMOTION", "false")?,
+            supersession_demotion_weight: env_parse("BRUNN_SUPERSESSION_DEMOTION_WEIGHT", "1.5")?,
+            intention_ledger: env_parse("BRUNN_INTENTION_LEDGER", "false")?,
+            read_path_roundtrip_v1: env_parse("BRUNN_READ_PATH_ROUNDTRIP_V1", "false")?,
+            lexical_single_scan: env_parse("BRUNN_LEXICAL_SINGLE_SCAN", "false")?,
+            resume_deltas: env_parse("BRUNN_RESUME_DELTAS", "false")?,
             bind,
             database_url_admin: first_env_or_file(&[
                 "DATABASE_URL_ADMIN",
-                "STRAYLIGHT_ADMIN_DATABASE_URL",
+                "BRUNN_ADMIN_DATABASE_URL",
             ])?,
             database_url_rw,
             database_url_ro,
-            database_max_connections: env_parse("STRAYLIGHT_DATABASE_MAX_CONNECTIONS", "20")?,
+            database_max_connections: env_parse("BRUNN_DATABASE_MAX_CONNECTIONS", "20")?,
             s3_endpoint,
-            s3_region: first_env(&["STRAYLIGHT_S3_REGION", "STRAYLIGHT_MINIO_REGION"])
+            s3_region: first_env(&["BRUNN_S3_REGION", "BRUNN_MINIO_REGION"])
                 .unwrap_or_else(|| "us-east-1".to_owned()),
-            s3_bucket: first_env(&["STRAYLIGHT_S3_BUCKET", "STRAYLIGHT_MINIO_BUCKET"])
-                .unwrap_or_else(|| "straylight".to_owned()),
+            s3_bucket: first_env(&["BRUNN_S3_BUCKET", "BRUNN_MINIO_BUCKET"])
+                .unwrap_or_else(|| "brunn".to_owned()),
             s3_access_key,
             s3_secret_key,
             s3_force_path_style,
             s3_create_bucket,
             openai_api_key: first_env_or_file(&["OPENAI_API_KEY"])?,
             openai_base_url: env_default("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-            capture_model: env_default("STRAYLIGHT_CAPTURE_MODEL", "gpt-5.6"),
-            capture_max_output_tokens: env_parse("STRAYLIGHT_CAPTURE_MAX_OUTPUT_TOKENS", "8192")?,
+            capture_model: env_default("BRUNN_CAPTURE_MODEL", "gpt-5.6"),
+            capture_max_output_tokens: env_parse("BRUNN_CAPTURE_MAX_OUTPUT_TOKENS", "8192")?,
             asset_description_model: first_env(&[
-                "CARRYSTATE_ASSET_DESCRIPTION_MODEL",
-                "STRAYLIGHT_ASSET_DESCRIPTION_MODEL",
+                "BRUNN_STATE_ASSET_DESCRIPTION_MODEL",
+                "BRUNN_ASSET_DESCRIPTION_MODEL",
             ])
             .unwrap_or_else(|| "gpt-5.6".to_owned()),
             asset_description_max_output_tokens: env_parse_value(
-                "CARRYSTATE_ASSET_DESCRIPTION_MAX_OUTPUT_TOKENS",
+                "BRUNN_STATE_ASSET_DESCRIPTION_MAX_OUTPUT_TOKENS",
                 first_env(&[
-                    "CARRYSTATE_ASSET_DESCRIPTION_MAX_OUTPUT_TOKENS",
-                    "STRAYLIGHT_ASSET_DESCRIPTION_MAX_OUTPUT_TOKENS",
+                    "BRUNN_STATE_ASSET_DESCRIPTION_MAX_OUTPUT_TOKENS",
+                    "BRUNN_ASSET_DESCRIPTION_MAX_OUTPUT_TOKENS",
                 ])
                 .unwrap_or_else(|| "4096".to_owned()),
             )?,
             asset_description_image_detail: first_env(&[
-                "CARRYSTATE_ASSET_DESCRIPTION_IMAGE_DETAIL",
-                "STRAYLIGHT_ASSET_DESCRIPTION_IMAGE_DETAIL",
+                "BRUNN_STATE_ASSET_DESCRIPTION_IMAGE_DETAIL",
+                "BRUNN_ASSET_DESCRIPTION_IMAGE_DETAIL",
             ])
             .unwrap_or_else(|| "high".to_owned()),
             background_job_lease: Duration::from_secs(env_parse(
-                "STRAYLIGHT_BACKGROUND_JOB_LEASE_SECONDS",
+                "BRUNN_BACKGROUND_JOB_LEASE_SECONDS",
                 "300",
             )?),
-            embedding_model: env_default("STRAYLIGHT_EMBEDDING_MODEL", "text-embedding-3-small"),
-            embedding_dimensions: env_parse("STRAYLIGHT_EMBEDDING_DIMENSIONS", "1536")?,
-            embedding_provider: env_default("STRAYLIGHT_EMBEDDING_PROVIDER", "openai"),
-            allow_degraded_embeddings: env_parse("STRAYLIGHT_ALLOW_DEGRADED_EMBEDDINGS", "false")?,
-            observability_timings_ms: env_parse("STRAYLIGHT_OBSERVABILITY_TIMINGS_MS", "true")?,
-            verbatim_spans: env_parse("STRAYLIGHT_VERBATIM_SPANS", "false")?,
-            semantic_lane: env_parse("STRAYLIGHT_SEMANTIC_LANE", "false")?,
-            embed_cache: env_parse("STRAYLIGHT_EMBED_CACHE", "true")?,
-            semantic_deadline: match env_parse::<u64>("STRAYLIGHT_SEMANTIC_DEADLINE_MS", "2500")? {
+            embedding_model: env_default("BRUNN_EMBEDDING_MODEL", "text-embedding-3-small"),
+            embedding_dimensions: env_parse("BRUNN_EMBEDDING_DIMENSIONS", "1536")?,
+            embedding_provider: env_default("BRUNN_EMBEDDING_PROVIDER", "openai"),
+            allow_degraded_embeddings: env_parse("BRUNN_ALLOW_DEGRADED_EMBEDDINGS", "false")?,
+            observability_timings_ms: env_parse("BRUNN_OBSERVABILITY_TIMINGS_MS", "true")?,
+            verbatim_spans: env_parse("BRUNN_VERBATIM_SPANS", "false")?,
+            semantic_lane: env_parse("BRUNN_SEMANTIC_LANE", "false")?,
+            embed_cache: env_parse("BRUNN_EMBED_CACHE", "true")?,
+            semantic_deadline: match env_parse::<u64>("BRUNN_SEMANTIC_DEADLINE_MS", "2500")? {
                 0 => None,
                 milliseconds => Some(Duration::from_millis(milliseconds)),
             },
             semantic_query_provider_timeout: Duration::from_millis(env_parse(
-                "STRAYLIGHT_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS",
+                "BRUNN_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS",
                 "5000",
             )?),
-            semantic_query_concurrency: env_parse("STRAYLIGHT_SEMANTIC_QUERY_CONCURRENCY", "8")?,
-            embedding_backfill_guard: env_parse("STRAYLIGHT_EMBEDDING_BACKFILL_GUARD", "true")?,
+            semantic_query_concurrency: env_parse("BRUNN_SEMANTIC_QUERY_CONCURRENCY", "8")?,
+            embedding_backfill_guard: env_parse("BRUNN_EMBEDDING_BACKFILL_GUARD", "true")?,
             embedding_backfill_batch_chunks: env_parse(
-                "STRAYLIGHT_EMBEDDING_BACKFILL_BATCH_CHUNKS",
+                "BRUNN_EMBEDDING_BACKFILL_BATCH_CHUNKS",
                 "64",
             )?,
             embedding_backfill_inter_batch_delay: Duration::from_millis(env_parse(
-                "STRAYLIGHT_EMBEDDING_BACKFILL_INTER_BATCH_MS",
+                "BRUNN_EMBEDDING_BACKFILL_INTER_BATCH_MS",
                 "250",
             )?),
             embedding_backfill_open_p95_limit_ms: env_parse(
-                "STRAYLIGHT_EMBEDDING_BACKFILL_OPEN_P95_LIMIT_MS",
+                "BRUNN_EMBEDDING_BACKFILL_OPEN_P95_LIMIT_MS",
                 "120",
             )?,
             embedding_backfill_search_p95_limit_ms: env_parse(
-                "STRAYLIGHT_EMBEDDING_BACKFILL_SEARCH_P95_LIMIT_MS",
+                "BRUNN_EMBEDDING_BACKFILL_SEARCH_P95_LIMIT_MS",
                 "107",
             )?,
             embedding_backfill_foreground_status_url: first_env(&[
-                "STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_URL",
+                "BRUNN_EMBEDDING_BACKFILL_FOREGROUND_STATUS_URL",
             ]),
             embedding_backfill_foreground_status_timeout: Duration::from_millis(env_parse(
-                "STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_TIMEOUT_MS",
+                "BRUNN_EMBEDDING_BACKFILL_FOREGROUND_STATUS_TIMEOUT_MS",
                 "1000",
             )?),
             continuation_secret,
-            materialize_token_budget: env_parse("STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET", "24000")?,
-            search_fair_share: env_parse("STRAYLIGHT_SEARCH_FAIR_SHARE", "false")?,
-            search_top1_hydration: env_parse("STRAYLIGHT_SEARCH_TOP1_HYDRATION", "false")?,
-            search_char_cap: env_parse("STRAYLIGHT_SEARCH_CHAR_CAP", "false")?,
+            materialize_token_budget: env_parse("BRUNN_MATERIALIZE_TOKEN_BUDGET", "24000")?,
+            search_fair_share: env_parse("BRUNN_SEARCH_FAIR_SHARE", "false")?,
+            search_top1_hydration: env_parse("BRUNN_SEARCH_TOP1_HYDRATION", "false")?,
+            search_char_cap: env_parse("BRUNN_SEARCH_CHAR_CAP", "false")?,
             search_section_demotion_top_n: first_env_parse(&[
-                "STRAYLIGHT_SEARCH_SECTION_DEMOTION_TOP_N",
+                "BRUNN_SEARCH_SECTION_DEMOTION_TOP_N",
             ])?,
-            request_timeout: Duration::from_secs(env_parse(
-                "STRAYLIGHT_REQUEST_TIMEOUT_SECONDS",
-                "30",
-            )?),
+            request_timeout: Duration::from_secs(env_parse("BRUNN_REQUEST_TIMEOUT_SECONDS", "30")?),
             transfer_timeout: Duration::from_secs(env_parse(
-                "STRAYLIGHT_TRANSFER_TIMEOUT_SECONDS",
+                "BRUNN_TRANSFER_TIMEOUT_SECONDS",
                 "3600",
             )?),
-            max_concurrent_transfers: env_parse("STRAYLIGHT_MAX_CONCURRENT_TRANSFERS", "8")?,
+            max_concurrent_transfers: env_parse("BRUNN_MAX_CONCURRENT_TRANSFERS", "8")?,
             readiness_timeout: Duration::from_secs(env_parse(
-                "STRAYLIGHT_READINESS_TIMEOUT_SECONDS",
+                "BRUNN_READINESS_TIMEOUT_SECONDS",
                 "3",
             )?),
-            requests_per_minute: env_parse("STRAYLIGHT_REQUESTS_PER_MINUTE", "600")?,
-            allowed_origins: parse_allowed_origins(&env_default("STRAYLIGHT_ALLOWED_ORIGINS", ""))?,
+            requests_per_minute: env_parse("BRUNN_REQUESTS_PER_MINUTE", "600")?,
+            allowed_origins: parse_allowed_origins(&env_default("BRUNN_ALLOWED_ORIGINS", ""))?,
             resend_api_key: first_env_or_file(&["RESEND_API_KEY"])?,
             auth_email_from: first_env(&["AUTH_EMAIL_FROM"]).map(|value| value.trim().to_owned()),
             auth_email_reply_to: first_env(&["AUTH_EMAIL_REPLY_TO"])
                 .map(|value| value.trim().to_owned()),
-            apns_team_id: first_env(&["STRAYLIGHT_APNS_TEAM_ID"])
-                .map(|value| value.trim().to_owned()),
-            apns_key_id: first_env(&["STRAYLIGHT_APNS_KEY_ID"])
-                .map(|value| value.trim().to_owned()),
-            apns_private_key: first_env_or_file(&["STRAYLIGHT_APNS_PRIVATE_KEY"])?,
-            apns_app_id: first_env(&["STRAYLIGHT_APNS_APP_ID"])
-                .map(|value| value.trim().to_owned()),
+            apns_team_id: first_env(&["BRUNN_APNS_TEAM_ID"]).map(|value| value.trim().to_owned()),
+            apns_key_id: first_env(&["BRUNN_APNS_KEY_ID"]).map(|value| value.trim().to_owned()),
+            apns_private_key: first_env_or_file(&["BRUNN_APNS_PRIVATE_KEY"])?,
+            apns_app_id: Some(apns_app_id.unwrap_or_else(|| DEFAULT_APNS_APP_ID.to_owned())),
             notification_token_encryption_key: first_env_or_file(&[
-                "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY",
+                "BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY",
             ])?,
-            secret_encryption_key: first_env_or_file(&["STRAYLIGHT_SECRET_ENCRYPTION_KEY"])?,
-            apns_delivery_enabled: env_parse("STRAYLIGHT_APNS_DELIVERY_ENABLED", "false")?,
-            messaging_enabled: env_parse("STRAYLIGHT_MESSAGING_ENABLED", "false")?,
-            todoist_sync_enabled: env_parse("STRAYLIGHT_TODOIST_SYNC_ENABLED", "false")?,
-            public_url: env_default("STRAYLIGHT_PUBLIC_URL", "https://straylight.rourkem.com")
+            secret_encryption_key: first_env_or_file(&["BRUNN_SECRET_ENCRYPTION_KEY"])?,
+            apns_delivery_enabled: env_parse("BRUNN_APNS_DELIVERY_ENABLED", "false")?,
+            messaging_enabled: env_parse("BRUNN_MESSAGING_ENABLED", "false")?,
+            todoist_sync_enabled: env_parse("BRUNN_TODOIST_SYNC_ENABLED", "false")?,
+            public_url: env_default("BRUNN_PUBLIC_URL", "https://brunn.ai")
                 .trim()
                 .trim_end_matches('/')
                 .to_owned(),
             account_export_ttl: Duration::from_secs(
-                env_parse::<u64>("STRAYLIGHT_ACCOUNT_EXPORT_TTL_HOURS", "24")?
-                    .saturating_mul(60 * 60),
+                env_parse::<u64>("BRUNN_ACCOUNT_EXPORT_TTL_HOURS", "24")?.saturating_mul(60 * 60),
             ),
             account_export_temp_dir: PathBuf::from(env_default(
-                "STRAYLIGHT_ACCOUNT_EXPORT_TEMP_DIR",
-                "/tmp/straylight-exports",
+                "BRUNN_ACCOUNT_EXPORT_TEMP_DIR",
+                "/tmp/brunn-exports",
             )),
             account_deletion_backup_retention_days: env_parse(
-                "STRAYLIGHT_ACCOUNT_DELETION_BACKUP_RETENTION_DAYS",
+                "BRUNN_ACCOUNT_DELETION_BACKUP_RETENTION_DAYS",
                 "30",
             )?,
-            dev_user_ref: env_default("STRAYLIGHT_DEV_USER_REF", "user:local"),
-            dev_user_name: env_default("STRAYLIGHT_DEV_USER_NAME", "Local user"),
-            dev_read_write_token: first_env_or_file(&["STRAYLIGHT_DEV_READ_WRITE_TOKEN"])?,
-            dev_read_only_token: first_env_or_file(&["STRAYLIGHT_DEV_READ_ONLY_TOKEN"])?,
+            dev_user_ref: env_default("BRUNN_DEV_USER_REF", "user:local"),
+            dev_user_name: env_default("BRUNN_DEV_USER_NAME", "Local user"),
+            dev_read_write_token: first_env_or_file(&["BRUNN_DEV_READ_WRITE_TOKEN"])?,
+            dev_read_only_token: first_env_or_file(&["BRUNN_DEV_READ_ONLY_TOKEN"])?,
             dreamer_internal_url: first_env(&["DREAMER_INTERNAL_URL"]),
             dreamer_internal_token: first_env_or_file(&["DREAMER_INTERNAL_TOKEN"])?,
         };
@@ -315,7 +302,7 @@ impl Config {
             "low" | "high" | "auto" | "original"
         ) {
             return Err(ApiError::configuration(
-                "STRAYLIGHT_ASSET_DESCRIPTION_IMAGE_DETAIL must be low, high, auto, or original",
+                "BRUNN_ASSET_DESCRIPTION_IMAGE_DETAIL must be low, high, auto, or original",
             ));
         }
         if config.request_timeout.is_zero() || config.transfer_timeout.is_zero() {
@@ -325,7 +312,7 @@ impl Config {
         }
         if config.max_concurrent_transfers == 0 {
             return Err(ApiError::configuration(
-                "STRAYLIGHT_MAX_CONCURRENT_TRANSFERS must be greater than zero",
+                "BRUNN_MAX_CONCURRENT_TRANSFERS must be greater than zero",
             ));
         }
         let apns_provider_parts = [
@@ -342,8 +329,8 @@ impl Config {
             ));
         }
         for (name, value) in [
-            ("STRAYLIGHT_APNS_TEAM_ID", config.apns_team_id.as_deref()),
-            ("STRAYLIGHT_APNS_KEY_ID", config.apns_key_id.as_deref()),
+            ("BRUNN_APNS_TEAM_ID", config.apns_team_id.as_deref()),
+            ("BRUNN_APNS_KEY_ID", config.apns_key_id.as_deref()),
         ] {
             if value.is_some_and(|value| {
                 value.len() != 10 || !value.bytes().all(|byte| byte.is_ascii_alphanumeric())
@@ -361,7 +348,7 @@ impl Config {
                     .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-'))
         }) {
             return Err(ApiError::configuration(
-                "STRAYLIGHT_APNS_APP_ID is not a valid app topic",
+                "BRUNN_APNS_APP_ID is not a valid app topic",
             ));
         }
         if let Some(key) = config.notification_token_encryption_key.as_deref() {
@@ -372,17 +359,17 @@ impl Config {
         }
         if config.todoist_sync_enabled && config.secret_encryption_key.is_none() {
             return Err(ApiError::configuration(
-                "enabled Todoist sync requires STRAYLIGHT_SECRET_ENCRYPTION_KEY",
+                "enabled Todoist sync requires BRUNN_SECRET_ENCRYPTION_KEY",
             ));
         }
-        if config.apns_app_id.is_some() != config.notification_token_encryption_key.is_some() {
+        if apns_app_id_was_explicit && config.notification_token_encryption_key.is_none() {
             return Err(ApiError::configuration(
-                "STRAYLIGHT_APNS_APP_ID and STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY must be configured together",
+                "BRUNN_APNS_APP_ID and BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY must be configured together",
             ));
         }
         if config.apns_configured() && config.notification_token_encryption_key.is_none() {
             return Err(ApiError::configuration(
-                "APNs delivery requires STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY",
+                "APNs delivery requires BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY",
             ));
         }
         if config.apns_delivery_enabled
@@ -394,36 +381,36 @@ impl Config {
         }
         if config.search_section_demotion_top_n == Some(0) {
             return Err(ApiError::configuration(
-                "STRAYLIGHT_SEARCH_SECTION_DEMOTION_TOP_N must be greater than zero when set",
+                "BRUNN_SEARCH_SECTION_DEMOTION_TOP_N must be greater than zero when set",
             ));
         }
         if !config.supersession_demotion_weight.is_finite()
             || config.supersession_demotion_weight < 0.0
         {
             return Err(ApiError::configuration(
-                "STRAYLIGHT_SUPERSESSION_DEMOTION_WEIGHT must be a finite nonnegative number",
+                "BRUNN_SUPERSESSION_DEMOTION_WEIGHT must be a finite nonnegative number",
             ));
         }
         if !(1..=64).contains(&config.embedding_backfill_batch_chunks) {
             return Err(ApiError::configuration(
-                "STRAYLIGHT_EMBEDDING_BACKFILL_BATCH_CHUNKS must be between 1 and 64",
+                "BRUNN_EMBEDDING_BACKFILL_BATCH_CHUNKS must be between 1 and 64",
             ));
         }
         if config.embedding_backfill_inter_batch_delay < Duration::from_millis(250) {
             return Err(ApiError::configuration(
-                "STRAYLIGHT_EMBEDDING_BACKFILL_INTER_BATCH_MS must be at least 250",
+                "BRUNN_EMBEDDING_BACKFILL_INTER_BATCH_MS must be at least 250",
             ));
         }
         if config.semantic_query_provider_timeout.is_zero()
             || config.semantic_query_provider_timeout > Duration::from_secs(60)
         {
             return Err(ApiError::configuration(
-                "STRAYLIGHT_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS must be between 1 and 60000",
+                "BRUNN_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS must be between 1 and 60000",
             ));
         }
         if !(1..=64).contains(&config.semantic_query_concurrency) {
             return Err(ApiError::configuration(
-                "STRAYLIGHT_SEMANTIC_QUERY_CONCURRENCY must be between 1 and 64",
+                "BRUNN_SEMANTIC_QUERY_CONCURRENCY must be between 1 and 64",
             ));
         }
         if !config.embedding_backfill_open_p95_limit_ms.is_finite()
@@ -440,7 +427,7 @@ impl Config {
             .is_zero()
         {
             return Err(ApiError::configuration(
-                "STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_TIMEOUT_MS must be greater than zero",
+                "BRUNN_EMBEDDING_BACKFILL_FOREGROUND_STATUS_TIMEOUT_MS must be greater than zero",
             ));
         }
         if config
@@ -449,7 +436,7 @@ impl Config {
             .is_some_and(|value| !value.starts_with("http://") && !value.starts_with("https://"))
         {
             return Err(ApiError::configuration(
-                "STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_URL must use http or https",
+                "BRUNN_EMBEDDING_BACKFILL_FOREGROUND_STATUS_URL must use http or https",
             ));
         }
         config.validate_production()?;
@@ -518,7 +505,7 @@ impl Config {
         }
         if !self.public_url.to_ascii_lowercase().starts_with("https://") {
             return Err(ApiError::configuration(
-                "STRAYLIGHT_PUBLIC_URL must use HTTPS in production",
+                "BRUNN_PUBLIC_URL must use HTTPS in production",
             ));
         }
         Ok(())
@@ -551,12 +538,12 @@ pub fn decode_notification_token_key(value: &str) -> ApiResult<[u8; 32]> {
         .or_else(|_| STANDARD.decode(value))
         .map_err(|_| {
             ApiError::configuration(
-                "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY must be base64 encoded",
+                "BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY must be base64 encoded",
             )
         })?;
     bytes.try_into().map_err(|_| {
         ApiError::configuration(
-            "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY must decode to exactly 32 bytes",
+            "BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY must decode to exactly 32 bytes",
         )
     })
 }
@@ -567,10 +554,10 @@ pub fn decode_secret_encryption_key(value: &str) -> ApiResult<[u8; 32]> {
         .decode(value)
         .or_else(|_| STANDARD.decode(value))
         .map_err(|_| {
-            ApiError::configuration("STRAYLIGHT_SECRET_ENCRYPTION_KEY must be base64 encoded")
+            ApiError::configuration("BRUNN_SECRET_ENCRYPTION_KEY must be base64 encoded")
         })?;
     bytes.try_into().map_err(|_| {
-        ApiError::configuration("STRAYLIGHT_SECRET_ENCRYPTION_KEY must decode to exactly 32 bytes")
+        ApiError::configuration("BRUNN_SECRET_ENCRYPTION_KEY must decode to exactly 32 bytes")
     })
 }
 
@@ -717,7 +704,7 @@ fn validate_web_auth_config(config: &Config) -> ApiResult<()> {
         }
     }
     let public_url = reqwest::Url::parse(&config.public_url)
-        .map_err(|_| ApiError::configuration("STRAYLIGHT_PUBLIC_URL must be an absolute URL"))?;
+        .map_err(|_| ApiError::configuration("BRUNN_PUBLIC_URL must be an absolute URL"))?;
     if !matches!(public_url.scheme(), "http" | "https")
         || public_url.host_str().is_none()
         || public_url.query().is_some()
@@ -727,7 +714,7 @@ fn validate_web_auth_config(config: &Config) -> ApiResult<()> {
         || public_url.path() != "/"
     {
         return Err(ApiError::configuration(
-            "STRAYLIGHT_PUBLIC_URL must be an HTTP(S) origin without credentials, path, query, or fragment",
+            "BRUNN_PUBLIC_URL must be an HTTP(S) origin without credentials, path, query, or fragment",
         ));
     }
     Ok(())
@@ -745,7 +732,7 @@ fn parse_allowed_origins(value: &str) -> ApiResult<Vec<String>> {
         .map(|origin| {
             let parsed = http::HeaderValue::from_str(origin).map_err(|error| {
                 ApiError::configuration(format!(
-                    "invalid STRAYLIGHT_ALLOWED_ORIGINS entry {origin:?}: {error}"
+                    "invalid BRUNN_ALLOWED_ORIGINS entry {origin:?}: {error}"
                 ))
             })?;
             let lower = origin.to_ascii_lowercase();
@@ -755,7 +742,7 @@ fn parse_allowed_origins(value: &str) -> ApiResult<Vec<String>> {
                 || lower.starts_with("http://nyx"))
             {
                 return Err(ApiError::configuration(format!(
-                    "STRAYLIGHT_ALLOWED_ORIGINS entry must be HTTPS or an explicit local development origin: {origin}"
+                    "BRUNN_ALLOWED_ORIGINS entry must be HTTPS or an explicit local development origin: {origin}"
                 )));
             }
             drop(parsed);
@@ -885,69 +872,69 @@ mod tests {
             .arg("--ignored")
             .arg("--nocapture")
             .env_clear()
-            .env("STRAYLIGHT_CONFIG_ENV_PROBE", scenario)
+            .env("BRUNN_CONFIG_ENV_PROBE", scenario)
             .env(
                 "DATABASE_URL_RW",
-                "postgres://app_rw:unit-secret@db:5432/straylight",
+                "postgres://app_rw:unit-secret@db:5432/brunn",
             )
             .env(
                 "DATABASE_URL_RO",
-                "postgres://app_ro:unit-secret@db:5432/straylight",
+                "postgres://app_ro:unit-secret@db:5432/brunn",
             )
-            .env("STRAYLIGHT_CONTINUATION_SECRET", "c".repeat(32));
+            .env("BRUNN_CONTINUATION_SECRET", "c".repeat(32));
         match scenario {
             "aws_default_chain" => {
                 command
-                    .env("STRAYLIGHT_ENV", "production")
+                    .env("BRUNN_ENV", "production")
                     .env("OPENAI_API_KEY", "sk-unit-openai");
             }
             "minio_aliases" => {
                 command
-                    .env("STRAYLIGHT_MINIO_ENDPOINT", "http://minio.test:9000")
-                    .env("STRAYLIGHT_MINIO_REGION", "minio-region")
-                    .env("STRAYLIGHT_MINIO_BUCKET", "minio-bucket")
-                    .env("STRAYLIGHT_MINIO_ACCESS_KEY", "minio-access")
-                    .env("STRAYLIGHT_MINIO_SECRET_KEY", "minio-secret");
+                    .env("BRUNN_MINIO_ENDPOINT", "http://minio.test:9000")
+                    .env("BRUNN_MINIO_REGION", "minio-region")
+                    .env("BRUNN_MINIO_BUCKET", "minio-bucket")
+                    .env("BRUNN_MINIO_ACCESS_KEY", "minio-access")
+                    .env("BRUNN_MINIO_SECRET_KEY", "minio-secret");
             }
             "explicit_overrides" => {
                 command
-                    .env("STRAYLIGHT_S3_ENDPOINT", "https://objects.example")
-                    .env("STRAYLIGHT_S3_FORCE_PATH_STYLE", "false")
-                    .env("STRAYLIGHT_S3_CREATE_BUCKET", "false")
-                    .env("STRAYLIGHT_S3_ACCESS_KEY", "s3-access")
-                    .env("STRAYLIGHT_S3_SECRET_KEY", "s3-secret")
-                    .env("STRAYLIGHT_VERBATIM_SPANS", "true");
+                    .env("BRUNN_S3_ENDPOINT", "https://objects.example")
+                    .env("BRUNN_S3_FORCE_PATH_STYLE", "false")
+                    .env("BRUNN_S3_CREATE_BUCKET", "false")
+                    .env("BRUNN_S3_ACCESS_KEY", "s3-access")
+                    .env("BRUNN_S3_SECRET_KEY", "s3-secret")
+                    .env("BRUNN_VERBATIM_SPANS", "true");
             }
             "partial_credentials" => {
-                command.env("STRAYLIGHT_S3_ACCESS_KEY", "access-without-secret");
+                command.env("BRUNN_S3_ACCESS_KEY", "access-without-secret");
             }
             "search_contract_defaults" => {}
             "search_contract_flags" => {
                 command
-                    .env("STRAYLIGHT_SEARCH_FAIR_SHARE", "true")
-                    .env("STRAYLIGHT_SEARCH_TOP1_HYDRATION", "true")
-                    .env("STRAYLIGHT_SEARCH_CHAR_CAP", "true")
-                    .env("STRAYLIGHT_SEARCH_SECTION_DEMOTION_TOP_N", "8");
+                    .env("BRUNN_SEARCH_FAIR_SHARE", "true")
+                    .env("BRUNN_SEARCH_TOP1_HYDRATION", "true")
+                    .env("BRUNN_SEARCH_CHAR_CAP", "true")
+                    .env("BRUNN_SEARCH_SECTION_DEMOTION_TOP_N", "8");
             }
             "resume_delta_flag" => {
-                command.env("STRAYLIGHT_RESUME_DELTAS", "true");
+                command.env("BRUNN_RESUME_DELTAS", "true");
             }
             "semantic_policy_flags" => {
                 command
-                    .env("STRAYLIGHT_SEMANTIC_LANE", "true")
-                    .env("STRAYLIGHT_EMBED_CACHE", "false")
-                    .env("STRAYLIGHT_SEMANTIC_DEADLINE_MS", "0")
-                    .env("STRAYLIGHT_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS", "1500")
-                    .env("STRAYLIGHT_SEMANTIC_QUERY_CONCURRENCY", "3")
-                    .env("STRAYLIGHT_EMBEDDING_BACKFILL_GUARD", "false")
-                    .env("STRAYLIGHT_EMBEDDING_BACKFILL_BATCH_CHUNKS", "32")
-                    .env("STRAYLIGHT_EMBEDDING_BACKFILL_INTER_BATCH_MS", "500")
+                    .env("BRUNN_SEMANTIC_LANE", "true")
+                    .env("BRUNN_EMBED_CACHE", "false")
+                    .env("BRUNN_SEMANTIC_DEADLINE_MS", "0")
+                    .env("BRUNN_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS", "1500")
+                    .env("BRUNN_SEMANTIC_QUERY_CONCURRENCY", "3")
+                    .env("BRUNN_EMBEDDING_BACKFILL_GUARD", "false")
+                    .env("BRUNN_EMBEDDING_BACKFILL_BATCH_CHUNKS", "32")
+                    .env("BRUNN_EMBEDDING_BACKFILL_INTER_BATCH_MS", "500")
                     .env(
-                        "STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_URL",
+                        "BRUNN_EMBEDDING_BACKFILL_FOREGROUND_STATUS_URL",
                         "http://api:8080/health/foreground-latency",
                     )
                     .env(
-                        "STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_TIMEOUT_MS",
+                        "BRUNN_EMBEDDING_BACKFILL_FOREGROUND_STATUS_TIMEOUT_MS",
                         "750",
                     );
             }
@@ -956,69 +943,66 @@ mod tests {
                 writeln!(secret, "re_unit_1234567890abcdef").unwrap();
                 command
                     .env("RESEND_API_KEY_FILE", secret.path())
-                    .env("AUTH_EMAIL_FROM", "Straylight <login@example.com>")
-                    .env("STRAYLIGHT_PUBLIC_URL", "http://localhost:13110");
+                    .env("AUTH_EMAIL_FROM", "Brunn <login@example.com>")
+                    .env("BRUNN_PUBLIC_URL", "http://localhost:13110");
                 resend_secret_file = Some(secret);
             }
             "production_missing_web_mail" => {
                 command
-                    .env("STRAYLIGHT_ENV", "production")
+                    .env("BRUNN_ENV", "production")
                     .env("OPENAI_API_KEY", "sk-unit-openai");
             }
             "production_placeholder_web_mail" => {
                 command
-                    .env("STRAYLIGHT_ENV", "production")
+                    .env("BRUNN_ENV", "production")
                     .env("OPENAI_API_KEY", "sk-unit-openai")
                     .env("RESEND_API_KEY", "replace-with-resend-key")
-                    .env("AUTH_EMAIL_FROM", "Straylight <login@example.com>");
+                    .env("AUTH_EMAIL_FROM", "Brunn <login@example.com>");
             }
             "invalid_environment" => {
-                command.env("STRAYLIGHT_ENV", "Production");
+                command.env("BRUNN_ENV", "Production");
             }
             "notification_api_config" => {
-                command
-                    .env("STRAYLIGHT_APNS_APP_ID", "com.example.Straylight")
-                    .env(
-                        "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY",
-                        STANDARD.encode([8_u8; 32]),
-                    );
+                command.env("BRUNN_APNS_APP_ID", "com.rourkem.brunn").env(
+                    "BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY",
+                    STANDARD.encode([8_u8; 32]),
+                );
             }
             "notification_app_without_key" => {
-                command.env("STRAYLIGHT_APNS_APP_ID", "com.example.Straylight");
+                command.env("BRUNN_APNS_APP_ID", "com.rourkem.brunn");
             }
             "notification_full_worker" => {
                 let mut secret = tempfile::NamedTempFile::new().unwrap();
                 writeln!(secret, "{}", STANDARD.encode([9_u8; 32])).unwrap();
                 command
-                    .env("STRAYLIGHT_APNS_TEAM_ID", "TEAMID1234")
-                    .env("STRAYLIGHT_APNS_KEY_ID", "KEYID12345")
-                    .env("STRAYLIGHT_APNS_PRIVATE_KEY", "unit-private-key")
-                    .env("STRAYLIGHT_APNS_APP_ID", "com.example.Straylight")
-                    .env("STRAYLIGHT_APNS_DELIVERY_ENABLED", "true")
+                    .env("BRUNN_APNS_TEAM_ID", "TEAMID1234")
+                    .env("BRUNN_APNS_KEY_ID", "KEYID12345")
+                    .env("BRUNN_APNS_PRIVATE_KEY", "unit-private-key")
+                    .env("BRUNN_APNS_APP_ID", "com.rourkem.brunn")
+                    .env("BRUNN_APNS_DELIVERY_ENABLED", "true")
                     .env(
-                        "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE",
+                        "BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE",
                         secret.path(),
                     );
                 notification_key_file = Some(secret);
             }
             "notification_partial_provider" => {
-                command.env("STRAYLIGHT_APNS_TEAM_ID", "TEAMID1234");
+                command.env("BRUNN_APNS_TEAM_ID", "TEAMID1234");
             }
             "notification_provider_missing_token_key" => {
                 command
-                    .env("STRAYLIGHT_APNS_TEAM_ID", "TEAMID1234")
-                    .env("STRAYLIGHT_APNS_KEY_ID", "KEYID12345")
-                    .env("STRAYLIGHT_APNS_PRIVATE_KEY", "unit-private-key")
-                    .env("STRAYLIGHT_APNS_APP_ID", "com.example.Straylight");
+                    .env("BRUNN_APNS_TEAM_ID", "TEAMID1234")
+                    .env("BRUNN_APNS_KEY_ID", "KEYID12345")
+                    .env("BRUNN_APNS_PRIVATE_KEY", "unit-private-key")
+                    .env("BRUNN_APNS_APP_ID", "com.rourkem.brunn");
             }
             "todoist_without_secret_key" => {
-                command.env("STRAYLIGHT_TODOIST_SYNC_ENABLED", "true");
+                command.env("BRUNN_TODOIST_SYNC_ENABLED", "true");
             }
             "todoist_with_secret_key" => {
-                command.env("STRAYLIGHT_TODOIST_SYNC_ENABLED", "true").env(
-                    "STRAYLIGHT_SECRET_ENCRYPTION_KEY",
-                    STANDARD.encode([11_u8; 32]),
-                );
+                command
+                    .env("BRUNN_TODOIST_SYNC_ENABLED", "true")
+                    .env("BRUNN_SECRET_ENCRYPTION_KEY", STANDARD.encode([11_u8; 32]));
             }
             scenario => panic!("unknown config probe scenario {scenario}"),
         }
@@ -1036,12 +1020,12 @@ mod tests {
     #[test]
     #[ignore = "executed in an isolated child process by the config environment tests"]
     fn config_env_probe() {
-        match std::env::var("STRAYLIGHT_CONFIG_ENV_PROBE")
-            .expect("STRAYLIGHT_CONFIG_ENV_PROBE must select a scenario")
+        match std::env::var("BRUNN_CONFIG_ENV_PROBE")
+            .expect("BRUNN_CONFIG_ENV_PROBE must select a scenario")
             .as_str()
         {
             "aws_default_chain" => {
-                assert_eq!(std::env::var("STRAYLIGHT_ENV").as_deref(), Ok("production"));
+                assert_eq!(std::env::var("BRUNN_ENV").as_deref(), Ok("production"));
                 let config = Config::from_env().unwrap();
                 assert_eq!(config.deployment_environment, "production");
                 assert_eq!(config.s3_endpoint, None);
@@ -1107,6 +1091,7 @@ mod tests {
                 assert!(!config.search_top1_hydration);
                 assert!(!config.search_char_cap);
                 assert_eq!(config.search_section_demotion_top_n, None);
+                assert_eq!(config.apns_app_id.as_deref(), Some(DEFAULT_APNS_APP_ID));
             }
             "search_contract_flags" => {
                 let config = Config::from_env().unwrap();
@@ -1153,7 +1138,7 @@ mod tests {
                 );
                 assert_eq!(
                     config.auth_email_from.as_deref(),
-                    Some("Straylight <login@example.com>")
+                    Some("Brunn <login@example.com>")
                 );
             }
             "production_missing_web_mail" => {
@@ -1168,14 +1153,11 @@ mod tests {
                 let error = Config::from_env()
                     .err()
                     .expect("invalid environment must fail");
-                assert!(error.to_string().contains("STRAYLIGHT_ENV"));
+                assert!(error.to_string().contains("BRUNN_ENV"));
             }
             "notification_api_config" => {
                 let config = Config::from_env().unwrap();
-                assert_eq!(
-                    config.apns_app_id.as_deref(),
-                    Some("com.example.Straylight")
-                );
+                assert_eq!(config.apns_app_id.as_deref(), Some("com.rourkem.brunn"));
                 assert!(!config.apns_configured());
                 assert!(!config.apns_delivery_enabled);
             }
@@ -1210,18 +1192,14 @@ mod tests {
                 assert!(
                     error
                         .to_string()
-                        .contains("STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY")
+                        .contains("BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY")
                 );
             }
             "todoist_without_secret_key" => {
                 let error = Config::from_env()
                     .err()
                     .expect("enabled Todoist sync without a vault key must fail");
-                assert!(
-                    error
-                        .to_string()
-                        .contains("STRAYLIGHT_SECRET_ENCRYPTION_KEY")
-                );
+                assert!(error.to_string().contains("BRUNN_SECRET_ENCRYPTION_KEY"));
             }
             "todoist_with_secret_key" => {
                 let config = Config::from_env().unwrap();

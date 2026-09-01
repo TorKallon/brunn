@@ -19,8 +19,8 @@ def main() -> None:
         help="Run one bounded read-only SELECT through the evaluation supervisor",
     )
     args = parser.parse_args()
-    endpoint = os.environ.get("CARRYSTATE_INSPECT_URL")
-    capability = os.environ.get("CARRYSTATE_INSPECT_CAPABILITY")
+    endpoint = os.environ.get("BRUNN_STATE_INSPECT_URL")
+    capability = os.environ.get("BRUNN_STATE_INSPECT_CAPABILITY")
     if not endpoint or not capability:
         raise SystemExit("trusted inspection supervisor is not available")
     local_path = args.path if args.path.is_absolute() else Path.cwd() / args.path

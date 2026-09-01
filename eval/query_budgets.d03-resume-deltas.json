@@ -1,5 +1,5 @@
 {
-  "schema": "straylight-query-budgets@v1",
+  "schema": "brunn-query-budgets@v1",
   "profile": "d03-resume-deltas",
   "runtime_features": {
     "intention_ledger": false,

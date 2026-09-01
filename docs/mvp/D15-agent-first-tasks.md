@@ -4,12 +4,12 @@ Status: Implemented — release requires all owner-approved gates 1–12
 Date: 2026-08-27
 Depends on: D12, D13, notifications, documents, and the secret vault
 Gated by: all twelve gates in the owner-approved 2026-08-26 task specification
-Runtime flags: `STRAYLIGHT_TODOIST_SYNC_ENABLED` (default `false`) and the existing APNs gate
+Runtime flags: `BRUNN_TODOIST_SYNC_ENABLED` (default `false`) and the existing APNs gate
 
 ## Decision and measured spike
 
 The canonical record is one versioned workspace entry per task at
-`.straylight/tasks/<uuid>.md`, with `kind: task`, schema `task.v1`, readable
+`.brunn/tasks/<uuid>.md`, with `kind: task`, schema `task.v1`, readable
 Markdown, and lossless typed metadata. Mutations use the simplified-core entry
 upsert, giving task state entry history, workspace changes, optimistic
 concurrency, account deletion, export, and import. Task entries never create
@@ -60,7 +60,7 @@ RLS-enabled-and-forced tables:
 
 Every table has account-cascade behavior and policies based on
 `app.current_user_id`; two-user tests cover it. Core entry policies grant
-`task.write` only for `.straylight/tasks/%`, never arbitrary memory or chunks.
+`task.write` only for `.brunn/tasks/%`, never arbitrary memory or chunks.
 `rebuild_task_projection` runs in the same transaction after normal upsert and
 import; deletion or a non-task current version removes the projection. The
 five initial contexts (`phone`, `home`, `errands`, `quick`, `online`) and iOS
@@ -109,7 +109,7 @@ hub/repo paths are matched against source/state refs by longest prefix.
 next actions/open questions/time plus urgent count, next three, waiting ages,
 parked count, interest, and last activity.
 
-Recurrence uses unique `(user, series, occurrence_key)` refs. Straylight RRULE
+Recurrence uses unique `(user, series, occurrence_key)` refs. Brunn RRULE
 completion materializes one next occurrence. A Todoist roll-forward upserts the
 same key; owner-first completion may pre-materialize a parseable next instance
 that a later pull updates. Unparseable source recurrence completes the current
@@ -176,7 +176,7 @@ The worker evaluates with explicit `as_of` and user timezone. Deduplication keys
 are `task-deadline:<id>:7d`, `:48h`, `:due-day`, `task-cost:<id>:set`, and
 `task-cost:<id>:week:<local-week>`. Existing inbox/outbox uniqueness gives at
 most once. Target `{type:"task",task_ref:"<uuid>"}` routes to
-`straylight://task/<uuid>`; APNs text remains generic and content is fetched
+`brunn://task/<uuid>`; APNs text remains generic and content is fetched
 after authentication.
 
 Quiet hours delay device delivery but retain the inbox/ledger event. Only an
@@ -225,7 +225,7 @@ card reports only the environment gate, saved/effective mode, token-configured
 boolean, configuration generation, run timing, outcome, and error code; it
 never exposes the token, imported task content, or external identifiers.
 Imported rows retain a Todoist provenance marker, while configuration stays in
-Web settings. A validated lowercase UUID `straylight://task/<id>` survives cold
+Web settings. A validated lowercase UUID `brunn://task/<id>` survives cold
 login, selects Tasks, and opens fetched detail. Completion uses status-green
 feedback and haptic; long press exposes actions. The bounded, user-bound cache
 stays complete-file-protected. No new entitlement is added.
@@ -289,7 +289,7 @@ Todoist.
 
 ## References
 
-- `sources/Projects/Straylight/Agent-first tasks - spec and Codex handoff - 2026-08-26.md`
+- `sources/Projects/Brunn/Agent-first tasks - spec and Codex handoff - 2026-08-26.md`
 - [Night Signal](../Brand.md)
 - [D12](D12-operational-simplification.md)
 - [D13](D13-client-integration-and-canaries.md)

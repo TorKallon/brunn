@@ -106,7 +106,7 @@ def accepted_evidence(
 
 def service_summary() -> dict:
     return {
-        "schema": "straylight-aggregate-service-provenance-summary@v1",
+        "schema": "brunn-aggregate-service-provenance-summary@v1",
         "status": "complete",
         "expected_arm_retrieval_modes": {
             arm: list(EXPECTED_MODES)
@@ -122,7 +122,7 @@ def service_summary() -> dict:
 
 def mutation_summary() -> dict:
     return {
-        "schema": "straylight-aggregate-mutation-provenance@v1",
+        "schema": "brunn-aggregate-mutation-provenance@v1",
         "status": "complete",
         "mutation_script_sha256": MUTATION_SCRIPT_SHA256,
         "draw_bindings": [

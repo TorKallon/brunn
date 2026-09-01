@@ -302,7 +302,7 @@ class E03ProfileTests(unittest.TestCase):
         validate_e03_runtime_metadata("mode1", {
             "embeddings": {
                 "provider": "hashing",
-                "model": "straylight-hashing-v1",
+                "model": "brunn-hashing-v1",
                 "dimensions": 1536,
                 "status": "degraded",
             }
@@ -319,7 +319,7 @@ class E03ProfileTests(unittest.TestCase):
             validate_e03_runtime_metadata("mode2", {
                 "embeddings": {
                     "provider": "hashing",
-                    "model": "straylight-hashing-v1",
+                    "model": "brunn-hashing-v1",
                     "dimensions": 1536,
                     "status": "degraded",
                 }
@@ -374,7 +374,7 @@ class E03ProfileTests(unittest.TestCase):
                     "error_status": 0,
                 },
                 "usage": {
-                    "schema": "straylight-openai-embedding-usage-receipt@v1",
+                    "schema": "brunn-openai-embedding-usage-receipt@v1",
                     "successful_embedding_responses": 2,
                     "usage_reported_responses": 2,
                     "usage_missing_responses": 0,
@@ -442,7 +442,7 @@ class E03ProfileTests(unittest.TestCase):
         run_command.return_value = SimpleNamespace(
             returncode=0,
             stdout=json.dumps({
-                "schema": "straylight-mock-openai-embeddings-health@v1",
+                "schema": "brunn-mock-openai-embeddings-health@v1",
                 "status": "ok",
                 "behavior": {"delay_ms": 0, "error_status": 0},
                 "identity": expected_identity,
@@ -486,10 +486,10 @@ class E03ProfileTests(unittest.TestCase):
                     "com.docker.compose.service": "api",
                 },
                 "Env": [
-                    "STRAYLIGHT_DATABASE_URL=postgres://u:p@db:5432/straylight",
+                    "BRUNN_DATABASE_URL=postgres://u:p@db:5432/brunn",
                     (
-                        "STRAYLIGHT_READ_ONLY_DATABASE_URL="
-                        "postgres://r:p@db:5432/straylight"
+                        "BRUNN_READ_ONLY_DATABASE_URL="
+                        "postgres://r:p@db:5432/brunn"
                     ),
                 ],
             },
@@ -699,7 +699,7 @@ class E03ProfileTests(unittest.TestCase):
                 "Node Type": "Index Scan",
                 "Relation Name": "search_chunks",
                 "Index Name": "search_chunks_semantic_coverage_idx",
-                "Filter": "(path !~~ '.straylight/checkpoints/%'::text)",
+                "Filter": "(path !~~ '.brunn/checkpoints/%'::text)",
             },
         })
         gates = evaluate_gates(

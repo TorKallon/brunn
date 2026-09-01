@@ -3,7 +3,7 @@
 -- still submit the legacy internal username, but atomically pin whichever
 -- identity alias was verified before the expensive password check.
 
-CREATE OR REPLACE FUNCTION straylight_auth.create_web_session(
+CREATE OR REPLACE FUNCTION brunn_auth.create_web_session(
   p_user_id uuid,
   p_token_hash text,
   p_expires_at timestamptz,
@@ -13,7 +13,7 @@ CREATE OR REPLACE FUNCTION straylight_auth.create_web_session(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 DECLARE
@@ -28,11 +28,11 @@ BEGIN
   END IF;
 
   SELECT credential.id INTO principal_id
-  FROM straylight.api_credentials AS credential
-  JOIN straylight.web_identities AS identity
+  FROM brunn.api_credentials AS credential
+  JOIN brunn.web_identities AS identity
     ON credential.user_id = identity.user_id
    AND credential.id = identity.web_credential_id
-  JOIN straylight.users AS user_row ON user_row.id = identity.user_id
+  JOIN brunn.users AS user_row ON user_row.id = identity.user_id
   WHERE identity.user_id = p_user_id
     AND user_row.account_status = 'active'
     AND credential.disabled_at IS NULL
@@ -43,7 +43,7 @@ BEGIN
   END IF;
 
   PERFORM 1
-  FROM straylight.web_identities AS identity
+  FROM brunn.web_identities AS identity
   WHERE identity.user_id = p_user_id
     AND identity.web_credential_id = principal_id
     AND identity.password_hash = p_verified_password_hash
@@ -56,17 +56,17 @@ BEGIN
     RAISE EXCEPTION 'verified password or login identity changed' USING ERRCODE = 'P0002';
   END IF;
 
-  DELETE FROM straylight.web_sessions
+  DELETE FROM brunn.web_sessions
   WHERE user_id = p_user_id
     AND (revoked_at IS NOT NULL OR expires_at <= clock_timestamp());
 
-  INSERT INTO straylight.web_sessions (
+  INSERT INTO brunn.web_sessions (
     user_id, credential_id, token_hash, expires_at
   ) VALUES (
     p_user_id, principal_id, p_token_hash, p_expires_at
   ) RETURNING id INTO created_session_id;
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, credential_id, action, details, content_free
   ) VALUES (
     p_user_id, principal_id, 'auth.web.login',

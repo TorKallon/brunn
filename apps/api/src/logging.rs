@@ -16,7 +16,7 @@ pub struct UdpLogMakeWriter {
 
 impl UdpLogMakeWriter {
     pub fn from_env() -> Result<Option<Self>, String> {
-        let Some(address) = env::var("STRAYLIGHT_SYSLOG_ADDR")
+        let Some(address) = env::var("BRUNN_SYSLOG_ADDR")
             .ok()
             .filter(|value| !value.trim().is_empty())
         else {
@@ -28,14 +28,14 @@ impl UdpLogMakeWriter {
     fn connect(address: &str) -> Result<Self, String> {
         let addresses = address
             .to_socket_addrs()
-            .map_err(|error| format!("could not resolve STRAYLIGHT_SYSLOG_ADDR: {error}"))?
+            .map_err(|error| format!("could not resolve BRUNN_SYSLOG_ADDR: {error}"))?
             .collect::<Vec<_>>();
         let remote = addresses
             .iter()
             .copied()
             .find(SocketAddr::is_ipv4)
             .or_else(|| addresses.first().copied())
-            .ok_or_else(|| "STRAYLIGHT_SYSLOG_ADDR resolved to no addresses".to_owned())?;
+            .ok_or_else(|| "BRUNN_SYSLOG_ADDR resolved to no addresses".to_owned())?;
         let bind = if remote.is_ipv4() {
             "0.0.0.0:0"
         } else {

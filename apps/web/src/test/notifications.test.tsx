@@ -167,7 +167,7 @@ describe("durable alert inbox", () => {
           data: {
             items: [{
               reference: entryAlert.target.entry_ref,
-              path: "Projects/Straylight/Recovery.md",
+              path: "Projects/Brunn/Recovery.md",
               title: "Recovery record",
               version: 3,
               content_hash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

@@ -93,8 +93,8 @@ isolated simplified-core stack with evaluation import enabled. Supply the
 administrative token through the environment without printing it:
 
 ```bash
-export STRAYLIGHT_API_URL=http://127.0.0.1:<isolated-port>
-export STRAYLIGHT_EVAL_TOKEN='<isolated-stack admin token>'
+export BRUNN_API_URL=http://127.0.0.1:<isolated-port>
+export BRUNN_EVAL_TOKEN='<isolated-stack admin token>'
 
 python3 owner_snapshot_eval.py import \
   --inventory operator-output/owner-tier-a/inventory.json \
@@ -150,7 +150,7 @@ Create a private request matching
 
 ```json
 {
-  "schema": "straylight-owner-link-leak-request@v1",
+  "schema": "brunn-owner-link-leak-request@v1",
   "checks": [
     {"case_id": "owner-01", "claim_id": "c1", "text": "private rubric claim"}
   ]
@@ -269,7 +269,7 @@ This source capture is now recovery evidence, not a second writable authority.
 Codex and Aether/OpenClaw both pass D13 through their production-facing pinned
 wrappers, with an unchanged post-gateway source re-audit. Neither client may
 write durable memory to the old source tree or silently fall back to it when
-Straylight is unavailable.
+Brunn is unavailable.
 
 The aggregate production result is
 [`results/2026-07-31-railway-simplified-cutover.md`](../../results/2026-07-31-railway-simplified-cutover.md).

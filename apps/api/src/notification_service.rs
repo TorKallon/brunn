@@ -39,8 +39,8 @@ const LIST_NOTIFICATIONS_SQL: &str = r#"
            notification.target,notification.occurred_at,
            notification.expires_at,notification.created_at,
            state.opened_at,state.acknowledged_at
-    FROM straylight.notifications AS notification
-    LEFT JOIN straylight.notification_user_state AS state
+    FROM brunn.notifications AS notification
+    LEFT JOIN brunn.notification_user_state AS state
       ON state.user_id=notification.user_id
      AND state.notification_id=notification.id
     WHERE notification.user_id=$1
@@ -287,7 +287,7 @@ pub(crate) async fn publish_in_tx(
     let notification_id = Uuid::now_v7();
     let inserted = sqlx::query(
         r#"
-        INSERT INTO straylight.notifications (
+        INSERT INTO brunn.notifications (
           id,user_id,producer_credential_id,event_key,request_hash,
           correlation_id,kind,importance,title,body,source,target,
           occurred_at,expires_at
@@ -315,7 +315,7 @@ pub(crate) async fn publish_in_tx(
         == 1;
 
     let existing = sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT id,request_hash FROM straylight.notifications WHERE user_id=$1 AND event_key=$2",
+        "SELECT id,request_hash FROM brunn.notifications WHERE user_id=$1 AND event_key=$2",
     )
     .bind(auth.user_id.0)
     .bind(request.event_key.trim())
@@ -338,11 +338,11 @@ pub(crate) async fn publish_in_tx(
     if inserted {
         sqlx::query(
             r#"
-            INSERT INTO straylight.notification_deliveries (
+            INSERT INTO brunn.notification_deliveries (
               user_id,notification_id,installation_id,state,last_error_code,available_at
             )
             SELECT $1,$2,installation.id,$3,$4,COALESCE($5,clock_timestamp())
-            FROM straylight.notification_installations AS installation
+            FROM brunn.notification_installations AS installation
             WHERE installation.user_id=$1
               AND installation.enabled
               AND installation.revoked_at IS NULL
@@ -367,7 +367,7 @@ pub(crate) async fn publish_in_tx(
         .rows_affected();
     }
     let delivery_count = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM straylight.notification_deliveries WHERE user_id=$1 AND notification_id=$2",
+        "SELECT count(*) FROM brunn.notification_deliveries WHERE user_id=$1 AND notification_id=$2",
     )
     .bind(auth.user_id.0)
     .bind(resolved_id)
@@ -424,8 +424,8 @@ pub async fn list(
     let unread_count = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT count(*)
-        FROM straylight.notifications AS notification
-        LEFT JOIN straylight.notification_user_state AS state
+        FROM brunn.notifications AS notification
+        LEFT JOIN brunn.notification_user_state AS state
           ON state.user_id=notification.user_id
          AND state.notification_id=notification.id
         WHERE notification.user_id=$1
@@ -499,7 +499,7 @@ pub async fn receipt(
         .transpose()?;
     let mut tx = state.begin_write(&auth).await?;
     let exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS (SELECT 1 FROM straylight.notifications WHERE user_id=$1 AND id=$2)",
+        "SELECT EXISTS (SELECT 1 FROM brunn.notifications WHERE user_id=$1 AND id=$2)",
     )
     .bind(auth.user_id.0)
     .bind(notification_id)
@@ -515,7 +515,7 @@ pub async fn receipt(
         let attributed = sqlx::query_scalar::<_, bool>(
             r#"
             SELECT EXISTS (
-              SELECT 1 FROM straylight.notification_deliveries
+              SELECT 1 FROM brunn.notification_deliveries
               WHERE user_id=$1 AND id=$2 AND notification_id=$3
             )
             "#,
@@ -533,7 +533,7 @@ pub async fn receipt(
     }
     let inserted = sqlx::query(
         r#"
-        INSERT INTO straylight.notification_receipts (
+        INSERT INTO brunn.notification_receipts (
           user_id,notification_id,delivery_id,kind,recorded_by_credential_id
         ) VALUES ($1,$2,$3,$4,$5)
         ON CONFLICT DO NOTHING
@@ -550,17 +550,17 @@ pub async fn receipt(
         == 1;
     let state_row = sqlx::query(
         r#"
-        INSERT INTO straylight.notification_user_state (
+        INSERT INTO brunn.notification_user_state (
           user_id,notification_id,opened_at,acknowledged_at
         ) VALUES (
           $1,$2,clock_timestamp(),
           CASE WHEN $3='acknowledged' THEN clock_timestamp() END
         )
         ON CONFLICT (user_id,notification_id) DO UPDATE SET
-          opened_at=coalesce(straylight.notification_user_state.opened_at,clock_timestamp()),
+          opened_at=coalesce(brunn.notification_user_state.opened_at,clock_timestamp()),
           acknowledged_at=CASE WHEN $3='acknowledged'
-            THEN coalesce(straylight.notification_user_state.acknowledged_at,clock_timestamp())
-            ELSE straylight.notification_user_state.acknowledged_at END,
+            THEN coalesce(brunn.notification_user_state.acknowledged_at,clock_timestamp())
+            ELSE brunn.notification_user_state.acknowledged_at END,
           updated_at=clock_timestamp()
         RETURNING opened_at,acknowledged_at
         "#,
@@ -572,7 +572,7 @@ pub async fn receipt(
     .await?;
     let recorded_at = sqlx::query_scalar::<_, DateTime<Utc>>(
         r#"
-        SELECT recorded_at FROM straylight.notification_receipts
+        SELECT recorded_at FROM brunn.notification_receipts
         WHERE user_id=$1 AND notification_id=$2 AND kind=$3
           AND delivery_id IS NOT DISTINCT FROM $4
         "#,
@@ -608,7 +608,7 @@ pub async fn upsert_installation(
     let token_hash = hex::encode(Sha256::digest(token.as_bytes()));
     let expected_app_id = state.config.apns_app_id.as_deref().ok_or_else(|| {
         ApiError::configuration(
-            "STRAYLIGHT_APNS_APP_ID is required for notification installation registration",
+            "BRUNN_APNS_APP_ID is required for notification installation registration",
         )
     })?;
     if request.app_id.trim() != expected_app_id {
@@ -623,7 +623,7 @@ pub async fn upsert_installation(
             .as_deref()
             .ok_or_else(|| {
                 ApiError::configuration(
-                    "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY is required for device registration",
+                    "BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY is required for device registration",
                 )
             })?;
         let token_key = decode_notification_token_key(encoded_key)?;
@@ -640,19 +640,17 @@ pub async fn upsert_installation(
     };
     let mut tx = state.begin_write(&auth).await?;
     if let Some(token_hash) = stored_token_hash.as_deref() {
-        sqlx::query_scalar::<_, i64>(
-            "SELECT straylight.claim_notification_device_token($1,$2,$3,$4)",
-        )
-        .bind(client_installation_id)
-        .bind(&request.environment)
-        .bind(request.app_id.trim())
-        .bind(token_hash)
-        .fetch_one(&mut *tx)
-        .await?;
+        sqlx::query_scalar::<_, i64>("SELECT brunn.claim_notification_device_token($1,$2,$3,$4)")
+            .bind(client_installation_id)
+            .bind(&request.environment)
+            .bind(request.app_id.trim())
+            .bind(token_hash)
+            .fetch_one(&mut *tx)
+            .await?;
     }
     let row = sqlx::query(
         r#"
-        INSERT INTO straylight.notification_installations (
+        INSERT INTO brunn.notification_installations (
           user_id,client_installation_id,registered_by_credential_id,
           platform,environment,app_id,
           token_ciphertext,token_nonce,token_hash,preview,enabled,revoked_at
@@ -686,7 +684,7 @@ pub async fn upsert_installation(
     if !request.enabled {
         sqlx::query(
             r#"
-            UPDATE straylight.notification_deliveries
+            UPDATE brunn.notification_deliveries
             SET state='expired',failed_at=clock_timestamp(),lease_expires_at=NULL,
                 last_error_code='installation_disabled',updated_at=clock_timestamp()
             WHERE user_id=$1 AND installation_id=$2 AND state IN ('queued','running')
@@ -720,7 +718,7 @@ pub async fn revoke_installation(
     let mut tx = state.begin_write(&auth).await?;
     let row = sqlx::query(
         r#"
-        UPDATE straylight.notification_installations
+        UPDATE brunn.notification_installations
         SET enabled=false,revoked_at=coalesce(revoked_at,clock_timestamp()),
             token_ciphertext=NULL,token_nonce=NULL,token_hash=NULL,
             updated_at=clock_timestamp()
@@ -736,7 +734,7 @@ pub async fn revoke_installation(
         let internal_installation_id: Uuid = row.try_get("id")?;
         sqlx::query(
             r#"
-            UPDATE straylight.notification_deliveries
+            UPDATE brunn.notification_deliveries
             SET state='expired',failed_at=clock_timestamp(),lease_expires_at=NULL,
                 last_error_code='installation_revoked',updated_at=clock_timestamp()
             WHERE user_id=$1 AND installation_id=$2 AND state IN ('queued','running')
@@ -1035,8 +1033,8 @@ async fn load_notification(
                notification.target,notification.occurred_at,
                notification.expires_at,notification.created_at,
                state.opened_at,state.acknowledged_at
-        FROM straylight.notifications AS notification
-        LEFT JOIN straylight.notification_user_state AS state
+        FROM brunn.notifications AS notification
+        LEFT JOIN brunn.notification_user_state AS state
           ON state.user_id=notification.user_id
          AND state.notification_id=notification.id
         WHERE notification.user_id=$1 AND notification.id=$2
@@ -1069,7 +1067,7 @@ async fn load_deliveries_tx(
     let rows = sqlx::query(
         r#"
         SELECT notification_id,id,state,accepted_at,failed_at,last_error_code
-        FROM straylight.notification_deliveries
+        FROM brunn.notification_deliveries
         WHERE user_id=$1 AND notification_id=ANY($2)
         ORDER BY created_at,id
         "#,
@@ -1102,8 +1100,7 @@ fn device_token_aad(
     environment: &str,
     app_id: &str,
 ) -> Vec<u8> {
-    format!("straylight.apns-token.v1|{user_id}|{installation_id}|{environment}|{app_id}")
-        .into_bytes()
+    format!("brunn.apns-token.v1|{user_id}|{installation_id}|{environment}|{app_id}").into_bytes()
 }
 
 fn encrypt_device_token(key: &[u8; 32], aad: &[u8], token: &str) -> ApiResult<(Vec<u8>, Vec<u8>)> {
@@ -1286,9 +1283,8 @@ impl HttpApnsProvider {
             .apns_private_key
             .as_deref()
             .expect("configured APNs private key");
-        let key = EncodingKey::from_ec_pem(private_key.as_bytes()).map_err(|_| {
-            ApiError::configuration("STRAYLIGHT_APNS_PRIVATE_KEY is not a valid EC key")
-        })?;
+        let key = EncodingKey::from_ec_pem(private_key.as_bytes())
+            .map_err(|_| ApiError::configuration("BRUNN_APNS_PRIVATE_KEY is not a valid EC key"))?;
         let client = reqwest::Client::builder()
             .http2_prior_knowledge()
             .timeout(Duration::from_secs(15))
@@ -1515,7 +1511,7 @@ pub async fn process_next_with_provider(
         .as_deref()
         .ok_or_else(|| {
             ApiError::configuration(
-                "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY is required for APNs delivery",
+                "BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY is required for APNs delivery",
             )
         })?;
     process_next_on_pool(pool, encoded_key, provider).await
@@ -1603,7 +1599,7 @@ pub async fn suppress_queued_deliveries(state: &AppState) -> ApiResult<bool> {
 pub async fn suppress_queued_deliveries_on_pool(pool: &PgPool) -> ApiResult<bool> {
     let affected = sqlx::query(
         r#"
-        UPDATE straylight.notification_deliveries
+        UPDATE brunn.notification_deliveries
         SET state='suppressed',failed_at=NULL,lease_expires_at=NULL,
             last_error_code='transport_disabled',updated_at=clock_timestamp()
         WHERE state IN ('queued','running')
@@ -1621,11 +1617,11 @@ pub async fn suppress_queued_deliveries_on_pool(pool: &PgPool) -> ApiResult<bool
 async fn expire_queued_deliveries_on_pool(pool: &PgPool) -> ApiResult<bool> {
     let affected = sqlx::query(
         r#"
-        UPDATE straylight.notification_deliveries AS delivery
+        UPDATE brunn.notification_deliveries AS delivery
         SET state='expired',failed_at=clock_timestamp(),
             lease_expires_at=NULL,last_error_code='notification_expired',
             updated_at=clock_timestamp()
-        FROM straylight.notifications AS notification
+        FROM brunn.notifications AS notification
         WHERE delivery.user_id=notification.user_id
           AND delivery.notification_id=notification.id
           AND delivery.state IN ('queued','running')
@@ -1646,11 +1642,11 @@ async fn claim_delivery(pool: &PgPool) -> ApiResult<Option<ClaimedDelivery>> {
         r#"
         WITH candidate AS (
           SELECT delivery.id
-          FROM straylight.notification_deliveries AS delivery
-          JOIN straylight.notification_installations AS installation
+          FROM brunn.notification_deliveries AS delivery
+          JOIN brunn.notification_installations AS installation
             ON installation.user_id=delivery.user_id
            AND installation.id=delivery.installation_id
-          JOIN straylight.notifications AS notification
+          JOIN brunn.notifications AS notification
             ON notification.user_id=delivery.user_id
            AND notification.id=delivery.notification_id
           WHERE (
@@ -1670,7 +1666,7 @@ async fn claim_delivery(pool: &PgPool) -> ApiResult<Option<ClaimedDelivery>> {
           FOR UPDATE OF delivery SKIP LOCKED
           LIMIT 1
         )
-        UPDATE straylight.notification_deliveries AS delivery
+        UPDATE brunn.notification_deliveries AS delivery
         SET state='running',attempt_count=CASE
               WHEN delivery.state='queued' THEN delivery.attempt_count+1
               ELSE delivery.attempt_count
@@ -1679,8 +1675,8 @@ async fn claim_delivery(pool: &PgPool) -> ApiResult<Option<ClaimedDelivery>> {
             lease_expires_at=clock_timestamp()+make_interval(secs => $1),
             updated_at=clock_timestamp()
         FROM candidate,
-             straylight.notifications AS notification,
-             straylight.notification_installations AS installation
+             brunn.notifications AS notification,
+             brunn.notification_installations AS installation
         WHERE delivery.id=candidate.id
           AND notification.user_id=delivery.user_id
           AND notification.id=delivery.notification_id
@@ -1763,7 +1759,7 @@ fn push_payload(delivery: &ClaimedDelivery, target: &ResolvedPushTarget) -> Valu
     let delivery_ref = format_ref("delivery", delivery.id);
     let mut aps = json!({
         "alert": {
-            "title": "Straylight",
+            "title": "Brunn",
             "body": push_body(delivery, target)
         }
     });
@@ -1772,10 +1768,10 @@ fn push_payload(delivery: &ClaimedDelivery, target: &ResolvedPushTarget) -> Valu
     }
     json!({
         "aps": aps,
-        "schema": "straylight-push@v1",
+        "schema": "brunn-push@v1",
         "notification_ref": notification_ref,
         "delivery_ref": delivery_ref,
-        "straylight_route": push_route(delivery, target)
+        "brunn_route": push_route(delivery, target)
     })
 }
 
@@ -1784,10 +1780,10 @@ fn push_route(delivery: &ClaimedDelivery, target: &ResolvedPushTarget) -> String
         ResolvedPushTarget::Conversation {
             conversation_id,
             seq,
-        } => format!("straylight://conversation/{conversation_id}?seq={seq}"),
-        ResolvedPushTarget::Task { task_ref } => format!("straylight://task/{task_ref}"),
+        } => format!("brunn://conversation/{conversation_id}?seq={seq}"),
+        ResolvedPushTarget::Task { task_ref } => format!("brunn://task/{task_ref}"),
         _ => format!(
-            "straylight://notification/{}?delivery={}",
+            "brunn://notification/{}?delivery={}",
             delivery.notification_id.simple(),
             delivery.id.simple()
         ),
@@ -1821,8 +1817,8 @@ fn push_body(delivery: &ClaimedDelivery, target: &ResolvedPushTarget) -> String 
 fn generic_push_body(kind: &str) -> &'static str {
     match kind {
         "briefing_ready" => "Your briefing is ready.",
-        "correction" => "A Straylight update needs your attention.",
-        _ => "A new Straylight alert is available.",
+        "correction" => "A Brunn update needs your attention.",
+        _ => "A new Brunn alert is available.",
     }
 }
 
@@ -1868,7 +1864,7 @@ async fn record_acceptance(
     let mut tx = pool.begin().await?;
     sqlx::query(
         r#"
-        INSERT INTO straylight.notification_attempts (
+        INSERT INTO brunn.notification_attempts (
           user_id,delivery_id,attempt_number,result,provider_status,
           provider_request_id
         ) VALUES ($1,$2,$3,'accepted_by_apns',$4,$5)
@@ -1884,7 +1880,7 @@ async fn record_acceptance(
     .await?;
     sqlx::query(
         r#"
-        UPDATE straylight.notification_deliveries
+        UPDATE brunn.notification_deliveries
         SET state='accepted_by_apns',accepted_at=clock_timestamp(),
             lease_expires_at=NULL,last_error_code=NULL,updated_at=clock_timestamp()
         WHERE user_id=$1 AND id=$2 AND state='running' AND attempt_count=$3
@@ -1920,7 +1916,7 @@ async fn record_failure(
     let mut tx = pool.begin().await?;
     sqlx::query(
         r#"
-        INSERT INTO straylight.notification_attempts (
+        INSERT INTO brunn.notification_attempts (
           user_id,delivery_id,attempt_number,result,provider_status,
           provider_request_id,error_code
         ) VALUES ($1,$2,$3,$4,$5,$6,$7)
@@ -1938,7 +1934,7 @@ async fn record_failure(
     .await?;
     sqlx::query(
         r#"
-        UPDATE straylight.notification_deliveries
+        UPDATE brunn.notification_deliveries
         SET state=CASE WHEN $4 THEN 'queued' ELSE 'failed' END,
             available_at=CASE WHEN $4
               THEN clock_timestamp()+make_interval(secs => $5)
@@ -1966,7 +1962,7 @@ async fn record_failure(
     if failure.invalidate_token {
         sqlx::query(
             r#"
-            UPDATE straylight.notification_installations
+            UPDATE brunn.notification_installations
             SET enabled=false,revoked_at=clock_timestamp(),
                 token_ciphertext=NULL,token_nonce=NULL,token_hash=NULL,
                 updated_at=clock_timestamp()
@@ -1979,7 +1975,7 @@ async fn record_failure(
         .await?;
         sqlx::query(
             r#"
-            UPDATE straylight.notification_deliveries
+            UPDATE brunn.notification_deliveries
             SET state='expired',failed_at=clock_timestamp(),
                 last_error_code='installation_token_invalid',updated_at=clock_timestamp()
             WHERE user_id=$1 AND installation_id=$2 AND state='queued'
@@ -2166,27 +2162,27 @@ mod tests {
             body: "Private news detail".to_owned(),
             target: json!({"type":"notification"}),
             environment: "development".to_owned(),
-            app_id: "com.example.Straylight".to_owned(),
+            app_id: "com.rourkem.brunn".to_owned(),
             token_ciphertext: Vec::new(),
             token_nonce: Vec::new(),
             expires_at: None,
         };
         let target = resolve_push_target(&delivery.target);
         let payload = push_payload(&delivery, &target);
-        assert_eq!(payload["schema"], "straylight-push@v1");
-        assert_eq!(payload["aps"]["alert"]["title"], "Straylight");
+        assert_eq!(payload["schema"], "brunn-push@v1");
+        assert_eq!(payload["aps"]["alert"]["title"], "Brunn");
         assert_eq!(
             payload["aps"]["alert"]["body"],
-            "A new Straylight alert is available."
+            "A new Brunn alert is available."
         );
         assert!(!payload.to_string().contains("Private news detail"));
         assert!(payload.get("title").is_none());
         assert!(payload.get("body").is_none());
         assert!(
-            payload["straylight_route"]
+            payload["brunn_route"]
                 .as_str()
                 .unwrap()
-                .starts_with("straylight://notification/")
+                .starts_with("brunn://notification/")
         );
         let keys: std::collections::BTreeSet<_> = payload
             .as_object()
@@ -2201,7 +2197,7 @@ mod tests {
                 "delivery_ref",
                 "notification_ref",
                 "schema",
-                "straylight_route",
+                "brunn_route",
             ])
         );
     }
@@ -2222,7 +2218,7 @@ mod tests {
             body: alert_text.to_owned(),
             target: json!({"type":"notification"}),
             environment: "development".to_owned(),
-            app_id: "com.example.Straylight".to_owned(),
+            app_id: "com.rourkem.brunn".to_owned(),
             token_ciphertext: Vec::new(),
             token_nonce: Vec::new(),
             expires_at: None,
@@ -2255,20 +2251,17 @@ mod tests {
             body: "Private deadline detail".to_owned(),
             target: json!({"type":"task","task_ref":task_id.to_string()}),
             environment: "development".to_owned(),
-            app_id: "com.example.Straylight".to_owned(),
+            app_id: "com.rourkem.brunn".to_owned(),
             token_ciphertext: Vec::new(),
             token_nonce: Vec::new(),
             expires_at: None,
         };
         let target = resolve_push_target(&delivery.target);
         let payload = push_payload(&delivery, &target);
-        assert_eq!(
-            payload["straylight_route"],
-            format!("straylight://task/{task_id}")
-        );
+        assert_eq!(payload["brunn_route"], format!("brunn://task/{task_id}"));
         assert_eq!(
             payload["aps"]["alert"]["body"],
-            "A new Straylight alert is available."
+            "A new Brunn alert is available."
         );
         assert!(!payload.to_string().contains("Private deadline detail"));
 
@@ -2296,7 +2289,7 @@ mod tests {
         let request = InstallationRequest {
             platform: "ios".to_owned(),
             environment: "development".to_owned(),
-            app_id: "com.example.Straylight".to_owned(),
+            app_id: "com.rourkem.brunn".to_owned(),
             device_token: "ab".repeat(32),
             preview: "generic".to_owned(),
             enabled: true,

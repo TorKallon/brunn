@@ -18,7 +18,7 @@ The deployed simplified API reports build
 with SHA-256
 `2c7e200f2ee015cdb69ab0b0a8ad86b96391ea6573be8e4b3e2001719b8cb39c`
 passes 28/28 tests. Separate credentials, fixed wrappers, private roots, and
-Straylight-only configuration are installed for both clients. Their prior live
+Brunn-only configuration are installed for both clients. Their prior live
 vault symlink and retired local-memory, report, and backup persistence paths are
 absent; the source vault remains intact as read-only recovery evidence. The
 additional dormant Aether backup was captured, imported, replay-verified, and
@@ -33,7 +33,7 @@ or outbound events, and the post-gateway source inventory remained unchanged.
 
 Automation retirement also passes. OpenClaw has 22 jobs: three safe jobs are
 enabled and 19 old vault/local-memory jobs are disabled. Codex has five active
-automations, including the two rewritten for Straylight; its legacy Gmail
+automations, including the two rewritten for Brunn; its legacy Gmail
 automation is paused. Absolute-retired-path scans pass for every active job.
 
 All 2026-07-24 MCP evaluation results exercised the legacy core. They remain
@@ -64,15 +64,15 @@ version/idempotency checks mandatory before the cutover can be called complete.
 
 ## Codex — passed
 
-1. Register a single `straylight` stdio MCP server that invokes only the Codex
+1. Register a single `brunn` stdio MCP server that invokes only the Codex
    wrapper; do not point configuration at a mutable repository build.
-2. Capture existing Codex durable local memory into Straylight before changing
+2. Capture existing Codex durable local memory into Brunn before changing
    its local-memory setting.
 3. Disable Codex local memories and remove every instruction that tells Codex
    to persist durable decisions to the vault.
 4. Start a fresh Codex process and run the direct-cutover canary subset recorded
    below.
-5. Prove a new durable write is visible through Straylight and is not created
+5. Prove a new durable write is visible through Brunn and is not created
    in the old local-memory or vault locations.
 
 ## Aether/OpenClaw — passed
@@ -80,10 +80,10 @@ version/idempotency checks mandatory before the cutover can be called complete.
 1. Register the same pinned distribution through the OpenClaw wrapper using a
    distinct credential and roots.
 2. Capture existing Aether daily/topic memory and its durable memory document
-   into Straylight before disabling them.
+   into Brunn before disabling them.
 3. Disable the built-in memory plugin, local memory search, compaction memory
    flush, and vault-oriented skills/instructions. Remove the live vault symlink.
-4. Keep every automation that has not been rewritten for Straylight disabled.
+4. Keep every automation that has not been rewritten for Brunn disabled.
 5. Restart/reload OpenClaw, run the direct-cutover canary subset recorded below
    from a fresh process, and prove no durable write reaches local memory or the
    vault.
@@ -147,7 +147,7 @@ The direct owner cutover passes only when both clients have:
 - distinct read/write credentials held outside configuration;
 - the executed direct-cutover READ and WRITE subset above passing;
 - cross-client visibility passing; and
-- fresh-process proof that durable reads/writes use Straylight only.
+- fresh-process proof that durable reads/writes use Brunn only.
 
 Credential, launcher, configuration, cross-client, source-retirement, Codex,
 and Aether/OpenClaw rows are populated. Both clients pass the direct-cutover

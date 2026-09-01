@@ -2,10 +2,10 @@
 -- Notification content remains in Postgres; APNs receives only opaque refs and
 -- generic copy. Provider acceptance and user receipts are recorded separately.
 
-ALTER TABLE straylight.api_credentials
+ALTER TABLE brunn.api_credentials
   DROP CONSTRAINT IF EXISTS api_credentials_capabilities_check2;
 
-ALTER TABLE straylight.api_credentials
+ALTER TABLE brunn.api_credentials
   ADD CONSTRAINT api_credentials_capabilities_check2 CHECK (
     capabilities <@ ARRAY[
       'open', 'query', 'read', 'compute', 'verify', 'status',
@@ -15,10 +15,10 @@ ALTER TABLE straylight.api_credentials
     ]::text[]
   );
 
-ALTER TABLE straylight.api_credentials
+ALTER TABLE brunn.api_credentials
   DROP CONSTRAINT IF EXISTS api_credentials_owner_full_capabilities_check;
 
-UPDATE straylight.api_credentials
+UPDATE brunn.api_credentials
 SET capabilities = capabilities
   || ARRAY['notification:publish', 'notification:manage']::text[]
 WHERE capabilities @> ARRAY['credential:manage']::text[]
@@ -26,7 +26,7 @@ WHERE capabilities @> ARRAY['credential:manage']::text[]
     'notification:publish', 'notification:manage'
   ]::text[];
 
-ALTER TABLE straylight.api_credentials
+ALTER TABLE brunn.api_credentials
   ADD CONSTRAINT api_credentials_owner_full_capabilities_check CHECK (
     NOT capabilities @> ARRAY['credential:manage']::text[]
     OR capabilities @> ARRAY[
@@ -37,7 +37,7 @@ ALTER TABLE straylight.api_credentials
     ]::text[]
   );
 
-CREATE OR REPLACE FUNCTION straylight_auth.admin_issue_credential(
+CREATE OR REPLACE FUNCTION brunn_auth.admin_issue_credential(
   p_user_id uuid,
   p_label text,
   p_token_hash text,
@@ -47,7 +47,7 @@ CREATE OR REPLACE FUNCTION straylight_auth.admin_issue_credential(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
@@ -60,7 +60,7 @@ DECLARE
   created_credential_id uuid;
   matched_scope_count integer;
 BEGIN
-  PERFORM straylight_auth.require_admin();
+  PERFORM brunn_auth.require_admin();
   IF p_capabilities IS NULL
      OR cardinality(p_capabilities) = 0
      OR array_position(p_capabilities, NULL) IS NOT NULL
@@ -83,35 +83,35 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
   IF NOT EXISTS (
-    SELECT 1 FROM straylight.users
+    SELECT 1 FROM brunn.users
     WHERE id = p_user_id AND account_status = 'active'
   ) THEN
     RAISE EXCEPTION 'active recovery user not found' USING ERRCODE = 'P0002';
   END IF;
   SELECT count(*) INTO matched_scope_count
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = p_user_id
     AND scope_row.scope_ref::text = ANY(p_scope_refs);
   IF matched_scope_count <> cardinality(p_scope_refs) THEN
     RAISE EXCEPTION 'one or more recovery scopes do not belong to the user'
       USING ERRCODE = '22023';
   END IF;
-  INSERT INTO straylight.api_credentials (
+  INSERT INTO brunn.api_credentials (
     user_id, label, token_hash, capabilities
   ) VALUES (p_user_id, p_label, p_token_hash, p_capabilities)
   RETURNING id INTO created_credential_id;
-  INSERT INTO straylight.credential_scope_grants (
+  INSERT INTO brunn.credential_scope_grants (
     credential_id, user_id, scope_id
   )
   SELECT created_credential_id, p_user_id, scope_row.id
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = p_user_id
     AND scope_row.scope_ref::text = ANY(p_scope_refs);
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, credential_id, action, details, content_free
   ) VALUES (
-    straylight_auth.current_user_id(),
-    straylight_auth.current_credential_id(),
+    brunn_auth.current_user_id(),
+    brunn_auth.current_credential_id(),
     'admin.credential.recover',
     jsonb_build_object(
       'target_user_id', p_user_id,
@@ -124,7 +124,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION straylight_auth.issue_credential(
+CREATE OR REPLACE FUNCTION brunn_auth.issue_credential(
   p_user_id uuid,
   p_label text,
   p_token_hash text,
@@ -134,7 +134,7 @@ CREATE OR REPLACE FUNCTION straylight_auth.issue_credential(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
@@ -147,12 +147,12 @@ DECLARE
   created_credential_id uuid;
   matched_scope_count integer;
 BEGIN
-  PERFORM straylight_auth.require_credential_control(p_user_id);
+  PERFORM brunn_auth.require_credential_control(p_user_id);
   IF p_capabilities IS NULL
      OR cardinality(p_capabilities) = 0
      OR array_position(p_capabilities, NULL) IS NOT NULL
      OR NOT p_capabilities <@ allowed_capabilities
-     OR NOT p_capabilities <@ straylight_auth.current_capabilities()
+     OR NOT p_capabilities <@ brunn_auth.current_capabilities()
      OR cardinality(p_capabilities) <> (
        SELECT count(DISTINCT capability)
        FROM unnest(p_capabilities) AS capability
@@ -163,7 +163,7 @@ BEGIN
   IF p_scope_refs IS NULL
      OR cardinality(p_scope_refs) = 0
      OR array_position(p_scope_refs, NULL) IS NOT NULL
-     OR NOT p_scope_refs <@ straylight_auth.current_scope_refs()
+     OR NOT p_scope_refs <@ brunn_auth.current_scope_refs()
      OR cardinality(p_scope_refs) <> (
        SELECT count(DISTINCT scope_ref)
        FROM unnest(p_scope_refs) AS scope_ref
@@ -172,31 +172,31 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
   SELECT count(*) INTO matched_scope_count
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = p_user_id
     AND scope_row.scope_ref::text = ANY(p_scope_refs);
   IF matched_scope_count <> cardinality(p_scope_refs) THEN
     RAISE EXCEPTION 'one or more scope_refs do not belong to the user'
       USING ERRCODE = '22023';
   END IF;
-  INSERT INTO straylight.api_credentials (
+  INSERT INTO brunn.api_credentials (
     user_id, label, token_hash, capabilities
   ) VALUES (
     p_user_id, p_label, p_token_hash, p_capabilities
   ) RETURNING id INTO created_credential_id;
-  INSERT INTO straylight.credential_scope_grants (
+  INSERT INTO brunn.credential_scope_grants (
     credential_id, user_id, scope_id
   )
   SELECT created_credential_id, p_user_id, scope_row.id
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = p_user_id
     AND scope_row.scope_ref::text = ANY(p_scope_refs);
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, scope_id, credential_id, action, details, content_free
   ) VALUES (
     p_user_id,
     NULL,
-    straylight_auth.current_credential_id(),
+    brunn_auth.current_credential_id(),
     'auth.credential.issue',
     jsonb_build_object(
       'credential_id', created_credential_id,
@@ -209,7 +209,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION straylight_auth.admin_provision_user(
+CREATE OR REPLACE FUNCTION brunn_auth.admin_provision_user(
   p_external_ref text,
   p_display_name text,
   p_credential_label text,
@@ -225,7 +225,7 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
@@ -242,7 +242,7 @@ DECLARE
   initial_revision_id uuid := gen_random_uuid();
   manifest_id uuid := gen_random_uuid();
 BEGIN
-  PERFORM straylight_auth.require_admin();
+  PERFORM brunn_auth.require_admin();
   IF p_external_ref IS NULL OR btrim(p_external_ref) = ''
      OR length(p_external_ref) > 200
      OR p_display_name IS NULL OR btrim(p_display_name) = ''
@@ -252,53 +252,53 @@ BEGIN
     RAISE EXCEPTION 'provisioning names are invalid' USING ERRCODE = '22023';
   END IF;
   IF EXISTS (
-    SELECT 1 FROM straylight.users AS existing_user
+    SELECT 1 FROM brunn.users AS existing_user
     WHERE existing_user.external_ref = p_external_ref
   ) THEN
     RAISE EXCEPTION 'external_ref already exists' USING ERRCODE = '23505';
   END IF;
-  INSERT INTO straylight.users (external_ref, display_name)
+  INSERT INTO brunn.users (external_ref, display_name)
   VALUES (p_external_ref, p_display_name)
   RETURNING users.id INTO created_user_id;
   SELECT scope_row.id INTO root_scope_id
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = created_user_id
     AND scope_row.scope_ref = 'scope:root';
   SELECT policy_row.id INTO default_policy_id
-  FROM straylight.policies AS policy_row
+  FROM brunn.policies AS policy_row
   WHERE policy_row.user_id = created_user_id
     AND policy_row.is_default;
-  INSERT INTO straylight.api_credentials (
+  INSERT INTO brunn.api_credentials (
     user_id, label, token_hash, capabilities
   ) VALUES (
     created_user_id, p_credential_label, p_token_hash, owner_capabilities
   ) RETURNING api_credentials.id INTO created_credential_id;
-  INSERT INTO straylight.credential_scope_grants (
+  INSERT INTO brunn.credential_scope_grants (
     credential_id, user_id, scope_id
   ) VALUES (created_credential_id, created_user_id, root_scope_id);
-  INSERT INTO straylight.corpus_revisions (
+  INSERT INTO brunn.corpus_revisions (
     id, user_id, scope_id, parent_revision_id, revision_number, manifest_hash
   ) VALUES (
     initial_revision_id, created_user_id, root_scope_id, NULL, 1, p_empty_manifest_hash
   );
-  INSERT INTO straylight.active_manifests (
+  INSERT INTO brunn.active_manifests (
     id, user_id, scope_id, active_corpus_revision_id, manifest_hash, generation
   ) VALUES (
     manifest_id, created_user_id, root_scope_id,
     initial_revision_id, p_empty_manifest_hash, 1
   );
-  INSERT INTO straylight.active_manifest_history (
+  INSERT INTO brunn.active_manifest_history (
     id, user_id, scope_id, manifest_id, generation, corpus_revision_id,
     manifest_hash, change_kind
   ) VALUES (
     gen_random_uuid(), created_user_id, root_scope_id, manifest_id, 1,
     initial_revision_id, p_empty_manifest_hash, 'initial'
   );
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, credential_id, action, details, content_free
   ) VALUES (
-    straylight_auth.current_user_id(),
-    straylight_auth.current_credential_id(),
+    brunn_auth.current_user_id(),
+    brunn_auth.current_credential_id(),
     'admin.user.provision',
     jsonb_build_object('target_user_id', created_user_id),
     true
@@ -309,9 +309,9 @@ BEGIN
 END;
 $$;
 
-CREATE TABLE straylight.notifications (
+CREATE TABLE brunn.notifications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES straylight.users(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES brunn.users(id) ON DELETE CASCADE,
   producer_credential_id uuid NOT NULL,
   event_key text NOT NULL CHECK (length(event_key) BETWEEN 1 AND 200),
   request_hash text NOT NULL CHECK (request_hash ~ '^[0-9a-f]{64}$'),
@@ -330,14 +330,14 @@ CREATE TABLE straylight.notifications (
   UNIQUE (user_id, id),
   UNIQUE (user_id, event_key),
   FOREIGN KEY (user_id, producer_credential_id)
-    REFERENCES straylight.api_credentials(user_id, id),
+    REFERENCES brunn.api_credentials(user_id, id),
   CHECK (expires_at > occurred_at)
 );
 
 CREATE INDEX notifications_timeline_idx
-  ON straylight.notifications (user_id, created_at DESC, id DESC);
+  ON brunn.notifications (user_id, created_at DESC, id DESC);
 
-CREATE TABLE straylight.notification_user_state (
+CREATE TABLE brunn.notification_user_state (
   user_id uuid NOT NULL,
   notification_id uuid NOT NULL,
   opened_at timestamptz,
@@ -345,13 +345,13 @@ CREATE TABLE straylight.notification_user_state (
   updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   PRIMARY KEY (user_id, notification_id),
   FOREIGN KEY (user_id, notification_id)
-    REFERENCES straylight.notifications(user_id, id) ON DELETE CASCADE,
+    REFERENCES brunn.notifications(user_id, id) ON DELETE CASCADE,
   CHECK (acknowledged_at IS NULL OR opened_at IS NOT NULL)
 );
 
-CREATE TABLE straylight.notification_installations (
+CREATE TABLE brunn.notification_installations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES straylight.users(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES brunn.users(id) ON DELETE CASCADE,
   client_installation_id uuid NOT NULL,
   registered_by_credential_id uuid NOT NULL,
   platform text NOT NULL CHECK (platform = 'ios'),
@@ -371,7 +371,7 @@ CREATE TABLE straylight.notification_installations (
   UNIQUE (user_id, id),
   UNIQUE (user_id, client_installation_id),
   FOREIGN KEY (user_id, registered_by_credential_id)
-    REFERENCES straylight.api_credentials(user_id, id),
+    REFERENCES brunn.api_credentials(user_id, id),
   CHECK (
     (
       enabled AND revoked_at IS NULL
@@ -388,11 +388,11 @@ CREATE TABLE straylight.notification_installations (
 );
 
 CREATE UNIQUE INDEX notification_installations_live_token_idx
-  ON straylight.notification_installations (
+  ON brunn.notification_installations (
     environment, app_id, token_hash
   ) WHERE enabled;
 
-CREATE TABLE straylight.notification_deliveries (
+CREATE TABLE brunn.notification_deliveries (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   notification_id uuid NOT NULL,
@@ -417,20 +417,20 @@ CREATE TABLE straylight.notification_deliveries (
   UNIQUE (user_id, id, notification_id),
   UNIQUE (user_id, notification_id, installation_id),
   FOREIGN KEY (user_id, notification_id)
-    REFERENCES straylight.notifications(user_id, id) ON DELETE CASCADE,
+    REFERENCES brunn.notifications(user_id, id) ON DELETE CASCADE,
   FOREIGN KEY (user_id, installation_id)
-    REFERENCES straylight.notification_installations(user_id, id) ON DELETE CASCADE
+    REFERENCES brunn.notification_installations(user_id, id) ON DELETE CASCADE
 );
 
 CREATE INDEX notification_deliveries_due_idx
-  ON straylight.notification_deliveries (available_at, created_at, id)
+  ON brunn.notification_deliveries (available_at, created_at, id)
   WHERE state = 'queued';
 
 CREATE INDEX notification_deliveries_stale_lease_idx
-  ON straylight.notification_deliveries (lease_expires_at, id)
+  ON brunn.notification_deliveries (lease_expires_at, id)
   WHERE state = 'running';
 
-CREATE TABLE straylight.notification_attempts (
+CREATE TABLE brunn.notification_attempts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   delivery_id uuid NOT NULL,
@@ -446,10 +446,10 @@ CREATE TABLE straylight.notification_attempts (
   attempted_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   UNIQUE (user_id, delivery_id, attempt_number),
   FOREIGN KEY (user_id, delivery_id)
-    REFERENCES straylight.notification_deliveries(user_id, id) ON DELETE CASCADE
+    REFERENCES brunn.notification_deliveries(user_id, id) ON DELETE CASCADE
 );
 
-CREATE TABLE straylight.notification_receipts (
+CREATE TABLE brunn.notification_receipts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   notification_id uuid NOT NULL,
@@ -458,23 +458,23 @@ CREATE TABLE straylight.notification_receipts (
   recorded_by_credential_id uuid NOT NULL,
   recorded_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   FOREIGN KEY (user_id, notification_id)
-    REFERENCES straylight.notifications(user_id, id) ON DELETE CASCADE,
+    REFERENCES brunn.notifications(user_id, id) ON DELETE CASCADE,
   FOREIGN KEY (user_id, delivery_id, notification_id)
-    REFERENCES straylight.notification_deliveries(user_id, id, notification_id)
+    REFERENCES brunn.notification_deliveries(user_id, id, notification_id)
     ON DELETE CASCADE,
   FOREIGN KEY (user_id, recorded_by_credential_id)
-    REFERENCES straylight.api_credentials(user_id, id)
+    REFERENCES brunn.api_credentials(user_id, id)
 );
 
 CREATE UNIQUE INDEX notification_receipts_without_delivery_idx
-  ON straylight.notification_receipts (user_id, notification_id, kind)
+  ON brunn.notification_receipts (user_id, notification_id, kind)
   WHERE delivery_id IS NULL;
 
 CREATE UNIQUE INDEX notification_receipts_with_delivery_idx
-  ON straylight.notification_receipts (user_id, notification_id, delivery_id, kind)
+  ON brunn.notification_receipts (user_id, notification_id, delivery_id, kind)
   WHERE delivery_id IS NOT NULL;
 
-CREATE FUNCTION straylight.claim_notification_device_token(
+CREATE FUNCTION brunn.claim_notification_device_token(
   p_client_installation_id uuid,
   p_environment text,
   p_app_id text,
@@ -483,18 +483,18 @@ CREATE FUNCTION straylight.claim_notification_device_token(
 RETURNS bigint
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
-  actor_user_id uuid := straylight_auth.current_user_id();
+  actor_user_id uuid := brunn_auth.current_user_id();
   reassigned_count bigint;
 BEGIN
-  IF NOT straylight_auth.context_is_valid()
+  IF NOT brunn_auth.context_is_valid()
      OR actor_user_id IS NULL
      OR NOT (
-       straylight_auth.has_capability('notification:manage')
-       OR straylight_auth.has_capability('admin')
+       brunn_auth.has_capability('notification:manage')
+       OR brunn_auth.has_capability('admin')
      ) THEN
     RAISE EXCEPTION 'notification management capability is required'
       USING ERRCODE = '42501';
@@ -510,13 +510,13 @@ BEGIN
   -- Serialize claims for one provider token so the global live-token unique
   -- index cannot race two account switches into an ambiguous assignment.
   PERFORM pg_advisory_xact_lock(hashtextextended(
-    'straylight.notification-token.v1|'
+    'brunn.notification-token.v1|'
       || p_environment || '|' || p_app_id || '|' || p_token_hash,
     0
   ));
 
   WITH revoked AS (
-    UPDATE straylight.notification_installations
+    UPDATE brunn.notification_installations
     SET enabled=false,
         token_ciphertext=NULL,
         token_nonce=NULL,
@@ -533,7 +533,7 @@ BEGIN
       )
     RETURNING user_id,id
   ), expired AS (
-    UPDATE straylight.notification_deliveries AS delivery
+    UPDATE brunn.notification_deliveries AS delivery
     SET state='expired',failed_at=clock_timestamp(),lease_expires_at=NULL,
         last_error_code='installation_reassigned',updated_at=clock_timestamp()
     FROM revoked
@@ -544,11 +544,11 @@ BEGIN
   )
   SELECT count(*) INTO reassigned_count FROM revoked;
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id,credential_id,action,details,content_free
   ) VALUES (
     actor_user_id,
-    straylight_auth.current_credential_id(),
+    brunn_auth.current_credential_id(),
     'notifications.installation.token_claim',
     jsonb_build_object('reassigned_installations',reassigned_count),
     true
@@ -557,24 +557,24 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION straylight.claim_notification_device_token(
+REVOKE ALL ON FUNCTION brunn.claim_notification_device_token(
   uuid,text,text,text
 ) FROM PUBLIC, app_ro;
-GRANT EXECUTE ON FUNCTION straylight.claim_notification_device_token(
+GRANT EXECUTE ON FUNCTION brunn.claim_notification_device_token(
   uuid,text,text,text
 ) TO app_rw;
 
-CREATE FUNCTION straylight.revoke_disabled_credential_notification_installations()
+CREATE FUNCTION brunn.revoke_disabled_credential_notification_installations()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 BEGIN
   IF OLD.disabled_at IS NULL AND NEW.disabled_at IS NOT NULL THEN
     WITH revoked AS (
-      UPDATE straylight.notification_installations
+      UPDATE brunn.notification_installations
       SET enabled=false,revoked_at=coalesce(revoked_at,clock_timestamp()),
           token_ciphertext=NULL,token_nonce=NULL,token_hash=NULL,
           updated_at=clock_timestamp()
@@ -583,7 +583,7 @@ BEGIN
         AND enabled
       RETURNING id
     )
-    UPDATE straylight.notification_deliveries
+    UPDATE brunn.notification_deliveries
     SET state='expired',failed_at=clock_timestamp(),lease_expires_at=NULL,
         last_error_code='registration_credential_revoked',
         updated_at=clock_timestamp()
@@ -596,12 +596,12 @@ END;
 $$;
 
 CREATE TRIGGER api_credentials_revoke_notification_installations
-AFTER UPDATE OF disabled_at ON straylight.api_credentials
+AFTER UPDATE OF disabled_at ON brunn.api_credentials
 FOR EACH ROW
-EXECUTE FUNCTION straylight.revoke_disabled_credential_notification_installations();
+EXECUTE FUNCTION brunn.revoke_disabled_credential_notification_installations();
 
 REVOKE ALL ON FUNCTION
-  straylight.revoke_disabled_credential_notification_installations()
+  brunn.revoke_disabled_credential_notification_installations()
 FROM PUBLIC, app_rw, app_ro;
 
 DO $$
@@ -612,124 +612,124 @@ BEGIN
     'notifications', 'notification_user_state', 'notification_installations',
     'notification_deliveries', 'notification_attempts', 'notification_receipts'
   ] LOOP
-    EXECUTE format('ALTER TABLE straylight.%I ENABLE ROW LEVEL SECURITY', table_name);
-    EXECUTE format('ALTER TABLE straylight.%I FORCE ROW LEVEL SECURITY', table_name);
+    EXECUTE format('ALTER TABLE brunn.%I ENABLE ROW LEVEL SECURITY', table_name);
+    EXECUTE format('ALTER TABLE brunn.%I FORCE ROW LEVEL SECURITY', table_name);
     EXECUTE format(
-      'CREATE POLICY notification_user_select ON straylight.%I '
+      'CREATE POLICY notification_user_select ON brunn.%I '
       'FOR SELECT USING ('
-      'user_id = straylight_auth.current_user_id() '
-      'AND straylight_auth.context_is_valid() '
-      'AND straylight_auth.has_capability(''read''))',
+      'user_id = brunn_auth.current_user_id() '
+      'AND brunn_auth.context_is_valid() '
+      'AND brunn_auth.has_capability(''read''))',
       table_name
     );
   END LOOP;
 END;
 $$;
 
-CREATE POLICY notifications_insert ON straylight.notifications
+CREATE POLICY notifications_insert ON brunn.notifications
   FOR INSERT WITH CHECK (
-    user_id = straylight_auth.current_user_id()
-    AND straylight_auth.context_is_valid()
-    AND producer_credential_id = straylight_auth.current_credential_id()
+    user_id = brunn_auth.current_user_id()
+    AND brunn_auth.context_is_valid()
+    AND producer_credential_id = brunn_auth.current_credential_id()
     AND (
-      straylight_auth.has_capability('notification:publish')
-      OR straylight_auth.has_capability('save')
-      OR straylight_auth.has_capability('admin')
+      brunn_auth.has_capability('notification:publish')
+      OR brunn_auth.has_capability('save')
+      OR brunn_auth.has_capability('admin')
     )
   );
 
-CREATE POLICY notification_state_write ON straylight.notification_user_state
+CREATE POLICY notification_state_write ON brunn.notification_user_state
   FOR ALL USING (
-    user_id = straylight_auth.current_user_id()
-    AND straylight_auth.context_is_valid()
+    user_id = brunn_auth.current_user_id()
+    AND brunn_auth.context_is_valid()
     AND (
-      straylight_auth.has_capability('notification:manage')
-      OR straylight_auth.has_capability('admin')
+      brunn_auth.has_capability('notification:manage')
+      OR brunn_auth.has_capability('admin')
     )
   ) WITH CHECK (
-    user_id = straylight_auth.current_user_id()
-    AND straylight_auth.context_is_valid()
+    user_id = brunn_auth.current_user_id()
+    AND brunn_auth.context_is_valid()
     AND (
-      straylight_auth.has_capability('notification:manage')
-      OR straylight_auth.has_capability('admin')
+      brunn_auth.has_capability('notification:manage')
+      OR brunn_auth.has_capability('admin')
     )
   );
 
-CREATE POLICY notification_installations_insert ON straylight.notification_installations
+CREATE POLICY notification_installations_insert ON brunn.notification_installations
   FOR INSERT WITH CHECK (
-    user_id = straylight_auth.current_user_id()
-    AND registered_by_credential_id = straylight_auth.current_credential_id()
-    AND straylight_auth.context_is_valid()
+    user_id = brunn_auth.current_user_id()
+    AND registered_by_credential_id = brunn_auth.current_credential_id()
+    AND brunn_auth.context_is_valid()
     AND (
-      straylight_auth.has_capability('notification:manage')
-      OR straylight_auth.has_capability('admin')
+      brunn_auth.has_capability('notification:manage')
+      OR brunn_auth.has_capability('admin')
     )
   );
 
-CREATE POLICY notification_installations_update ON straylight.notification_installations
+CREATE POLICY notification_installations_update ON brunn.notification_installations
   FOR UPDATE USING (
-    user_id = straylight_auth.current_user_id()
-    AND straylight_auth.context_is_valid()
+    user_id = brunn_auth.current_user_id()
+    AND brunn_auth.context_is_valid()
     AND (
-      straylight_auth.has_capability('notification:manage')
-      OR straylight_auth.has_capability('admin')
+      brunn_auth.has_capability('notification:manage')
+      OR brunn_auth.has_capability('admin')
     )
   ) WITH CHECK (
-    user_id = straylight_auth.current_user_id()
-    AND straylight_auth.context_is_valid()
+    user_id = brunn_auth.current_user_id()
+    AND brunn_auth.context_is_valid()
     AND (
-      straylight_auth.has_capability('notification:manage')
-      OR straylight_auth.has_capability('admin')
+      brunn_auth.has_capability('notification:manage')
+      OR brunn_auth.has_capability('admin')
     )
   );
 
-CREATE POLICY notification_deliveries_publish ON straylight.notification_deliveries
+CREATE POLICY notification_deliveries_publish ON brunn.notification_deliveries
   FOR INSERT WITH CHECK (
-    user_id = straylight_auth.current_user_id()
-    AND straylight_auth.context_is_valid()
+    user_id = brunn_auth.current_user_id()
+    AND brunn_auth.context_is_valid()
     AND (
-      straylight_auth.has_capability('notification:publish')
-      OR straylight_auth.has_capability('save')
-      OR straylight_auth.has_capability('admin')
+      brunn_auth.has_capability('notification:publish')
+      OR brunn_auth.has_capability('save')
+      OR brunn_auth.has_capability('admin')
     )
   );
 
-CREATE POLICY notification_deliveries_installation_expire ON straylight.notification_deliveries
+CREATE POLICY notification_deliveries_installation_expire ON brunn.notification_deliveries
   FOR UPDATE USING (
-    user_id = straylight_auth.current_user_id()
-    AND straylight_auth.context_is_valid()
+    user_id = brunn_auth.current_user_id()
+    AND brunn_auth.context_is_valid()
     AND (
-      straylight_auth.has_capability('notification:manage')
-      OR straylight_auth.has_capability('admin')
+      brunn_auth.has_capability('notification:manage')
+      OR brunn_auth.has_capability('admin')
     )
   ) WITH CHECK (
-    user_id = straylight_auth.current_user_id()
-    AND straylight_auth.context_is_valid()
+    user_id = brunn_auth.current_user_id()
+    AND brunn_auth.context_is_valid()
     AND (
-      straylight_auth.has_capability('notification:manage')
-      OR straylight_auth.has_capability('admin')
+      brunn_auth.has_capability('notification:manage')
+      OR brunn_auth.has_capability('admin')
     )
   );
 
-CREATE POLICY notification_receipts_insert ON straylight.notification_receipts
+CREATE POLICY notification_receipts_insert ON brunn.notification_receipts
   FOR INSERT WITH CHECK (
-    user_id = straylight_auth.current_user_id()
-    AND recorded_by_credential_id = straylight_auth.current_credential_id()
-    AND straylight_auth.context_is_valid()
+    user_id = brunn_auth.current_user_id()
+    AND recorded_by_credential_id = brunn_auth.current_credential_id()
+    AND brunn_auth.context_is_valid()
     AND (
-      straylight_auth.has_capability('notification:manage')
-      OR straylight_auth.has_capability('admin')
+      brunn_auth.has_capability('notification:manage')
+      OR brunn_auth.has_capability('admin')
     )
   );
 
-GRANT SELECT, INSERT ON straylight.notifications TO app_rw;
-GRANT SELECT ON straylight.notifications TO app_ro;
-GRANT SELECT, INSERT, UPDATE ON straylight.notification_user_state TO app_rw;
-GRANT SELECT ON straylight.notification_user_state TO app_ro;
-GRANT SELECT, INSERT, UPDATE ON straylight.notification_installations TO app_rw;
-GRANT SELECT ON straylight.notification_installations TO app_ro;
-GRANT SELECT, INSERT, UPDATE ON straylight.notification_deliveries TO app_rw;
-GRANT SELECT ON straylight.notification_deliveries TO app_ro;
-GRANT SELECT ON straylight.notification_attempts TO app_rw, app_ro;
-GRANT SELECT, INSERT ON straylight.notification_receipts TO app_rw;
-GRANT SELECT ON straylight.notification_receipts TO app_ro;
+GRANT SELECT, INSERT ON brunn.notifications TO app_rw;
+GRANT SELECT ON brunn.notifications TO app_ro;
+GRANT SELECT, INSERT, UPDATE ON brunn.notification_user_state TO app_rw;
+GRANT SELECT ON brunn.notification_user_state TO app_ro;
+GRANT SELECT, INSERT, UPDATE ON brunn.notification_installations TO app_rw;
+GRANT SELECT ON brunn.notification_installations TO app_ro;
+GRANT SELECT, INSERT, UPDATE ON brunn.notification_deliveries TO app_rw;
+GRANT SELECT ON brunn.notification_deliveries TO app_ro;
+GRANT SELECT ON brunn.notification_attempts TO app_rw, app_ro;
+GRANT SELECT, INSERT ON brunn.notification_receipts TO app_rw;
+GRANT SELECT ON brunn.notification_receipts TO app_ro;

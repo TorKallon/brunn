@@ -3,7 +3,7 @@ import { RouterProvider, type AnyRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { AuthProvider } from "./lib/auth";
 
-export function StraylightApp({
+export function BrunnApp({
   router,
   queryClient,
 }: {

@@ -7,7 +7,7 @@ database, and exercises the normal workspace write/change/export/import paths.
 It never copies projection rows between users.
 
 ``--preflight`` is deliberately read-only.  It keeps the contract red until the
-shared simple-core and carrystate dispatchers understand managed conversation
+shared simple-core and brunn-state dispatchers understand managed conversation
 entries, including their narrow 12 MiB exception and continuation ordering.
 """
 
@@ -32,11 +32,11 @@ from typing import Any, Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 SIMPLE_CORE = ROOT / "apps" / "api" / "src" / "simple_core.rs"
-CARRYSTATE_EXPORT = ROOT / "apps" / "api" / "src" / "carrystate_export.rs"
-CARRYSTATE_IMPORT = ROOT / "apps" / "api" / "src" / "carrystate_import.rs"
+BRUNN_STATE_EXPORT = ROOT / "apps" / "api" / "src" / "brunn_state_export.rs"
+BRUNN_STATE_IMPORT = ROOT / "apps" / "api" / "src" / "brunn_state_import.rs"
 
-IMPORT_FORMAT = "straylight-workspace-import-manifest@v1"
-CONVERSATION_PREFIX = ".straylight/conversations/"
+IMPORT_FORMAT = "brunn-workspace-import-manifest@v1"
+CONVERSATION_PREFIX = ".brunn/conversations/"
 CONTINUATION_BODY = (
     "This conversation continues from the preceding 500-message entry."
 )
@@ -46,7 +46,7 @@ MESSAGE_LIMIT = 16 * 1024
 MESSAGE_COUNT = 500
 
 # The child intentionally sorts before its parent.  A generic path-sorted
-# carrystate import therefore fails unless the messaging-aware importer orders
+# brunn-state import therefore fails unless the messaging-aware importer orders
 # the continuation graph parent-first.
 CHILD_ID = uuid.UUID("00000000-0000-7000-8000-000000000001")
 PARENT_ID = uuid.UUID("ffffffff-ffff-7fff-bfff-ffffffffffff")
@@ -154,7 +154,7 @@ class Client:
         headers = {
             "Accept": "application/json",
             "Authorization": f"Bearer {self.token}",
-            "User-Agent": "straylight-messaging-portability-gate12e/1",
+            "User-Agent": "brunn-messaging-portability-gate12e/1",
         }
         if body is not None:
             payload = json.dumps(
@@ -269,13 +269,13 @@ def seed_principals(args: argparse.Namespace, workspace: Workspace) -> None:
         args,
         f"""
         BEGIN;
-        INSERT INTO straylight.messaging_agents (
+        INSERT INTO brunn.messaging_agents (
           user_id,agent_id,display_name,principal_kind,delivery_mode,
           created_by_credential_id
         ) VALUES
           ('{user_id}'::uuid,'agent-a','Agent A','resident','pull','{credential_id}'::uuid),
           ('{user_id}'::uuid,'owner','Owner','owner','pull','{credential_id}'::uuid);
-        INSERT INTO straylight.messaging_credential_bindings (
+        INSERT INTO brunn.messaging_credential_bindings (
           user_id,credential_id,agent_id,bound_by_credential_id
         ) VALUES (
           '{user_id}'::uuid,'{credential_id}'::uuid,'owner','{credential_id}'::uuid
@@ -406,14 +406,14 @@ def render_conversation(
     header_json = json.dumps(header, ensure_ascii=False, separators=(",", ":")).replace(
         ">", "\\u003e"
     )
-    output.extend(f"<!-- straylight-conversation-v1 {header_json} -->\n".encode())
+    output.extend(f"<!-- brunn-conversation-v1 {header_json} -->\n".encode())
     for envelope, body_md in messages:
         envelope_json = json.dumps(
             envelope, ensure_ascii=False, separators=(",", ":")
         ).replace(">", "\\u003e")
-        output.extend(f"<!-- straylight-message-v1 {envelope_json} -->\n".encode())
+        output.extend(f"<!-- brunn-message-v1 {envelope_json} -->\n".encode())
         output.extend(body_md.encode("utf-8"))
-        output.extend(b"\n<!-- /straylight-message-v1 -->\n")
+        output.extend(b"\n<!-- /brunn-message-v1 -->\n")
     return bytes(output)
 
 
@@ -438,7 +438,7 @@ def conversation_metadata(header: dict[str, Any], *, imported: bool) -> dict[str
         },
     }
     if imported:
-        metadata["_straylight_import"] = {"format": IMPORT_FORMAT}
+        metadata["_brunn_import"] = {"format": IMPORT_FORMAT}
     return metadata
 
 
@@ -549,12 +549,12 @@ def assert_failed_candidate_absent(
         f"""
         SELECT jsonb_build_object(
           'entries',(
-            SELECT count(*) FROM straylight.entries
+            SELECT count(*) FROM brunn.entries
             WHERE user_id='{user_id}'::uuid
               AND (path='{ordinary_path}' OR path IN ({paths}))
           ),
           'conversations',(
-            SELECT count(*) FROM straylight.messaging_conversations
+            SELECT count(*) FROM brunn.messaging_conversations
             WHERE user_id='{user_id}'::uuid AND conversation_id IN ({ids})
           )
         )::text
@@ -575,7 +575,7 @@ def projection_snapshot(
             SELECT conversation_id,path,conversation_kind,direct_key,subject,status,
                    created_by_agent_id,last_seq,last_message_at,agent_streak,needs_human,
                    continues_from,latest_sync_cursor,closed_at,created_at
-            FROM straylight.messaging_conversations
+            FROM brunn.messaging_conversations
             WHERE user_id='{user_id}'::uuid AND conversation_id=ANY({conversation_ids})
           ) AS item
         """,
@@ -584,7 +584,7 @@ def projection_snapshot(
                    ORDER BY item.conversation_id,item.agent_id),'[]')::text
           FROM (
             SELECT conversation_id,agent_id,role,last_read_seq,joined_at,updated_at
-            FROM straylight.messaging_participants
+            FROM brunn.messaging_participants
             WHERE user_id='{user_id}'::uuid AND conversation_id=ANY({conversation_ids})
           ) AS item
         """,
@@ -597,13 +597,13 @@ def projection_snapshot(
                    encode(digest(body_md,'sha256'),'hex') AS body_sha256,
                    refs,in_reply_to_conversation_id,in_reply_to,correlation_id,
                    expects_reply,reply_by,reply_by_handled_at,sync_cursor,created_at
-            FROM straylight.messaging_message_index
+            FROM brunn.messaging_message_index
             WHERE user_id='{user_id}'::uuid AND conversation_id=ANY({conversation_ids})
           ) AS item
         """,
         "sync": f"""
           SELECT jsonb_build_object('current_cursor',coalesce((
-            SELECT current_cursor FROM straylight.messaging_sync_state
+            SELECT current_cursor FROM brunn.messaging_sync_state
             WHERE user_id='{user_id}'::uuid
           ),0))::text
         """,
@@ -616,7 +616,7 @@ def assert_no_search_work(args: argparse.Namespace, user_id: uuid.UUID) -> None:
         args,
         f"""
         WITH managed_entries AS (
-          SELECT id FROM straylight.entries
+          SELECT id FROM brunn.entries
           WHERE user_id='{user_id}'::uuid
             AND path IN (
               '{CONVERSATION_PREFIX}{PARENT_ID}.md',
@@ -625,12 +625,12 @@ def assert_no_search_work(args: argparse.Namespace, user_id: uuid.UUID) -> None:
         )
         SELECT jsonb_build_object(
           'chunks',(
-            SELECT count(*) FROM straylight.search_chunks AS chunk
+            SELECT count(*) FROM brunn.search_chunks AS chunk
             WHERE chunk.user_id='{user_id}'::uuid
               AND chunk.entry_id IN (SELECT id FROM managed_entries)
           ),
           'embed_jobs',(
-            SELECT count(*) FROM straylight.jobs AS job
+            SELECT count(*) FROM brunn.jobs AS job
             WHERE job.user_id='{user_id}'::uuid
               AND job.kind='embed_entry'
               AND (job.payload->>'entry_id')::uuid IN (SELECT id FROM managed_entries)
@@ -644,18 +644,18 @@ def assert_no_search_work(args: argparse.Namespace, user_id: uuid.UUID) -> None:
     )
 
 
-def run_carrystate(
+def run_brunn_state(
     args: argparse.Namespace,
     sanitizer: Sanitizer,
     token: str,
     arguments: list[str],
 ) -> None:
     completed = subprocess.run(
-        [str(args.carrystate), "workspace", *arguments],
+        [str(args.brunn_state), "workspace", *arguments],
         env={
             **os.environ,
-            "CARRYSTATE_API_URL": args.base_url,
-            "CARRYSTATE_API_TOKEN": token,
+            "BRUNN_STATE_API_URL": args.base_url,
+            "BRUNN_STATE_API_TOKEN": token,
         },
         text=True,
         capture_output=True,
@@ -664,14 +664,14 @@ def run_carrystate(
     )
     if completed.returncode != 0:
         detail = sanitizer.text(completed.stderr[-1500:] or completed.stdout[-1500:])
-        raise ContractFailure(f"carrystate {' '.join(arguments[:2])} failed: {detail}")
+        raise ContractFailure(f"brunn-state {' '.join(arguments[:2])} failed: {detail}")
 
 
 def preflight() -> dict[str, Any]:
     sources = {
         "simple_core": SIMPLE_CORE.read_text(encoding="utf-8"),
-        "carrystate_export": CARRYSTATE_EXPORT.read_text(encoding="utf-8"),
-        "carrystate_import": CARRYSTATE_IMPORT.read_text(encoding="utf-8"),
+        "brunn_state_export": BRUNN_STATE_EXPORT.read_text(encoding="utf-8"),
+        "brunn_state_import": BRUNN_STATE_IMPORT.read_text(encoding="utf-8"),
     }
     required = {
         "simple_core messaging projection dispatcher": (
@@ -686,16 +686,16 @@ def preflight() -> dict[str, Any]:
             "simple_core",
             "is_conversation_candidate",
         ),
-        "carrystate managed exact-read boundary": (
-            "carrystate_export",
+        "brunn-state managed exact-read boundary": (
+            "brunn_state_export",
             "MAX_CANONICAL_CONVERSATION_BYTES",
         ),
-        "carrystate managed import boundary": (
-            "carrystate_import",
+        "brunn-state managed import boundary": (
+            "brunn_state_import",
             "MAX_CANONICAL_CONVERSATION_BYTES",
         ),
-        "carrystate continuation parent-first ordering": (
-            "carrystate_import",
+        "brunn-state continuation parent-first ordering": (
+            "brunn_state_import",
             "continues_from",
         ),
     }
@@ -709,7 +709,7 @@ def preflight() -> dict[str, Any]:
             "unwired shared messaging portability seams: " + "; ".join(missing)
         )
     return {
-        "schema": "straylight-agent-messaging-portability-preflight@v1",
+        "schema": "brunn-agent-messaging-portability-preflight@v1",
         "status": "pass",
         "checks": sorted(required),
     }
@@ -881,12 +881,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     )
 
     target_generation = workspace_generation(target.client)
-    with tempfile.TemporaryDirectory(prefix="straylight-messaging-portability-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="brunn-messaging-portability-") as temporary:
         temporary_root = Path(temporary)
         source_export = temporary_root / "source-export"
         target_export = temporary_root / "target-export"
         import_state = temporary_root / "target-state"
-        run_carrystate(
+        run_brunn_state(
             args,
             sanitizer,
             source.client.token,
@@ -918,7 +918,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "source export changed continuation bytes",
         )
 
-        run_carrystate(
+        run_brunn_state(
             args,
             sanitizer,
             target.client.token,
@@ -932,7 +932,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "false",
             ],
         )
-        run_carrystate(
+        run_brunn_state(
             args,
             sanitizer,
             target.client.token,
@@ -971,7 +971,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     )
 
     return {
-        "schema": "straylight-agent-messaging-portability-contract@v1",
+        "schema": "brunn-agent-messaging-portability-contract@v1",
         "status": "pass",
         "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
         "managed_parent_bytes": len(fixture["parent"]),
@@ -994,22 +994,22 @@ def main() -> int:
     parser.add_argument("--preflight", action="store_true")
     parser.add_argument("--base-url", default="http://127.0.0.1:18112")
     parser.add_argument("--admin-token-ref")
-    parser.add_argument("--database-container", default="straylight_agent_messaging-db-1")
+    parser.add_argument("--database-container", default="brunn_agent_messaging-db-1")
     parser.add_argument("--database-user", default="admin")
-    parser.add_argument("--database-name", default="straylight")
+    parser.add_argument("--database-name", default="brunn")
     parser.add_argument("--timeout", type=float, default=180.0)
     parser.add_argument("--cli-timeout", type=float, default=300.0)
     parser.add_argument(
-        "--carrystate",
+        "--brunn-state",
         type=Path,
-        default=ROOT / "apps" / "api" / "target" / "debug" / "carrystate",
+        default=ROOT / "apps" / "api" / "target" / "debug" / "brunn-state",
     )
     args = parser.parse_args()
     try:
         result = preflight() if args.preflight else run(args)
     except (ContractFailure, KeyError, OSError, ValueError, subprocess.TimeoutExpired) as error:
         result = {
-            "schema": "straylight-agent-messaging-portability-contract@v1",
+            "schema": "brunn-agent-messaging-portability-contract@v1",
             "status": "fail",
             "error": str(error),
         }

@@ -6,11 +6,11 @@ use uuid::Uuid;
 
 #[tokio::test]
 async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping recovery safety test");
+        eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping recovery safety test");
         return;
     };
     let pool = PgPoolOptions::new()
@@ -21,21 +21,20 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .expect("apply Straylight migrations");
+        .expect("apply Brunn migrations");
 
     let mut role_check = pool.begin().await.expect("begin role check");
     sqlx::query("SET LOCAL ROLE app_rw")
         .execute(&mut *role_check)
         .await
         .expect("assume app_rw for trigger predicate check");
-    let app_role_is_admin =
-        sqlx::query_scalar::<_, bool>("SELECT straylight.database_administrator()")
-            .fetch_one(&mut *role_check)
-            .await
-            .expect("app_rw can evaluate administrator predicate");
+    let app_role_is_admin = sqlx::query_scalar::<_, bool>("SELECT brunn.database_administrator()")
+        .fetch_one(&mut *role_check)
+        .await
+        .expect("app_rw can evaluate administrator predicate");
     assert!(!app_role_is_admin);
     let app_role_authorized = sqlx::query_scalar::<_, bool>(
-        "SELECT straylight.asset_internal_operation_authorized(
+        "SELECT brunn.asset_internal_operation_authorized(
            'stage_reclaim',$1,$2,1
          )",
     )
@@ -59,7 +58,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
 
     let mut setup = pool.begin().await.expect("begin fixture transaction");
     sqlx::query(
-        "INSERT INTO straylight.users (id,external_ref,display_name)
+        "INSERT INTO brunn.users (id,external_ref,display_name)
          VALUES ($1,$2,$3)",
     )
     .bind(user_id)
@@ -70,7 +69,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     .expect("insert test user");
     let policy_id = sqlx::query_scalar::<_, Uuid>(
         "SELECT id
-         FROM straylight.policies
+         FROM brunn.policies
          WHERE user_id=$1 AND is_default",
     )
     .bind(user_id)
@@ -78,7 +77,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     .await
     .expect("read seeded default policy");
     sqlx::query(
-        "INSERT INTO straylight.scopes (id,user_id,scope_ref,name)
+        "INSERT INTO brunn.scopes (id,user_id,scope_ref,name)
          VALUES ($1,$2,$3,$4)",
     )
     .bind(scope_id)
@@ -89,7 +88,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     .await
     .expect("insert test scope");
     sqlx::query(
-        "INSERT INTO straylight.api_credentials (
+        "INSERT INTO brunn.api_credentials (
            id,user_id,label,token_hash,capabilities
          ) VALUES ($1,$2,$3,$4,ARRAY['stage'])",
     )
@@ -101,7 +100,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     .await
     .expect("insert test credential");
     sqlx::query(
-        "INSERT INTO straylight.credential_scope_grants (
+        "INSERT INTO brunn.credential_scope_grants (
            credential_id,user_id,scope_id
          ) VALUES ($1,$2,$3)",
     )
@@ -112,7 +111,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     .await
     .expect("grant test scope");
     sqlx::query(
-        "INSERT INTO straylight.corpus_revisions (
+        "INSERT INTO brunn.corpus_revisions (
            id,user_id,scope_id,parent_revision_id,revision_number,manifest_hash
          ) VALUES ($1,$2,$3,NULL,1,$4)",
     )
@@ -128,7 +127,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
         (competing_stage_id, "uploading", "-1 minute", "1 hour"),
     ] {
         sqlx::query(
-            "INSERT INTO straylight.stages (
+            "INSERT INTO brunn.stages (
                id,user_id,scope_id,credential_id,base_corpus_revision_id,
                input_hash,status,policy_id,policy_version,created_at,expires_at
              ) VALUES (
@@ -152,7 +151,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
         .expect("insert test stage");
     }
     sqlx::query(
-        "INSERT INTO straylight.assets (
+        "INSERT INTO brunn.assets (
            id,user_id,scope_id,current_version,policy_id,policy_version
          ) VALUES ($1,$2,$3,1,$4,1)",
     )
@@ -164,7 +163,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     .await
     .expect("insert staged asset");
     sqlx::query(
-        "INSERT INTO straylight.asset_versions (
+        "INSERT INTO brunn.asset_versions (
            user_id,asset_id,version,previous_version,bucket,object_key,
            content_hash,size_bytes,media_type,object_version_id
          ) VALUES ($1,$2,1,NULL,'recovery-test',$3,$4,3,'text/plain',$5)",
@@ -178,7 +177,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     .await
     .expect("insert staged asset version");
     sqlx::query(
-        "INSERT INTO straylight.staged_entries (
+        "INSERT INTO brunn.staged_entries (
            id,user_id,scope_id,stage_id,path,entry_kind,media_type,size_bytes,
            content_hash,asset_id,asset_version,readability
          ) VALUES ($1,$2,$3,$4,'staged.txt','file','text/plain',3,$5,$6,1,'readable')",
@@ -197,7 +196,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     let invalid_asset_id = Uuid::now_v7();
     let mut invalid_version = pool.begin().await.expect("begin invalid asset test");
     sqlx::query(
-        "INSERT INTO straylight.assets (
+        "INSERT INTO brunn.assets (
            id,user_id,scope_id,current_version,policy_id,policy_version
          ) VALUES ($1,$2,$3,1,$4,1)",
     )
@@ -209,7 +208,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     .await
     .expect("insert invalid-version test asset");
     let missing_version_id = sqlx::query(
-        "INSERT INTO straylight.asset_versions (
+        "INSERT INTO brunn.asset_versions (
            user_id,asset_id,version,previous_version,bucket,object_key,
            content_hash,size_bytes,media_type,object_version_id
          ) VALUES ($1,$2,1,NULL,'recovery-test',$3,$4,1,'text/plain',NULL)",
@@ -237,7 +236,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     let mut reclaim = pool.begin().await.expect("begin reclamation");
     let reclaimed = sqlx::query_scalar::<_, String>(
         "SELECT reclaimed_object_key
-         FROM straylight.expire_unpromoted_stage($1)",
+         FROM brunn.expire_unpromoted_stage($1)",
     )
     .bind(expiring_stage_id)
     .fetch_all(&mut *reclaim)
@@ -252,7 +251,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
         .expect("set competing lock timeout");
     let blocked_at = Instant::now();
     let blocked_insert = sqlx::query(
-        "INSERT INTO straylight.staged_entries (
+        "INSERT INTO brunn.staged_entries (
            id,user_id,scope_id,stage_id,path,entry_kind,media_type,size_bytes,
            content_hash,asset_id,asset_version,readability
          ) VALUES ($1,$2,$3,$4,'competing.txt','file','text/plain',3,$5,$6,1,'readable')",
@@ -277,7 +276,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     reclaim.commit().await.expect("commit reclamation");
 
     let post_commit_insert = sqlx::query(
-        "INSERT INTO straylight.staged_entries (
+        "INSERT INTO brunn.staged_entries (
            id,user_id,scope_id,stage_id,path,entry_kind,media_type,size_bytes,
            content_hash,asset_id,asset_version,readability
          ) VALUES ($1,$2,$3,$4,'after.txt','file','text/plain',3,$5,$6,1,'readable')",
@@ -305,7 +304,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     let persistent_hash = "4".repeat(64);
     let mut persistent = pool.begin().await.expect("begin persistent asset");
     sqlx::query(
-        "INSERT INTO straylight.assets (
+        "INSERT INTO brunn.assets (
            id,user_id,scope_id,current_version,policy_id,policy_version
          ) VALUES ($1,$2,$3,1,$4,1)",
     )
@@ -317,7 +316,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     .await
     .expect("insert persistent asset");
     sqlx::query(
-        "INSERT INTO straylight.asset_versions (
+        "INSERT INTO brunn.asset_versions (
            user_id,asset_id,version,previous_version,bucket,object_key,
            content_hash,size_bytes,media_type,object_version_id
          ) VALUES ($1,$2,1,NULL,'recovery-test',$3,$4,4,'text/plain',$5)",
@@ -333,7 +332,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     persistent.commit().await.expect("commit persistent asset");
 
     let direct_update = sqlx::query(
-        "UPDATE straylight.asset_versions
+        "UPDATE brunn.asset_versions
          SET object_version_id='forbidden-direct-update'
          WHERE user_id=$1 AND asset_id=$2 AND version=1",
     )
@@ -356,14 +355,14 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
         "size_bytes": 4
     }]);
     let updated =
-        sqlx::query_scalar::<_, i64>("SELECT straylight.remap_asset_object_versions($1::jsonb)")
+        sqlx::query_scalar::<_, i64>("SELECT brunn.remap_asset_object_versions($1::jsonb)")
             .bind(&mapping)
             .fetch_one(&pool)
             .await
             .expect("perform exact locator remap");
     assert_eq!(updated, 1);
     let repeated =
-        sqlx::query_scalar::<_, i64>("SELECT straylight.remap_asset_object_versions($1::jsonb)")
+        sqlx::query_scalar::<_, i64>("SELECT brunn.remap_asset_object_versions($1::jsonb)")
             .bind(&mapping)
             .fetch_one(&pool)
             .await
@@ -380,7 +379,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
         "size_bytes": 4
     }]);
     assert!(
-        sqlx::query_scalar::<_, i64>("SELECT straylight.remap_asset_object_versions($1::jsonb)",)
+        sqlx::query_scalar::<_, i64>("SELECT brunn.remap_asset_object_versions($1::jsonb)",)
             .bind(wrong_identity)
             .fetch_one(&pool)
             .await
@@ -389,7 +388,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     );
     let locator = sqlx::query_as::<_, (String, String)>(
         "SELECT bucket::text,object_version_id
-         FROM straylight.asset_versions
+         FROM brunn.asset_versions
          WHERE user_id=$1 AND asset_id=$2 AND version=1",
     )
     .bind(user_id)

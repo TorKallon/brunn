@@ -1,13 +1,13 @@
 -- Immutable evidence/history rows may only lose content while an administrator
 -- is executing a real deletion job. The ordinary application roles cannot
 -- manufacture this context by setting the custom GUC themselves.
-CREATE FUNCTION straylight.guard_deletion_redaction()
+CREATE FUNCTION brunn.guard_deletion_redaction()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY INVOKER
 AS $$
 DECLARE
-  deletion_job_setting text := current_setting('straylight.deletion_job_id', true);
+  deletion_job_setting text := current_setting('brunn.deletion_job_id', true);
   deletion_job_id uuid;
   row_user_id uuid;
   old_shape jsonb := to_jsonb(OLD);
@@ -40,7 +40,7 @@ BEGIN
      OR row_user_id IS NULL
      OR NOT EXISTS (
        SELECT 1
-       FROM straylight.deletion_jobs AS job
+       FROM brunn.deletion_jobs AS job
        WHERE job.id = deletion_job_id
          AND job.user_id = row_user_id
          AND job.status = 'propagating'
@@ -72,12 +72,12 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION straylight.guard_deletion_redaction() IS
+COMMENT ON FUNCTION brunn.guard_deletion_redaction() IS
   'Allows listed content columns to be redacted only by a DB administrator with a transaction-local GUC naming a propagating deletion job for the same user.';
 
 -- Relation revisions retain their keys and lineage but no longer need to retain
 -- the semantic predicate after an authorized deletion.
-INSERT INTO straylight.relation_schema_revisions (
+INSERT INTO brunn.relation_schema_revisions (
   predicate, version, display_name, qualifier_schema, allowed_state_machines,
   allow_extra_roles, inverse_label, reserved
 ) VALUES (
@@ -195,13 +195,13 @@ BEGIN
     FROM unnest(replacement.allowed_columns) AS column_name;
 
     EXECUTE format(
-      'DROP TRIGGER %I ON straylight.%I',
+      'DROP TRIGGER %I ON brunn.%I',
       replacement.trigger_name,
       replacement.table_name
     );
     EXECUTE format(
-      'CREATE TRIGGER %I BEFORE UPDATE OR DELETE ON straylight.%I '
-      'FOR EACH ROW EXECUTE FUNCTION straylight.guard_deletion_redaction(%s)',
+      'CREATE TRIGGER %I BEFORE UPDATE OR DELETE ON brunn.%I '
+      'FOR EACH ROW EXECUTE FUNCTION brunn.guard_deletion_redaction(%s)',
       replacement.trigger_name,
       replacement.table_name,
       function_arguments

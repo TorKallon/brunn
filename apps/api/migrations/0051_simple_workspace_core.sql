@@ -3,9 +3,9 @@
 
 CREATE EXTENSION IF NOT EXISTS btree_gin;
 
-CREATE TABLE straylight.entries (
+CREATE TABLE brunn.entries (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES straylight.users(id),
+  user_id uuid NOT NULL REFERENCES brunn.users(id),
   path text NOT NULL,
   title text NOT NULL,
   kind text NOT NULL CHECK (kind IN ('markdown', 'binary')),
@@ -24,29 +24,29 @@ CREATE TABLE straylight.entries (
 );
 
 CREATE UNIQUE INDEX entries_user_path_unique_idx
-  ON straylight.entries (user_id, lower(normalize(path, NFC)));
+  ON brunn.entries (user_id, lower(normalize(path, NFC)));
 
 CREATE INDEX entries_user_updated_idx
-  ON straylight.entries (user_id, updated_at DESC, id)
+  ON brunn.entries (user_id, updated_at DESC, id)
   WHERE deleted_at IS NULL;
 
 CREATE INDEX entries_user_title_idx
-  ON straylight.entries (user_id, lower(title))
+  ON brunn.entries (user_id, lower(title))
   WHERE deleted_at IS NULL;
 
 CREATE INDEX entries_user_manifest_idx
-  ON straylight.entries (user_id, path, id)
+  ON brunn.entries (user_id, path, id)
   WHERE deleted_at IS NULL;
 
 CREATE INDEX entries_user_history_manifest_idx
-  ON straylight.entries (user_id, path, id);
+  ON brunn.entries (user_id, path, id);
 
-CREATE TABLE straylight.entry_versions (
+CREATE TABLE brunn.entry_versions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   entry_id uuid NOT NULL,
   version bigint NOT NULL CHECK (version > 0),
-  content_sha256 straylight.sha256_hex NOT NULL,
+  content_sha256 brunn.sha256_hex NOT NULL,
   content text,
   object_key text,
   object_version_id text,
@@ -58,9 +58,9 @@ CREATE TABLE straylight.entry_versions (
   UNIQUE (user_id, id),
   UNIQUE (user_id, entry_id, version),
   FOREIGN KEY (user_id, entry_id)
-    REFERENCES straylight.entries(user_id, id),
+    REFERENCES brunn.entries(user_id, id),
   FOREIGN KEY (user_id, created_by_credential_id)
-    REFERENCES straylight.api_credentials(user_id, id),
+    REFERENCES brunn.api_credentials(user_id, id),
   CHECK (
     (content IS NOT NULL AND object_key IS NULL AND object_version_id IS NULL)
     OR
@@ -68,32 +68,32 @@ CREATE TABLE straylight.entry_versions (
   )
 );
 
-ALTER TABLE straylight.entries
+ALTER TABLE brunn.entries
   ADD CONSTRAINT entries_current_version_fk
   FOREIGN KEY (user_id, id, current_version)
-  REFERENCES straylight.entry_versions(user_id, entry_id, version)
+  REFERENCES brunn.entry_versions(user_id, entry_id, version)
   DEFERRABLE INITIALLY DEFERRED;
 
 CREATE INDEX entry_versions_history_idx
-  ON straylight.entry_versions (user_id, entry_id, version DESC);
+  ON brunn.entry_versions (user_id, entry_id, version DESC);
 
-CREATE TABLE straylight.workspace_changes (
+CREATE TABLE brunn.workspace_changes (
   generation bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id uuid NOT NULL,
   entry_id uuid NOT NULL,
   entry_version bigint NOT NULL,
   operation text NOT NULL CHECK (operation IN ('create', 'update', 'delete')),
   path text NOT NULL,
-  content_sha256 straylight.sha256_hex NOT NULL,
+  content_sha256 brunn.sha256_hex NOT NULL,
   recorded_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   FOREIGN KEY (user_id, entry_id, entry_version)
-    REFERENCES straylight.entry_versions(user_id, entry_id, version)
+    REFERENCES brunn.entry_versions(user_id, entry_id, version)
 );
 
 CREATE INDEX workspace_changes_user_generation_idx
-  ON straylight.workspace_changes (user_id, generation);
+  ON brunn.workspace_changes (user_id, generation);
 
-CREATE TABLE straylight.search_chunks (
+CREATE TABLE brunn.search_chunks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   entry_id uuid NOT NULL,
@@ -113,20 +113,20 @@ CREATE TABLE straylight.search_chunks (
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   UNIQUE (user_id, entry_id, chunk_index),
   FOREIGN KEY (user_id, entry_id)
-    REFERENCES straylight.entries(user_id, id)
+    REFERENCES brunn.entries(user_id, id)
     ON DELETE CASCADE,
   FOREIGN KEY (user_id, entry_version_id)
-    REFERENCES straylight.entry_versions(user_id, id)
+    REFERENCES brunn.entry_versions(user_id, id)
 );
 
 CREATE INDEX search_chunks_fts_idx
-  ON straylight.search_chunks USING gin (user_id, search_vector);
+  ON brunn.search_chunks USING gin (user_id, search_vector);
 
 CREATE INDEX search_chunks_path_idx
-  ON straylight.search_chunks (user_id, lower(path), chunk_index);
+  ON brunn.search_chunks (user_id, lower(path), chunk_index);
 
 CREATE INDEX search_chunks_embedding_hnsw_idx
-  ON straylight.search_chunks
+  ON brunn.search_chunks
   USING hnsw (embedding vector_cosine_ops)
   WHERE embedding IS NOT NULL;
 
@@ -135,7 +135,7 @@ CREATE INDEX search_chunks_embedding_hnsw_idx
 -- security-barrier estimate otherwise prevents both GIN and HNSW plans. The
 -- caller cannot provide a user ID: it comes only from the transaction context
 -- already validated by the API.
-CREATE FUNCTION straylight.workspace_lexical_candidates(
+CREATE FUNCTION brunn.workspace_lexical_candidates(
   p_query text
 )
 RETURNS TABLE (
@@ -146,28 +146,28 @@ RETURNS TABLE (
   score double precision,
   title text,
   current_version bigint,
-  content_sha256 straylight.sha256_hex
+  content_sha256 brunn.sha256_hex
 )
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
   WITH context AS (
-    SELECT straylight_auth.setting_uuid('app.current_user_id') AS user_id
-    WHERE straylight_auth.context_is_valid()
+    SELECT brunn_auth.setting_uuid('app.current_user_id') AS user_id
+    WHERE brunn_auth.context_is_valid()
   ), requested AS (
     SELECT websearch_to_tsquery('english', p_query) AS query
   ), bounded_matches AS MATERIALIZED (
     SELECT chunk.id,chunk.entry_id,
            ts_rank_cd(chunk.search_vector,requested.query,32)::double precision AS score
-    FROM straylight.search_chunks AS chunk
+    FROM brunn.search_chunks AS chunk
     CROSS JOIN context
     CROSS JOIN requested
     WHERE chunk.user_id=context.user_id
       AND chunk.search_vector @@ requested.query
-      AND chunk.path NOT LIKE '.straylight/checkpoints/%'
+      AND chunk.path NOT LIKE '.brunn/checkpoints/%'
     LIMIT 4096
   ), ranked_chunks AS MATERIALIZED (
     SELECT matched.*,
@@ -194,11 +194,11 @@ AS $$
          version.content_sha256
   FROM ranked
   JOIN context ON true
-  JOIN straylight.search_chunks AS chunk
+  JOIN brunn.search_chunks AS chunk
     ON chunk.user_id=context.user_id AND chunk.id=ranked.id
-  JOIN straylight.entries AS entry
+  JOIN brunn.entries AS entry
     ON entry.user_id=context.user_id AND entry.id=ranked.entry_id
-  JOIN straylight.entry_versions AS version
+  JOIN brunn.entry_versions AS version
     ON version.user_id=entry.user_id
    AND version.entry_id=entry.id
    AND version.version=entry.current_version
@@ -206,7 +206,7 @@ AS $$
   ORDER BY ranked.entry_score DESC,chunk.path,ranked.section_rank
 $$;
 
-CREATE FUNCTION straylight.workspace_semantic_candidates(
+CREATE FUNCTION brunn.workspace_semantic_candidates(
   p_embedding vector(1536)
 )
 RETURNS TABLE (
@@ -217,28 +217,28 @@ RETURNS TABLE (
   distance double precision,
   title text,
   current_version bigint,
-  content_sha256 straylight.sha256_hex
+  content_sha256 brunn.sha256_hex
 )
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 SET hnsw.iterative_scan = 'relaxed_order'
 AS $$
   WITH context AS (
-    SELECT straylight_auth.setting_uuid('app.current_user_id') AS user_id
-    WHERE straylight_auth.context_is_valid()
+    SELECT brunn_auth.setting_uuid('app.current_user_id') AS user_id
+    WHERE brunn_auth.context_is_valid()
   ), nearest_chunks AS MATERIALIZED (
     SELECT chunk.entry_id,chunk.path,chunk.heading,chunk.content,
            (
              chunk.embedding OPERATOR(public.<=>) p_embedding
            )::double precision AS distance
-    FROM straylight.search_chunks AS chunk
+    FROM brunn.search_chunks AS chunk
     CROSS JOIN context
     WHERE chunk.user_id=context.user_id
       AND chunk.embedding IS NOT NULL
-      AND chunk.path NOT LIKE '.straylight/checkpoints/%'
+      AND chunk.path NOT LIKE '.brunn/checkpoints/%'
     ORDER BY chunk.embedding OPERATOR(public.<=>) p_embedding
     LIMIT 192
   ), nearest AS MATERIALIZED (
@@ -259,9 +259,9 @@ AS $$
          version.content_sha256
   FROM ranked
   JOIN context ON true
-  JOIN straylight.entries AS entry
+  JOIN brunn.entries AS entry
     ON entry.user_id=context.user_id AND entry.id=ranked.entry_id
-  JOIN straylight.entry_versions AS version
+  JOIN brunn.entry_versions AS version
     ON version.user_id=entry.user_id
    AND version.entry_id=entry.id
    AND version.version=entry.current_version
@@ -270,21 +270,21 @@ AS $$
 $$;
 
 REVOKE ALL ON FUNCTION
-  straylight.workspace_lexical_candidates(text)
+  brunn.workspace_lexical_candidates(text)
 FROM PUBLIC;
 REVOKE ALL ON FUNCTION
-  straylight.workspace_semantic_candidates(vector)
+  brunn.workspace_semantic_candidates(vector)
 FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION
-  straylight.workspace_lexical_candidates(text)
+  brunn.workspace_lexical_candidates(text)
 TO app_rw, app_ro;
 GRANT EXECUTE ON FUNCTION
-  straylight.workspace_semantic_candidates(vector)
+  brunn.workspace_semantic_candidates(vector)
 TO app_rw, app_ro;
 
-CREATE TABLE straylight.jobs (
+CREATE TABLE brunn.jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES straylight.users(id),
+  user_id uuid NOT NULL REFERENCES brunn.users(id),
   kind text NOT NULL CHECK (kind IN (
     'embed_entry', 'describe_binary', 'dream_workspace'
   )),
@@ -302,17 +302,17 @@ CREATE TABLE straylight.jobs (
 );
 
 CREATE INDEX jobs_claim_idx
-  ON straylight.jobs (status, available_at, created_at)
+  ON brunn.jobs (status, available_at, created_at)
   WHERE status IN ('queued', 'running');
 
 CREATE INDEX jobs_kind_claim_idx
-  ON straylight.jobs (kind, status, available_at, created_at, id)
+  ON brunn.jobs (kind, status, available_at, created_at, id)
   WHERE status IN ('queued', 'running');
 
 CREATE INDEX jobs_user_kind_status_idx
-  ON straylight.jobs (user_id, kind, status);
+  ON brunn.jobs (user_id, kind, status);
 
-CREATE TABLE straylight.entry_usage (
+CREATE TABLE brunn.entry_usage (
   user_id uuid NOT NULL,
   entry_id uuid NOT NULL,
   read_count bigint NOT NULL DEFAULT 0 CHECK (read_count >= 0),
@@ -323,7 +323,7 @@ CREATE TABLE straylight.entry_usage (
   last_search_at timestamptz,
   PRIMARY KEY (user_id, entry_id),
   FOREIGN KEY (user_id, entry_id)
-    REFERENCES straylight.entries(user_id, id)
+    REFERENCES brunn.entries(user_id, id)
     ON DELETE CASCADE
 );
 
@@ -341,31 +341,31 @@ BEGIN
   ]
   LOOP
     EXECUTE format(
-      'ALTER TABLE straylight.%I ENABLE ROW LEVEL SECURITY',
+      'ALTER TABLE brunn.%I ENABLE ROW LEVEL SECURITY',
       table_name
     );
     EXECUTE format(
-      'ALTER TABLE straylight.%I FORCE ROW LEVEL SECURITY',
+      'ALTER TABLE brunn.%I FORCE ROW LEVEL SECURITY',
       table_name
     );
     EXECUTE format(
-      'CREATE POLICY simple_user_select ON straylight.%I '
+      'CREATE POLICY simple_user_select ON brunn.%I '
       'FOR SELECT TO app_rw, app_ro '
-      'USING (straylight_auth.can_access_user(user_id))',
+      'USING (brunn_auth.can_access_user(user_id))',
       table_name
     );
     EXECUTE format(
-      'CREATE POLICY simple_user_write ON straylight.%I '
+      'CREATE POLICY simple_user_write ON brunn.%I '
       'FOR ALL TO app_rw '
       'USING ('
-      '  straylight_auth.can_access_user(user_id) '
-      '  AND straylight_auth.has_any_capability('
+      '  brunn_auth.can_access_user(user_id) '
+      '  AND brunn_auth.has_any_capability('
       '    ARRAY[''save'', ''checkpoint'', ''stage'', ''dream'', ''delete'']'
       '  )'
       ') '
       'WITH CHECK ('
-      '  straylight_auth.can_access_user(user_id) '
-      '  AND straylight_auth.has_any_capability('
+      '  brunn_auth.can_access_user(user_id) '
+      '  AND brunn_auth.has_any_capability('
       '    ARRAY[''save'', ''checkpoint'', ''stage'', ''dream'', ''delete'']'
       '  )'
       ')',
@@ -376,22 +376,22 @@ END;
 $$;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON
-  straylight.entries,
-  straylight.entry_versions,
-  straylight.workspace_changes,
-  straylight.search_chunks,
-  straylight.jobs,
-  straylight.entry_usage
+  brunn.entries,
+  brunn.entry_versions,
+  brunn.workspace_changes,
+  brunn.search_chunks,
+  brunn.jobs,
+  brunn.entry_usage
 TO app_rw;
 
 GRANT SELECT ON
-  straylight.entries,
-  straylight.entry_versions,
-  straylight.workspace_changes,
-  straylight.search_chunks,
-  straylight.jobs,
-  straylight.entry_usage
+  brunn.entries,
+  brunn.entry_versions,
+  brunn.workspace_changes,
+  brunn.search_chunks,
+  brunn.jobs,
+  brunn.entry_usage
 TO app_ro;
 
-GRANT USAGE, SELECT ON SEQUENCE straylight.workspace_changes_generation_seq
+GRANT USAGE, SELECT ON SEQUENCE brunn.workspace_changes_generation_seq
 TO app_rw;

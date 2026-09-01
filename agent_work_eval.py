@@ -33,7 +33,7 @@ from semantic_eval_policy import (
     semantic_rates,
     validate_e09_runtime,
 )
-from straylight_eval import BM25Index
+from brunn_eval import BM25Index
 from workspace_cli import corpus_hash, diverse_results, load_corpus
 
 
@@ -60,18 +60,18 @@ REASONING_BILLING_POLICY = {
     "route": "chatgpt_subscription",
     "api_fallback": "forbidden",
 }
-RUN_LEDGER_SCHEMA = "straylight-eval-run-ledger@v1"
+RUN_LEDGER_SCHEMA = "brunn-eval-run-ledger@v1"
 SERVICE_IMAGE_FINGERPRINT_SCHEMA = (
-    "straylight-service-image-fingerprint@v1"
+    "brunn-service-image-fingerprint@v1"
 )
 SERVICE_IMAGE_PROVENANCE_SCHEMA = (
-    "straylight-service-image-provenance@v1"
+    "brunn-service-image-provenance@v1"
 )
 RESPONSE_CHARACTER_METRICS_SCHEMA = (
-    "straylight-agent-response-character-metrics@v1"
+    "brunn-agent-response-character-metrics@v1"
 )
 LOCAL_CLI_FAILURE_SUMMARY_SCHEMA = (
-    "straylight-local-cli-failure-summary@v1"
+    "brunn-local-cli-failure-summary@v1"
 )
 CANONICAL_SERVICE_CHECKPOINT_INVOCATION = (
     "`./memory checkpoint "
@@ -211,7 +211,7 @@ def subscription_reasoning_environment(
         "AZURE_OPENAI_API_KEY",
         "AZURE_OPENAI_ENDPOINT",
         "CODEX_API_KEY",
-        "CARRYSTATE_EVAL_DIRECT_OPENAI",
+        "BRUNN_STATE_EVAL_DIRECT_OPENAI",
     }
     for key in list(env):
         upper = key.upper()
@@ -237,13 +237,13 @@ def require_codex_subscription(codex: Path) -> dict[str, str]:
             "Paid Codex API-key reasoning is forbidden. Remove CODEX_API_KEY and "
             "use a ChatGPT-authenticated Codex account."
         )
-    if os.environ.get("CARRYSTATE_EVAL_DIRECT_OPENAI", "").strip().lower() not in {
+    if os.environ.get("BRUNN_STATE_EVAL_DIRECT_OPENAI", "").strip().lower() not in {
         "",
         "0",
         "false",
     }:
         raise ValueError(
-            "Direct OpenAI reasoning is forbidden for Straylight evaluations. "
+            "Direct OpenAI reasoning is forbidden for Brunn evaluations. "
             "Use the Codex plan, switch ChatGPT accounts, or wait for its reset."
         )
     try:
@@ -265,7 +265,7 @@ def require_codex_subscription(codex: Path) -> dict[str, str]:
     }
     if status.returncode != 0 or "Logged in using ChatGPT" not in auth_lines:
         raise ValueError(
-            "Straylight reasoning evaluations require Codex logged in through "
+            "Brunn reasoning evaluations require Codex logged in through "
             "ChatGPT. API-key billing is forbidden; switch accounts or wait for "
             "the subscription reset."
         )
@@ -750,7 +750,7 @@ def definitive_service_run_provenance(
     if (
         not isinstance(runtime_snapshot, dict)
         or runtime_snapshot.get("schema")
-        != "straylight-service-runtime-snapshot@v1"
+        != "brunn-service-runtime-snapshot@v1"
         or runtime_snapshot.get("status") != "ready"
         or not isinstance(runtime_snapshot.get("runtime_features"), dict)
         or not isinstance(runtime_snapshot.get("embeddings"), dict)
@@ -889,7 +889,7 @@ def definitive_service_run_provenance(
         )
 
     return {
-        "schema": "straylight-definitive-service-run-provenance@v1",
+        "schema": "brunn-definitive-service-run-provenance@v1",
         "run_id": run_id,
         "experiment_arm": experiment_arm,
         "paired_draw_id": paired_draw_id,
@@ -1132,8 +1132,8 @@ CONDITION_ADAPTERS = {
         "label": "Filesystem agent with writable sidecar",
         "kind": "filesystem_sidecar",
     },
-    "workspace": {"label": "Straylight workspace agent", "kind": "legacy_workspace"},
-    "service_api": {"label": "Native Straylight API agent", "kind": "native_service"},
+    "workspace": {"label": "Brunn workspace agent", "kind": "legacy_workspace"},
+    "service_api": {"label": "Native Brunn API agent", "kind": "native_service"},
 }
 CONDITION_LABELS = {key: value["label"] for key, value in CONDITION_ADAPTERS.items()}
 WORKSPACE_CONDITIONS = {"workspace", "service_api"}
@@ -1365,7 +1365,7 @@ def render_prompt(
         )
     elif condition == "service_api" and case.get("workspace_access") == "read_only":
         access = (
-            "Use the read-only native Straylight service through ./memory only. Do not inspect the wrapper or any corpus path. "
+            "Use the read-only native Brunn service through ./memory only. Do not inspect the wrapper or any corpus path. "
             "Run `./memory open` and treat its initial evidence, learned context, checkpoint, and revision delta as the first "
             "answer packet. A `complete_source` item is already the full source and must not be read again. Pointer-only "
             "`evidence_leads` identify additional sources to read only when a requested task facet is absent. Treat "
@@ -1382,7 +1382,7 @@ def render_prompt(
         )
     elif condition == "service_api":
         access = (
-            "Use the native Straylight service through ./memory only. Do not inspect the wrapper or any corpus path. "
+            "Use the native Brunn service through ./memory only. Do not inspect the wrapper or any corpus path. "
             "Run `./memory open` and treat its initial evidence, learned context, checkpoint, and revision delta as the first "
             "answer packet. A `complete_source` item is already the full source and must not be read again. Pointer-only "
             "`evidence_leads` identify additional sources to read only when a requested task facet is absent. Treat "
@@ -1403,14 +1403,14 @@ def render_prompt(
         )
     elif case.get("workspace_access") == "read_only":
         access = (
-            "Use the read-only Straylight workspace through ./memory only. Do not inspect the wrapper or corpus path directly. "
+            "Use the read-only Brunn workspace through ./memory only. Do not inspect the wrapper or corpus path directly. "
             f"Start with ./memory open --scope {json.dumps(scope)}, then use only targeted query, read, compute, or verify "
             "operations. This credential cannot checkpoint or mutate corpus or staged state. Do not browse or use filesystem "
             "search outside this workspace surface."
         )
     else:
         access = (
-            "Use the Straylight workspace through ./memory only. Do not inspect the wrapper or corpus path directly. "
+            "Use the Brunn workspace through ./memory only. Do not inspect the wrapper or corpus path directly. "
             f"Start with ./memory open --scope {json.dumps(scope)}, then use a small number of targeted query and read "
             "operations. Use compute for arithmetic and one combined verify when useful; do not verify every claim separately "
             "when the same sources cover them. Before answering, persist a checkpoint with ./memory checkpoint. Do not browse "
@@ -2344,11 +2344,11 @@ def render_report(run: dict) -> str:
             "must receive a durable JSON checkpoint."
         ),
         "workspace": (
-            "- **Straylight workspace agent:** a fresh agent uses the initial BM25-backed shell CLI. "
+            "- **Brunn workspace agent:** a fresh agent uses the initial BM25-backed shell CLI. "
             "This legacy condition does not test semantic retrieval or the native API."
         ),
         "service_api": (
-            "- **Native Straylight API agent:** a fresh agent receives no corpus path and uses the Rust service through "
+            "- **Native Brunn API agent:** a fresh agent receives no corpus path and uses the Rust service through "
             "batched `open`, `query`, `read`, `compute`, `verify`, and capability-bound write operations."
         ),
     }
@@ -2360,7 +2360,7 @@ def render_report(run: dict) -> str:
         f"Updated: {run.get('regraded_at', run['run_at'])}",
         "Status: Complete",
         "",
-        "Related: [[Straylight]], [[Projects/Straylight/Decisions|Decisions]]",
+        "Related: [[Brunn]], [[Projects/Brunn/Decisions|Decisions]]",
         "",
         f"# {report_title} - {report_date}",
         "",
@@ -2547,7 +2547,7 @@ def render_report(run: dict) -> str:
             "",
             "## Reproduce",
             "```bash",
-            "cd /Users/Shared/projects/straylight",
+            "cd /Users/Shared/projects/brunn",
             "python3 -m unittest discover -s tests -v",
             f"python3 agent_work_eval.py --manifest {manifest_argument} validate",
             f"python3 agent_work_eval.py --manifest {manifest_argument} run{native_flag} --concurrency 3 --timeout 420 --out results/native-personal-coordination.json",
@@ -2562,7 +2562,7 @@ def render_report(run: dict) -> str:
             "",
             "## Conclusions",
             "- Complex agent work needs recoverable source and artifact access. A fixed handoff is useful orientation, but it cannot be the durable work substrate.",
-            "- Direct filesystem access is the quality and efficiency baseline. Straylight must preserve that freedom while adding portable checkpoints, authority, provenance, trust policy, and cross-agent continuity.",
+            "- Direct filesystem access is the quality and efficiency baseline. Brunn must preserve that freedom while adding portable checkpoints, authority, provenance, trust policy, and cross-agent continuity.",
             (
                 f"- The native API recovered {service['claims_passed']}/{service['claims_total']} claims versus {filesystem['claims_passed']}/{filesystem['claims_total']} for filesystem access and persisted every eligible checkpoint."
                 if service and filesystem
@@ -2582,7 +2582,7 @@ def render_report(run: dict) -> str:
             "",
             "## Reproduce",
             "```bash",
-            "cd /Users/Shared/projects/straylight",
+            "cd /Users/Shared/projects/brunn",
             "python3 -m unittest discover -s tests -v",
             f"python3 agent_work_eval.py --manifest {manifest_argument} validate",
             f"python3 agent_work_eval.py --manifest {manifest_argument} run{native_flag} --concurrency 3 --timeout 420 --out results/native-agent-work.json",
@@ -2772,7 +2772,7 @@ def capture_service_runtime_snapshot(
     if not isinstance(embeddings, dict):
         raise ValueError("service status omitted embeddings metadata")
     snapshot = {
-        "schema": "straylight-service-runtime-snapshot@v1",
+        "schema": "brunn-service-runtime-snapshot@v1",
         "captured_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "status": status["status"],
         "build_revision": build_revision,
@@ -2798,7 +2798,7 @@ def fetch_service_runtime_snapshot(
     expected_build_revision: str | None,
 ) -> dict[str, Any]:
     status_client = NativeApiClient(
-        base_url=os.environ["STRAYLIGHT_API_URL"],
+        base_url=os.environ["BRUNN_API_URL"],
         token=metadata["token"],
         run_id=run_id,
         case_id="runtime-snapshot-preflight",
@@ -3170,11 +3170,11 @@ async def run_all(args: argparse.Namespace) -> dict:
             if condition == "service_api":
                 metadata = native_metadata[case["id"]]
                 environment = {
-                    "STRAYLIGHT_API_URL": os.environ["STRAYLIGHT_API_URL"],
-                    "STRAYLIGHT_EVAL_TOKEN": metadata["token"],
+                    "BRUNN_API_URL": os.environ["BRUNN_API_URL"],
+                    "BRUNN_EVAL_TOKEN": metadata["token"],
                 }
                 if service_retrieval_modes:
-                    environment["STRAYLIGHT_EVAL_RETRIEVAL_MODES"] = ",".join(
+                    environment["BRUNN_EVAL_RETRIEVAL_MODES"] = ",".join(
                         service_retrieval_modes
                     )
             tasks.append(run_one(
@@ -3471,7 +3471,7 @@ def measure_adoption(
         )
     emitted = sum(bool(session["emitted_valid_frontmatter"]) for session in sessions)
     return {
-        "schema": "straylight-frontmatter-adoption@v2",
+        "schema": "brunn-frontmatter-adoption@v2",
         "run_id": run.get("run_id"),
         "benchmark_version": run.get("benchmark_version"),
         "experiment_arm": provenance["experiment_arm"],
@@ -3554,11 +3554,11 @@ def aggregate_adoption_measurements(
         provenance = measurement.get("provenance")
         if (
             measurement.get("schema")
-            != "straylight-frontmatter-adoption@v2"
+            != "brunn-frontmatter-adoption@v2"
             or not isinstance(source_artifact, dict)
             or not isinstance(provenance, dict)
             or provenance.get("schema")
-            != "straylight-definitive-service-run-provenance@v1"
+            != "brunn-definitive-service-run-provenance@v1"
         ):
             raise ValueError(
                 f"{path}: not a definitive adoption measurement"
@@ -3840,7 +3840,7 @@ def aggregate_adoption_measurements(
         value["emitted_sessions"] for value in by_feature.values()
     )
     return {
-        "schema": "straylight-frontmatter-adoption-aggregate@v1",
+        "schema": "brunn-frontmatter-adoption-aggregate@v1",
         "experiment_arm": "e07-adoption",
         "expected_draws": list(expected_draws),
         "inputs": loaded,
@@ -3857,7 +3857,7 @@ def aggregate_adoption_measurements(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run the Straylight agent-work evaluation")
+    parser = argparse.ArgumentParser(description="Run the Brunn agent-work evaluation")
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA)
     subparsers = parser.add_subparsers(dest="command", required=True)

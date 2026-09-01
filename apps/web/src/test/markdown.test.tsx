@@ -90,17 +90,17 @@ describe("MarkdownView", () => {
     const onEntryLink = vi.fn();
     const { container } = render(
       <MarkdownView
-        markdown="Open [[Projects/Straylight/Plan#Next|the plan]]."
+        markdown="Open [[Projects/Brunn/Plan#Next|the plan]]."
         onEntryLink={onEntryLink}
       />,
     );
     const anchor = container.querySelector("a");
     expect(anchor).toHaveTextContent("the plan");
-    expect(anchor?.getAttribute("href")).not.toContain("straylight:");
+    expect(anchor?.getAttribute("href")).not.toContain("brunn:");
     fireEvent.click(anchor!);
     expect(onEntryLink).toHaveBeenCalledWith({
       kind: "wiki",
-      target: "Projects/Straylight/Plan#Next",
+      target: "Projects/Brunn/Plan#Next",
     });
   });
 
@@ -160,27 +160,27 @@ describe("MarkdownView", () => {
     expect(
       resolveWorkspaceEntryLink("sources/Projects/Current/Entry.md", {
         kind: "wiki",
-        target: "Projects/Straylight/Plan",
+        target: "Projects/Brunn/Plan",
       }),
     ).toEqual({
-      path: "Projects/Straylight/Plan.md",
-      alternatePaths: ["sources/Projects/Straylight/Plan.md"],
-      fallbackQuery: "Projects/Straylight/Plan",
+      path: "Projects/Brunn/Plan.md",
+      alternatePaths: ["sources/Projects/Brunn/Plan.md"],
+      fallbackQuery: "Projects/Brunn/Plan",
     });
     expect(
       resolveWorkspaceEntryLink("sources/Projects/Current/Entry.md", {
         kind: "wiki",
-        target: "Projects/Straylight/Plan.markdown",
+        target: "Projects/Brunn/Plan.markdown",
       }),
     ).toEqual({
-      path: "Projects/Straylight/Plan.markdown",
-      alternatePaths: ["sources/Projects/Straylight/Plan.markdown"],
-      fallbackQuery: "Projects/Straylight/Plan.markdown",
+      path: "Projects/Brunn/Plan.markdown",
+      alternatePaths: ["sources/Projects/Brunn/Plan.markdown"],
+      fallbackQuery: "Projects/Brunn/Plan.markdown",
     });
     expect(
       resolveWorkspaceEntryLink("sources/Projects/Current/Entry.md", {
         kind: "markdown",
-        target: "straylight://entry/sources/Projects/Plan.markdown",
+        target: "brunn://entry/sources/Projects/Plan.markdown",
       }),
     ).toEqual({
       path: "sources/Projects/Plan.markdown",

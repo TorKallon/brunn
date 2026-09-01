@@ -19,7 +19,7 @@ function requestOf(fetchMock: ReturnType<typeof installFetch>): Request {
   const [input, init] = fetchMock.mock.calls[0];
   return input instanceof Request
     ? input
-    : new Request(new URL(String(input), "https://straylight.test"), init);
+    : new Request(new URL(String(input), "https://brunn.test"), init);
 }
 
 const api = () => createApiClient();
@@ -122,7 +122,7 @@ describe("briefing api client", () => {
   });
 
   it("posts item actions as json without undefined fields", async () => {
-    document.cookie = "straylight_csrf=briefing-csrf; Path=/";
+    document.cookie = "brunn_csrf=briefing-csrf; Path=/";
     const fetchMock = installFetch({
       status: "committed",
       data: {

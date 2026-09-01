@@ -13,7 +13,7 @@ from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-ATTESTATION_SCHEMA = "straylight-eval-hook-attestation@v1"
+ATTESTATION_SCHEMA = "brunn-eval-hook-attestation@v1"
 ATTESTATION_FIELDS = (
     "schema",
     "pass",

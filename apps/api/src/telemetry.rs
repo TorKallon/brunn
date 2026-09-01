@@ -22,7 +22,7 @@ use crate::{db::AppState, models::ResponseStatus};
 static HTTP_IN_FLIGHT: AtomicI64 = AtomicI64::new(0);
 
 pub fn init(component: &'static str) -> Result<bool, String> {
-    if !env_bool("STRAYLIGHT_METRICS_ENABLED", false)? {
+    if !env_bool("BRUNN_METRICS_ENABLED", false)? {
         return Ok(false);
     }
 
@@ -34,14 +34,14 @@ pub fn init(component: &'static str) -> Result<bool, String> {
         .ok()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| "8125".to_owned());
-    let address = env::var("STRAYLIGHT_DOGSTATSD_ADDR")
+    let address = env::var("BRUNN_DOGSTATSD_ADDR")
         .ok()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| format!("{host}:{port}"));
-    let flush_interval = Duration::from_secs(env_u64("STRAYLIGHT_METRICS_FLUSH_SECONDS", 3)?);
+    let flush_interval = Duration::from_secs(env_u64("BRUNN_METRICS_FLUSH_SECONDS", 3)?);
     let labels = vec![
         Label::new("env", env_default("DD_ENV", "development")),
-        Label::new("service", env_default("DD_SERVICE", "straylight")),
+        Label::new("service", env_default("DD_SERVICE", "brunn")),
         Label::new(
             "version",
             env_default("DD_VERSION", env!("CARGO_PKG_VERSION")),
@@ -54,7 +54,7 @@ pub fn init(component: &'static str) -> Result<bool, String> {
         .map_err(|error| error.to_string())?
         .with_flush_interval(flush_interval)
         .with_global_labels(labels)
-        .set_global_prefix("straylight")
+        .set_global_prefix("brunn")
         .with_telemetry(true)
         .with_histogram_sampling(true)
         .send_histograms_as_distributions(true)
@@ -591,11 +591,11 @@ async fn record_queue_snapshot(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
                extract(epoch FROM clock_timestamp()-min(created_at))::float8 AS oldest_age_seconds
         FROM (
           SELECT 'account_export'::text AS queue,status,created_at
-          FROM straylight.account_exports
+          FROM brunn.account_exports
           WHERE status IN ('queued','running','deleting','failed')
           UNION ALL
           SELECT 'account_deletion'::text AS queue,status,created_at
-          FROM straylight.account_deletion_requests
+          FROM brunn.account_deletion_requests
           WHERE status IN ('queued','running','awaiting_backup_expiry','failed')
         ) pending
         GROUP BY queue,status
@@ -657,8 +657,8 @@ async fn record_notification_queue_snapshot(pool: &sqlx::PgPool) -> Result<(), s
           )::bigint AS stale_lease,
           count(*) FILTER (WHERE delivery.state='failed')::bigint AS failed,
           count(*) FILTER (WHERE delivery.state='suppressed')::bigint AS suppressed
-        FROM straylight.notification_deliveries AS delivery
-        JOIN straylight.notifications AS notification
+        FROM brunn.notification_deliveries AS delivery
+        JOIN brunn.notifications AS notification
           ON notification.user_id=delivery.user_id
          AND notification.id=delivery.notification_id
         "#,
@@ -679,13 +679,13 @@ async fn record_asset_snapshot(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
         r#"
         WITH physical AS (
           SELECT user_id,object_key,max(size_bytes)::bigint AS size_bytes
-          FROM straylight.asset_versions
+          FROM brunn.asset_versions
           GROUP BY user_id,object_key
         )
         SELECT
-          (SELECT count(*)::bigint FROM straylight.asset_versions) AS logical_versions,
+          (SELECT count(*)::bigint FROM brunn.asset_versions) AS logical_versions,
           (SELECT coalesce(sum(size_bytes),0)::float8
-             FROM straylight.asset_versions) AS logical_bytes,
+             FROM brunn.asset_versions) AS logical_bytes,
           (SELECT count(*)::bigint FROM physical) AS physical_objects,
           (SELECT coalesce(sum(size_bytes),0)::float8 FROM physical) AS physical_bytes
         "#,

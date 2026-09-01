@@ -32,7 +32,7 @@ class TodoistApiRoutesContractTest(unittest.TestCase):
 
     def test_routes_are_inside_the_authenticated_workspace_router(self) -> None:
         workspace_start = self.source.index("let workspace_ordinary = Router::new()")
-        workspace_end = self.source.index("let legacy_ordinary = Router::new()")
+        workspace_end = self.source.index("let account_ordinary = Router::new()")
         workspace = self.source[workspace_start:workspace_end]
         for path in (
             "/workspace/integrations/todoist/status",

@@ -1,7 +1,7 @@
 -- Close alpha data-safety gaps without changing read, retrieval, capture, or
 -- dreaming semantics.
 
-CREATE OR REPLACE FUNCTION straylight_auth.authenticate_credential(p_token_hash text)
+CREATE OR REPLACE FUNCTION brunn_auth.authenticate_credential(p_token_hash text)
 RETURNS TABLE (
   credential_id uuid,
   user_id uuid,
@@ -11,7 +11,7 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
   SELECT
@@ -23,13 +23,13 @@ AS $$
         FILTER (WHERE scope.scope_ref IS NOT NULL),
       '{}'::text[]
     )
-  FROM straylight.api_credentials AS credential
-  JOIN straylight.users AS user_row
+  FROM brunn.api_credentials AS credential
+  JOIN brunn.users AS user_row
     ON user_row.id = credential.user_id
-  LEFT JOIN straylight.credential_scope_grants AS grant_row
+  LEFT JOIN brunn.credential_scope_grants AS grant_row
     ON grant_row.user_id = credential.user_id
    AND grant_row.credential_id = credential.id
-  LEFT JOIN straylight.scopes AS scope
+  LEFT JOIN brunn.scopes AS scope
     ON scope.user_id = grant_row.user_id
    AND scope.id = grant_row.scope_id
   WHERE credential.token_hash = p_token_hash
@@ -41,7 +41,7 @@ AS $$
         AND credential.capabilities = ARRAY['status']::text[]
         AND EXISTS (
           SELECT 1
-          FROM straylight.account_deletion_requests AS deletion
+          FROM brunn.account_deletion_requests AS deletion
           WHERE deletion.user_id = credential.user_id
             AND deletion.requested_by_credential_id = credential.id
             AND deletion.status IN (
@@ -53,7 +53,7 @@ AS $$
   GROUP BY credential.id, credential.user_id, credential.capabilities
 $$;
 
-CREATE OR REPLACE FUNCTION straylight_auth.validate_transaction_context(
+CREATE OR REPLACE FUNCTION brunn_auth.validate_transaction_context(
   p_user_id uuid,
   p_credential_id uuid,
   p_capabilities text[],
@@ -63,13 +63,13 @@ RETURNS TABLE(valid boolean, scope_ids uuid[])
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
   WITH credential AS (
     SELECT api.capabilities
-    FROM straylight.api_credentials AS api
-    JOIN straylight.users AS user_row ON user_row.id = api.user_id
+    FROM brunn.api_credentials AS api
+    JOIN brunn.users AS user_row ON user_row.id = api.user_id
     WHERE api.id = p_credential_id
       AND api.user_id = p_user_id
       AND api.disabled_at IS NULL
@@ -80,7 +80,7 @@ AS $$
           AND api.capabilities = ARRAY['status']::text[]
           AND EXISTS (
             SELECT 1
-            FROM straylight.account_deletion_requests AS deletion
+            FROM brunn.account_deletion_requests AS deletion
             WHERE deletion.user_id = api.user_id
               AND deletion.requested_by_credential_id = api.id
               AND deletion.status IN (
@@ -96,8 +96,8 @@ AS $$
         array_agg(scope.scope_ref::text ORDER BY scope.scope_ref),
         '{}'::text[]
       ) AS scope_refs
-    FROM straylight.credential_scope_grants AS grant_row
-    JOIN straylight.scopes AS scope
+    FROM brunn.credential_scope_grants AS grant_row
+    JOIN brunn.scopes AS scope
       ON scope.user_id = grant_row.user_id
      AND scope.id = grant_row.scope_id
     WHERE grant_row.user_id = p_user_id
@@ -117,7 +117,7 @@ AS $$
   FROM decision
 $$;
 
-CREATE OR REPLACE FUNCTION straylight_auth.issue_credential(
+CREATE OR REPLACE FUNCTION brunn_auth.issue_credential(
   p_user_id uuid,
   p_label text,
   p_token_hash text,
@@ -127,7 +127,7 @@ CREATE OR REPLACE FUNCTION straylight_auth.issue_credential(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
@@ -139,13 +139,13 @@ DECLARE
   created_credential_id uuid;
   matched_scope_count integer;
 BEGIN
-  PERFORM straylight_auth.require_credential_control(p_user_id);
+  PERFORM brunn_auth.require_credential_control(p_user_id);
 
   IF p_capabilities IS NULL
      OR cardinality(p_capabilities) = 0
      OR array_position(p_capabilities, NULL) IS NOT NULL
      OR NOT p_capabilities <@ allowed_capabilities
-     OR NOT p_capabilities <@ straylight_auth.current_capabilities()
+     OR NOT p_capabilities <@ brunn_auth.current_capabilities()
      OR cardinality(p_capabilities) <> (
        SELECT count(DISTINCT capability)
        FROM unnest(p_capabilities) AS capability
@@ -157,7 +157,7 @@ BEGIN
   IF p_scope_refs IS NULL
      OR cardinality(p_scope_refs) = 0
      OR array_position(p_scope_refs, NULL) IS NOT NULL
-     OR NOT p_scope_refs <@ straylight_auth.current_scope_refs()
+     OR NOT p_scope_refs <@ brunn_auth.current_scope_refs()
      OR cardinality(p_scope_refs) <> (
        SELECT count(DISTINCT scope_ref)
        FROM unnest(p_scope_refs) AS scope_ref
@@ -167,7 +167,7 @@ BEGIN
   END IF;
 
   SELECT count(*) INTO matched_scope_count
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = p_user_id
     AND scope_row.scope_ref::text = ANY(p_scope_refs);
 
@@ -176,26 +176,26 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  INSERT INTO straylight.api_credentials (
+  INSERT INTO brunn.api_credentials (
     user_id, label, token_hash, capabilities
   ) VALUES (
     p_user_id, p_label, p_token_hash, p_capabilities
   ) RETURNING id INTO created_credential_id;
 
-  INSERT INTO straylight.credential_scope_grants (
+  INSERT INTO brunn.credential_scope_grants (
     credential_id, user_id, scope_id
   )
   SELECT created_credential_id, p_user_id, scope_row.id
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = p_user_id
     AND scope_row.scope_ref::text = ANY(p_scope_refs);
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, scope_id, credential_id, action, details, content_free
   ) VALUES (
     p_user_id,
     NULL,
-    straylight_auth.current_credential_id(),
+    brunn_auth.current_credential_id(),
     'auth.credential.issue',
     jsonb_build_object(
       'credential_id', created_credential_id,
@@ -209,7 +209,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION straylight_auth.request_account_deletion(
+CREATE OR REPLACE FUNCTION brunn_auth.request_account_deletion(
   p_user_id uuid,
   p_confirmation text,
   p_reason text,
@@ -218,19 +218,19 @@ CREATE OR REPLACE FUNCTION straylight_auth.request_account_deletion(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
   expected_confirmation text;
   request_id uuid := gen_random_uuid();
-  requesting_credential_id uuid := straylight_auth.current_credential_id();
+  requesting_credential_id uuid := brunn_auth.current_credential_id();
 BEGIN
-  PERFORM straylight_auth.require_credential_control(p_user_id);
+  PERFORM brunn_auth.require_credential_control(p_user_id);
 
   SELECT 'DELETE ' || external_ref
   INTO expected_confirmation
-  FROM straylight.users
+  FROM brunn.users
   WHERE id = p_user_id AND account_status = 'active'
   FOR UPDATE;
 
@@ -251,14 +251,14 @@ BEGIN
   END IF;
   IF EXISTS (
     SELECT 1
-    FROM straylight.account_exports
+    FROM brunn.account_exports
     WHERE user_id = p_user_id AND status = 'running'
   ) THEN
     RAISE EXCEPTION 'a running account export must finish before deletion'
       USING ERRCODE = '55000';
   END IF;
 
-  INSERT INTO straylight.account_deletion_requests (
+  INSERT INTO brunn.account_deletion_requests (
     id, user_id, requested_by_credential_id, status, confirmation_hash,
     reason, backup_expiry_due_at
   ) VALUES (
@@ -271,29 +271,29 @@ BEGIN
     clock_timestamp() + make_interval(days => p_backup_retention_days)
   );
 
-  UPDATE straylight.api_credentials
+  UPDATE brunn.api_credentials
   SET disabled_at = coalesce(disabled_at, clock_timestamp())
   WHERE user_id = p_user_id
     AND id <> requesting_credential_id
     AND disabled_at IS NULL;
 
-  UPDATE straylight.api_credentials
+  UPDATE brunn.api_credentials
   SET capabilities = ARRAY['status']::text[]
   WHERE user_id = p_user_id
     AND id = requesting_credential_id
     AND disabled_at IS NULL;
 
-  UPDATE straylight.users
+  UPDATE brunn.users
   SET account_status = 'deleting',
       deletion_requested_at = clock_timestamp()
   WHERE id = p_user_id;
 
-  UPDATE straylight.account_exports
+  UPDATE brunn.account_exports
   SET status = 'deleted',
       completed_at = coalesce(completed_at, clock_timestamp())
   WHERE user_id = p_user_id AND status IN ('queued', 'ready');
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, credential_id, action, details, content_free
   ) VALUES (
     p_user_id,
@@ -311,11 +311,11 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION straylight.purge_account_user_rows(p_user_id uuid)
+CREATE OR REPLACE FUNCTION brunn.purge_account_user_rows(p_user_id uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 DECLARE
@@ -325,7 +325,7 @@ DECLARE
   result jsonb := '{}'::jsonb;
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM straylight.users
+    SELECT 1 FROM brunn.users
     WHERE id = p_user_id AND account_status = 'deleting'
   ) THEN
     RAISE EXCEPTION 'account purge requires a deleting user'
@@ -340,7 +340,7 @@ BEGIN
       ON table_row.table_schema = column_row.table_schema
      AND table_row.table_name = column_row.table_name
      AND table_row.table_type = 'BASE TABLE'
-    WHERE column_row.table_schema = 'straylight'
+    WHERE column_row.table_schema = 'brunn'
       AND column_row.column_name = 'user_id'
       AND column_row.table_name <> ALL(ARRAY[
         'users', 'api_credentials', 'account_deletion_requests'
@@ -348,7 +348,7 @@ BEGIN
     ORDER BY column_row.table_name
   LOOP
     EXECUTE format(
-      'DELETE FROM straylight.%I WHERE user_id=$1',
+      'DELETE FROM brunn.%I WHERE user_id=$1',
       table_row.table_name
     ) USING p_user_id;
     GET DIAGNOSTICS deleted_rows = ROW_COUNT;
@@ -363,7 +363,7 @@ BEGIN
       ON table_row.table_schema = column_row.table_schema
      AND table_row.table_name = column_row.table_name
      AND table_row.table_type = 'BASE TABLE'
-    WHERE column_row.table_schema = 'straylight'
+    WHERE column_row.table_schema = 'brunn'
       AND column_row.column_name = 'user_id'
       AND column_row.table_name <> ALL(ARRAY[
         'users', 'api_credentials', 'account_deletion_requests'
@@ -371,12 +371,12 @@ BEGIN
     ORDER BY column_row.table_name
   LOOP
     EXECUTE format(
-      'SELECT count(*) FROM straylight.%I WHERE user_id=$1',
+      'SELECT count(*) FROM brunn.%I WHERE user_id=$1',
       table_row.table_name
     ) INTO remaining_rows USING p_user_id;
     IF remaining_rows <> 0 THEN
       RAISE EXCEPTION '% rows remain in %.% after account purge',
-        remaining_rows, 'straylight', table_row.table_name
+        remaining_rows, 'brunn', table_row.table_name
         USING ERRCODE = '55000';
     END IF;
   END LOOP;
@@ -388,5 +388,5 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION straylight.purge_account_user_rows(uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight.purge_account_user_rows(uuid) FROM app_rw, app_ro;
+REVOKE ALL ON FUNCTION brunn.purge_account_user_rows(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn.purge_account_user_rows(uuid) FROM app_rw, app_ro;

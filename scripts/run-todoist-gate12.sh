@@ -2,11 +2,11 @@
 set -u
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-artifact_dir=${STRAYLIGHT_TODOIST_GATE12_ARTIFACT_DIR:-"$repo_root/release-artifacts/task-gate12/todoist"}
-test_database_url=${STRAYLIGHT_TEST_DATABASE_URL:-}
+artifact_dir=${BRUNN_TODOIST_GATE12_ARTIFACT_DIR:-"$repo_root/release-artifacts/task-gate12/todoist"}
+test_database_url=${BRUNN_TEST_DATABASE_URL:-}
 
 if [ -z "$test_database_url" ]; then
-  echo "STRAYLIGHT_TEST_DATABASE_URL must name a disposable migrated database" >&2
+  echo "BRUNN_TEST_DATABASE_URL must name a disposable migrated database" >&2
   exit 2
 fi
 
@@ -96,7 +96,7 @@ for path in sorted(fixture_root.glob("*.json")):
     fixtures[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
 
 evidence = {
-    "schema": "straylight-todoist-gate12e@v1",
+    "schema": "brunn-todoist-gate12e@v1",
     "status": os.environ["TODOIST_GATE12_STATUS"],
     "started_at": os.environ["TODOIST_GATE12_STARTED"],
     "finished_at": os.environ["TODOIST_GATE12_FINISHED"],

@@ -29,7 +29,7 @@ const MAX_JSON_RESPONSE_BYTES = 32 * 1024 * 1024;
 // request deadline remains the final bound. Including the initial request, the
 // production policy makes at most seven attempts over 17 seconds of backoff.
 const DEFAULT_RETRY_BACKOFF_MS = [100, 400, 1_000, 2_500, 5_000, 8_000] as const;
-const RETRY_BACKOFF_ENVIRONMENT = "STRAYLIGHT_MCP_RETRY_BACKOFF_MS";
+const RETRY_BACKOFF_ENVIRONMENT = "BRUNN_MCP_RETRY_BACKOFF_MS";
 const MAX_RETRY_BACKOFFS = DEFAULT_RETRY_BACKOFF_MS.length;
 const TRANSIENT_HTTP_STATUSES = new Set([502, 503, 504]);
 const TRANSIENT_NETWORK_CODES = new Set([
@@ -71,7 +71,7 @@ export interface ApiClientTimeouts {
   retryBackoffMs?: readonly number[];
 }
 
-export class StraylightApiError extends Error {
+export class BrunnApiError extends Error {
   constructor(
     readonly status: number,
     readonly body: Record<string, unknown>,
@@ -80,13 +80,13 @@ export class StraylightApiError extends Error {
     super(
       typeof detail === "object" && detail !== null && "message" in detail
         ? String(detail.message)
-        : `Straylight API returned HTTP ${status}`,
+        : `Brunn API returned HTTP ${status}`,
     );
-    this.name = "StraylightApiError";
+    this.name = "BrunnApiError";
   }
 }
 
-export class StraylightApiClient {
+export class BrunnApiClient {
   private readonly baseUrl: string;
   private readonly requestTimeoutMs: number;
   private readonly transferTimeoutMs: number;
@@ -103,12 +103,12 @@ export class StraylightApiClient {
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.requestTimeoutMs = configuredTimeout(
       timeouts.requestMs,
-      "STRAYLIGHT_MCP_REQUEST_TIMEOUT_MS",
+      "BRUNN_MCP_REQUEST_TIMEOUT_MS",
       DEFAULT_REQUEST_TIMEOUT_MS,
     );
     this.transferTimeoutMs = configuredTimeout(
       timeouts.transferMs,
-      "STRAYLIGHT_MCP_TRANSFER_TIMEOUT_MS",
+      "BRUNN_MCP_TRANSFER_TIMEOUT_MS",
       DEFAULT_TRANSFER_TIMEOUT_MS,
     );
     this.retryBackoffMs = configuredRetryBackoff(timeouts.retryBackoffMs);
@@ -131,11 +131,11 @@ export class StraylightApiClient {
         : undefined
       : methodOrPath;
     if (path === undefined || !path.startsWith("/")) {
-      throw new TypeError("Straylight API request path must start with /");
+      throw new TypeError("Brunn API request path must start with /");
     }
     const body = explicitMethod ? explicitBody : pathOrBody;
     if (method === "GET" && body !== undefined) {
-      throw new TypeError("Straylight API GET requests cannot include a body");
+      throw new TypeError("Brunn API GET requests cannot include a body");
     }
     const started = performance.now();
     const deadline = started + this.requestTimeoutMs;
@@ -171,17 +171,17 @@ export class StraylightApiClient {
           result.railwayApplicationNotFound,
         );
         if (!transientResponse && result.structured) {
-          throw new StraylightApiError(result.response.status, result.body);
+          throw new BrunnApiError(result.response.status, result.body);
         }
         if (!transientResponse && !result.structured && !result.response.ok) {
-          throw new StraylightApiError(
+          throw new BrunnApiError(
             result.response.status,
             invalidUpstreamResponse(result.response.status, result.requestId),
           );
         }
         transientStatus = normalizeTransientStatus(result.response.status);
       } catch (error) {
-        if (error instanceof StraylightApiError) {
+        if (error instanceof BrunnApiError) {
           throw error;
         }
         if (error instanceof JsonAttemptError) {
@@ -223,7 +223,7 @@ export class StraylightApiClient {
       rejectDeadline = reject;
     });
     const timer = setTimeout(() => {
-      const error = new DOMException("Straylight request deadline exceeded", "TimeoutError");
+      const error = new DOMException("Brunn request deadline exceeded", "TimeoutError");
       controller.abort(error);
       rejectDeadline?.(error);
     }, timeoutMs);
@@ -314,11 +314,11 @@ export class StraylightApiClient {
     try {
       metadataResponse = await this.assetMetadata(assetRef, sessionId, requestedVersion);
     } catch (error) {
-      if (error instanceof StraylightApiError) {
+      if (error instanceof BrunnApiError) {
         if (isResilienceFailure(error.body)) {
           throw error;
         }
-        throw new StraylightApiError(
+        throw new BrunnApiError(
           error.status,
           assetFailure("metadata", error.status),
         );
@@ -351,7 +351,7 @@ export class StraylightApiClient {
     );
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      throw new StraylightApiError(
+      throw new BrunnApiError(
         response.status,
         assetFailure("download", response.status),
       );
@@ -376,7 +376,7 @@ export class StraylightApiClient {
   ): Promise<ApiResponse> {
     const started = performance.now();
     const importRoot = await realpath(
-      process.env.STRAYLIGHT_MCP_IMPORT_ROOT ?? "/imports",
+      process.env.BRUNN_MCP_IMPORT_ROOT ?? "/imports",
     );
     if (files.length > MAX_STAGE_FILES) {
       throw new Error(`staging is limited to ${MAX_STAGE_FILES} files per request`);
@@ -387,7 +387,7 @@ export class StraylightApiClient {
       const filePath = await realpath(resolve(importRoot, file.path));
       const insideRoot = relative(importRoot, filePath);
       if (insideRoot.startsWith("..") || insideRoot.includes("/../")) {
-        throw new Error("staged paths must remain inside STRAYLIGHT_MCP_IMPORT_ROOT");
+        throw new Error("staged paths must remain inside BRUNN_MCP_IMPORT_ROOT");
       }
       const metadata = await stat(filePath);
       if (!metadata.isFile()) {
@@ -439,7 +439,7 @@ export class StraylightApiClient {
       });
       const parsed = await parseJson(response);
       if (!response.ok || isInvalidUpstreamResponse(parsed)) {
-        throw new StraylightApiError(response.status, parsed);
+        throw new BrunnApiError(response.status, parsed);
       }
       status = response.status;
       uploads.push(parsed);
@@ -541,7 +541,7 @@ function invalidUpstreamResponse(
     ...(requestId === undefined ? {} : { request_id: requestId }),
     error: {
       code: "invalid_upstream_response",
-      message: `Straylight upstream returned an invalid JSON response (HTTP ${status})`,
+      message: `Brunn upstream returned an invalid JSON response (HTTP ${status})`,
     },
   };
 }
@@ -562,14 +562,14 @@ class JsonAttemptError extends Error {
     readonly responseStatus: number,
     cause: unknown,
   ) {
-    super("Straylight upstream response could not be read safely", { cause });
+    super("Brunn upstream response could not be read safely", { cause });
     this.name = "JsonAttemptError";
   }
 }
 
 class ResponseTooLargeError extends Error {
   constructor() {
-    super(`Straylight upstream response exceeded ${MAX_JSON_RESPONSE_BYTES} bytes`);
+    super(`Brunn upstream response exceeded ${MAX_JSON_RESPONSE_BYTES} bytes`);
     this.name = "ResponseTooLargeError";
   }
 }
@@ -670,13 +670,13 @@ function exhaustedTransientError(
   attempts: number,
   requestId: string | undefined,
   status: number,
-): StraylightApiError {
+): BrunnApiError {
   const error = policy.mutation
     ? policy.retryable
       ? {
           code: "ambiguous_outcome",
           message:
-            "Straylight could not confirm this idempotent mutation after bounded transient retries. "
+            "Brunn could not confirm this idempotent mutation after bounded transient retries. "
             + "It may already have committed. Replay the identical request with the identical "
             + "idempotency key or event identity to recover the durable receipt; do not mint a new key.",
           outcome: "unknown",
@@ -686,7 +686,7 @@ function exhaustedTransientError(
       : {
           code: "ambiguous_outcome",
           message:
-            "Straylight could not confirm this mutation. It may already have committed, and the "
+            "Brunn could not confirm this mutation. It may already have committed, and the "
             + "request had no safe idempotency identity, so it was not retried automatically. "
             + "Confirm durable state before attempting another mutation.",
           outcome: "unknown",
@@ -696,11 +696,11 @@ function exhaustedTransientError(
     : {
         code: "upstream_unavailable",
         message:
-          "Straylight is temporarily unavailable after bounded attempts. Retry the same read request.",
+          "Brunn is temporarily unavailable after bounded attempts. Retry the same read request.",
         retryable: true,
         attempts,
       };
-  return new StraylightApiError(status, {
+  return new BrunnApiError(status, {
     ...(requestId === undefined ? {} : { request_id: requestId }),
     error,
   });
@@ -752,7 +752,7 @@ function assetFailure(
   return {
     error: {
       code: `asset_${stage}_failed`,
-      message: `CarryState asset ${stage} request returned HTTP ${status}`,
+      message: `Brunn State asset ${stage} request returned HTTP ${status}`,
     },
   };
 }

@@ -1,7 +1,7 @@
 -- Make stage reclamation fail closed against every foreign key in the live
 -- schema. This replaces the hand-maintained reference list in migration 0036.
 
-CREATE OR REPLACE FUNCTION straylight.foreign_key_reference_exists(
+CREATE OR REPLACE FUNCTION brunn.foreign_key_reference_exists(
   p_parent regclass,
   p_key jsonb,
   p_ignored_children regclass[] DEFAULT ARRAY[]::regclass[]
@@ -9,7 +9,7 @@ CREATE OR REPLACE FUNCTION straylight.foreign_key_reference_exists(
 RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 DECLARE
@@ -79,17 +79,17 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION straylight.foreign_key_reference_exists(
+REVOKE ALL ON FUNCTION brunn.foreign_key_reference_exists(
   regclass,
   jsonb,
   regclass[]
 ) FROM PUBLIC,app_rw,app_ro;
 
-CREATE OR REPLACE FUNCTION straylight.expire_unpromoted_stage(p_stage_id uuid)
+CREATE OR REPLACE FUNCTION brunn.expire_unpromoted_stage(p_stage_id uuid)
 RETURNS TABLE(reclaimed_object_key text)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 DECLARE
@@ -101,7 +101,7 @@ BEGIN
   -- per-user storage lock before locking a stage or asset row.
   SELECT stage.id,stage.user_id,stage.scope_id,stage.status,stage.expires_at
   INTO target_stage
-  FROM straylight.stages AS stage
+  FROM brunn.stages AS stage
   WHERE stage.id=p_stage_id;
 
   IF NOT FOUND THEN
@@ -114,7 +114,7 @@ BEGIN
 
   SELECT stage.id,stage.user_id,stage.scope_id,stage.status,stage.expires_at
   INTO target_stage
-  FROM straylight.stages AS stage
+  FROM brunn.stages AS stage
   WHERE stage.id=p_stage_id
   FOR UPDATE;
 
@@ -127,12 +127,12 @@ BEGIN
     RETURN;
   END IF;
 
-  UPDATE straylight.stages
+  UPDATE brunn.stages
   SET status='expired'
   WHERE id=p_stage_id
     AND status IN ('uploading','inspecting','ready','quarantined','failed');
 
-  UPDATE straylight.background_jobs
+  UPDATE brunn.background_jobs
   SET status='canceled',completed_at=clock_timestamp(),
       result=jsonb_build_object('reason','stage_expired'),
       locked_at=NULL,locked_by=NULL
@@ -144,18 +144,18 @@ BEGIN
   FOR candidate IN
     SELECT DISTINCT version.asset_id,version.version,version.previous_version,
            version.object_key,asset.current_version
-    FROM straylight.staged_entries AS entry
-    JOIN straylight.asset_versions AS version
+    FROM brunn.staged_entries AS entry
+    JOIN brunn.asset_versions AS version
       ON version.user_id=entry.user_id
      AND version.asset_id=entry.asset_id
      AND version.version=entry.asset_version
-    JOIN straylight.assets AS asset
+    JOIN brunn.assets AS asset
       ON asset.user_id=version.user_id AND asset.id=version.asset_id
     WHERE entry.user_id=target_stage.user_id
       AND entry.stage_id=p_stage_id
       AND NOT EXISTS (
         SELECT 1
-        FROM straylight.staged_entries AS other_stage
+        FROM brunn.staged_entries AS other_stage
         WHERE other_stage.user_id=entry.user_id
           AND other_stage.stage_id<>entry.stage_id
           AND other_stage.asset_id=entry.asset_id
@@ -163,24 +163,24 @@ BEGIN
       )
       AND NOT EXISTS (
         SELECT 1
-        FROM straylight.asset_versions AS successor
+        FROM brunn.asset_versions AS successor
         WHERE successor.user_id=entry.user_id
           AND successor.asset_id=entry.asset_id
           AND successor.previous_version=entry.asset_version
       )
       AND asset.current_version=entry.asset_version
   LOOP
-    IF straylight.foreign_key_reference_exists(
-      'straylight.asset_versions'::regclass,
+    IF brunn.foreign_key_reference_exists(
+      'brunn.asset_versions'::regclass,
       jsonb_build_object(
         'user_id',target_stage.user_id::text,
         'asset_id',candidate.asset_id::text,
         'version',candidate.version::text
       ),
       ARRAY[
-        'straylight.assets'::regclass,
-        'straylight.asset_versions'::regclass,
-        'straylight.staged_entries'::regclass
+        'brunn.assets'::regclass,
+        'brunn.asset_versions'::regclass,
+        'brunn.staged_entries'::regclass
       ]
     ) THEN
       CONTINUE candidate_loop;
@@ -188,16 +188,16 @@ BEGIN
 
     IF candidate.previous_version IS NULL
        AND (
-         straylight.foreign_key_reference_exists(
-           'straylight.assets'::regclass,
+         brunn.foreign_key_reference_exists(
+           'brunn.assets'::regclass,
            jsonb_build_object(
              'user_id',target_stage.user_id::text,
              'id',candidate.asset_id::text
            ),
-           ARRAY['straylight.asset_versions'::regclass]
+           ARRAY['brunn.asset_versions'::regclass]
          )
-         OR straylight.foreign_key_reference_exists(
-           'straylight.record_keys'::regclass,
+         OR brunn.foreign_key_reference_exists(
+           'brunn.record_keys'::regclass,
            jsonb_build_object(
              'user_id',target_stage.user_id::text,
              'record_id',candidate.asset_id::text,
@@ -208,7 +208,7 @@ BEGIN
       CONTINUE candidate_loop;
     END IF;
 
-    DELETE FROM straylight.staged_entries
+    DELETE FROM brunn.staged_entries
     WHERE user_id=target_stage.user_id
       AND stage_id=p_stage_id
       AND asset_id=candidate.asset_id
@@ -222,23 +222,23 @@ BEGIN
     -- rollback of the unpublished asset revision.
     PERFORM set_config('session_replication_role','replica',true);
     IF candidate.previous_version IS NULL THEN
-      DELETE FROM straylight.asset_versions
+      DELETE FROM brunn.asset_versions
       WHERE user_id=target_stage.user_id
         AND asset_id=candidate.asset_id
         AND version=candidate.version;
-      DELETE FROM straylight.assets
+      DELETE FROM brunn.assets
       WHERE user_id=target_stage.user_id AND id=candidate.asset_id;
-      DELETE FROM straylight.record_keys
+      DELETE FROM brunn.record_keys
       WHERE user_id=target_stage.user_id
         AND record_id=candidate.asset_id
         AND record_kind='asset';
     ELSE
-      UPDATE straylight.assets
+      UPDATE brunn.assets
       SET current_version=candidate.previous_version
       WHERE user_id=target_stage.user_id
         AND id=candidate.asset_id
         AND current_version=candidate.version;
-      DELETE FROM straylight.asset_versions
+      DELETE FROM brunn.asset_versions
       WHERE user_id=target_stage.user_id
         AND asset_id=candidate.asset_id
         AND version=candidate.version;
@@ -246,10 +246,10 @@ BEGIN
     PERFORM set_config('session_replication_role','origin',true);
   END LOOP;
 
-  DELETE FROM straylight.staged_entries
+  DELETE FROM brunn.staged_entries
   WHERE user_id=target_stage.user_id AND stage_id=p_stage_id;
 
-  UPDATE straylight.asset_uploads
+  UPDATE brunn.asset_uploads
   SET status='expired',updated_at=clock_timestamp(),
       failure_code='stage_expired'
   WHERE user_id=target_stage.user_id
@@ -266,5 +266,5 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION straylight.expire_unpromoted_stage(uuid)
+REVOKE ALL ON FUNCTION brunn.expire_unpromoted_stage(uuid)
 FROM PUBLIC,app_rw,app_ro;

@@ -13,12 +13,12 @@ use sqlx::{PgPool, Row, postgres::PgPoolOptions};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use straylight::notification_service::{
+use brunn::notification_service::{
     ApnsAccepted, ApnsFailure, ApnsProvider, ApnsRequest, process_next_on_pool,
     suppress_queued_deliveries_on_pool,
 };
 
-const APP_ID: &str = "com.example.Straylight";
+const APP_ID: &str = "com.rourkem.brunn";
 
 struct FakeProvider {
     outcomes: Mutex<VecDeque<Result<ApnsAccepted, ApnsFailure>>>,
@@ -60,11 +60,11 @@ impl ApnsProvider for FakeProvider {
 }
 
 async fn connect_test_pool() -> Option<PgPool> {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping notification delivery test");
+        eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping notification delivery test");
         return None;
     };
     let pool = PgPoolOptions::new()
@@ -75,14 +75,14 @@ async fn connect_test_pool() -> Option<PgPool> {
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .expect("apply Straylight migrations");
+        .expect("apply Brunn migrations");
     Some(pool)
 }
 
 async fn insert_principal(pool: &PgPool) -> (Uuid, Uuid) {
     let user_id = Uuid::now_v7();
     let credential_id = Uuid::now_v7();
-    sqlx::query("INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
         .bind(user_id)
         .bind(format!("notification-delivery-test:{user_id}"))
         .bind("Notification delivery test")
@@ -91,7 +91,7 @@ async fn insert_principal(pool: &PgPool) -> (Uuid, Uuid) {
         .expect("insert delivery test user");
     sqlx::query(
         r#"
-        INSERT INTO straylight.api_credentials (
+        INSERT INTO brunn.api_credentials (
           id,user_id,label,token_hash,capabilities
         ) VALUES ($1,$2,'Notification delivery test',$3,$4)
         "#,
@@ -113,7 +113,7 @@ fn encrypt_token(
     token: &str,
 ) -> (Vec<u8>, Vec<u8>) {
     let aad =
-        format!("straylight.apns-token.v1|{user_id}|{client_installation_id}|development|{APP_ID}");
+        format!("brunn.apns-token.v1|{user_id}|{client_installation_id}|development|{APP_ID}");
     let nonce = [client_installation_id.as_bytes()[0]; 12];
     let cipher = Aes256Gcm::new_from_slice(key).expect("AES key");
     let ciphertext = cipher
@@ -142,7 +142,7 @@ async fn insert_installation(
     let token_hash = hex::encode(Sha256::digest(token.as_bytes()));
     sqlx::query(
         r#"
-        INSERT INTO straylight.notification_installations (
+        INSERT INTO brunn.notification_installations (
           id,user_id,client_installation_id,registered_by_credential_id,
           platform,environment,app_id,token_ciphertext,token_nonce,
           token_hash,preview
@@ -179,7 +179,7 @@ async fn insert_delivery(
     let delivery_id = Uuid::now_v7();
     sqlx::query(
         r#"
-        INSERT INTO straylight.notifications (
+        INSERT INTO brunn.notifications (
           id,user_id,producer_credential_id,event_key,request_hash,
           correlation_id,kind,importance,title,body,target,occurred_at,expires_at
         ) VALUES (
@@ -205,7 +205,7 @@ async fn insert_delivery(
     .expect("insert delivery-test notification");
     sqlx::query(
         r#"
-        INSERT INTO straylight.notification_deliveries (
+        INSERT INTO brunn.notification_deliveries (
           id,user_id,notification_id,installation_id
         ) VALUES ($1,$2,$3,$4)
         "#,
@@ -255,7 +255,7 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_previ
     // queued so this worker-state test owns the due queue deterministically.
     sqlx::query(
         r#"
-        UPDATE straylight.notification_deliveries
+        UPDATE brunn.notification_deliveries
         SET state='expired',failed_at=clock_timestamp(),
             last_error_code='test_fixture_retired',lease_expires_at=NULL
         WHERE state IN ('queued','running')
@@ -295,7 +295,7 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_previ
             .expect("accept one delivery")
     );
     let accepted_row = sqlx::query(
-        "SELECT state,attempt_count,accepted_at FROM straylight.notification_deliveries WHERE id=$1",
+        "SELECT state,attempt_count,accepted_at FROM brunn.notification_deliveries WHERE id=$1",
     )
     .bind(accepted_delivery)
     .fetch_one(&pool)
@@ -344,7 +344,7 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_previ
         r#"
         SELECT state,attempt_count,last_error_code,
                available_at > clock_timestamp() AS delayed
-        FROM straylight.notification_deliveries WHERE id=$1
+        FROM brunn.notification_deliveries WHERE id=$1
         "#,
     )
     .bind(retry_delivery)
@@ -391,8 +391,8 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_previ
         SELECT installation.enabled,installation.token_ciphertext,
                installation.token_nonce,installation.token_hash,
                delivery.state,delivery.last_error_code
-        FROM straylight.notification_installations AS installation
-        JOIN straylight.notification_deliveries AS delivery
+        FROM brunn.notification_installations AS installation
+        JOIN brunn.notification_deliveries AS delivery
           ON delivery.installation_id=installation.id
         WHERE installation.id=$1 AND delivery.id=$2
         "#,
@@ -434,7 +434,7 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_previ
             .expect("expire stale delivery")
     );
     let expired_state = sqlx::query_scalar::<_, String>(
-        "SELECT state FROM straylight.notification_deliveries WHERE id=$1",
+        "SELECT state FROM brunn.notification_deliveries WHERE id=$1",
     )
     .bind(expired_delivery)
     .fetch_one(&pool)
@@ -457,7 +457,7 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_previ
     .await;
     sqlx::query(
         r#"
-        UPDATE straylight.notification_deliveries
+        UPDATE brunn.notification_deliveries
         SET state='running',attempt_count=1,
             lease_expires_at=clock_timestamp()-interval '1 minute'
         WHERE id=$1
@@ -472,13 +472,12 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_previ
             .await
             .expect("recover stale lease")
     );
-    let stale_row = sqlx::query(
-        "SELECT state,attempt_count FROM straylight.notification_deliveries WHERE id=$1",
-    )
-    .bind(stale_delivery)
-    .fetch_one(&pool)
-    .await
-    .expect("read stale-lease recovery");
+    let stale_row =
+        sqlx::query("SELECT state,attempt_count FROM brunn.notification_deliveries WHERE id=$1")
+            .bind(stale_delivery)
+            .fetch_one(&pool)
+            .await
+            .expect("read stale-lease recovery");
     assert_eq!(stale_row.get::<String, _>("state"), "accepted_by_apns");
     assert_eq!(stale_row.get::<i32, _>("attempt_count"), 1);
 
@@ -516,7 +515,7 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_previ
     let blocked_row = sqlx::query(
         r#"
         SELECT state,attempt_count,provider_block_count,last_error_code
-        FROM straylight.notification_deliveries WHERE id=$1
+        FROM brunn.notification_deliveries WHERE id=$1
         "#,
     )
     .bind(blocked_delivery)
@@ -536,7 +535,7 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_previ
             .expect("provider circuit pauses the queue")
     );
     let waiting_attempts = sqlx::query_scalar::<_, i32>(
-        "SELECT attempt_count FROM straylight.notification_deliveries WHERE id=$1",
+        "SELECT attempt_count FROM brunn.notification_deliveries WHERE id=$1",
     )
     .bind(waiting_delivery)
     .fetch_one(&pool)
@@ -552,7 +551,7 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_previ
     );
     let suppressed_rows = sqlx::query_scalar::<_, i64>(
         r#"
-        SELECT count(*) FROM straylight.notification_deliveries
+        SELECT count(*) FROM brunn.notification_deliveries
         WHERE id=ANY($1) AND state='suppressed'
           AND last_error_code='transport_disabled'
         "#,

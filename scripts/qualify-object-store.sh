@@ -5,7 +5,7 @@ root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 env_file=${ENV_FILE:-"$root/.env"}
 compose_override_file=${COMPOSE_OVERRIDE_FILE:-}
 compose_managed_s3_file=${COMPOSE_MANAGED_S3_FILE:-}
-project=${COMPOSE_PROJECT_NAME:-straylight}
+project=${COMPOSE_PROJECT_NAME:-brunn}
 
 [ -f "$env_file" ] || {
   echo "environment file does not exist: $env_file" >&2

@@ -1,8 +1,8 @@
-# Straylight Architecture
+# Brunn Architecture
 
 Status: alpha reference architecture
 
-Straylight is an agent-first workspace and memory service. It provides the
+Brunn is an agent-first workspace and memory service. It provides the
 useful behavior of a shared Markdown vault through an online API, then adds
 portable retrieval, exact binary access, lightweight history, background
 maintenance, usage visibility, and resumable checkpoints.
@@ -22,9 +22,9 @@ In order:
 5. Learn and maintain useful context without hiding changes.
 6. Keep failure local, repairable, and inexpensive.
 
-Straylight is not a transcript replay system, a knowledge graph database, a
+Brunn is not a transcript replay system, a knowledge graph database, a
 distributed transaction coordinator, or a replacement reasoning engine. Codex,
-OpenClaw, and other agents reason with their own tools after Straylight returns
+OpenClaw, and other agents reason with their own tools after Brunn returns
 source material.
 
 ## System Shape
@@ -50,7 +50,7 @@ the development implementation.
 
 The remote MCP gateway is a stateless protocol and OAuth adapter, not another
 durable store. Each hosted client authorizes with its own root-scoped
-read/write Straylight credential. The gateway encrypts that credential into
+read/write Brunn credential. The gateway encrypts that credential into
 short-lived OAuth access and rotating refresh tokens and creates a fresh API
 client per MCP request. It never has a process-global upstream credential.
 Local stdio clients retain the complete tool surface. Hosted clients expose
@@ -86,7 +86,7 @@ from those conventions without creating another source of truth.
 
 ## Consistency Posture
 
-Straylight uses short PostgreSQL transactions where partial visibility would
+Brunn uses short PostgreSQL transactions where partial visibility would
 be confusing. It does not provide distributed ACID behavior across PostgreSQL,
 S3, model providers, workers, or clients.
 
@@ -110,7 +110,7 @@ Semantic publication is intentionally finer grained than a document or job
 batch. At most 128 chunk vectors become visible through one short statement,
 and the worker yields between groups. Partial semantic coverage is valid:
 lexical retrieval remains complete, and a retry skips chunks that already
-have vectors. Straylight never holds a document-sized transaction merely to
+have vectors. Brunn never holds a document-sized transaction merely to
 make derived embeddings appear together.
 
 Workers prefer the newest ready embedding jobs after user-visible dreaming and
@@ -234,7 +234,7 @@ The document route is a deliberate promotion boundary, not another workspace
 browser. It serves only versions carrying the human-document marker. There is
 no document index or automatic promotion from imports, captures, generic
 writes, search results, or conversational replies. The route remains behind
-normal Straylight authentication and per-user authorization.
+normal Brunn authentication and per-user authorization.
 
 Deleting an entry marks its current head deleted, removes current search
 chunks, and appends one change. Historical versions remain available until an
@@ -244,7 +244,7 @@ explicit retention or account-erasure operation removes them.
 
 A checkpoint is deterministic Markdown at:
 
-`.straylight/checkpoints/<checkpoint-id>.md`
+`.brunn/checkpoints/<checkpoint-id>.md`
 
 It records the goal, decisions, current state, open questions, next actions,
 workspace generation, parent checkpoint, and exact source path/version/hash
@@ -261,7 +261,7 @@ portable file metadata.
 
 Every binary has searchable Markdown under:
 
-`.straylight/binaries/<path-hash>.md`
+`.brunn/binaries/<path-hash>.md`
 
 The companion contains original path, exact hash, media type, size,
 description, provenance, and limitations. It is derivative and cannot

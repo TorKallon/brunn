@@ -10,14 +10,14 @@ WITH authoritative_candidates AS (
     object_version_id,
     'sha256:' || content_hash AS content_hash,
     size_bytes
-  FROM straylight.asset_versions
+  FROM brunn.asset_versions
   WHERE NOT (
     object_key::text = user_id::text || '/deleted-assets/'
       || asset_id::text || '/' || version::text
     AND content_hash::text =
       'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
     AND size_bytes = 0
-    AND media_type::text = 'application/x-straylight-deleted'
+    AND media_type::text = 'application/x-brunn-deleted'
     AND metadata ? 'redacted_by_deletion_job'
   )
   UNION ALL
@@ -25,12 +25,12 @@ WITH authoritative_candidates AS (
   SELECT
     'asset_uploads.canonical',
     user_id,
-    current_setting('straylight.backup_object_bucket'),
+    current_setting('brunn.backup_object_bucket'),
     canonical_object_key,
     canonical_object_version_id,
     'sha256:' || expected_content_hash,
     expected_size_bytes
-  FROM straylight.asset_uploads
+  FROM brunn.asset_uploads
   WHERE status IN ('completed', 'consumed')
     AND canonical_object_key IS NOT NULL
 
@@ -39,12 +39,12 @@ WITH authoritative_candidates AS (
   SELECT
     'account_exports',
     user_id,
-    current_setting('straylight.backup_object_bucket'),
+    current_setting('brunn.backup_object_bucket'),
     object_key,
     object_version_id,
     'sha256:' || content_hash,
     size_bytes
-  FROM straylight.account_exports
+  FROM brunn.account_exports
   WHERE status = 'ready'
     AND object_key IS NOT NULL
 ),
@@ -61,8 +61,8 @@ ordered_references AS (
   ORDER BY relation, user_id, object_key, object_version_id
 )
 SELECT jsonb_build_object(
-  'format', 'straylight-database-object-references@v1',
-  'object_bucket', current_setting('straylight.backup_object_bucket'),
+  'format', 'brunn-database-object-references@v1',
+  'object_bucket', current_setting('brunn.backup_object_bucket'),
   'references',
     coalesce(
       jsonb_agg(

@@ -1,7 +1,7 @@
 {
   "benchmark_version": "recent-work-v0.3-e02-identifier-heavy",
-  "name": "Straylight E02 identifier-heavy targeted evaluation",
-  "report_title": "Straylight E02 identifier-heavy targeted evaluation",
+  "name": "Brunn E02 identifier-heavy targeted evaluation",
+  "report_title": "Brunn E02 identifier-heavy targeted evaluation",
   "report_date": "2026-07-27",
   "evaluation_model": "recent_personal_and_agent_operations",
   "grading_mode": "concept_tokens_v1",

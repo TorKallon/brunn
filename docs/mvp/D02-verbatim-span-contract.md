@@ -32,7 +32,7 @@ With verbatim_spans on, every exact-lane candidate in a search response addition
 
 Request delta: none (server-side flag). Response delta: the single field above on exact-lane candidates only. Lexical and semantic lanes are out of scope for this design.
 
-Implementation note (2026-07-27): `STRAYLIGHT_VERBATIM_SPANS=false` is
+Implementation note (2026-07-27): `BRUNN_VERBATIM_SPANS=false` is
 plumbed through startup configuration and Compose. When enabled, an exact path
 query conditionally retrieves that version's full source in the same SQL
 round trip, extracts at most three query-anchor lines, and returns

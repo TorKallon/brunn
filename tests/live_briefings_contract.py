@@ -222,7 +222,7 @@ def publish_payload(
 
 def run(base_url: str, env: dict[str, str]) -> dict[str, Any]:
     run_id = uuid.uuid4().hex
-    admin = Client(base_url, env["STRAYLIGHT_DEV_READ_WRITE_TOKEN"])
+    admin = Client(base_url, env["BRUNN_DEV_READ_WRITE_TOKEN"])
     briefer = provision_user(admin, run_id, "briefings")
     started = time.monotonic()
 
@@ -519,7 +519,7 @@ def run(base_url: str, env: dict[str, str]) -> dict[str, Any]:
     )
 
     return {
-        "schema": "straylight-briefings-live-contract@v1",
+        "schema": "brunn-briefings-live-contract@v1",
         "status": "pass",
         "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
         "checks": {
@@ -548,7 +548,7 @@ def main() -> int:
         result = run(args.base_url, load_env(args.env_file))
     except (ContractFailure, KeyError, OSError, ValueError) as error:
         result = {
-            "schema": "straylight-briefings-live-contract@v1",
+            "schema": "brunn-briefings-live-contract@v1",
             "status": "fail",
             "error": str(error),
         }

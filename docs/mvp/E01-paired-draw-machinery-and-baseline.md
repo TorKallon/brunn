@@ -111,7 +111,7 @@ MM-DD below is the actual run date.
 - Per-suite and corpus-wide paired claim win/loss/tie; exact McNemar p per pairing (A-B, A-C, B-C) on majority-collapsed binary case outcomes; bootstrap 95% CI on the corpus-total claim difference after repeated draws are averaged within case.
 - Comparable model-visible tool-output chars/case per condition per suite, with a case-clustered CI on the paired difference. The RuptureOps service-versus-files result is the experiment; legacy 41,441 chars/case is descriptive historical context only.
 - Two-sided checkpoint comparison: `persisted_checkpoints` rate and content in arm C sidecars vs service checkpoints in arm A (deterministic id, 11 rows/~55KB) — both directions: does the service make durable continuation more reliable than free-form files, and do sidecar files carry anything the service format drops.
-- Chronic-case tracking (reported, not gated): ruptureops-archive-import-reconciliation, ruptureops-flowworks-campaign-revision, ruptureops-spatial-evidence, ruptureops-forked-agent-idempotency, recent-europe-calendar-dedup, recent-aether-gmail-actions, recent-aether-morning-brief, coord-deadline-readiness; transitions claim-slot omissions (straylight-api-gate-transition worst).
+- Chronic-case tracking (reported, not gated): ruptureops-archive-import-reconciliation, ruptureops-flowworks-campaign-revision, ruptureops-spatial-evidence, ruptureops-forked-agent-idempotency, recent-europe-calendar-dedup, recent-aether-gmail-actions, recent-aether-morning-brief, coord-deadline-readiness; transitions claim-slot omissions (brunn-api-gate-transition worst).
 
 ## Acceptance criteria
 

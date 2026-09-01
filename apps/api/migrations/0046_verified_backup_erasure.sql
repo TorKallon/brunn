@@ -2,7 +2,7 @@
 -- an operator-verified backup watermark and receipt before account deletion may
 -- claim that retained recovery copies no longer contain the account.
 
-ALTER TABLE straylight.account_deletion_requests
+ALTER TABLE brunn.account_deletion_requests
   ADD COLUMN backup_erasure_verified_at timestamptz,
   ADD COLUMN backup_erasure_watermark_at timestamptz,
   ADD COLUMN backup_erasure_receipt_sha256 text,
@@ -34,10 +34,10 @@ ALTER TABLE straylight.account_deletion_requests
     )
   ) NOT VALID;
 
-COMMENT ON COLUMN straylight.account_deletion_requests.backup_erasure_watermark_at IS
+COMMENT ON COLUMN brunn.account_deletion_requests.backup_erasure_watermark_at IS
   'Oldest retained backup creation time proven by the referenced prune receipt.';
-COMMENT ON COLUMN straylight.account_deletion_requests.backup_erasure_receipt_sha256 IS
+COMMENT ON COLUMN brunn.account_deletion_requests.backup_erasure_receipt_sha256 IS
   'SHA-256 of the operator-reviewed prune receipt that established the backup watermark.';
 COMMENT ON CONSTRAINT account_deletion_completion_requires_backup_proof
-  ON straylight.account_deletion_requests IS
+  ON brunn.account_deletion_requests IS
   'Enforces verified backup erasure for new completion transitions while retaining legacy completed receipts.';

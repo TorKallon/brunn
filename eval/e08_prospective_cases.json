@@ -1,7 +1,7 @@
 {
   "benchmark_version": "e08-prospective-v0.1",
-  "name": "Straylight E08 prospective-memory subset",
-  "report_title": "Straylight E08 prospective-memory subset",
+  "name": "Brunn E08 prospective-memory subset",
+  "report_title": "Brunn E08 prospective-memory subset",
   "report_date": "2026-07-27",
   "evaluation_model": "prospective_memory",
   "grading_mode": "concept_tokens_v1",

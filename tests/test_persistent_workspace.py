@@ -5,17 +5,18 @@ import urllib.request
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from straylight import StraylightService, StraylightStore
-from straylight.embeddings import HashingEmbeddingProvider
-from straylight_http import build_server
+from brunn import BrunnService, BrunnStore
+from brunn.embeddings import HashingEmbeddingProvider
+from brunn_http import build_server
+from transition_eval import derive_seed_case_id_map
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class PersistentWorkspaceTests(unittest.TestCase):
-    def make_store(self, root: Path) -> tuple[StraylightStore, dict, dict]:
-        store = StraylightStore(root / "straylight.db")
+    def make_store(self, root: Path) -> tuple[BrunnStore, dict, dict]:
+        store = BrunnStore(root / "brunn.db")
         base = store.ingest_documents(
             {
                 "Projects/Alpha/Plan.md": (
@@ -49,7 +50,7 @@ class PersistentWorkspaceTests(unittest.TestCase):
     def test_checkpoint_reopen_delta_and_child_lineage(self):
         with TemporaryDirectory() as temp:
             store, seed, delta = self.make_store(Path(temp))
-            service = StraylightService(store)
+            service = BrunnService(store)
             opened = service.open({
                 "task": "Advance Alpha",
                 "scopes": ["Alpha"],
@@ -80,7 +81,7 @@ class PersistentWorkspaceTests(unittest.TestCase):
     def test_checkpoint_rejects_unknown_source_refs(self):
         with TemporaryDirectory() as temp:
             store, seed, _ = self.make_store(Path(temp))
-            service = StraylightService(store)
+            service = BrunnService(store)
             opened = service.open({"task": "Advance Alpha", "checkpoint_id": seed["checkpoint_id"]})
             with self.assertRaisesRegex(ValueError, "unknown source refs"):
                 service.checkpoint({
@@ -96,7 +97,7 @@ class PersistentWorkspaceTests(unittest.TestCase):
             provider = HashingEmbeddingProvider()
             indexed = store.index_embeddings(provider)
             self.assertEqual(indexed["indexed"], 2)
-            service = StraylightService(store, provider)
+            service = BrunnService(store, provider)
             opened = service.open({"task": "Find related design", "checkpoint_id": seed["checkpoint_id"]})
             result = service.query({
                 "session_id": opened["session_id"],
@@ -108,7 +109,7 @@ class PersistentWorkspaceTests(unittest.TestCase):
 
     def test_empty_source_spans_are_not_embedded(self):
         with TemporaryDirectory() as temp:
-            store = StraylightStore(Path(temp) / "straylight.db")
+            store = BrunnStore(Path(temp) / "brunn.db")
             store.ingest_documents(
                 {"Projects/Alpha/Empty.md": "# Empty\n\n", "Projects/Alpha/Full.md": "# Full\n\nEvidence."},
                 note="empty span regression",
@@ -150,17 +151,25 @@ class PersistentWorkspaceTests(unittest.TestCase):
     def test_transition_cards_reference_frozen_sources(self):
         manifest = json.loads((ROOT / "eval" / "transition_cases.json").read_text())
         seeds = json.loads((ROOT / manifest["seed_results"]).read_text())
+        work_cases = json.loads((ROOT / "eval" / "work_cases.json").read_text())
+        frozen_records = json.dumps(seeds["records"], sort_keys=True, separators=(",", ":"))
+        seed_case_id_map = derive_seed_case_id_map(seeds, work_cases)
         seed_ids = {
-            record["case_id"] for record in seeds["records"]
+            seed_case_id_map[record["case_id"]] for record in seeds["records"]
             if record["condition"] == "workspace" and record.get("workspace_checkpoint")
         }
+        self.assertEqual(
+            frozen_records,
+            json.dumps(seeds["records"], sort_keys=True, separators=(",", ":")),
+        )
+        self.assertEqual(len(seeds["manifest"]["cases"]), len(seed_case_id_map))
         corpus_paths = {
             path.relative_to(ROOT / manifest["base_corpus_root"]).as_posix()
             for path in (ROOT / manifest["base_corpus_root"]).rglob("*") if path.is_file()
         }
         self.assertEqual(len(manifest["cases"]), 5)
         self.assertEqual({case["workload"] for case in manifest["cases"]}, {
-            "Warmind", "Charlemagne", "Star Rupture", "Switzerland", "Straylight"
+            "Warmind", "Charlemagne", "Star Rupture", "Switzerland", "Brunn"
         })
         for case in manifest["cases"]:
             self.assertIn(case["seed_case_id"], seed_ids)
@@ -169,6 +178,21 @@ class PersistentWorkspaceTests(unittest.TestCase):
             for rubric in case["rubric"]:
                 for source in rubric["sources_any"]:
                     self.assertTrue(source in corpus_paths or (ROOT / source).is_file(), source)
+
+    def test_transition_seed_id_mapping_fails_closed_on_semantic_drift(self):
+        manifest = json.loads((ROOT / "eval" / "transition_cases.json").read_text())
+        seeds = json.loads((ROOT / manifest["seed_results"]).read_text())
+        work_cases = json.loads((ROOT / "eval" / "work_cases.json").read_text())
+
+        changed_capability = json.loads(json.dumps(work_cases))
+        changed_capability["cases"][0]["capability"] += "-changed"
+        with self.assertRaisesRegex(ValueError, "changed capability"):
+            derive_seed_case_id_map(seeds, changed_capability)
+
+        changed_rubric = json.loads(json.dumps(work_cases))
+        changed_rubric["cases"][0]["rubric"][0]["id"] += "-changed"
+        with self.assertRaisesRegex(ValueError, "changed rubric slots"):
+            derive_seed_case_id_map(seeds, changed_rubric)
 
 
 if __name__ == "__main__":

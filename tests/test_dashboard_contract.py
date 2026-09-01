@@ -33,19 +33,19 @@ class DashboardContractTests(unittest.TestCase):
 
     def test_activity_rollup_is_bounded_content_free_and_user_scoped(self) -> None:
         for marker in (
-            "CREATE TABLE straylight.product_activity_minutely",
+            "CREATE TABLE brunn.product_activity_minutely",
             "PRIMARY KEY (user_id, credential_id, bucket_start, operation)",
             "CHECK (operation IN",
             "CHECK (operation_count >= 0)",
             "CHECK (byte_count >= 0)",
             "ENABLE ROW LEVEL SECURITY",
             "FORCE ROW LEVEL SECURITY",
-            "straylight_auth.can_access_user(user_id)",
+            "brunn_auth.can_access_user(user_id)",
             "bucket_start + interval '1 minute'",
-            "GRANT SELECT ON straylight.product_activity_minutely TO app_rw, app_ro",
+            "GRANT SELECT ON brunn.product_activity_minutely TO app_rw, app_ro",
             "product_activity_minutely_user_time_idx",
             "product_activity_minutely_credential_recent_idx",
-            "CREATE TABLE straylight.credential_activity",
+            "CREATE TABLE brunn.credential_activity",
         ):
             self.assertIn(marker, self.migration)
         self.assertNotIn("GRANT INSERT", self.migration)
@@ -54,19 +54,19 @@ class DashboardContractTests(unittest.TestCase):
 
     def test_credential_projection_is_security_definer_and_secret_free(self) -> None:
         start = self.migration.index(
-            "CREATE FUNCTION straylight_auth.dashboard_credentials"
+            "CREATE FUNCTION brunn_auth.dashboard_credentials"
         )
         end = self.migration.index(
-            "REVOKE ALL ON FUNCTION straylight_auth.dashboard_credentials", start
+            "REVOKE ALL ON FUNCTION brunn_auth.dashboard_credentials", start
         )
         function = self.migration[start:end]
         for marker in (
             "SECURITY DEFINER",
             "SET row_security = off",
-            "straylight_auth.context_is_valid()",
-            "straylight_auth.has_capability('read')",
-            "straylight_auth.has_capability('status')",
-            "straylight.web_identities",
+            "brunn_auth.context_is_valid()",
+            "brunn_auth.has_capability('read')",
+            "brunn_auth.has_capability('status')",
+            "brunn.web_identities",
             "'web_ui'",
             "manageable",
         ):
@@ -113,25 +113,25 @@ class DashboardContractTests(unittest.TestCase):
 
     def test_telemetry_writer_is_least_privilege_and_revalidates_principals(self) -> None:
         for marker in (
-            "CREATE FUNCTION straylight_auth.write_entry_usage",
-            "CREATE FUNCTION straylight_auth.write_product_activity",
-            "CREATE FUNCTION straylight_auth.write_credential_activity",
+            "CREATE FUNCTION brunn_auth.write_entry_usage",
+            "CREATE FUNCTION brunn_auth.write_product_activity",
+            "CREATE FUNCTION brunn_auth.write_credential_activity",
             "SECURITY DEFINER",
-            "SET search_path = pg_catalog, straylight, straylight_auth",
+            "SET search_path = pg_catalog, brunn, brunn_auth",
             "SET row_security = off",
-            "straylight_auth.context_is_valid()",
-            "straylight_auth.current_user_id() IS DISTINCT FROM p_user_id",
-            "straylight_auth.current_credential_id() IS DISTINCT FROM p_credential_id",
-            "straylight_auth.validate_transaction_context(",
-            "straylight_auth.current_capabilities()",
-            "straylight_auth.current_scope_refs()",
+            "brunn_auth.context_is_valid()",
+            "brunn_auth.current_user_id() IS DISTINCT FROM p_user_id",
+            "brunn_auth.current_credential_id() IS DISTINCT FROM p_credential_id",
+            "brunn_auth.validate_transaction_context(",
+            "brunn_auth.current_capabilities()",
+            "brunn_auth.current_scope_refs()",
             "item_count > 5000",
             "REVOKE ALL ON FUNCTION",
             "TO app_rw",
         ):
             self.assertIn(marker, self.telemetry_writer)
         self.assertGreaterEqual(
-            self.telemetry_writer.count("straylight_auth.validate_transaction_context("),
+            self.telemetry_writer.count("brunn_auth.validate_transaction_context("),
             3,
         )
         self.assertNotIn("TO app_ro", self.telemetry_writer)

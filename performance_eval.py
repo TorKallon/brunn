@@ -75,7 +75,7 @@ E03_EMBEDDING_COST_CEILING_USD = 5.0
 E03_MODE3_PREFLIGHT_MAX_USD = 2.5
 E03_EMBEDDING_DIMENSIONS = 1_536
 E03_EMBEDDING_MODELS = {
-    "mode1": "straylight-hashing-v1",
+    "mode1": "brunn-hashing-v1",
     "mode2": "text-embedding-3-small",
     "mode3": "text-embedding-3-small",
 }
@@ -350,7 +350,7 @@ def capture_service_runtime_snapshot(
     if not isinstance(embeddings, dict):
         raise ValueError("service status omitted embeddings metadata")
     snapshot = {
-        "schema": "straylight-service-runtime-snapshot@v1",
+        "schema": "brunn-service-runtime-snapshot@v1",
         "captured_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "status": status["status"],
         "build_revision": build_revision,
@@ -653,7 +653,7 @@ def summarize_query_counts(
         "missing_by_operation": dict(sorted(missing.items())),
         "missing_by_sample_name": dict(sorted(missing_by_sample_name.items())),
         "sample_cardinality": {
-            "schema": "straylight-query-count-sample-cardinality@v1",
+            "schema": "brunn-query-count-sample-cardinality@v1",
             "authoritative": authoritative,
             "expected_by_sample_name": dict(sorted(normalized_expected.items())),
             "observed_by_sample_name": dict(
@@ -676,7 +676,7 @@ def load_query_budgets(
     expected_profile: str | None = None,
 ) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
-    if payload.get("schema") != "straylight-query-budgets@v1":
+    if payload.get("schema") != "brunn-query-budgets@v1":
         raise ValueError(f"unsupported query-budget schema in {path}")
     profile = payload.get("profile")
     if not isinstance(profile, str) or not profile:
@@ -751,7 +751,7 @@ def resolve_query_budget_contract(
             "path": None,
             "sha256": None,
             "contract": {
-                "schema": "straylight-query-budgets@v1",
+                "schema": "brunn-query-budgets@v1",
                 "profile": "calibration",
                 "runtime_features": runtime_snapshot["runtime_features"],
                 "operations": {},
@@ -1051,7 +1051,7 @@ def valid_resume_delta_lineage_sample(
 
 def load_d03_resume_control(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
-    if payload.get("schema") != "straylight-performance-eval@v2":
+    if payload.get("schema") != "brunn-performance-eval@v2":
         raise ValueError("D03 resume control is not a performance-eval v2 artifact")
     if payload.get("pass") is not True:
         raise ValueError("D03 resume control must be a passing definitive artifact")
@@ -1922,7 +1922,7 @@ def e03_mode1_environment_snapshot(api_container: str) -> dict[str, Any]:
         "api_image_revision": labels.get("org.opencontainers.image.revision"),
         "running_worker_count": len(workers),
         "embedding_provider": environment.get(
-            "STRAYLIGHT_EMBEDDING_PROVIDER",
+            "BRUNN_EMBEDDING_PROVIDER",
             "openai",
         ),
         "provider_credential": {
@@ -2014,7 +2014,7 @@ def e03_container_topology(
         ),
     }
     result = {
-        "schema": "straylight-e03-container-topology@v1",
+        "schema": "brunn-e03-container-topology@v1",
         "arm": arm,
         "api": api,
         "db": db,
@@ -2109,8 +2109,8 @@ def e03_api_route_binding(
 
     database_checks: dict[str, bool] = {}
     for name in (
-        "STRAYLIGHT_DATABASE_URL",
-        "STRAYLIGHT_READ_ONLY_DATABASE_URL",
+        "BRUNN_DATABASE_URL",
+        "BRUNN_READ_ONLY_DATABASE_URL",
     ):
         raw = api["environment"].get(name, "")
         parsed = urllib.parse.urlsplit(raw)
@@ -2158,7 +2158,7 @@ def e03_api_route_binding(
         "api_database_urls_target_named_db": all(database_checks.values()),
     }
     result = {
-        "schema": "straylight-e03-api-route-binding@v1",
+        "schema": "brunn-e03-api-route-binding@v1",
         "api_container_id": api["container_id"],
         "db_container_id": db["container_id"],
         "compose_project": api["compose_project"],
@@ -2194,19 +2194,19 @@ def e03_mode1_coverage_snapshot(
 SELECT json_build_object(
   'user_ref','user:{user_id}',
   'chunks',(
-    SELECT count(*) FROM straylight.search_chunks
+    SELECT count(*) FROM brunn.search_chunks
     WHERE user_id='{user_id}'::uuid
   ),
   'semantic_ready_chunks',(
-    SELECT count(*) FROM straylight.search_chunks
+    SELECT count(*) FROM brunn.search_chunks
     WHERE user_id='{user_id}'::uuid AND embedding IS NOT NULL
   ),
   'pending_chunks',(
-    SELECT count(*) FROM straylight.search_chunks
+    SELECT count(*) FROM brunn.search_chunks
     WHERE user_id='{user_id}'::uuid AND embedding IS NULL
   ),
   'embed_jobs_queued_or_running',(
-    SELECT count(*) FROM straylight.jobs
+    SELECT count(*) FROM brunn.jobs
     WHERE user_id='{user_id}'::uuid AND kind='embed_entry'
       AND status IN ('queued','running')
   )
@@ -2932,7 +2932,7 @@ def synthetic_documents(
             target_path,
             marker,
             {
-                "schema": "straylight-synthetic-fixture@v2",
+                "schema": "brunn-synthetic-fixture@v2",
                 "scale": count,
                 "verbatim_identifiers": verbatim_identifiers,
             },
@@ -3106,7 +3106,7 @@ def benchmark_flat_files(
     read_found = []
     engines: set[str] = set()
     with tempfile.TemporaryDirectory(
-        prefix=f"straylight-flat-{scale}-",
+        prefix=f"brunn-flat-{scale}-",
     ) as temporary:
         root = Path(temporary)
         materialize_ms, corpus_bytes = materialize_flat_file_corpus(
@@ -3187,7 +3187,7 @@ def run_psql(container: str, sql: str) -> str:
             "-U",
             os.environ.get("POSTGRES_USER", "admin"),
             "-d",
-            os.environ.get("POSTGRES_DB", "straylight"),
+            os.environ.get("POSTGRES_DB", "brunn"),
         ],
         input=sql,
         text=True,
@@ -3265,7 +3265,7 @@ def retrieval_plan_assertions(
         raise ValueError(f"invalid retrieval modes for plan assertions: {modes}")
     requested = set(modes)
     contract = json.loads(contract_path.read_text(encoding="utf-8"))
-    if contract.get("schema") != "straylight-retrieval-plan-contract@v1":
+    if contract.get("schema") != "brunn-retrieval-plan-contract@v1":
         raise ValueError(f"unsupported retrieval plan contract in {contract_path}")
     if not re.fullmatch(r"[a-z_][a-z0-9_]*", str(contract.get("app_role", ""))):
         raise ValueError("retrieval plan contract has an unsafe app role")
@@ -3274,10 +3274,10 @@ def retrieval_plan_assertions(
         container,
         f"""
 SELECT entry.user_id::text || '|' || credential.id::text
-FROM straylight.entries AS entry
+FROM brunn.entries AS entry
 CROSS JOIN LATERAL (
   SELECT id
-  FROM straylight.api_credentials
+  FROM brunn.api_credentials
   WHERE user_id=entry.user_id AND disabled_at IS NULL
   ORDER BY created_at,id
   LIMIT 1
@@ -3302,13 +3302,13 @@ LIMIT 1;
     )
     request_timeout_text = container_env_value(
         container,
-        "STRAYLIGHT_REQUEST_TIMEOUT_SECONDS",
+        "BRUNN_REQUEST_TIMEOUT_SECONDS",
     )
     try:
         request_timeout_seconds = int(request_timeout_text or "30")
     except ValueError as error:
         raise RuntimeError(
-            "STRAYLIGHT_REQUEST_TIMEOUT_SECONDS is not an integer"
+            "BRUNN_REQUEST_TIMEOUT_SECONDS is not an integer"
         ) from error
     statement_timeout_ms = max(1, request_timeout_seconds - 5) * 1_000
     context_gucs = "\n".join([
@@ -3462,7 +3462,7 @@ BEGIN
   FOR item IN
     SELECT schemaname, tablename
     FROM pg_tables
-    WHERE schemaname = 'straylight'
+    WHERE schemaname = 'brunn'
     ORDER BY tablename
   LOOP
     EXECUTE format(
@@ -3502,7 +3502,7 @@ SELECT COALESCE(
   '{}'::json
 )
 FROM pg_stat_user_indexes
-WHERE schemaname='straylight'
+WHERE schemaname='brunn'
   AND indexrelname IN (
     'search_chunks_fts_idx',
     'search_chunks_embedding_hnsw_idx'
@@ -3565,27 +3565,27 @@ def simple_checkpoint_footprint(
 WITH footprint AS (
   SELECT 'entries'::text AS table_name,count(*)::bigint AS rows,
          coalesce(sum(pg_column_size(item)),0)::bigint AS bytes
-  FROM straylight.entries AS item
+  FROM brunn.entries AS item
   WHERE item.id='{parsed}'::uuid
   UNION ALL
   SELECT 'entry_versions',count(*)::bigint,
          coalesce(sum(pg_column_size(item)),0)::bigint
-  FROM straylight.entry_versions AS item
+  FROM brunn.entry_versions AS item
   WHERE item.entry_id='{parsed}'::uuid
   UNION ALL
   SELECT 'workspace_changes',count(*)::bigint,
          coalesce(sum(pg_column_size(item)),0)::bigint
-  FROM straylight.workspace_changes AS item
+  FROM brunn.workspace_changes AS item
   WHERE item.entry_id='{parsed}'::uuid
   UNION ALL
   SELECT 'search_chunks',count(*)::bigint,
          coalesce(sum(pg_column_size(item)),0)::bigint
-  FROM straylight.search_chunks AS item
+  FROM brunn.search_chunks AS item
   WHERE item.entry_id='{parsed}'::uuid
   UNION ALL
   SELECT 'jobs',count(*)::bigint,
          coalesce(sum(pg_column_size(item)),0)::bigint
-  FROM straylight.jobs AS item
+  FROM brunn.jobs AS item
   WHERE item.payload->>'entry_id'='{parsed}'
 )
 SELECT json_build_object(
@@ -4257,7 +4257,7 @@ def e03_mode3_paired_query_probe(
         cold["finished_monotonic_ns"] <= warm["started_monotonic_ns"]
     )
     return {
-        "schema": "straylight-e03-mode3-paired-query@v1",
+        "schema": "brunn-e03-mode3-paired-query@v1",
         "status": "complete",
         "single_provisioning_event": True,
         "cold_before_warm": cold_before_warm,
@@ -4523,8 +4523,8 @@ def benchmark_scale(
         # touched tables so measurement starts from steady-state plans.
         run_psql(
             db_container,
-            "ANALYZE straylight.entries, straylight.entry_versions, "
-            "straylight.search_chunks, straylight.workspace_changes;",
+            "ANALYZE brunn.entries, brunn.entry_versions, "
+            "brunn.search_chunks, brunn.workspace_changes;",
         )
     mode1_pending_evidence: dict[str, Any] | None = None
     if run_e03_mode1_pending:
@@ -4541,7 +4541,7 @@ def benchmark_scale(
             else {"pass": False, "reason": "service evidence was invalid"}
         )
         mode1_pending_evidence = {
-            "schema": "straylight-e03-mode1-pending@v1",
+            "schema": "brunn-e03-mode1-pending@v1",
             "before_sampling": {
                 "service": service_evidence,
                 "database": coverage_before,
@@ -7387,7 +7387,7 @@ def command_run(args: argparse.Namespace) -> int:
         else "failed_or_not_reached"
     )
     result = {
-        "schema": "straylight-performance-eval@v2",
+        "schema": "brunn-performance-eval@v2",
         "created_at": datetime.now().astimezone().isoformat(),
         "label": args.label,
         "protocol": args.protocol,
@@ -7502,7 +7502,7 @@ def write_configuration_error(
         "reason": "configuration preflight failed before eligibility proof",
     }
     result = {
-        "schema": "straylight-performance-eval@v2",
+        "schema": "brunn-performance-eval@v2",
         "created_at": datetime.now().astimezone().isoformat(),
         "label": args.label,
         "pass": False,
@@ -7546,7 +7546,7 @@ def command_compare(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Production-shaped Straylight retrieval and write-amplification benchmark",
+        description="Production-shaped Brunn retrieval and write-amplification benchmark",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -7781,7 +7781,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help=(
             "reuse matching direct-file controls from a prior artifact while "
-            "rerunning every Straylight measurement; provenance is recorded"
+            "rerunning every Brunn measurement; provenance is recorded"
         ),
     )
     run.add_argument(

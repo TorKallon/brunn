@@ -54,38 +54,38 @@ trap cleanup EXIT INT TERM
 echo "building immutable release images for $revision"
 docker build \
   --file "$root/apps/api/Dockerfile" \
-  --build-arg "STRAYLIGHT_BUILD_REVISION=$revision" \
-  --tag "straylight-api:$revision" \
+  --build-arg "BRUNN_BUILD_REVISION=$revision" \
+  --tag "brunn-api:$revision" \
   "$root"
 docker build \
   --file "$root/apps/web/Dockerfile" \
-  --build-arg "STRAYLIGHT_BUILD_REVISION=$revision" \
-  --tag "straylight-web:$revision" \
+  --build-arg "BRUNN_BUILD_REVISION=$revision" \
+  --tag "brunn-web:$revision" \
   "$root/apps/web"
 docker build \
   --file "$root/apps/mcp/Dockerfile" \
-  --build-arg "STRAYLIGHT_BUILD_REVISION=$revision" \
-  --tag "straylight-mcp:$revision" \
+  --build-arg "BRUNN_BUILD_REVISION=$revision" \
+  --tag "brunn-mcp:$revision" \
   "$root/apps/mcp"
 docker build \
   --file "$root/infra/postgres/Dockerfile" \
-  --build-arg "STRAYLIGHT_BUILD_REVISION=$revision" \
-  --tag "straylight-postgres:$revision" \
+  --build-arg "BRUNN_BUILD_REVISION=$revision" \
+  --tag "brunn-postgres:$revision" \
   "$root/infra/postgres"
 docker build \
   --file "$root/infra/minio/Dockerfile" \
-  --build-arg "STRAYLIGHT_BUILD_REVISION=$revision" \
-  --tag "straylight-minio:$revision" \
+  --build-arg "BRUNN_BUILD_REVISION=$revision" \
+  --tag "brunn-minio:$revision" \
   "$root/infra/minio"
 docker build \
   --file "$root/infra/minio-client/Dockerfile" \
-  --build-arg "STRAYLIGHT_BUILD_REVISION=$revision" \
-  --tag "straylight-minio-client:$revision" \
+  --build-arg "BRUNN_BUILD_REVISION=$revision" \
+  --tag "brunn-minio-client:$revision" \
   "$root/infra/minio-client"
 docker build \
   --file "$root/infra/caddy/Dockerfile" \
-  --build-arg "STRAYLIGHT_BUILD_REVISION=$revision" \
-  --tag "straylight-caddy:$revision" \
+  --build-arg "BRUNN_BUILD_REVISION=$revision" \
+  --tag "brunn-caddy:$revision" \
   "$root/infra/caddy"
 
 copy_from_image() {
@@ -98,38 +98,38 @@ copy_from_image() {
 }
 
 copy_from_image \
-  "straylight-api:$revision" \
-  /usr/local/bin/straylight \
-  "$work_dir/binaries/straylight"
+  "brunn-api:$revision" \
+  /usr/local/bin/brunn \
+  "$work_dir/binaries/brunn"
 copy_from_image \
-  "straylight-api:$revision" \
-  /usr/local/bin/carrystate \
-  "$work_dir/binaries/carrystate"
+  "brunn-api:$revision" \
+  /usr/local/bin/brunn-state \
+  "$work_dir/binaries/brunn-state"
 copy_from_image \
-  "straylight-minio:$revision" \
+  "brunn-minio:$revision" \
   /usr/local/bin/minio \
   "$work_dir/binaries/minio"
 copy_from_image \
-  "straylight-minio-client:$revision" \
+  "brunn-minio-client:$revision" \
   /usr/local/bin/mc \
   "$work_dir/binaries/mc"
 copy_from_image \
-  "straylight-postgres:$revision" \
+  "brunn-postgres:$revision" \
   /usr/local/bin/postgres \
   "$work_dir/binaries/postgres"
 copy_from_image \
-  "straylight-web:$revision" \
+  "brunn-web:$revision" \
   /usr/share/nginx/html/. \
   "$work_dir/bundles/web"
 copy_from_image \
-  "straylight-mcp:$revision" \
+  "brunn-mcp:$revision" \
   /app/dist/. \
   "$work_dir/bundles/mcp"
 
 failed_components=
 repository_failed=false
 for component in api web mcp postgres minio minio-client caddy; do
-  image="straylight-$component:$revision"
+  image="brunn-$component:$revision"
   docker image inspect "$image" >"$work_dir/image-inspect/$component.json"
   docker save "$image" | gzip -9 >"$work_dir/images/$component.tar.gz"
   docker run --rm \
@@ -159,15 +159,15 @@ else
   release_env_file="$work_dir/.candidate.env"
   awk -F= -v revision="$revision" '
     BEGIN {
-      replacement["STRAYLIGHT_RELEASE_REVISION"] = revision
+      replacement["BRUNN_RELEASE_REVISION"] = revision
       replacement["DD_VERSION"] = revision
-      replacement["STRAYLIGHT_DATABASE_IMAGE"] = "straylight-postgres:" revision
-      replacement["STRAYLIGHT_OBJECT_STORE_IMAGE"] = "straylight-minio:" revision
-      replacement["STRAYLIGHT_OBJECT_STORE_CLIENT_IMAGE"] = "straylight-minio-client:" revision
-      replacement["STRAYLIGHT_API_IMAGE"] = "straylight-api:" revision
-      replacement["STRAYLIGHT_WEB_IMAGE"] = "straylight-web:" revision
-      replacement["STRAYLIGHT_MCP_IMAGE"] = "straylight-mcp:" revision
-      replacement["STRAYLIGHT_EDGE_IMAGE"] = "straylight-caddy:" revision
+      replacement["BRUNN_DATABASE_IMAGE"] = "brunn-postgres:" revision
+      replacement["BRUNN_OBJECT_STORE_IMAGE"] = "brunn-minio:" revision
+      replacement["BRUNN_OBJECT_STORE_CLIENT_IMAGE"] = "brunn-minio-client:" revision
+      replacement["BRUNN_API_IMAGE"] = "brunn-api:" revision
+      replacement["BRUNN_WEB_IMAGE"] = "brunn-web:" revision
+      replacement["BRUNN_MCP_IMAGE"] = "brunn-mcp:" revision
+      replacement["BRUNN_EDGE_IMAGE"] = "brunn-caddy:" revision
     }
     {
       key = $1
@@ -207,7 +207,7 @@ docker compose \
   config --format json |
   jq -r '.services[].image' |
   LC_ALL=C sort -u |
-  grep -v '^straylight-' >"$vendor_list"
+  grep -v '^brunn-' >"$vendor_list"
 printf '%s\n' "name	image	critical	high	fixable_high_or_critical" \
   >"$work_dir/vendor-images.tsv"
 vendor_index=0
@@ -296,7 +296,7 @@ dependency_fingerprint=$(shasum -a 256 \
   "$work_dir/source/dependency-locks.sha256" | awk '{print $1}')
 
 jq -n \
-  --arg format "straylight-release@v1" \
+  --arg format "brunn-release@v1" \
   --arg release_id "$release_id" \
   --arg created_at "$created_at" \
   --arg revision "$revision" \

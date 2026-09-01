@@ -7,17 +7,17 @@ env_file=${ENV_FILE:-"$root/.env"}
 backup_root=${1:-"$root/backups"}
 compose_file=${COMPOSE_FILE:-"$root/compose.yaml"}
 compose_override_file=${COMPOSE_OVERRIDE_FILE:-}
-project=${COMPOSE_PROJECT_NAME:-straylight}
-retention_days=${STRAYLIGHT_BACKUP_RETENTION_DAYS:-30}
+project=${COMPOSE_PROJECT_NAME:-brunn}
+retention_days=${BRUNN_BACKUP_RETENTION_DAYS:-30}
 
 case "$retention_days" in
   ''|*[!0-9]*)
-    echo "STRAYLIGHT_BACKUP_RETENTION_DAYS must be a positive integer" >&2
+    echo "BRUNN_BACKUP_RETENTION_DAYS must be a positive integer" >&2
     exit 64
     ;;
 esac
 [ "$retention_days" -ge 1 ] && [ "$retention_days" -le 90 ] || {
-  echo "STRAYLIGHT_BACKUP_RETENTION_DAYS must be between 1 and 90" >&2
+  echo "BRUNN_BACKUP_RETENTION_DAYS must be between 1 and 90" >&2
   exit 64
 }
 
@@ -163,7 +163,7 @@ minio_container=$(compose ps -q minio)
 
 db_user=$(container_env "$db_container" POSTGRES_USER)
 db_name=$(container_env "$db_container" POSTGRES_DB)
-bucket=$(container_env "$api_container" STRAYLIGHT_MINIO_BUCKET)
+bucket=$(container_env "$api_container" BRUNN_MINIO_BUCKET)
 for value_name in db_user db_name bucket; do
   eval "value=\${$value_name}"
   [ -n "$value" ] || {
@@ -196,7 +196,7 @@ active_deletions=$(docker exec "$db_container" psql \
   --tuples-only \
   --no-align \
   --no-psqlrc \
-  --command "SELECT count(*) FROM straylight.account_deletion_requests WHERE status IN ('queued','running')" |
+  --command "SELECT count(*) FROM brunn.account_deletion_requests WHERE status IN ('queued','running')" |
   tr -d '[:space:]')
 [ "$active_deletions" = "0" ] || {
   echo "cannot snapshot while $active_deletions account deletion request(s) are mutating canonical data" >&2
@@ -208,7 +208,7 @@ active_uploads=$(docker exec "$db_container" psql \
   --tuples-only \
   --no-align \
   --no-psqlrc \
-  --command "SELECT count(*) FROM straylight.asset_uploads WHERE status IN ('uploading','verifying')" |
+  --command "SELECT count(*) FROM brunn.asset_uploads WHERE status IN ('uploading','verifying')" |
   tr -d '[:space:]')
 [ "$active_uploads" = "0" ] || {
   echo "cannot snapshot while $active_uploads resumable upload(s) are incomplete" >&2
@@ -291,7 +291,7 @@ compose run --rm -T --no-deps --entrypoint /bin/sh minio-init -ec '
   mc alias set local http://minio:9000 \
     "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
   mc ls --versions --recursive --json \
-    "local/$STRAYLIGHT_MINIO_BUCKET"
+    "local/$BRUNN_MINIO_BUCKET"
 ' | LC_ALL=C sort >"$work_dir/minio-versions.jsonl"
 
 echo "capturing immutable runtime identity"
@@ -335,7 +335,7 @@ if [ -n "$(git -C "$root" status --short 2>/dev/null || true)" ]; then
 fi
 
 jq -n \
-  --arg format "straylight-coordinated-backup@v2" \
+  --arg format "brunn-coordinated-backup@v2" \
   --arg backup_id "$backup_id" \
   --arg created_at "$created_at" \
   --arg completed_at "$completed_at" \

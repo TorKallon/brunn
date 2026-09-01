@@ -1,18 +1,5 @@
 {
-  "straylight.asset.access.bytes": [
-    "env",
-    "service",
-    "version",
-    "component",
-    "operation"
-  ],
-  "straylight.asset.upload.part_bytes": [
-    "env",
-    "service",
-    "version",
-    "component"
-  ],
-  "straylight.db.transaction.begin.duration_ms": [
+  "brunn.db.transaction.begin.duration_ms": [
     "env",
     "service",
     "version",
@@ -20,7 +7,7 @@
     "access",
     "result"
   ],
-  "straylight.embedding.duration_ms": [
+  "brunn.embedding.duration_ms": [
     "env",
     "service",
     "version",
@@ -29,7 +16,7 @@
     "model",
     "result"
   ],
-  "straylight.http.request.duration_ms": [
+  "brunn.http.request.duration_ms": [
     "env",
     "service",
     "version",
@@ -38,7 +25,7 @@
     "route",
     "status_code"
   ],
-  "straylight.model.duration_ms": [
+  "brunn.model.duration_ms": [
     "env",
     "service",
     "version",
@@ -48,7 +35,7 @@
     "model",
     "status"
   ],
-  "straylight.object_store.duration_ms": [
+  "brunn.object_store.duration_ms": [
     "env",
     "service",
     "version",
@@ -56,64 +43,49 @@
     "operation",
     "result"
   ],
-  "straylight.projection.duration_ms": [
-    "env",
-    "service",
-    "version",
-    "component",
-    "operation",
-    "action"
-  ],
-  "straylight.projection.withheld_paths": [
-    "env",
-    "service",
-    "version",
-    "component",
-    "operation"
-  ],
-  "straylight.stage.upload_bytes": [
+  "brunn.stage.upload_bytes": [
     "env",
     "service",
     "version",
     "component"
   ],
-  "straylight.simple.open.duration_ms": [
+  "brunn.simple.open.duration_ms": [
     "env",
     "service",
     "version",
     "component"
   ],
-  "straylight.simple.open.evidence_sources": [
+  "brunn.simple.open.evidence_sources": [
     "env",
     "service",
     "version",
     "component"
   ],
-  "straylight.simple.search.duration_ms": [
+  "brunn.simple.search.duration_ms": [
     "env",
     "service",
     "version",
     "component"
   ],
-  "straylight.simple.search.candidates": [
+  "brunn.simple.search.candidates": [
     "env",
     "service",
     "version",
     "component"
   ],
-  "straylight.simple.read.duration_ms": [
+  "brunn.simple.read.duration_ms": [
     "env",
     "service",
     "version",
     "component"
   ],
-  "straylight.simple.read.entries": [
+  "brunn.simple.read.entries": [
     "env",
     "service",
     "version",
     "component"
   ],
-  "straylight.simple.retrieval.lane_duration_ms": [
+  "brunn.simple.retrieval.lane_duration_ms": [
     "env",
     "service",
     "version",
@@ -121,26 +93,26 @@
     "lane",
     "result"
   ],
-  "straylight.simple.retrieval.lane_candidates": [
+  "brunn.simple.retrieval.lane_candidates": [
     "env",
     "service",
     "version",
     "component",
     "lane"
   ],
-  "straylight.simple.write.duration_ms": [
+  "brunn.simple.write.duration_ms": [
     "env",
     "service",
     "version",
     "component"
   ],
-  "straylight.simple.write.changed_entries": [
+  "brunn.simple.write.changed_entries": [
     "env",
     "service",
     "version",
     "component"
   ],
-  "straylight.simple.jobs.duration_ms": [
+  "brunn.simple.jobs.duration_ms": [
     "env",
     "service",
     "version",
@@ -148,7 +120,7 @@
     "kind",
     "result"
   ],
-  "straylight.simple.jobs.batch_size": [
+  "brunn.simple.jobs.batch_size": [
     "env",
     "service",
     "version",
@@ -156,7 +128,7 @@
     "kind",
     "result"
   ],
-  "straylight.worker.job.duration_ms": [
+  "brunn.worker.job.duration_ms": [
     "env",
     "service",
     "version",

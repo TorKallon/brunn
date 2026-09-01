@@ -1,7 +1,7 @@
-ALTER TABLE straylight.asset_uploads
+ALTER TABLE brunn.asset_uploads
   DROP CONSTRAINT asset_upload_completion_lease_consistent;
 
-ALTER TABLE straylight.asset_uploads
+ALTER TABLE brunn.asset_uploads
   ADD CONSTRAINT asset_upload_completion_lease_consistent CHECK (
     (completion_token IS NULL) = (completion_lease_expires_at IS NULL)
     AND (

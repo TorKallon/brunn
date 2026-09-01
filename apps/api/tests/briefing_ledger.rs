@@ -3,18 +3,18 @@ use serde_json::json;
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use uuid::Uuid;
 
-use sha2::{Digest, Sha256};
-use straylight::briefing_service::{
+use brunn::briefing_service::{
     BriefingOmission, BriefingSection, apply_edition_to_ledger, canonicalize_url,
     rebuild_briefing_ledger, story_url_hash,
 };
+use sha2::{Digest, Sha256};
 
 async fn connect_test_pool() -> Option<PgPool> {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping briefing ledger test");
+        eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping briefing ledger test");
         return None;
     };
     let pool = PgPoolOptions::new()
@@ -25,13 +25,13 @@ async fn connect_test_pool() -> Option<PgPool> {
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .expect("apply Straylight migrations");
+        .expect("apply Brunn migrations");
     Some(pool)
 }
 
 async fn insert_test_user(pool: &PgPool) -> Uuid {
     let user_id = Uuid::now_v7();
-    sqlx::query("INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
         .bind(user_id)
         .bind(format!("briefing-ledger-test:{user_id}"))
         .bind("Briefing ledger test")
@@ -72,7 +72,7 @@ async fn story_row(pool: &PgPool, user_id: Uuid, story_key: &str) -> StoryRow {
         SELECT title,topic,entities,event_at::text,last_delivered_date::text,
                last_delivered_edition_ref,last_delivered_headline,
                delivery_count,suppression_count,status
-        FROM straylight.briefing_stories
+        FROM brunn.briefing_stories
         WHERE user_id=$1 AND story_key=$2
         "#,
     )
@@ -87,7 +87,7 @@ async fn url_rows(pool: &PgPool, user_id: Uuid) -> Vec<(String, String, String)>
     sqlx::query_as(
         r#"
         SELECT story_key,url_hash::text,url
-        FROM straylight.briefing_story_urls
+        FROM brunn.briefing_story_urls
         WHERE user_id=$1
         ORDER BY story_key,url_hash
         "#,
@@ -121,7 +121,7 @@ async fn ledger_snapshot(pool: &PgPool, user_id: Uuid) -> LedgerSnapshot {
         SELECT story_key,title,topic,entities,event_at::text,last_delivered_date::text,
                last_delivered_edition_ref,last_delivered_headline,
                delivery_count,suppression_count,status
-        FROM straylight.briefing_stories
+        FROM brunn.briefing_stories
         WHERE user_id=$1
         ORDER BY story_key
         "#,
@@ -146,7 +146,7 @@ async fn insert_edition_version(pool: &PgPool, user_id: Uuid, edition: &EditionF
     let mut tx = pool.begin().await.expect("begin edition insert");
     sqlx::query(
         r#"
-        INSERT INTO straylight.entries (
+        INSERT INTO brunn.entries (
           id,user_id,path,title,kind,media_type,current_version
         ) VALUES ($1,$2,$3,$4,'markdown','text/markdown',$5)
         ON CONFLICT (user_id,(lower(normalize(path, NFC)))) DO UPDATE
@@ -167,7 +167,7 @@ async fn insert_edition_version(pool: &PgPool, user_id: Uuid, edition: &EditionF
     );
     sqlx::query(
         r#"
-        INSERT INTO straylight.entry_versions (
+        INSERT INTO brunn.entry_versions (
           id,user_id,entry_id,version,content_sha256,content,size_bytes,metadata
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
         "#,
@@ -340,7 +340,7 @@ async fn rebuild_replay_matches_publish_order_application() {
 
     sqlx::query(
         r#"
-        INSERT INTO straylight.briefing_stories (user_id,story_key,title,delivery_count)
+        INSERT INTO brunn.briefing_stories (user_id,story_key,title,delivery_count)
         VALUES ($1,'zzz-stale-row','A row rebuild must remove',7)
         "#,
     )

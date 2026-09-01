@@ -74,16 +74,16 @@ export function configuredAssetRoot(
   environment: NodeJS.ProcessEnv = process.env,
 ): string {
   const configured =
-    environment.CARRYSTATE_MCP_ASSET_ROOT
-    ?? environment.STRAYLIGHT_MCP_ASSET_ROOT;
+    environment.BRUNN_STATE_MCP_ASSET_ROOT
+    ?? environment.BRUNN_MCP_ASSET_ROOT;
   if (!configured) {
     throw new Error(
-      "CARRYSTATE_MCP_ASSET_ROOT is required for asset.fetch "
-      + "(STRAYLIGHT_MCP_ASSET_ROOT is accepted as a legacy alias)",
+      "BRUNN_STATE_MCP_ASSET_ROOT is required for asset.fetch "
+      + "(BRUNN_MCP_ASSET_ROOT is accepted as a legacy alias)",
     );
   }
   if (!isAbsolute(configured)) {
-    throw new Error("CARRYSTATE_MCP_ASSET_ROOT must be an absolute path");
+    throw new Error("BRUNN_STATE_MCP_ASSET_ROOT must be an absolute path");
   }
   return resolve(configured);
 }
@@ -230,8 +230,8 @@ async function validateContentResponse(
     throw new Error("asset content must not use a transfer content encoding");
   }
   const responseHash = normalizeSha256(
-    response.headers.get("x-carrystate-sha256"),
-    "x-carrystate-sha256",
+    response.headers.get("x-brunn-state-sha256"),
+    "x-brunn-state-sha256",
   );
   if (`sha256:${responseHash}` !== metadata.contentHash) {
     await response.body?.cancel().catch(() => undefined);
@@ -245,14 +245,14 @@ async function validateContentResponse(
     await response.body?.cancel().catch(() => undefined);
     throw new Error("asset content-length header does not match asset metadata");
   }
-  const responseRef = response.headers.get("x-carrystate-asset-ref");
+  const responseRef = response.headers.get("x-brunn-state-asset-ref");
   if (responseRef !== metadata.assetRef) {
     await response.body?.cancel().catch(() => undefined);
     throw new Error("asset content response returned an unexpected asset reference");
   }
   const responseVersion = parseHeaderInteger(
-    response.headers.get("x-carrystate-asset-version"),
-    "x-carrystate-asset-version",
+    response.headers.get("x-brunn-state-asset-version"),
+    "x-brunn-state-asset-version",
   );
   if (responseVersion !== metadata.version) {
     await response.body?.cancel().catch(() => undefined);
@@ -268,26 +268,26 @@ async function validateContentResponse(
 
 async function ensurePrivateRoot(configuredRoot: string): Promise<RootIdentity> {
   if (!isAbsolute(configuredRoot)) {
-    throw new Error("CARRYSTATE_MCP_ASSET_ROOT must be an absolute path");
+    throw new Error("BRUNN_STATE_MCP_ASSET_ROOT must be an absolute path");
   }
   const requestedRoot = resolve(configuredRoot);
   await mkdir(requestedRoot, { recursive: true, mode: 0o700 });
   const requested = await lstat(requestedRoot, { bigint: true });
   if (requested.isSymbolicLink() || !requested.isDirectory()) {
-    throw new Error("CARRYSTATE_MCP_ASSET_ROOT must be a real directory, not a symlink");
+    throw new Error("BRUNN_STATE_MCP_ASSET_ROOT must be a real directory, not a symlink");
   }
   const root = await realpath(requestedRoot);
   const metadata = await lstat(root, { bigint: true });
   if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
-    throw new Error("CARRYSTATE_MCP_ASSET_ROOT must resolve to a real directory");
+    throw new Error("BRUNN_STATE_MCP_ASSET_ROOT must resolve to a real directory");
   }
   if (typeof process.getuid === "function" && metadata.uid !== BigInt(process.getuid())) {
-    throw new Error("CARRYSTATE_MCP_ASSET_ROOT must be owned by the MCP process user");
+    throw new Error("BRUNN_STATE_MCP_ASSET_ROOT must be owned by the MCP process user");
   }
   await chmod(root, 0o700);
   const privateMetadata = await lstat(root, { bigint: true });
   if ((privateMetadata.mode & 0o777n) !== 0o700n) {
-    throw new Error("CARRYSTATE_MCP_ASSET_ROOT could not be made private");
+    throw new Error("BRUNN_STATE_MCP_ASSET_ROOT could not be made private");
   }
   return {
     path: root,
@@ -304,13 +304,13 @@ async function assertRootIdentity(expected: RootIdentity): Promise<void> {
     || current.dev !== expected.device
     || current.ino !== expected.inode
   ) {
-    throw new Error("CARRYSTATE_MCP_ASSET_ROOT changed during asset download");
+    throw new Error("BRUNN_STATE_MCP_ASSET_ROOT changed during asset download");
   }
 }
 
 function assertDirectChild(root: string, candidate: string): void {
   if (resolve(candidate) !== candidate || resolve(root, candidate.slice(root.length + 1)) !== candidate) {
-    throw new Error("asset destination escaped CARRYSTATE_MCP_ASSET_ROOT");
+    throw new Error("asset destination escaped BRUNN_STATE_MCP_ASSET_ROOT");
   }
 }
 

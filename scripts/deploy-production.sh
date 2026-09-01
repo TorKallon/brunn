@@ -6,7 +6,7 @@ root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 env_file=${ENV_FILE:-"$root/production.env"}
 backup_root_override=${BACKUP_ROOT:-}
 record_root=${DEPLOYMENT_RECORD_ROOT:-"$root/deployment-records"}
-project=${COMPOSE_PROJECT_NAME:-straylight}
+project=${COMPOSE_PROJECT_NAME:-brunn}
 
 . "$root/scripts/deploy-steps.sh"
 
@@ -23,9 +23,9 @@ read_value() {
   ' "$env_file"
 }
 
-revision=$(read_value STRAYLIGHT_RELEASE_REVISION)
-host=$(read_value STRAYLIGHT_PUBLIC_HOST)
-object_store_mode=$(read_value STRAYLIGHT_OBJECT_STORE_MODE)
+revision=$(read_value BRUNN_RELEASE_REVISION)
+host=$(read_value BRUNN_PUBLIC_HOST)
+object_store_mode=$(read_value BRUNN_OBJECT_STORE_MODE)
 object_store_mode=${object_store_mode:-self-hosted-minio}
 managed_overlay=
 case "$object_store_mode" in
@@ -34,7 +34,7 @@ case "$object_store_mode" in
     ;;
   managed-s3)
     managed_overlay="$root/compose.managed-s3.yaml"
-    backup_root=${backup_root_override:-$(read_value STRAYLIGHT_MANAGED_BACKUP_ROOT)}
+    backup_root=${backup_root_override:-$(read_value BRUNN_MANAGED_BACKUP_ROOT)}
     ;;
   *)
     echo "unsupported object-store mode: $object_store_mode" >&2
@@ -90,7 +90,7 @@ done
 
 predeploy_backup=
 if [ "$running" -eq "$expected_running" ]; then
-  backup_log=$(mktemp "${TMPDIR:-/tmp}/straylight-predeploy-backup.XXXXXX")
+  backup_log=$(mktemp "${TMPDIR:-/tmp}/brunn-predeploy-backup.XXXXXX")
   if [ "$object_store_mode" = "managed-s3" ]; then
     backup_command="$root/scripts/managed-s3-backup.sh"
   else
@@ -246,7 +246,7 @@ mkdir -m 0700 "$record_dir"
 compose config --hash '*' >"$record_dir/compose-service-hashes.txt"
 compose config --images >"$record_dir/configured-images.txt"
 jq -n \
-  --arg format "straylight-deployment@v1" \
+  --arg format "brunn-deployment@v1" \
   --arg deployed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --arg revision "$revision" \
   --arg host "$host" \

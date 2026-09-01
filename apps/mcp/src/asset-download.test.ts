@@ -63,30 +63,30 @@ test("asset metadata parsing requires exact identity and integrity fields", () =
   );
 });
 
-test("asset root configuration prefers CarryState and accepts the legacy alias", () => {
+test("asset root configuration prefers Brunn State and accepts the legacy alias", () => {
   assert.equal(
     configuredAssetRoot({
-      CARRYSTATE_MCP_ASSET_ROOT: "/private/carrystate",
-      STRAYLIGHT_MCP_ASSET_ROOT: "/private/legacy",
+      BRUNN_STATE_MCP_ASSET_ROOT: "/private/brunn-state",
+      BRUNN_MCP_ASSET_ROOT: "/private/legacy",
     }),
-    "/private/carrystate",
+    "/private/brunn-state",
   );
   assert.equal(
-    configuredAssetRoot({ STRAYLIGHT_MCP_ASSET_ROOT: "/private/legacy" }),
+    configuredAssetRoot({ BRUNN_MCP_ASSET_ROOT: "/private/legacy" }),
     "/private/legacy",
   );
   assert.throws(
     () => configuredAssetRoot({}),
-    /CARRYSTATE_MCP_ASSET_ROOT is required/,
+    /BRUNN_STATE_MCP_ASSET_ROOT is required/,
   );
   assert.throws(
-    () => configuredAssetRoot({ CARRYSTATE_MCP_ASSET_ROOT: "relative/path" }),
+    () => configuredAssetRoot({ BRUNN_STATE_MCP_ASSET_ROOT: "relative/path" }),
     /must be an absolute path/,
   );
 });
 
 test("verified streaming creates private files and reuses only an exact verified destination", async () => {
-  const parent = await mkdtemp(join(tmpdir(), "carrystate-asset-test-"));
+  const parent = await mkdtemp(join(tmpdir(), "brunn-state-asset-test-"));
   const root = join(parent, "assets");
   const bytes = Buffer.from([0, 1, 2, 3, 255, 254, 128, 64]);
   const metadata = assetMetadata(bytes, "image/png", "images/map.png");
@@ -126,7 +126,7 @@ test("verified streaming creates private files and reuses only an exact verified
 });
 
 test("download filenames cannot collide across same-version assets", async () => {
-  const parent = await mkdtemp(join(tmpdir(), "carrystate-asset-collision-"));
+  const parent = await mkdtemp(join(tmpdir(), "brunn-state-asset-collision-"));
   const root = join(parent, "assets");
   const firstBytes = Buffer.from("first receipt");
   const secondBytes = Buffer.from("second receipt");
@@ -176,7 +176,7 @@ test("download filenames cannot collide across same-version assets", async () =>
 });
 
 test("corrupt or truncated streams never publish an asset", async () => {
-  const parent = await mkdtemp(join(tmpdir(), "carrystate-asset-corrupt-"));
+  const parent = await mkdtemp(join(tmpdir(), "brunn-state-asset-corrupt-"));
   const corruptRoot = join(parent, "corrupt");
   const truncatedRoot = join(parent, "truncated");
   const expected = Buffer.from("expected asset bytes");
@@ -211,7 +211,7 @@ test("corrupt or truncated streams never publish an asset", async () => {
 });
 
 test("asset storage rejects a symlink root without writing through it", async () => {
-  const parent = await mkdtemp(join(tmpdir(), "carrystate-asset-symlink-"));
+  const parent = await mkdtemp(join(tmpdir(), "brunn-state-asset-symlink-"));
   const target = join(parent, "target");
   const root = join(parent, "assets");
   const marker = join(target, "keep.txt");
@@ -269,9 +269,9 @@ function assetResponse(
     headers: {
       "content-length": String(options.contentLength ?? bytes.byteLength),
       "content-type": metadata.mediaType,
-      "x-carrystate-asset-ref": metadata.assetRef,
-      "x-carrystate-asset-version": String(metadata.version),
-      "x-carrystate-sha256": metadata.contentHash,
+      "x-brunn-state-asset-ref": metadata.assetRef,
+      "x-brunn-state-asset-version": String(metadata.version),
+      "x-brunn-state-sha256": metadata.contentHash,
     },
   });
 }

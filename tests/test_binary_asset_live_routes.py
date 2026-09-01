@@ -1,6 +1,6 @@
 """Source-level and opt-in live HTTP checks for native asset routes.
 
-The live class is intentionally disabled unless CARRYSTATE_BINARY_LIVE=1. It
+The live class is intentionally disabled unless BRUNN_STATE_BINARY_LIVE=1. It
 mutates the configured account with uniquely named fixture records and should
 be pointed at a disposable evaluation user.
 """
@@ -34,95 +34,121 @@ from binary_asset_fixture import make_png, sha256_bytes  # noqa: E402
 
 
 class AssetRouteSourceContractTest(unittest.TestCase):
-    def test_api_wires_list_metadata_content_and_stage_status_routes(self) -> None:
+    def test_api_wires_authenticated_workspace_binary_routes(self) -> None:
         api = (REPO_ROOT / "apps/api/src/api.rs").read_text(encoding="utf-8")
-        for route in (
-            '"/assets"',
-            '"/assets/{asset_ref}"',
-            '"/assets/{asset_ref}/versions/{version}/content"',
-            '"/asset-uploads"',
-            '"/asset-uploads/{upload_ref}/parts/{part_number}"',
-            '"/stages/{stage_ref}"',
+        for route, handler in (
+            ('"/workspace/binaries"', "get(simple_core::list_binaries)"),
+            (
+                '"/workspace/binaries/{entry_ref}"',
+                "get(simple_core::binary_metadata)",
+            ),
+            ('"/workspace/binaries"', "post(simple_core::upload_binary)"),
+            (
+                '"/workspace/binaries/content"',
+                "put(simple_core::upload_binary_stream)",
+            ),
+            (
+                '"/workspace/binaries/{entry_ref}/content"',
+                "get(simple_core::fetch_binary)",
+            ),
         ):
-            with self.subTest(route=route):
+            with self.subTest(route=route, handler=handler):
                 self.assertIn(route, api)
-        self.assertIn("get(service::get_asset_content)", api)
-        self.assertIn("get(service::get_stage)", api)
+                self.assertIn(handler, api)
+        transfers = api[
+            api.index("let workspace_transfers = Router::new()") :
+            api.index("let account_transfers = Router::new()")
+        ]
+        self.assertIn("DefaultBodyLimit::disable()", transfers)
+        protected = api[
+            api.index("let protected = ordinary") :
+            api.index("let web_auth_routes = Router::new()")
+        ]
+        self.assertIn(".merge(transfers)", protected)
+        self.assertIn("auth::middleware", protected)
 
-    def test_asset_service_enforces_read_session_and_bounded_ranges(self) -> None:
-        service = (REPO_ROOT / "apps/api/src/asset_service.rs").read_text(
+    def test_binary_handlers_enforce_capabilities_and_exact_integrity(self) -> None:
+        service = (REPO_ROOT / "apps/api/src/simple_core.rs").read_text(
             encoding="utf-8"
         )
-        self.assertGreaterEqual(service.count("auth.require(Capability::Read)?"), 3)
-        self.assertIn("asset listing requires session_id", service)
-        self.assertIn("asset metadata requires session_id", service)
-        self.assertIn("asset download requires session_id", service)
-        self.assertIn("parse_range", service)
-        self.assertIn("RANGE_NOT_SATISFIABLE", service)
-        self.assertIn("ACCEPT_RANGES", service)
-        self.assertIn("x-carrystate-sha256", service)
-        self.assertIn("CONTENT_DISPOSITION", service)
-        writer = (REPO_ROOT / "apps/api/src/write_service.rs").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn('"hash": content_hash.clone()', writer)
-        self.assertIn('"content_hash": content_hash', writer)
+        for function, capability in (
+            ("list_binaries", "Read"),
+            ("binary_metadata", "Read"),
+            ("fetch_binary", "Read"),
+            ("upload_binary", "Stage"),
+            ("upload_binary_stream", "Stage"),
+        ):
+            start = service.index(f"pub async fn {function}")
+            end = service.find("\npub async fn ", start + 1)
+            body = service[start : None if end < 0 else end]
+            with self.subTest(function=function):
+                self.assertIn(f"auth.require(Capability::{capability})?", body)
+        download = service[
+            service.index("pub async fn fetch_binary") :
+            service.index("pub async fn binary_metadata")
+        ]
+        self.assertIn("get_stream_version(key, entry.object_version_id.as_deref())", download)
+        self.assertIn("content_size_mismatch", download)
+        self.assertIn("x-brunn-state-sha256", service)
+        self.assertIn("x-brunn-state-integrity", download)
+        self.assertIn('HeaderValue::from_static("private, no-store")', download)
+        self.assertIn('HeaderValue::from_static("nosniff")', download)
 
     def test_generated_description_contract_is_explicitly_non_authoritative(self) -> None:
         descriptor = (REPO_ROOT / "apps/api/src/asset_description.rs").read_text(
             encoding="utf-8"
         )
-        writer = (REPO_ROOT / "apps/api/src/write_service.rs").read_text(
-            encoding="utf-8"
-        )
-        dreamer = (REPO_ROOT / "apps/api/src/dream_service.rs").read_text(
+        workspace = (REPO_ROOT / "apps/api/src/simple_core.rs").read_text(
             encoding="utf-8"
         )
         self.assertIn("Generated, non-authoritative description", descriptor)
-        self.assertIn(".carrystate/generated/descriptions/", descriptor)
-        self.assertIn('"authoritative": false', descriptor)
-        self.assertIn("derived_non_authoritative", writer)
-        self.assertIn(
-            "evidence.evidence_kind <> 'derived_non_authoritative'",
-            dreamer,
-        )
-        self.assertIn(
-            "source.source_kind <> 'derived_asset_description'",
-            dreamer,
-        )
+        self.assertIn("against the exact binary bytes", descriptor)
+        self.assertIn('format!(".brunn/binaries/{}.md"', workspace)
+        self.assertIn("The immutable binary bytes are authoritative", workspace)
+        self.assertIn('"kind": "binary_description"', workspace)
+        self.assertIn("should_queue_description", workspace)
+        self.assertIn("VALUES ($1,'describe_binary',$2)", workspace)
 
-    def test_staging_uses_stable_path_identity_and_content_addressed_bytes(self) -> None:
-        writer = (REPO_ROOT / "apps/api/src/write_service.rs").read_text(
+    def test_binary_commit_uses_stable_paths_versions_and_exact_objects(self) -> None:
+        writer = (REPO_ROOT / "apps/api/src/simple_core.rs").read_text(
             encoding="utf-8"
         )
         migration = (
             REPO_ROOT
-            / "apps/api/migrations/0033_scope_local_logical_assets.sql"
+            / "apps/api/migrations/0051_simple_workspace_core.sql"
         ).read_text(encoding="utf-8")
-        self.assertIn("staged_source_ref(scope_ref, stable_import_id", writer)
-        self.assertIn("current_version.checked_add(1)", writer)
-        self.assertIn("asset.current_version", writer)
-        self.assertIn("DROP CONSTRAINT", migration)
-        self.assertIn("asset_versions_object_lookup_idx", migration)
+        commit = writer[writer.index("async fn commit_binary_with_companion") :]
+        self.assertIn("object_version_id.ok_or_else", commit)
+        self.assertIn("portable_path_key(path)", commit)
+        self.assertIn("require_local_publish_lock", commit)
+        self.assertIn("FOR UPDATE OF entry", commit)
+        self.assertIn("entry_version_conflict", commit)
+        self.assertIn('row.get::<i64, _>("current_version") + 1', commit)
+        self.assertIn("INSERT INTO brunn.entry_versions", commit)
+        self.assertIn("INSERT INTO brunn.workspace_changes", commit)
+        self.assertIn("tx.commit().await?", commit)
+        self.assertIn("CREATE UNIQUE INDEX entries_user_path_unique_idx", migration)
+        self.assertIn("UNIQUE (user_id, entry_id, version)", migration)
+        self.assertIn("object_version_id IS NOT NULL", migration)
 
-    def test_resumable_upload_is_hash_bound_replay_safe_and_expiring(self) -> None:
-        upload = (REPO_ROOT / "apps/api/src/upload_service.rs").read_text(
+    def test_streaming_upload_is_hash_bound_bounded_and_cleaned_up(self) -> None:
+        upload = (REPO_ROOT / "apps/api/src/simple_core.rs").read_text(
             encoding="utf-8"
         )
-        migration = (
-            REPO_ROOT / "apps/api/migrations/0034_resumable_asset_uploads.sql"
-        ).read_text(encoding="utf-8")
-        expiry = (
-            REPO_ROOT / "apps/api/migrations/0035_completed_upload_expiry.sql"
-        ).read_text(encoding="utf-8")
-        self.assertIn("x-carrystate-part-sha256 is required", upload)
-        self.assertIn("part_retry_mismatch", upload)
-        self.assertIn("promote_verified_upload", upload)
-        self.assertIn("abort_active_for_user", upload)
-        self.assertIn("attachment_context exceeds its bounded size", upload)
-        self.assertIn("make_interval(hours => $15::integer)", upload)
-        self.assertIn("asset_upload_parts", migration)
-        self.assertIn("'completed'", expiry)
+        stream = upload[
+            upload.index("pub async fn upload_binary_stream") :
+            upload.index("pub async fn fetch_binary")
+        ]
+        self.assertIn("validate_sha256(&query.expected_content_hash)?", stream)
+        self.assertIn("MAX_STREAMED_BINARY_BYTES", stream)
+        self.assertIn("binary upload size overflow", stream)
+        self.assertIn("workspace binary uploads are limited to 4 GiB", stream)
+        self.assertIn("OpenOptions::new()", stream)
+        self.assertIn(".create_new(true)", stream)
+        self.assertIn("put_user_file_blob", stream)
+        self.assertIn("tokio::fs::remove_file(&temporary_path)", stream)
+        self.assertIn("content_hash_mismatch", stream)
+        self.assertIn("commit_binary_with_companion", stream)
 
     def test_stage_reclamation_discovers_references_and_locks_storage_first(self) -> None:
         migration = (
@@ -185,7 +211,7 @@ class LiveClient:
         request_headers = {
             "Accept": "application/json",
             "Authorization": f"Bearer {self.token}",
-            "User-Agent": "carrystate-binary-live-conformance/1",
+            "User-Agent": "brunn-state-binary-live-conformance/1",
         }
         if headers:
             request_headers.update(headers)
@@ -247,7 +273,7 @@ def encode_multipart(
     fields: Mapping[str, str],
     files: Iterable[tuple[str, str, str, bytes]],
 ) -> tuple[str, bytes]:
-    boundary = "----carrystate-binary-conformance-" + uuid.uuid4().hex
+    boundary = "----brunn-state-binary-conformance-" + uuid.uuid4().hex
     chunks: list[bytes] = []
 
     def append(text: str) -> None:
@@ -273,15 +299,15 @@ def encode_multipart(
 
 
 @unittest.skipUnless(
-    os.environ.get("CARRYSTATE_BINARY_LIVE") == "1",
-    "set CARRYSTATE_BINARY_LIVE=1 with disposable RW/RO credentials",
+    os.environ.get("BRUNN_STATE_BINARY_LIVE") == "1",
+    "set BRUNN_STATE_BINARY_LIVE=1 with disposable RW/RO credentials",
 )
 class LiveBinaryAssetRouteTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         required = (
-            "CARRYSTATE_BINARY_LIVE_RW_TOKEN",
-            "CARRYSTATE_BINARY_LIVE_RO_TOKEN",
+            "BRUNN_STATE_BINARY_LIVE_RW_TOKEN",
+            "BRUNN_STATE_BINARY_LIVE_RO_TOKEN",
         )
         missing = [name for name in required if not os.environ.get(name)]
         if missing:
@@ -289,23 +315,23 @@ class LiveBinaryAssetRouteTest(unittest.TestCase):
                 "live binary route test is missing " + ", ".join(missing)
             )
         cls.base_url = os.environ.get(
-            "CARRYSTATE_BINARY_LIVE_BASE_URL",
+            "BRUNN_STATE_BINARY_LIVE_BASE_URL",
             "http://localhost:18110",
         )
         cls.scope = os.environ.get(
-            "CARRYSTATE_BINARY_LIVE_SCOPE",
+            "BRUNN_STATE_BINARY_LIVE_SCOPE",
             "scope:root",
         )
         cls.describe = os.environ.get(
-            "CARRYSTATE_BINARY_LIVE_DESCRIPTIONS"
+            "BRUNN_STATE_BINARY_LIVE_DESCRIPTIONS"
         ) == "1"
         cls.rw = LiveClient(
             cls.base_url,
-            os.environ["CARRYSTATE_BINARY_LIVE_RW_TOKEN"],
+            os.environ["BRUNN_STATE_BINARY_LIVE_RW_TOKEN"],
         )
         cls.ro = LiveClient(
             cls.base_url,
-            os.environ["CARRYSTATE_BINARY_LIVE_RO_TOKEN"],
+            os.environ["BRUNN_STATE_BINARY_LIVE_RO_TOKEN"],
         )
 
     def _stage(
@@ -423,15 +449,15 @@ class LiveBinaryAssetRouteTest(unittest.TestCase):
 
     def _admin_sql(self, sql: str) -> str:
         container = os.environ.get(
-            "CARRYSTATE_BINARY_LIVE_DB_CONTAINER",
-            "straylight-db-1",
+            "BRUNN_STATE_BINARY_LIVE_DB_CONTAINER",
+            "brunn-db-1",
         )
         database = os.environ.get(
-            "CARRYSTATE_BINARY_LIVE_DB_NAME",
-            "straylight",
+            "BRUNN_STATE_BINARY_LIVE_DB_NAME",
+            "brunn",
         )
         user = os.environ.get(
-            "CARRYSTATE_BINARY_LIVE_DB_USER",
+            "BRUNN_STATE_BINARY_LIVE_DB_USER",
             "admin",
         )
         result = subprocess.run(
@@ -467,7 +493,7 @@ class LiveBinaryAssetRouteTest(unittest.TestCase):
     def _expire_stage_and_wait(self, stage_ref: str) -> dict[str, Any]:
         stage_id = uuid.UUID(stage_ref.removeprefix("stage:"))
         updated = self._admin_sql(
-            "UPDATE straylight.stages "
+            "UPDATE brunn.stages "
             "SET created_at=clock_timestamp()-interval '2 minutes',"
             "expires_at=clock_timestamp()-interval '1 minute' "
             f"WHERE id='{stage_id}' RETURNING id;"
@@ -551,12 +577,12 @@ class LiveBinaryAssetRouteTest(unittest.TestCase):
         )
         self.assertEqual(full.body, first_bytes)
         self.assertEqual(
-            full.headers.get("x-carrystate-sha256"),
+            full.headers.get("x-brunn-state-sha256"),
             sha256_bytes(first_bytes),
         )
         self.assertEqual(full.headers.get("accept-ranges"), "bytes")
         self.assertEqual(
-            full.headers.get("x-carrystate-integrity"),
+            full.headers.get("x-brunn-state-integrity"),
             "expected-sha256-verified-on-complete",
         )
         self.assertIn(
@@ -580,11 +606,11 @@ class LiveBinaryAssetRouteTest(unittest.TestCase):
             f"bytes 7-19/{len(first_bytes)}",
         )
         self.assertEqual(
-            partial.headers.get("x-carrystate-sha256"),
+            partial.headers.get("x-brunn-state-sha256"),
             sha256_bytes(first_bytes),
         )
         self.assertEqual(
-            partial.headers.get("x-carrystate-integrity"),
+            partial.headers.get("x-brunn-state-integrity"),
             "range-from-verified-object-identity",
         )
         self.ro.request(
@@ -779,10 +805,10 @@ class LiveBinaryAssetRouteTest(unittest.TestCase):
         asset_id = uuid.UUID(str(first_entry["asset_ref"]).removeprefix("asset:"))
         database_state = self._admin_sql(
             "SELECT asset.current_version,"
-            "(SELECT count(*) FROM straylight.asset_versions AS version "
+            "(SELECT count(*) FROM brunn.asset_versions AS version "
             " WHERE version.user_id=asset.user_id "
             " AND version.asset_id=asset.id) "
-            "FROM straylight.assets AS asset "
+            "FROM brunn.assets AS asset "
             f"WHERE asset.id='{asset_id}';"
         )
         self.assertEqual("1|1", database_state)
@@ -816,7 +842,7 @@ class LiveBinaryAssetRouteTest(unittest.TestCase):
             offset = (part_number - 1) * part_size
             size = min(part_size, total_size - offset)
             seed = hashlib.sha256(
-                f"carrystate-large-part:{part_number}".encode("ascii")
+                f"brunn-state-large-part:{part_number}".encode("ascii")
             ).digest()
             return (seed * ((size + len(seed) - 1) // len(seed)))[:size]
 
@@ -856,7 +882,7 @@ class LiveBinaryAssetRouteTest(unittest.TestCase):
                 body=content,
                 headers={
                     "Content-Type": "application/octet-stream",
-                    "x-carrystate-part-sha256": hashlib.sha256(content).hexdigest(),
+                    "x-brunn-state-part-sha256": hashlib.sha256(content).hexdigest(),
                 },
             ).json()
             self.assertEqual(response["size_bytes"], len(content))
@@ -868,7 +894,7 @@ class LiveBinaryAssetRouteTest(unittest.TestCase):
                     body=content,
                     headers={
                         "Content-Type": "application/octet-stream",
-                        "x-carrystate-part-sha256": hashlib.sha256(content).hexdigest(),
+                        "x-brunn-state-part-sha256": hashlib.sha256(content).hexdigest(),
                     },
                 ).json()
                 self.assertIs(replay["replayed"], True)
@@ -919,7 +945,7 @@ class LiveBinaryAssetRouteTest(unittest.TestCase):
         path = f"tests/binary-conformance/{marker}/pre-stage-export.bin"
         content = f"completed-before-stage:{marker}\n".encode("ascii")
         content_hash = hashlib.sha256(content).hexdigest()
-        trigger_function = "straylight.test_fail_pre_stage_export"
+        trigger_function = "brunn.test_fail_pre_stage_export"
         trigger_name = "test_fail_pre_stage_export"
         self._admin_sql(
             f"""
@@ -932,9 +958,9 @@ class LiveBinaryAssetRouteTest(unittest.TestCase):
               RETURN NEW;
             END;
             $$;
-            DROP TRIGGER IF EXISTS {trigger_name} ON straylight.stages;
+            DROP TRIGGER IF EXISTS {trigger_name} ON brunn.stages;
             CREATE TRIGGER {trigger_name}
-            BEFORE INSERT ON straylight.stages
+            BEFORE INSERT ON brunn.stages
             FOR EACH ROW EXECUTE FUNCTION {trigger_function}();
             """
         )
@@ -961,7 +987,7 @@ class LiveBinaryAssetRouteTest(unittest.TestCase):
                 body=content,
                 headers={
                     "Content-Type": "application/octet-stream",
-                    "x-carrystate-part-sha256": content_hash,
+                    "x-brunn-state-part-sha256": content_hash,
                 },
             )
             self.rw.request(
@@ -972,7 +998,7 @@ class LiveBinaryAssetRouteTest(unittest.TestCase):
         finally:
             self._admin_sql(
                 f"""
-                DROP TRIGGER IF EXISTS {trigger_name} ON straylight.stages;
+                DROP TRIGGER IF EXISTS {trigger_name} ON brunn.stages;
                 DROP FUNCTION IF EXISTS {trigger_function}();
                 """
             )
@@ -981,7 +1007,7 @@ class LiveBinaryAssetRouteTest(unittest.TestCase):
         upload_state = self._admin_sql(
             "SELECT status || '|' || canonical_object_key || '|' || "
             "canonical_object_version_id "
-            "FROM straylight.asset_uploads "
+            "FROM brunn.asset_uploads "
             f"WHERE id='{upload_id}';"
         )
         self.assertTrue(upload_state.startswith("completed|"), upload_state)
@@ -1011,7 +1037,7 @@ class LiveBinaryAssetRouteTest(unittest.TestCase):
         ).body
         with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as exported:
             manifest_member = exported.extractfile(
-                "straylight-export/manifest.json"
+                "brunn-export/manifest.json"
             )
             self.assertIsNotNone(manifest_member)
             manifest = json.load(manifest_member)
@@ -1026,7 +1052,7 @@ class LiveBinaryAssetRouteTest(unittest.TestCase):
             ]
             self.assertEqual(len(matched), 1, matched)
             exported_bytes = exported.extractfile(
-                "straylight-export/" + matched[0]["path"]
+                "brunn-export/" + matched[0]["path"]
             )
             self.assertIsNotNone(exported_bytes)
             self.assertEqual(exported_bytes.read(), content)

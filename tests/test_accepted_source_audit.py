@@ -33,15 +33,15 @@ def accepted_source_payload():
         "clean": True,
     }
     runtime_snapshot = {
-        "schema": "straylight-service-runtime-snapshot@v1",
+        "schema": "brunn-service-runtime-snapshot@v1",
         "captured_at": "2026-07-27T12:00:30-07:00",
         "status": "ready",
         "build_revision": REVISION,
         "runtime_features": {},
     }
     image = {
-        "schema": "straylight-service-image-fingerprint@v1",
-        "api_container": "straylight-api",
+        "schema": "brunn-service-image-fingerprint@v1",
+        "api_container": "brunn-api",
         "api_container_id": "container-control-1",
         "api_container_started_at": "2026-07-27T12:00:20-07:00",
         "api_container_running": True,
@@ -49,7 +49,7 @@ def accepted_source_payload():
         "api_image_revision": REVISION,
     }
     image_provenance = {
-        "schema": "straylight-service-image-provenance@v1",
+        "schema": "brunn-service-image-provenance@v1",
         "stable": True,
         "before": image,
         "after": dict(image),
@@ -77,7 +77,7 @@ def accepted_source_payload():
             service_image_provenance=image_provenance,
         )
     metrics = {
-        "schema": "straylight-agent-response-character-metrics@v1",
+        "schema": "brunn-agent-response-character-metrics@v1",
         "service_result_chars": 130,
         "service_source_text_chars": 100,
         "service_metadata_chars": 30,

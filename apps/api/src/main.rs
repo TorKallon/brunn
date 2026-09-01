@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
-use straylight::{
+use brunn::{
     AppState, Config, db,
     logging::UdpLogMakeWriter,
     object_store::{ObjectStore, backup as object_backup},
@@ -9,6 +8,7 @@ use straylight::{
     request_query_count::QueryCountLayer,
     router, task_guard, telemetry, worker,
 };
+use clap::{Parser, Subcommand};
 use tokio::net::TcpListener;
 use tracing_subscriber::{
     EnvFilter, Layer as _, filter::filter_fn, fmt::writer::MakeWriterExt, layer::SubscriberExt,
@@ -16,7 +16,7 @@ use tracing_subscriber::{
 };
 
 #[derive(Debug, Parser)]
-#[command(name = "straylight", about = "Agent-first durable context service")]
+#[command(name = "brunn", about = "Agent-first durable context service")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -148,7 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     if matches!(&cli.command, Command::Healthcheck) {
-        let url = std::env::var("STRAYLIGHT_HEALTHCHECK_URL")
+        let url = std::env::var("BRUNN_HEALTHCHECK_URL")
             .unwrap_or_else(|_| "http://127.0.0.1:8080/health".to_owned());
         let response = reqwest::get(url).await?;
         if !response.status().is_success() {
@@ -180,30 +180,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The dreamer is a pure HTTP client of the API: it deliberately skips
     // Config::from_env (no database, no object store) and uses its own env.
     if let Command::Dreamer { command } = &cli.command {
-        let dreamer =
-            straylight::dreamer::run::Dreamer::new(straylight::dreamer::config_from_env()?);
+        let dreamer = brunn::dreamer::run::Dreamer::new(brunn::dreamer::config_from_env()?);
         match command {
             DreamerCommand::Serve => {
-                let internal_token = straylight::dreamer::internal_token_from_env()?;
-                let app = straylight::dreamer::http::DreamerApp::new(dreamer, internal_token);
+                let internal_token = brunn::dreamer::internal_token_from_env()?;
+                let app = brunn::dreamer::http::DreamerApp::new(dreamer, internal_token);
                 tokio::spawn(app.clone().nightly_loop());
-                let bind = straylight::dreamer::bind_from_env();
+                let bind = brunn::dreamer::bind_from_env();
                 let listener = TcpListener::bind(&bind).await?;
-                tracing::info!(%bind, "Straylight dreamer listening");
+                tracing::info!(%bind, "Brunn dreamer listening");
                 axum::serve(listener, app.router()).await?;
             }
             DreamerCommand::Once { backfill } => {
                 let kind = if *backfill {
-                    straylight::dreamer::run::RunKind::Backfill
+                    brunn::dreamer::run::RunKind::Backfill
                 } else {
-                    straylight::dreamer::run::RunKind::Nightly
+                    brunn::dreamer::run::RunKind::Nightly
                 };
-                let today = straylight::dreamer::http::DreamerApp::today();
+                let today = brunn::dreamer::http::DreamerApp::today();
                 let report = dreamer.run_once(today, kind).await;
                 println!("{}", serde_json::to_string_pretty(&report)?);
                 if matches!(
                     report.outcome,
-                    straylight::dreamer::run::RunOutcome::Failed { .. }
+                    brunn::dreamer::run::RunOutcome::Failed { .. }
                 ) {
                     std::process::exit(1);
                 }
@@ -225,7 +224,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 telemetry::spawn_runtime_metrics(state.clone());
             }
             let listener = TcpListener::bind(bind).await?;
-            tracing::info!(%bind, "Straylight API listening");
+            tracing::info!(%bind, "Brunn API listening");
             axum::serve(listener, router(state)).await?;
         }
         Command::Dreamer { .. } => unreachable!("handled before Config::from_env"),

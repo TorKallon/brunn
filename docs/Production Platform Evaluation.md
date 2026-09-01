@@ -1,4 +1,4 @@
-# Straylight Production Platform Evaluation
+# Brunn Production Platform Evaluation
 
 Status: **Railway selected; operational cutover and repository publication passed**
 Date: 2026-07-31
@@ -9,7 +9,7 @@ The earlier recommendation to use Render was superseded by the owner's Railway
 selection. Railway now hosts the public web edge, private simplified API,
 separate worker, and PostgreSQL. Production objects remain in an external,
 versioned S3 store because Railway's native bucket contract does not provide
-the versioning boundary Straylight requires. Nyx is operator/test/restore
+the versioning boundary Brunn requires. Nyx is operator/test/restore
 infrastructure, not a second production deployment.
 
 The current API is healthy and ready at build

@@ -1,4 +1,4 @@
-INSERT INTO straylight.profile_schema_revisions (
+INSERT INTO brunn.profile_schema_revisions (
   profile_ref, version, display_name, properties_schema, reserved
 ) VALUES
   ('core.person', 1, 'Person', '{}'::jsonb, true),
@@ -14,7 +14,7 @@ INSERT INTO straylight.profile_schema_revisions (
   ('core.event_series', 1, 'Event series', '{}'::jsonb, true),
   ('core.event_occurrence', 1, 'Event occurrence', '{}'::jsonb, true);
 
-INSERT INTO straylight.state_machines (
+INSERT INTO brunn.state_machines (
   state_machine_ref, display_name, version, target_kinds, description, reserved
 ) VALUES
   ('state:event.schedule@v1', 'Event schedule', 1, ARRAY['object'], 'Schedule authority state.', true),
@@ -30,7 +30,7 @@ INSERT INTO straylight.state_machines (
   ('state:work.execution@v1', 'Work execution', 1, ARRAY['object'], 'Work progress state.', true),
   ('state:gate.validation@v1', 'Gate validation', 1, ARRAY['object'], 'Evidence-backed validation state.', true);
 
-INSERT INTO straylight.state_values (
+INSERT INTO brunn.state_values (
   state_machine_ref, value, display_order, terminal
 ) VALUES
   ('state:event.schedule@v1', 'tentative', 0, false),
@@ -90,7 +90,7 @@ INSERT INTO straylight.state_values (
   ('state:gate.validation@v1', 'blocked', 4, false),
   ('state:gate.validation@v1', 'not_applicable', 5, true);
 
-INSERT INTO straylight.relation_schema_revisions (
+INSERT INTO brunn.relation_schema_revisions (
   predicate, version, display_name, qualifier_schema,
   allowed_state_machines, allow_extra_roles, inverse_label, reserved
 ) VALUES
@@ -116,7 +116,7 @@ INSERT INTO straylight.relation_schema_revisions (
     false, 'has occurrence', true
   );
 
-INSERT INTO straylight.relation_role_rules (
+INSERT INTO brunn.relation_role_rules (
   predicate, schema_version, role, minimum_count, maximum_count, allowed_profiles
 ) VALUES
   ('core.possibly_same_as', 1, 'entity', 2, 2, ARRAY['core.person', 'core.organization', 'core.group']),
@@ -126,26 +126,26 @@ INSERT INTO straylight.relation_role_rules (
   ('core.occurrence_of', 1, 'occurrence', 1, 1, ARRAY['core.event']),
   ('core.occurrence_of', 1, 'series', 1, 1, ARRAY['core.event']);
 
-CREATE FUNCTION straylight.ensure_profile_schema(p_profile_ref text)
+CREATE FUNCTION brunn.ensure_profile_schema(p_profile_ref text)
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 AS $$
 DECLARE
-  validated_ref straylight.namespaced_identifier;
+  validated_ref brunn.namespaced_identifier;
   resolved_version integer;
 BEGIN
-  IF NOT straylight_auth.context_is_valid()
-     OR NOT straylight_auth.has_capability('save') THEN
+  IF NOT brunn_auth.context_is_valid()
+     OR NOT brunn_auth.has_capability('save') THEN
     RAISE EXCEPTION 'authenticated save capability is required'
       USING ERRCODE = '42501';
   END IF;
 
-  validated_ref := p_profile_ref::straylight.namespaced_identifier;
+  validated_ref := p_profile_ref::brunn.namespaced_identifier;
 
   SELECT max(schema_row.version) INTO resolved_version
-  FROM straylight.profile_schema_revisions AS schema_row
+  FROM brunn.profile_schema_revisions AS schema_row
   WHERE schema_row.profile_ref = validated_ref;
 
   IF resolved_version IS NOT NULL THEN
@@ -157,7 +157,7 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  INSERT INTO straylight.profile_schema_revisions (
+  INSERT INTO brunn.profile_schema_revisions (
     profile_ref, version, display_name, properties_schema, reserved
   ) VALUES (
     validated_ref,
@@ -168,33 +168,33 @@ BEGIN
   ) ON CONFLICT (profile_ref, version) DO NOTHING;
 
   SELECT max(schema_row.version) INTO STRICT resolved_version
-  FROM straylight.profile_schema_revisions AS schema_row
+  FROM brunn.profile_schema_revisions AS schema_row
   WHERE schema_row.profile_ref = validated_ref;
 
   RETURN resolved_version;
 END;
 $$;
 
-CREATE FUNCTION straylight.ensure_relation_schema(p_predicate text)
+CREATE FUNCTION brunn.ensure_relation_schema(p_predicate text)
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 AS $$
 DECLARE
-  validated_predicate straylight.namespaced_identifier;
+  validated_predicate brunn.namespaced_identifier;
   resolved_version integer;
 BEGIN
-  IF NOT straylight_auth.context_is_valid()
-     OR NOT straylight_auth.has_capability('save') THEN
+  IF NOT brunn_auth.context_is_valid()
+     OR NOT brunn_auth.has_capability('save') THEN
     RAISE EXCEPTION 'authenticated save capability is required'
       USING ERRCODE = '42501';
   END IF;
 
-  validated_predicate := p_predicate::straylight.namespaced_identifier;
+  validated_predicate := p_predicate::brunn.namespaced_identifier;
 
   SELECT max(schema_row.version) INTO resolved_version
-  FROM straylight.relation_schema_revisions AS schema_row
+  FROM brunn.relation_schema_revisions AS schema_row
   WHERE schema_row.predicate = validated_predicate;
 
   IF resolved_version IS NOT NULL THEN
@@ -206,7 +206,7 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  INSERT INTO straylight.relation_schema_revisions (
+  INSERT INTO brunn.relation_schema_revisions (
     predicate, version, display_name, qualifier_schema,
     allowed_state_machines, allow_extra_roles, inverse_label, reserved
   ) VALUES (
@@ -221,31 +221,31 @@ BEGIN
   ) ON CONFLICT (predicate, version) DO NOTHING;
 
   SELECT max(schema_row.version) INTO STRICT resolved_version
-  FROM straylight.relation_schema_revisions AS schema_row
+  FROM brunn.relation_schema_revisions AS schema_row
   WHERE schema_row.predicate = validated_predicate;
 
   RETURN resolved_version;
 END;
 $$;
 
-CREATE FUNCTION straylight_auth.require_save_control(p_user_id uuid)
+CREATE FUNCTION brunn_auth.require_save_control(p_user_id uuid)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 BEGIN
-  IF NOT straylight_auth.context_is_valid()
-     OR straylight_auth.current_user_id() IS DISTINCT FROM p_user_id
-     OR NOT straylight_auth.has_capability('save') THEN
+  IF NOT brunn_auth.context_is_valid()
+     OR brunn_auth.current_user_id() IS DISTINCT FROM p_user_id
+     OR NOT brunn_auth.has_capability('save') THEN
     RAISE EXCEPTION 'authenticated same-user save capability is required'
       USING ERRCODE = '42501';
   END IF;
 END;
 $$;
 
-CREATE FUNCTION straylight_auth.create_scope(
+CREATE FUNCTION brunn_auth.create_scope(
   p_user_id uuid,
   p_scope_ref text,
   p_name text
@@ -253,32 +253,32 @@ CREATE FUNCTION straylight_auth.create_scope(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
   created_scope_id uuid;
 BEGIN
-  PERFORM straylight_auth.require_save_control(p_user_id);
+  PERFORM brunn_auth.require_save_control(p_user_id);
 
-  INSERT INTO straylight.scopes (user_id, scope_ref, name)
+  INSERT INTO brunn.scopes (user_id, scope_ref, name)
   VALUES (p_user_id, p_scope_ref, p_name)
   ON CONFLICT (user_id, scope_ref) DO UPDATE
     SET name = EXCLUDED.name
   RETURNING id INTO created_scope_id;
 
-  INSERT INTO straylight.credential_scope_grants (
+  INSERT INTO brunn.credential_scope_grants (
     credential_id, user_id, scope_id
   ) VALUES (
-    straylight_auth.current_credential_id(), p_user_id, created_scope_id
+    brunn_auth.current_credential_id(), p_user_id, created_scope_id
   ) ON CONFLICT DO NOTHING;
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, scope_id, credential_id, action, details, content_free
   ) VALUES (
     p_user_id,
     created_scope_id,
-    straylight_auth.current_credential_id(),
+    brunn_auth.current_credential_id(),
     'auth.scope.create',
     jsonb_build_object('scope_id', created_scope_id, 'scope_ref', p_scope_ref),
     true
@@ -288,7 +288,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION straylight_auth.issue_credential(
+CREATE FUNCTION brunn_auth.issue_credential(
   p_user_id uuid,
   p_label text,
   p_token_hash text,
@@ -298,7 +298,7 @@ CREATE FUNCTION straylight_auth.issue_credential(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
@@ -309,7 +309,7 @@ DECLARE
   created_credential_id uuid;
   matched_scope_count integer;
 BEGIN
-  PERFORM straylight_auth.require_save_control(p_user_id);
+  PERFORM brunn_auth.require_save_control(p_user_id);
 
   IF p_capabilities IS NULL
      OR cardinality(p_capabilities) = 0
@@ -335,7 +335,7 @@ BEGIN
   END IF;
 
   SELECT count(*) INTO matched_scope_count
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = p_user_id
     AND scope_row.scope_ref::text = ANY(p_scope_refs);
 
@@ -344,26 +344,26 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  INSERT INTO straylight.api_credentials (
+  INSERT INTO brunn.api_credentials (
     user_id, label, token_hash, capabilities
   ) VALUES (
     p_user_id, p_label, p_token_hash, p_capabilities
   ) RETURNING id INTO created_credential_id;
 
-  INSERT INTO straylight.credential_scope_grants (
+  INSERT INTO brunn.credential_scope_grants (
     credential_id, user_id, scope_id
   )
   SELECT created_credential_id, p_user_id, scope_row.id
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = p_user_id
     AND scope_row.scope_ref::text = ANY(p_scope_refs);
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, scope_id, credential_id, action, details, content_free
   ) VALUES (
     p_user_id,
     NULL,
-    straylight_auth.current_credential_id(),
+    brunn_auth.current_credential_id(),
     'auth.credential.issue',
     jsonb_build_object(
       'credential_id', created_credential_id,
@@ -377,22 +377,22 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION straylight_auth.revoke_credential(
+CREATE FUNCTION brunn_auth.revoke_credential(
   p_user_id uuid,
   p_credential_id uuid
 )
 RETURNS timestamptz
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
   revoked_at timestamptz;
 BEGIN
-  PERFORM straylight_auth.require_save_control(p_user_id);
+  PERFORM brunn_auth.require_save_control(p_user_id);
 
-  UPDATE straylight.api_credentials AS credential
+  UPDATE brunn.api_credentials AS credential
   SET disabled_at = coalesce(credential.disabled_at, clock_timestamp())
   WHERE credential.user_id = p_user_id
     AND credential.id = p_credential_id
@@ -402,12 +402,12 @@ BEGIN
     RAISE EXCEPTION 'credential not found for user' USING ERRCODE = 'P0002';
   END IF;
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, scope_id, credential_id, action, details, content_free
   ) VALUES (
     p_user_id,
     NULL,
-    straylight_auth.current_credential_id(),
+    brunn_auth.current_credential_id(),
     'auth.credential.revoke',
     jsonb_build_object('credential_id', p_credential_id, 'revoked_at', revoked_at),
     true
@@ -417,7 +417,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION straylight_auth.list_credentials(p_user_id uuid)
+CREATE FUNCTION brunn_auth.list_credentials(p_user_id uuid)
 RETURNS TABLE (
   id uuid,
   label text,
@@ -429,13 +429,13 @@ RETURNS TABLE (
 LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 BEGIN
-  IF NOT straylight_auth.context_is_valid()
-     OR straylight_auth.current_user_id() IS DISTINCT FROM p_user_id
-     OR NOT straylight_auth.has_any_capability(ARRAY['status', 'read']) THEN
+  IF NOT brunn_auth.context_is_valid()
+     OR brunn_auth.current_user_id() IS DISTINCT FROM p_user_id
+     OR NOT brunn_auth.has_any_capability(ARRAY['status', 'read']) THEN
     RAISE EXCEPTION 'authenticated same-user status or read capability is required'
       USING ERRCODE = '42501';
   END IF;
@@ -452,11 +452,11 @@ BEGIN
     ),
     credential.created_at,
     credential.disabled_at
-  FROM straylight.api_credentials AS credential
-  LEFT JOIN straylight.credential_scope_grants AS scope_grant
+  FROM brunn.api_credentials AS credential
+  LEFT JOIN brunn.credential_scope_grants AS scope_grant
     ON scope_grant.user_id = credential.user_id
    AND scope_grant.credential_id = credential.id
-  LEFT JOIN straylight.scopes AS scope_row
+  LEFT JOIN brunn.scopes AS scope_row
     ON scope_row.user_id = scope_grant.user_id
    AND scope_row.id = scope_grant.scope_id
   WHERE credential.user_id = p_user_id
@@ -470,16 +470,16 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION straylight_auth.can_access_user(p_user_id uuid)
+CREATE FUNCTION brunn_auth.can_access_user(p_user_id uuid)
 RETURNS boolean
 LANGUAGE sql
 STABLE
 AS $$
-  SELECT straylight_auth.context_is_valid()
-    AND p_user_id = straylight_auth.current_user_id()
+  SELECT brunn_auth.context_is_valid()
+    AND p_user_id = brunn_auth.current_user_id()
 $$;
 
-CREATE FUNCTION straylight_auth.can_access_optional_scope(
+CREATE FUNCTION brunn_auth.can_access_optional_scope(
   p_user_id uuid,
   p_scope_id uuid
 )
@@ -487,14 +487,14 @@ RETURNS boolean
 LANGUAGE sql
 STABLE
 AS $$
-  SELECT straylight_auth.can_access_user(p_user_id)
+  SELECT brunn_auth.can_access_user(p_user_id)
     AND (
       p_scope_id IS NULL
-      OR straylight_auth.can_access_scope(p_user_id, p_scope_id)
+      OR brunn_auth.can_access_scope(p_user_id, p_scope_id)
     )
 $$;
 
-CREATE FUNCTION straylight_auth.can_access_record(
+CREATE FUNCTION brunn_auth.can_access_record(
   p_user_id uuid,
   p_record_id uuid
 )
@@ -502,15 +502,15 @@ RETURNS boolean
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
   SELECT EXISTS (
     SELECT 1
-    FROM straylight.record_keys AS record_key
+    FROM brunn.record_keys AS record_key
     WHERE record_key.user_id = p_user_id
       AND record_key.record_id = p_record_id
-      AND straylight_auth.can_access_scope(record_key.user_id, record_key.scope_id)
+      AND brunn_auth.can_access_scope(record_key.user_id, record_key.scope_id)
   )
 $$;
 
@@ -523,44 +523,44 @@ BEGIN
   FOR table_row IN
     SELECT table_name
     FROM information_schema.columns
-    WHERE table_schema = 'straylight' AND column_name = 'user_id'
+    WHERE table_schema = 'brunn' AND column_name = 'user_id'
     GROUP BY table_name
   LOOP
-    EXECUTE format('ALTER TABLE straylight.%I ENABLE ROW LEVEL SECURITY', table_row.table_name);
-    EXECUTE format('ALTER TABLE straylight.%I FORCE ROW LEVEL SECURITY', table_row.table_name);
+    EXECUTE format('ALTER TABLE brunn.%I ENABLE ROW LEVEL SECURITY', table_row.table_name);
+    EXECUTE format('ALTER TABLE brunn.%I FORCE ROW LEVEL SECURITY', table_row.table_name);
   END LOOP;
 END;
 $$;
 
 -- users uses id rather than user_id, so it is not covered by the catalog loop.
-ALTER TABLE straylight.users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE straylight.users FORCE ROW LEVEL SECURITY;
+ALTER TABLE brunn.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE brunn.users FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY users_self_select ON straylight.users
+CREATE POLICY users_self_select ON brunn.users
   FOR SELECT TO app_rw, app_ro
-  USING (straylight_auth.can_access_user(id));
+  USING (brunn_auth.can_access_user(id));
 
-CREATE POLICY scopes_granted_select ON straylight.scopes
+CREATE POLICY scopes_granted_select ON brunn.scopes
   FOR SELECT TO app_rw, app_ro
-  USING (straylight_auth.can_access_scope(user_id, id));
+  USING (brunn_auth.can_access_scope(user_id, id));
 
-CREATE POLICY credentials_self_select ON straylight.api_credentials
+CREATE POLICY credentials_self_select ON brunn.api_credentials
   FOR SELECT TO app_rw, app_ro
-  USING (straylight_auth.can_access_user(user_id));
+  USING (brunn_auth.can_access_user(user_id));
 
-CREATE POLICY policies_self_select ON straylight.policies
+CREATE POLICY policies_self_select ON brunn.policies
   FOR SELECT TO app_rw, app_ro
-  USING (straylight_auth.can_access_user(user_id));
+  USING (brunn_auth.can_access_user(user_id));
 
-CREATE POLICY policies_self_write ON straylight.policies
+CREATE POLICY policies_self_write ON brunn.policies
   FOR ALL TO app_rw
   USING (
-    straylight_auth.can_access_user(user_id)
-    AND straylight_auth.has_any_capability(ARRAY['save', 'correct'])
+    brunn_auth.can_access_user(user_id)
+    AND brunn_auth.has_any_capability(ARRAY['save', 'correct'])
   )
   WITH CHECK (
-    straylight_auth.can_access_user(user_id)
-    AND straylight_auth.has_any_capability(ARRAY['save', 'correct'])
+    brunn_auth.can_access_user(user_id)
+    AND brunn_auth.has_any_capability(ARRAY['save', 'correct'])
   );
 
 DO $$
@@ -570,16 +570,16 @@ BEGIN
   FOREACH table_name IN ARRAY ARRAY['policy_revisions', 'policy_rules']
   LOOP
     EXECUTE format(
-      'CREATE POLICY user_select ON straylight.%I FOR SELECT TO app_rw, app_ro '
-      'USING (straylight_auth.can_access_user(user_id))',
+      'CREATE POLICY user_select ON brunn.%I FOR SELECT TO app_rw, app_ro '
+      'USING (brunn_auth.can_access_user(user_id))',
       table_name
     );
     EXECUTE format(
-      'CREATE POLICY user_write ON straylight.%I FOR ALL TO app_rw '
-      'USING (straylight_auth.can_access_user(user_id) AND '
-      'straylight_auth.has_any_capability(ARRAY[''save'', ''correct''])) '
-      'WITH CHECK (straylight_auth.can_access_user(user_id) AND '
-      'straylight_auth.has_any_capability(ARRAY[''save'', ''correct'']))',
+      'CREATE POLICY user_write ON brunn.%I FOR ALL TO app_rw '
+      'USING (brunn_auth.can_access_user(user_id) AND '
+      'brunn_auth.has_any_capability(ARRAY[''save'', ''correct''])) '
+      'WITH CHECK (brunn_auth.can_access_user(user_id) AND '
+      'brunn_auth.has_any_capability(ARRAY[''save'', ''correct'']))',
       table_name
     );
   END LOOP;
@@ -596,7 +596,7 @@ BEGIN
   FOR table_row IN
     SELECT table_name
     FROM information_schema.columns
-    WHERE table_schema = 'straylight'
+    WHERE table_schema = 'brunn'
       AND column_name = 'scope_id'
       AND table_name NOT IN ('scopes', 'audit_events')
     GROUP BY table_name
@@ -636,16 +636,16 @@ BEGIN
     END;
 
     EXECUTE format(
-      'CREATE POLICY scope_select ON straylight.%I FOR SELECT TO app_rw, app_ro '
-      'USING (straylight_auth.can_access_scope(user_id, scope_id))',
+      'CREATE POLICY scope_select ON brunn.%I FOR SELECT TO app_rw, app_ro '
+      'USING (brunn_auth.can_access_scope(user_id, scope_id))',
       table_row.table_name
     );
     EXECUTE format(
-      'CREATE POLICY scope_write ON straylight.%I FOR ALL TO app_rw '
-      'USING (straylight_auth.can_access_scope(user_id, scope_id) AND '
-      'straylight_auth.has_any_capability(%L::text[])) '
-      'WITH CHECK (straylight_auth.can_access_scope(user_id, scope_id) AND '
-      'straylight_auth.has_any_capability(%L::text[]))',
+      'CREATE POLICY scope_write ON brunn.%I FOR ALL TO app_rw '
+      'USING (brunn_auth.can_access_scope(user_id, scope_id) AND '
+      'brunn_auth.has_any_capability(%L::text[])) '
+      'WITH CHECK (brunn_auth.can_access_scope(user_id, scope_id) AND '
+      'brunn_auth.has_any_capability(%L::text[]))',
       table_row.table_name,
       mutation_capabilities::text,
       mutation_capabilities::text
@@ -654,15 +654,15 @@ BEGIN
 END;
 $$;
 
-CREATE POLICY audit_events_select ON straylight.audit_events
+CREATE POLICY audit_events_select ON brunn.audit_events
   FOR SELECT TO app_rw, app_ro
-  USING (straylight_auth.can_access_optional_scope(user_id, scope_id));
+  USING (brunn_auth.can_access_optional_scope(user_id, scope_id));
 
-CREATE POLICY audit_events_insert ON straylight.audit_events
+CREATE POLICY audit_events_insert ON brunn.audit_events
   FOR INSERT TO app_rw
   WITH CHECK (
-    straylight_auth.can_access_optional_scope(user_id, scope_id)
-    AND straylight_auth.has_any_capability(ARRAY[
+    brunn_auth.can_access_optional_scope(user_id, scope_id)
+    AND brunn_auth.has_any_capability(ARRAY[
       'open', 'query', 'read', 'compute', 'verify', 'status',
       'checkpoint', 'save', 'stage', 'correct', 'delete', 'dream'
     ])
@@ -676,44 +676,44 @@ DECLARE
 BEGIN
   FOR child IN
     SELECT * FROM (VALUES
-      ('asset_versions', 'straylight_auth.can_access_record(user_id, asset_id)', ARRAY['save', 'correct', 'stage', 'dream']::text[]),
-      ('source_asset_links', 'straylight_auth.can_access_record(user_id, source_episode_id)', ARRAY['save', 'stage']::text[]),
-      ('object_revisions', 'straylight_auth.can_access_record(user_id, object_id)', ARRAY['save', 'correct', 'dream']::text[]),
-      ('object_revision_profiles', 'straylight_auth.can_access_record(user_id, object_id)', ARRAY['save', 'correct', 'dream']::text[]),
-      ('artifact_asset_links', 'straylight_auth.can_access_record(user_id, object_id)', ARRAY['save', 'correct', 'dream']::text[]),
-      ('recurrence_rules', 'straylight_auth.can_access_record(user_id, recurrence_spec_id)', ARRAY['save', 'correct']::text[]),
-      ('recurrence_exclusions', 'straylight_auth.can_access_record(user_id, recurrence_spec_id)', ARRAY['save', 'correct']::text[]),
-      ('event_series_revisions', 'straylight_auth.can_access_record(user_id, object_id)', ARRAY['save', 'correct']::text[]),
-      ('event_occurrence_revisions', 'straylight_auth.can_access_record(user_id, occurrence_object_id)', ARRAY['save', 'correct']::text[]),
-      ('recurrence_additions', 'straylight_auth.can_access_record(user_id, recurrence_spec_id)', ARRAY['save', 'correct']::text[]),
-      ('claim_about_targets', 'straylight_auth.can_access_record(user_id, claim_id)', ARRAY['save', 'correct', 'dream']::text[]),
-      ('claim_evidence_links', 'straylight_auth.can_access_record(user_id, claim_id)', ARRAY['save', 'correct', 'dream']::text[]),
-      ('claim_lineage', 'straylight_auth.can_access_record(user_id, claim_id)', ARRAY['save', 'correct', 'dream']::text[]),
-      ('relation_revisions', 'straylight_auth.can_access_record(user_id, relation_id)', ARRAY['save', 'correct', 'dream']::text[]),
-      ('relation_endpoints', 'straylight_auth.can_access_record(user_id, relation_id)', ARRAY['save', 'correct', 'dream']::text[]),
-      ('relation_evidence_links', 'straylight_auth.can_access_record(user_id, relation_id)', ARRAY['save', 'correct', 'dream']::text[]),
-      ('identity_name_claims', 'straylight_auth.can_access_record(user_id, claim_id)', ARRAY['save', 'correct']::text[]),
-      ('checkpoint_focus_links', 'straylight_auth.can_access_record(user_id, checkpoint_id)', ARRAY['checkpoint', 'save']::text[]),
-      ('checkpoint_goals', 'straylight_auth.can_access_record(user_id, checkpoint_id)', ARRAY['checkpoint', 'save']::text[]),
-      ('checkpoint_state_refs', 'straylight_auth.can_access_record(user_id, checkpoint_id)', ARRAY['checkpoint', 'save']::text[]),
-      ('checkpoint_gaps', 'straylight_auth.can_access_record(user_id, checkpoint_id)', ARRAY['checkpoint', 'save']::text[]),
-      ('checkpoint_decisions', 'straylight_auth.can_access_record(user_id, checkpoint_id)', ARRAY['checkpoint', 'save']::text[]),
-      ('checkpoint_gates', 'straylight_auth.can_access_record(user_id, checkpoint_id)', ARRAY['checkpoint', 'save']::text[]),
-      ('checkpoint_gate_evidence', 'straylight_auth.can_access_record(user_id, checkpoint_id)', ARRAY['checkpoint', 'save']::text[]),
-      ('checkpoint_actions', 'straylight_auth.can_access_record(user_id, checkpoint_id)', ARRAY['checkpoint', 'save']::text[]),
-      ('checkpoint_source_refs', 'straylight_auth.can_access_record(user_id, checkpoint_id)', ARRAY['checkpoint', 'save']::text[]),
-      ('document_revisions', 'straylight_auth.can_access_record(user_id, document_id)', ARRAY['save', 'correct', 'dream']::text[])
+      ('asset_versions', 'brunn_auth.can_access_record(user_id, asset_id)', ARRAY['save', 'correct', 'stage', 'dream']::text[]),
+      ('source_asset_links', 'brunn_auth.can_access_record(user_id, source_episode_id)', ARRAY['save', 'stage']::text[]),
+      ('object_revisions', 'brunn_auth.can_access_record(user_id, object_id)', ARRAY['save', 'correct', 'dream']::text[]),
+      ('object_revision_profiles', 'brunn_auth.can_access_record(user_id, object_id)', ARRAY['save', 'correct', 'dream']::text[]),
+      ('artifact_asset_links', 'brunn_auth.can_access_record(user_id, object_id)', ARRAY['save', 'correct', 'dream']::text[]),
+      ('recurrence_rules', 'brunn_auth.can_access_record(user_id, recurrence_spec_id)', ARRAY['save', 'correct']::text[]),
+      ('recurrence_exclusions', 'brunn_auth.can_access_record(user_id, recurrence_spec_id)', ARRAY['save', 'correct']::text[]),
+      ('event_series_revisions', 'brunn_auth.can_access_record(user_id, object_id)', ARRAY['save', 'correct']::text[]),
+      ('event_occurrence_revisions', 'brunn_auth.can_access_record(user_id, occurrence_object_id)', ARRAY['save', 'correct']::text[]),
+      ('recurrence_additions', 'brunn_auth.can_access_record(user_id, recurrence_spec_id)', ARRAY['save', 'correct']::text[]),
+      ('claim_about_targets', 'brunn_auth.can_access_record(user_id, claim_id)', ARRAY['save', 'correct', 'dream']::text[]),
+      ('claim_evidence_links', 'brunn_auth.can_access_record(user_id, claim_id)', ARRAY['save', 'correct', 'dream']::text[]),
+      ('claim_lineage', 'brunn_auth.can_access_record(user_id, claim_id)', ARRAY['save', 'correct', 'dream']::text[]),
+      ('relation_revisions', 'brunn_auth.can_access_record(user_id, relation_id)', ARRAY['save', 'correct', 'dream']::text[]),
+      ('relation_endpoints', 'brunn_auth.can_access_record(user_id, relation_id)', ARRAY['save', 'correct', 'dream']::text[]),
+      ('relation_evidence_links', 'brunn_auth.can_access_record(user_id, relation_id)', ARRAY['save', 'correct', 'dream']::text[]),
+      ('identity_name_claims', 'brunn_auth.can_access_record(user_id, claim_id)', ARRAY['save', 'correct']::text[]),
+      ('checkpoint_focus_links', 'brunn_auth.can_access_record(user_id, checkpoint_id)', ARRAY['checkpoint', 'save']::text[]),
+      ('checkpoint_goals', 'brunn_auth.can_access_record(user_id, checkpoint_id)', ARRAY['checkpoint', 'save']::text[]),
+      ('checkpoint_state_refs', 'brunn_auth.can_access_record(user_id, checkpoint_id)', ARRAY['checkpoint', 'save']::text[]),
+      ('checkpoint_gaps', 'brunn_auth.can_access_record(user_id, checkpoint_id)', ARRAY['checkpoint', 'save']::text[]),
+      ('checkpoint_decisions', 'brunn_auth.can_access_record(user_id, checkpoint_id)', ARRAY['checkpoint', 'save']::text[]),
+      ('checkpoint_gates', 'brunn_auth.can_access_record(user_id, checkpoint_id)', ARRAY['checkpoint', 'save']::text[]),
+      ('checkpoint_gate_evidence', 'brunn_auth.can_access_record(user_id, checkpoint_id)', ARRAY['checkpoint', 'save']::text[]),
+      ('checkpoint_actions', 'brunn_auth.can_access_record(user_id, checkpoint_id)', ARRAY['checkpoint', 'save']::text[]),
+      ('checkpoint_source_refs', 'brunn_auth.can_access_record(user_id, checkpoint_id)', ARRAY['checkpoint', 'save']::text[]),
+      ('document_revisions', 'brunn_auth.can_access_record(user_id, document_id)', ARRAY['save', 'correct', 'dream']::text[])
     ) AS mapping(table_name, access_expression, capabilities)
   LOOP
     EXECUTE format(
-      'CREATE POLICY parent_select ON straylight.%I FOR SELECT TO app_rw, app_ro USING (%s)',
+      'CREATE POLICY parent_select ON brunn.%I FOR SELECT TO app_rw, app_ro USING (%s)',
       child.table_name,
       child.access_expression
     );
     EXECUTE format(
-      'CREATE POLICY parent_write ON straylight.%I FOR ALL TO app_rw '
-      'USING ((%s) AND straylight_auth.has_any_capability(%L::text[])) '
-      'WITH CHECK ((%s) AND straylight_auth.has_any_capability(%L::text[]))',
+      'CREATE POLICY parent_write ON brunn.%I FOR ALL TO app_rw '
+      'USING ((%s) AND brunn_auth.has_any_capability(%L::text[])) '
+      'WITH CHECK ((%s) AND brunn_auth.has_any_capability(%L::text[]))',
       child.table_name,
       child.access_expression,
       child.capabilities::text,
@@ -740,10 +740,10 @@ BEGIN
     ) AS mapping(table_name, parent_table, parent_column, capabilities)
   LOOP
     EXECUTE format(
-      'CREATE POLICY parent_select ON straylight.%I FOR SELECT TO app_rw, app_ro '
-      'USING (EXISTS (SELECT 1 FROM straylight.%I AS parent '
+      'CREATE POLICY parent_select ON brunn.%I FOR SELECT TO app_rw, app_ro '
+      'USING (EXISTS (SELECT 1 FROM brunn.%I AS parent '
       'WHERE parent.user_id = %I.user_id AND parent.id = %I.%I '
-      'AND straylight_auth.can_access_scope(parent.user_id, parent.scope_id)))',
+      'AND brunn_auth.can_access_scope(parent.user_id, parent.scope_id)))',
       child.table_name,
       child.parent_table,
       child.table_name,
@@ -751,15 +751,15 @@ BEGIN
       child.parent_column
     );
     EXECUTE format(
-      'CREATE POLICY parent_write ON straylight.%I FOR ALL TO app_rw '
-      'USING (EXISTS (SELECT 1 FROM straylight.%I AS parent '
+      'CREATE POLICY parent_write ON brunn.%I FOR ALL TO app_rw '
+      'USING (EXISTS (SELECT 1 FROM brunn.%I AS parent '
       'WHERE parent.user_id = %I.user_id AND parent.id = %I.%I '
-      'AND straylight_auth.can_access_scope(parent.user_id, parent.scope_id)) '
-      'AND straylight_auth.has_any_capability(%L::text[])) '
-      'WITH CHECK (EXISTS (SELECT 1 FROM straylight.%I AS parent '
+      'AND brunn_auth.can_access_scope(parent.user_id, parent.scope_id)) '
+      'AND brunn_auth.has_any_capability(%L::text[])) '
+      'WITH CHECK (EXISTS (SELECT 1 FROM brunn.%I AS parent '
       'WHERE parent.user_id = %I.user_id AND parent.id = %I.%I '
-      'AND straylight_auth.can_access_scope(parent.user_id, parent.scope_id)) '
-      'AND straylight_auth.has_any_capability(%L::text[]))',
+      'AND brunn_auth.can_access_scope(parent.user_id, parent.scope_id)) '
+      'AND brunn_auth.has_any_capability(%L::text[]))',
       child.table_name,
       child.parent_table,
       child.table_name,
@@ -776,63 +776,63 @@ BEGIN
 END;
 $$;
 
-GRANT USAGE ON SCHEMA straylight, straylight_auth TO app_rw, app_ro;
+GRANT USAGE ON SCHEMA brunn, brunn_auth TO app_rw, app_ro;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA straylight TO app_rw;
-GRANT SELECT ON ALL TABLES IN SCHEMA straylight TO app_ro;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA brunn TO app_rw;
+GRANT SELECT ON ALL TABLES IN SCHEMA brunn TO app_ro;
 
 -- Registries are migration-owned. Unknown namespaced values are added by a
 -- reviewed registry migration, not by ordinary content writes.
 REVOKE INSERT, UPDATE, DELETE ON
-  straylight.profile_schema_revisions,
-  straylight.iana_time_zones,
-  straylight.state_machines,
-  straylight.state_values,
-  straylight.state_transition_rules,
-  straylight.relation_schema_revisions,
-  straylight.relation_role_rules
+  brunn.profile_schema_revisions,
+  brunn.iana_time_zones,
+  brunn.state_machines,
+  brunn.state_values,
+  brunn.state_transition_rules,
+  brunn.relation_schema_revisions,
+  brunn.relation_role_rules
 FROM app_rw;
 
 -- Account and credential creation stays behind SECURITY DEFINER bootstrap and
 -- future credential-management functions. Token hashes are never selectable.
-REVOKE ALL ON straylight.users FROM app_rw, app_ro;
-GRANT SELECT ON straylight.users TO app_rw, app_ro;
+REVOKE ALL ON brunn.users FROM app_rw, app_ro;
+GRANT SELECT ON brunn.users TO app_rw, app_ro;
 
-REVOKE ALL ON straylight.scopes FROM app_rw, app_ro;
-GRANT SELECT ON straylight.scopes TO app_rw, app_ro;
+REVOKE ALL ON brunn.scopes FROM app_rw, app_ro;
+GRANT SELECT ON brunn.scopes TO app_rw, app_ro;
 
-REVOKE ALL ON straylight.api_credentials FROM app_rw, app_ro;
+REVOKE ALL ON brunn.api_credentials FROM app_rw, app_ro;
 
-REVOKE ALL ON straylight.credential_scope_grants FROM app_rw, app_ro;
+REVOKE ALL ON brunn.credential_scope_grants FROM app_rw, app_ro;
 
-REVOKE ALL ON ALL FUNCTIONS IN SCHEMA straylight_auth FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight.ensure_profile_schema(text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight.ensure_relation_schema(text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight_auth.require_save_control(uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight_auth.create_scope(uuid, text, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight_auth.issue_credential(uuid, text, text, text[], text[]) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight_auth.revoke_credential(uuid, uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight_auth.list_credentials(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION straylight.ensure_profile_schema(text) TO app_rw;
-GRANT EXECUTE ON FUNCTION straylight.ensure_relation_schema(text) TO app_rw;
-GRANT EXECUTE ON FUNCTION straylight_auth.create_scope(uuid, text, text) TO app_rw;
-GRANT EXECUTE ON FUNCTION straylight_auth.issue_credential(uuid, text, text, text[], text[]) TO app_rw;
-GRANT EXECUTE ON FUNCTION straylight_auth.revoke_credential(uuid, uuid) TO app_rw;
-GRANT EXECUTE ON FUNCTION straylight_auth.list_credentials(uuid) TO app_rw, app_ro;
-GRANT EXECUTE ON FUNCTION straylight_auth.authenticate_credential(text) TO app_rw, app_ro;
-GRANT EXECUTE ON FUNCTION straylight_auth.bootstrap_user(text, text, text, text, text[]) TO app_rw;
-GRANT EXECUTE ON FUNCTION straylight_auth.setting_uuid(text) TO app_rw, app_ro;
-GRANT EXECUTE ON FUNCTION straylight_auth.setting_list(text) TO app_rw, app_ro;
-GRANT EXECUTE ON FUNCTION straylight_auth.current_user_id() TO app_rw, app_ro;
-GRANT EXECUTE ON FUNCTION straylight_auth.current_credential_id() TO app_rw, app_ro;
-GRANT EXECUTE ON FUNCTION straylight_auth.current_capabilities() TO app_rw, app_ro;
-GRANT EXECUTE ON FUNCTION straylight_auth.current_scope_refs() TO app_rw, app_ro;
-GRANT EXECUTE ON FUNCTION straylight_auth.context_is_valid() TO app_rw, app_ro;
-GRANT EXECUTE ON FUNCTION straylight_auth.has_capability(text) TO app_rw, app_ro;
-GRANT EXECUTE ON FUNCTION straylight_auth.has_any_capability(text[]) TO app_rw, app_ro;
-GRANT EXECUTE ON FUNCTION straylight_auth.can_access_user(uuid) TO app_rw, app_ro;
-GRANT EXECUTE ON FUNCTION straylight_auth.can_access_scope(uuid, uuid) TO app_rw, app_ro;
-GRANT EXECUTE ON FUNCTION straylight_auth.can_access_optional_scope(uuid, uuid) TO app_rw, app_ro;
-GRANT EXECUTE ON FUNCTION straylight_auth.can_access_record(uuid, uuid) TO app_rw, app_ro;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA brunn_auth FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn.ensure_profile_schema(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn.ensure_relation_schema(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn_auth.require_save_control(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn_auth.create_scope(uuid, text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn_auth.issue_credential(uuid, text, text, text[], text[]) FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn_auth.revoke_credential(uuid, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn_auth.list_credentials(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION brunn.ensure_profile_schema(text) TO app_rw;
+GRANT EXECUTE ON FUNCTION brunn.ensure_relation_schema(text) TO app_rw;
+GRANT EXECUTE ON FUNCTION brunn_auth.create_scope(uuid, text, text) TO app_rw;
+GRANT EXECUTE ON FUNCTION brunn_auth.issue_credential(uuid, text, text, text[], text[]) TO app_rw;
+GRANT EXECUTE ON FUNCTION brunn_auth.revoke_credential(uuid, uuid) TO app_rw;
+GRANT EXECUTE ON FUNCTION brunn_auth.list_credentials(uuid) TO app_rw, app_ro;
+GRANT EXECUTE ON FUNCTION brunn_auth.authenticate_credential(text) TO app_rw, app_ro;
+GRANT EXECUTE ON FUNCTION brunn_auth.bootstrap_user(text, text, text, text, text[]) TO app_rw;
+GRANT EXECUTE ON FUNCTION brunn_auth.setting_uuid(text) TO app_rw, app_ro;
+GRANT EXECUTE ON FUNCTION brunn_auth.setting_list(text) TO app_rw, app_ro;
+GRANT EXECUTE ON FUNCTION brunn_auth.current_user_id() TO app_rw, app_ro;
+GRANT EXECUTE ON FUNCTION brunn_auth.current_credential_id() TO app_rw, app_ro;
+GRANT EXECUTE ON FUNCTION brunn_auth.current_capabilities() TO app_rw, app_ro;
+GRANT EXECUTE ON FUNCTION brunn_auth.current_scope_refs() TO app_rw, app_ro;
+GRANT EXECUTE ON FUNCTION brunn_auth.context_is_valid() TO app_rw, app_ro;
+GRANT EXECUTE ON FUNCTION brunn_auth.has_capability(text) TO app_rw, app_ro;
+GRANT EXECUTE ON FUNCTION brunn_auth.has_any_capability(text[]) TO app_rw, app_ro;
+GRANT EXECUTE ON FUNCTION brunn_auth.can_access_user(uuid) TO app_rw, app_ro;
+GRANT EXECUTE ON FUNCTION brunn_auth.can_access_scope(uuid, uuid) TO app_rw, app_ro;
+GRANT EXECUTE ON FUNCTION brunn_auth.can_access_optional_scope(uuid, uuid) TO app_rw, app_ro;
+GRANT EXECUTE ON FUNCTION brunn_auth.can_access_record(uuid, uuid) TO app_rw, app_ro;
 
-REVOKE CREATE ON SCHEMA straylight, straylight_auth FROM app_rw, app_ro;
+REVOKE CREATE ON SCHEMA brunn, brunn_auth FROM app_rw, app_ro;

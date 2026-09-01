@@ -32,7 +32,7 @@ MCP clients pass it through untouched. `performance_eval.py` records
 `timings_ms` per sample so p50/p95/p99 per phase becomes reportable.
 
 Implementation note (2026-07-27): part (a) emits open/search phase timing
-metadata behind `STRAYLIGHT_OBSERVABILITY_TIMINGS_MS` (default on), records
+metadata behind `BRUNN_OBSERVABILITY_TIMINGS_MS` (default on), records
 phase percentiles in `performance_eval.py`, and gates top-level phase-sum
 sanity. E03's `--wait-semantic` and `--unique-queries` harness modes, its
 semantic-ready no-deferred-lane assertion, repeated resume sampling, and an

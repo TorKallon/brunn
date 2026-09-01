@@ -140,7 +140,7 @@ async fn run_on_pool_inner(
             let row = sqlx::query(
                 r#"
                 SELECT notification_id,inserted,delivery_count
-                FROM straylight.enqueue_task_guard_notification(
+                FROM brunn.enqueue_task_guard_notification(
                   $1,$2,$3,$4,$5,$6,$7,$8,$9
                 )
                 "#,
@@ -159,7 +159,7 @@ async fn run_on_pool_inner(
             let notification_id: Option<Uuid> = row.try_get("notification_id")?;
             let inserted: bool = row.try_get("inserted")?;
             let delivery_count: i64 = row.try_get("delivery_count")?;
-            let route = format!("straylight://task/{}", candidate.task_id);
+            let route = format!("brunn://task/{}", candidate.task_id);
             report.events.push(TaskGuardEventReport {
                 event_key: event.event_key,
                 task_id: candidate.task_id,
@@ -208,10 +208,10 @@ async fn record_guard_outcome(
             .map_err(|_| ApiError::Internal("task guard interval is invalid".to_owned()))?;
     sqlx::query(
         r#"
-        UPDATE straylight.task_guard_state AS state
+        UPDATE brunn.task_guard_state AS state
         SET last_run_at=$1,last_outcome=$2,last_error_code=$3,
             next_run_at=$4,updated_at=clock_timestamp()
-        FROM straylight.users AS account
+        FROM brunn.users AS account
         WHERE account.id=state.user_id AND account.account_status='active'
         "#,
     )
@@ -236,9 +236,9 @@ async fn load_candidates(pool: &PgPool, as_of: DateTime<Utc>) -> ApiResult<Vec<G
                settings.quiet_hours_start,settings.quiet_hours_end,
                settings.quiet_override_enabled,
                settings.quiet_override_within_hours
-        FROM straylight.task_index AS task
-        JOIN straylight.users AS account ON account.id=task.user_id
-        JOIN straylight.task_settings AS settings ON settings.user_id=task.user_id
+        FROM brunn.task_index AS task
+        JOIN brunn.users AS account ON account.id=task.user_id
+        JOIN brunn.task_settings AS settings ON settings.user_id=task.user_id
         WHERE account.account_status='active'
           AND task.status IN ('open','waiting')
           AND task.created_at <= $1

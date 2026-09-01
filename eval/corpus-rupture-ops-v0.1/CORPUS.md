@@ -8,7 +8,7 @@ selected Codex interaction evidence. It is intended to compare:
 
 1. a bounded fixed context pack;
 2. direct access to local Markdown, structured text, and source files; and
-3. Straylight-compatible workspace architectures.
+3. Brunn-compatible workspace architectures.
 
 The corpus preserves its source directory shape where practical. Repository
 material is nested under `Projects/RuptureOps/Repository` so one project scope

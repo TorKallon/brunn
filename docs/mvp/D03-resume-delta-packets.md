@@ -19,13 +19,13 @@ materialize:
 - B's operation-level resume result was larger than A in all 15 paired
   draw-case observations (+63,387 characters total).
 
-Keep `STRAYLIGHT_RESUME_DELTAS=false`. This implementation is not eligible for
+Keep `BRUNN_RESUME_DELTAS=false`. This implementation is not eligible for
 Nyx rollout or default-on promotion. See
 [the definitive E06 report](../../results/2026-07-28-e06-report.md).
 
 ## Problem and evidence
 
-Transitions are the worst suite in the program: 0/5 cases in every run, in every condition. Failures are claim-slot omissions, never lineage loss — the agent resumes with correct lineage but omits claims about what changed while it was away. straylight-api-gate-transition is the worst chronic case.
+Transitions are the worst suite in the program: 0/5 cases in every run, in every condition. Failures are claim-slot omissions, never lineage loss — the agent resumes with correct lineage but omits claims about what changed while it was away. brunn-api-gate-transition is the worst chronic case.
 
 The current resume payload explains why. On open with a resume_checkpoint_ref the agent receives: checkpoint text truncated to token_budget*4 chars, plus changes_since_checkpoint (≤200 rows) — a list that says which paths changed, but not what changed. Reconstructing the delta requires follow-up reads pinned to two versions, which the agent must think to issue and usually does not. The omission is structural, not a retrieval failure.
 
@@ -96,7 +96,7 @@ the baseline resume payload with no deploy.
 
 ## Implementation record
 
-- Runtime configuration: `STRAYLIGHT_RESUME_DELTAS`, default `false`, exposed through Compose as `resume_deltas`.
+- Runtime configuration: `BRUNN_RESUME_DELTAS`, default `false`, exposed through Compose as `resume_deltas`.
 - Resume behavior: only a flagged open with `resume_checkpoint_ref` enters the delta path. Non-resume opens and all flag-off requests retain the previous response shape.
 - History read: one batched SQL statement accepts the author-ordered `(entry_id, pinned_version)` pairs and returns pinned/current text plus hashes. Missing entries or versions, path drift, checkpoint/stored hash disagreement, and recomputed text-hash disagreement return `checkpoint_lineage_error`.
 - Evidence accounting: returned before/after or diff characters are deducted from the existing evidence token allowance before ordinary hydration.
@@ -110,7 +110,7 @@ the baseline resume payload with no deploy.
 
 - E06-resume-delta-experiment.md — gating experiment.
 - results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json — resume p95 35.2ms, concurrent 29.0/100.9ms at 640K.
-- Transitions evidence: 0/5 in every run; claim-slot omissions, never lineage loss; straylight-api-gate-transition worst.
+- Transitions evidence: 0/5 in every run; claim-slot omissions, never lineage loss; brunn-api-gate-transition worst.
 - apps/api/src/simple_core.rs — open/resume path, changes_since_checkpoint, checkpoint source refs; migrations 0051-0055.
 - D02-verbatim-span-contract.md — sibling design in the exact-value loss family.
 - Documented negative results: 2026-07-22 dedup revert; v6 recent-first collapse; 2026-07-26 bookkeeping collapse.

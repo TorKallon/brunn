@@ -19,7 +19,7 @@ use crate::{
 pub async fn health() -> Json<Value> {
     Json(json!({
         "status": "ok",
-        "service": "straylight",
+        "service": "brunn",
         "version": env!("CARGO_PKG_VERSION"),
         "build_revision": build_revision()
     }))
@@ -76,7 +76,7 @@ fn readiness_is_available(database_ready: bool, object_store_ready: bool) -> boo
 pub async fn openapi() -> Json<Value> {
     Json(json!({
         "openapi": "3.1.0",
-        "info": {"title": "Straylight API", "version": env!("CARGO_PKG_VERSION")},
+        "info": {"title": "Brunn API", "version": env!("CARGO_PKG_VERSION")},
         "servers": [{"url": "/"}],
         "paths": {
             "/v1/memory/open": {"post": {"operationId": "memoryOpen"}},
@@ -213,7 +213,7 @@ fn runtime_features(state: &AppState) -> Value {
 }
 
 fn build_revision() -> &'static str {
-    option_env!("STRAYLIGHT_BUILD_REVISION").unwrap_or("unknown")
+    option_env!("BRUNN_BUILD_REVISION").unwrap_or("unknown")
 }
 
 pub async fn list_credentials(

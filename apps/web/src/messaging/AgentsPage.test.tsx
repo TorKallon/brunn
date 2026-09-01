@@ -243,7 +243,7 @@ describe("Agents page", () => {
 
     expect(await screen.findByRole("heading", { name: "Agents" })).toBeInTheDocument();
     const list = await screen.findByRole("list", { name: "Conversations" });
-    const items = within(list).getAllByRole("button");
+    const items = await within(list).findAllByRole("button");
     expect(items[0]).toHaveAccessibleName(/Release decision/);
     expect(within(items[0]).getByText("Needs human")).toBeInTheDocument();
     await waitFor(() =>
@@ -362,7 +362,7 @@ describe("Agents page", () => {
   it("keeps the same client key when an ambiguous send is retried", async () => {
     const bodies: Array<Record<string, unknown>> = [];
     let attempts = 0;
-    document.cookie = "straylight_csrf=csrf-test; path=/";
+    document.cookie = "brunn_csrf=csrf-test; path=/";
     installMessagingRoutes({
       [`POST /api/v1/workspace/messaging/conversations/${attentionConversationId}/messages`]: async (
         request: Request,
@@ -430,7 +430,7 @@ describe("Agents page", () => {
 
   it("creates a conversation from the picker without accepting sender identity", async () => {
     let body: Record<string, unknown> | undefined;
-    document.cookie = "straylight_csrf=csrf-test; path=/";
+    document.cookie = "brunn_csrf=csrf-test; path=/";
     installMessagingRoutes({
       "POST /api/v1/workspace/messaging/conversations": async (request: Request) => {
         body = (await request.json()) as Record<string, unknown>;
@@ -459,7 +459,7 @@ describe("Agents page", () => {
 
   it("binds a credential from the owner registry panel with CSRF", async () => {
     let body: Record<string, unknown> | undefined;
-    document.cookie = "straylight_csrf=csrf-test; path=/";
+    document.cookie = "brunn_csrf=csrf-test; path=/";
     installMessagingRoutes({
       "PUT /api/v1/workspace/messaging/agents/echo/credential": async (
         request: Request,

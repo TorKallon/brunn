@@ -15,7 +15,7 @@ from typing import Any, Sequence
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SCHEMA = "straylight-e09-step-policy@v1"
+SCHEMA = "brunn-e09-step-policy@v1"
 DEFAULT_MANIFESTS = (
     PROJECT_ROOT / "eval" / "work_cases.json",
     PROJECT_ROOT / "eval" / "rupture_ops_cases.json",

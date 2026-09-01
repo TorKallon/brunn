@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 
-SCHEMA = "straylight-paired-query-count-comparison@v1"
-PERFORMANCE_SCHEMA = "straylight-performance-eval@v2"
+SCHEMA = "brunn-paired-query-count-comparison@v1"
+PERFORMANCE_SCHEMA = "brunn-performance-eval@v2"
 PRODUCTION_RECORDS = 64_000
 QUERY_COUNT_SAMPLE_OPERATIONS = {
     "open": "open",
@@ -332,7 +332,7 @@ def _sample_counts(
     )
     if (
         cardinality.get("schema")
-        != "straylight-query-count-sample-cardinality@v1"
+        != "brunn-query-count-sample-cardinality@v1"
         or cardinality.get("authoritative") is not True
         or cardinality.get("pass") is not True
         or cardinality.get("expected_by_sample_name") != expected

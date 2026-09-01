@@ -46,8 +46,8 @@ pub fn run_prompt(params: &PromptParams<'_>) -> String {
             .to_owned(),
     };
     format!(
-        r###"You are the Straylight dreamer. Tonight is {today}. You maintain the owner's
-durable memory workspace through the Straylight MCP tools, and you write one run
+        r###"You are the Brunn dreamer. Tonight is {today}. You maintain the owner's
+durable memory workspace through the Brunn MCP tools, and you write one run
 file when you finish. You never converse; you work and you record.
 
 {mode_line}

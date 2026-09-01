@@ -1,7 +1,7 @@
 {
   "benchmark_version": "personal-coordination-v0.1",
-  "name": "Straylight personal coordination evaluation",
-  "report_title": "Straylight personal coordination evaluation",
+  "name": "Brunn personal coordination evaluation",
+  "report_title": "Brunn personal coordination evaluation",
   "report_date": "2026-07-11",
   "evaluation_model": "generalized_personal_coordination",
   "grading_mode": "concept_tokens_v1",
@@ -253,7 +253,7 @@
       "workload": "Personal Coordination",
       "scope": "Personal Coordination",
       "capability": "canonical_contract_normalization",
-      "task": "Audit the normalized Straylight contract snapshot. Demonstrate one canonical multi-profile object, one immutable qualified-relation revision, one civil-time recurring event, and five independent arrangement state assignments. Explain which source records they normalize without treating source shorthand as a second canonical identity.",
+      "task": "Audit the normalized Brunn contract snapshot. Demonstrate one canonical multi-profile object, one immutable qualified-relation revision, one civil-time recurring event, and five independent arrangement state assignments. Explain which source records they normalize without treating source shorthand as a second canonical identity.",
       "claim_slots": {
         "c1": "single canonical object and profiles",
         "c2": "versioned qualified relation",

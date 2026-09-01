@@ -30,7 +30,7 @@ const sessionEnvelope = {
 
 describe("web authentication", () => {
   it("signs in with an email and password without browser token storage", async () => {
-    window.sessionStorage.setItem("straylight.access_token", "legacy-bearer-secret");
+    window.sessionStorage.setItem("brunn.access_token", "legacy-bearer-secret");
     const requests: Request[] = [];
     installApiMock({
       "GET /api/v1/auth/session": unauthenticated,
@@ -152,7 +152,7 @@ describe("web authentication", () => {
 
   it("captures a reset token from the fragment, scrubs it, and sends CSRF", async () => {
     window.history.replaceState({}, "", "/reset-password#token=reset-secret");
-    document.cookie = "straylight_csrf=csrf-value; Path=/";
+    document.cookie = "brunn_csrf=csrf-value; Path=/";
     const resetRequest = vi.fn(async (request: Request) => {
       expect(new URL(request.url).pathname).toBe("/api/v1/auth/reset-password");
       expect(request.url).not.toContain("reset-secret");
@@ -314,7 +314,7 @@ describe("web authentication", () => {
   });
 
   it("signs out through the session endpoint with CSRF protection", async () => {
-    document.cookie = "straylight_csrf=logout-csrf; Path=/";
+    document.cookie = "brunn_csrf=logout-csrf; Path=/";
     const logoutRequest = vi.fn((request: Request) => {
       expect(request.credentials).toBe("same-origin");
       expect(request.headers.get("X-CSRF-Token")).toBe("logout-csrf");

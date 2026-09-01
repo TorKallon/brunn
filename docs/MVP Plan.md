@@ -1,9 +1,9 @@
-# Straylight MVP Plan
+# Brunn MVP Plan
 
 Status: Authoritative plan of record — direct Railway owner cutover and repository publication complete
 Date: 2026-07-31
 Owner: Rourke (Tor Kallon)
-Prior decision record: `Projects/Straylight/MVP plan and authoritative next steps - 2026-07-27` (captured in the migration source; no longer a write target)
+Prior decision record: `Projects/Brunn/MVP plan and authoritative next steps - 2026-07-27` (captured in the migration source; no longer a write target)
 Detailed designs and experiment specs: `docs/mvp/` (this document indexes them and holds state)
 
 This document is the single place that holds plan state. Each design (Dxx) and
@@ -71,7 +71,7 @@ deltas) proven in real use.
   direct owner cutover. The aggregate record is
   [`results/2026-07-31-railway-simplified-cutover.md`](../results/2026-07-31-railway-simplified-cutover.md).
 - Both clients use separate credentials and pinned wrappers and are configured
-  Straylight-only. Codex passed open/read/write/replay/checkpoint and stale-409
+  Brunn-only. Codex passed open/read/write/replay/checkpoint and stale-409
   canaries. Aether/OpenClaw's strict post-archive rerun passed cross-read,
   byte-identical path/ref replay, checkpoint/resume, no-delivery, and
   no-API-key reasoning through its healthy normal gateway.
@@ -134,7 +134,7 @@ Historical experiment conclusions remain unchanged:
    abort criteria — for all tiers, not just launch experiments.
 3. Every context-shaping change ships behind a runtime kill switch and is gated
    by an n≥3 paired-draw experiment. Single-draw acceptance is a defect.
-4. Straylight is the post-cutover durable authority. Preserve the exact fresh
+4. Brunn is the post-cutover durable authority. Preserve the exact fresh
    source capture and export evidence for recovery, but do not continue a
    second writable Markdown authority.
 5. Dreaming stays paused (Open question 8). No schema expansion, no validity
@@ -181,7 +181,7 @@ Readiness — clients, migration, authority:
 
 | ID | Title | Status | Notes |
 |---|---|---|---|
-| [D13](mvp/D13-client-integration-and-canaries.md) | Client integration + canaries | Direct-cutover subset passed for Codex and Aether/OpenClaw | Both are configured Straylight-only; broader reusable qualification and Claude Code are deferred |
+| [D13](mvp/D13-client-integration-and-canaries.md) | Client integration + canaries | Direct-cutover subset passed for Codex and Aether/OpenClaw | Both are configured Brunn-only; broader reusable qualification and Claude Code are deferred |
 | [D14](mvp/D14-migration-and-authority-tiers.md) | Lossless migration and authority cutover | Operational cutover and locally verified repository publication passed | Records the environment-blocked restore exception and hosted-CI billing constraint |
 
 Conditional — do not start until stated preconditions hold:
@@ -300,7 +300,7 @@ then superseded the staged rollout with the direct-cutover Track 1 on
   scenarios 12a–g, has recorded passing output.
 - 2026-07-31 (cutover execution): Completed the zero-diff layered migration,
   exact fresh-source overlay, ten history-preserving soft deletions, primary
-  agent-memory and dormant-backup import/replay, Straylight-only Codex and
+  agent-memory and dormant-backup import/replay, Brunn-only Codex and
   Aether/OpenClaw canaries, and final web verification. Recorded the isolated
   restore as `not_performed_environment_blocked` after locked Nyx prevented
   Docker access; this is non-blocking for the direct owner cutover and is not a
@@ -316,7 +316,7 @@ then superseded the staged rollout with the direct-cutover Track 1 on
   least-loss layered migration: verified history/native replay, exact fresh
   source overlay, history-preserving soft deletions, then local agent-memory
   capture. Completion requires zero-diff production audits, client read/write
-  canaries, Straylight-only persistence proof, an explicit recovery-evidence
+  canaries, Brunn-only persistence proof, an explicit recovery-evidence
   disposition, and locally verified repository publication. Hosted CI can be
   re-enabled only after GitHub Actions billing is repaired. Historical E01–E11 results and
   default-off decisions are unchanged.

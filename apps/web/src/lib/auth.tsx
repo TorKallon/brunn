@@ -5,17 +5,17 @@ import {
   useEffect,
   useMemo,
 } from "react";
-import { createApiClient, type StraylightApi } from "./api";
+import { createApiClient, type BrunnApi } from "./api";
 
 export const AUTH_SESSION_QUERY_KEY = ["auth", "session"] as const;
-const ApiContext = createContext<StraylightApi | null>(null);
+const ApiContext = createContext<BrunnApi | null>(null);
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const api = useMemo(() => createApiClient(), []);
 
   useEffect(() => {
     try {
-      window.sessionStorage.removeItem("straylight.access_token");
+      window.sessionStorage.removeItem("brunn.access_token");
     } catch {
       // Hardened browser policies may disable storage. The legacy value is
       // never read or used by the cookie-session client.
@@ -27,7 +27,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   );
 }
 
-export function useApi(): StraylightApi {
+export function useApi(): BrunnApi {
   const value = useContext(ApiContext);
   if (!value) throw new Error("useApi must be used inside AuthProvider");
   return value;

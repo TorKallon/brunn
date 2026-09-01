@@ -29,7 +29,7 @@ def create_backup(
     name: str,
     *,
     expires_at: datetime,
-    version: str = "straylight-coordinated-backup@v2",
+    version: str = "brunn-coordinated-backup@v2",
 ) -> Path:
     backup = root / name
     backup.mkdir()
@@ -59,7 +59,7 @@ def create_backup(
 def add_restore_receipt(backup: Path) -> None:
     manifest = json.loads((backup / "manifest.json").read_text())
     receipt = {
-        "format": "straylight-restore-drill-receipt@v1",
+        "format": "brunn-restore-drill-receipt@v1",
         "status": "pass",
         "backup_id": manifest["backup_id"],
         "backup_manifest_sha256": f"sha256:{sha256(backup / 'manifest.json')}",
@@ -98,7 +98,7 @@ class BackupRetentionTests(unittest.TestCase):
                 backup_root,
                 "legacy",
                 expires_at=now - timedelta(hours=1),
-                version="straylight-coordinated-backup@v1",
+                version="brunn-coordinated-backup@v1",
             )
 
             dry_run = subprocess.run(

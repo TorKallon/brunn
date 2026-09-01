@@ -711,7 +711,7 @@ pub async fn apply_edition_to_ledger(
                     .and_then(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok());
                 sqlx::query(
                     r#"
-                    INSERT INTO straylight.briefing_stories (
+                    INSERT INTO brunn.briefing_stories (
                       user_id,story_key,title,topic,entities,event_at,
                       last_delivered_date,last_delivered_edition_ref,
                       last_delivered_headline,delivery_count
@@ -765,7 +765,7 @@ pub async fn apply_edition_to_ledger(
             LedgerOp::Suppress { story_key, urls } => {
                 sqlx::query(
                     r#"
-                    INSERT INTO straylight.briefing_stories (user_id,story_key,suppression_count)
+                    INSERT INTO brunn.briefing_stories (user_id,story_key,suppression_count)
                     VALUES ($1,$2,1)
                     ON CONFLICT (user_id,story_key) DO UPDATE SET
                       suppression_count=briefing_stories.suppression_count + 1,
@@ -803,19 +803,19 @@ pub async fn rebuild_briefing_ledger(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
 ) -> ApiResult<BriefingLedgerRebuild> {
-    sqlx::query("DELETE FROM straylight.briefing_story_urls WHERE user_id=$1")
+    sqlx::query("DELETE FROM brunn.briefing_story_urls WHERE user_id=$1")
         .bind(user_id)
         .execute(&mut **tx)
         .await?;
-    sqlx::query("DELETE FROM straylight.briefing_stories WHERE user_id=$1")
+    sqlx::query("DELETE FROM brunn.briefing_stories WHERE user_id=$1")
         .bind(user_id)
         .execute(&mut **tx)
         .await?;
     let versions = sqlx::query(
         r#"
         SELECT entry.id AS entry_id,version.metadata->'briefing' AS briefing
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
         WHERE entry.user_id=$1
@@ -983,8 +983,8 @@ pub async fn dedupe_candidate_in_tx(
             SELECT DISTINCT story.story_key,story.title,story.last_delivered_date,
                    story.last_delivered_edition_ref,story.last_delivered_headline,
                    story.delivery_count,story.suppression_count
-            FROM straylight.briefing_story_urls AS url
-            JOIN straylight.briefing_stories AS story
+            FROM brunn.briefing_story_urls AS url
+            JOIN brunn.briefing_stories AS story
               ON story.user_id=url.user_id AND story.story_key=url.story_key
             WHERE url.user_id=$1 AND url.url_hash=ANY($2)
             ORDER BY story.story_key
@@ -1001,7 +1001,7 @@ pub async fn dedupe_candidate_in_tx(
             r#"
             SELECT story_key,title,last_delivered_date,last_delivered_edition_ref,
                    last_delivered_headline,delivery_count,suppression_count
-            FROM straylight.briefing_stories
+            FROM brunn.briefing_stories
             WHERE user_id=$1 AND story_key=$2
             "#,
         )
@@ -1023,7 +1023,7 @@ pub async fn dedupe_candidate_in_tx(
             r#"
             SELECT story_key,title,last_delivered_date,last_delivered_edition_ref,
                    last_delivered_headline,delivery_count,suppression_count
-            FROM straylight.briefing_stories
+            FROM brunn.briefing_stories
             WHERE user_id=$1
               AND (title <> '' OR cardinality(entities) > 0)
               AND to_tsvector('english',title || ' ' || array_to_string(entities,' '))
@@ -1618,8 +1618,8 @@ pub async fn list_editions_in_tx(
                          version.metadata->>'date',
                          substring(entry.path from ' - (\d{4}-\d{2}-\d{2})[.]md$')
                        )
-                FROM straylight.entries AS entry
-                JOIN straylight.entry_versions AS version
+                FROM brunn.entries AS entry
+                JOIN brunn.entry_versions AS version
                   ON version.user_id=entry.user_id
                  AND version.entry_id=entry.id
                  AND version.version=entry.current_version
@@ -1659,8 +1659,8 @@ pub async fn list_editions_in_tx(
                    version.metadata->>'date',
                    substring(entry.path from ' - (\d{4}-\d{2}-\d{2})[.]md$')
                  ) AS order_date
-          FROM straylight.entries AS entry
-          JOIN straylight.entry_versions AS version
+          FROM brunn.entries AS entry
+          JOIN brunn.entry_versions AS version
             ON version.user_id=entry.user_id
            AND version.entry_id=entry.id
            AND version.version=entry.current_version
@@ -1789,8 +1789,8 @@ pub async fn get_edition_in_tx(
         r#"
         SELECT entry.id,entry.path,entry.current_version,
                version.version,version.content,version.metadata,version.created_at
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=coalesce($3,entry.current_version)
@@ -1812,7 +1812,7 @@ pub async fn get_edition_in_tx(
     let versions = sqlx::query(
         r#"
         SELECT version,created_at
-        FROM straylight.entry_versions
+        FROM brunn.entry_versions
         WHERE user_id=$1 AND entry_id=$2
         ORDER BY version
         "#,
@@ -1901,8 +1901,8 @@ pub async fn topics_snapshot_in_tx(
     let rows = sqlx::query(
         r#"
         SELECT entry.id,entry.path,entry.current_version,version.content
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
@@ -1946,8 +1946,8 @@ pub async fn topics_snapshot_in_tx(
     let rows = sqlx::query(
         r#"
         SELECT entry.id,entry.path,version.content
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
@@ -1993,8 +1993,8 @@ pub async fn topics_snapshot_in_tx(
     let feedback = sqlx::query_scalar::<_, String>(
         r#"
         SELECT version.content
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
@@ -2059,8 +2059,8 @@ async fn fetch_locked_document(
     let row = sqlx::query(
         r#"
         SELECT entry.deleted_at,version.content,version.metadata
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
+        FROM brunn.entries AS entry
+        JOIN brunn.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
@@ -2229,8 +2229,8 @@ pub async fn item_action(
             let date = sqlx::query_scalar::<_, Option<String>>(
                 r#"
                 SELECT version.metadata->'briefing'->>'date'
-                FROM straylight.entries AS entry
-                JOIN straylight.entry_versions AS version
+                FROM brunn.entries AS entry
+                JOIN brunn.entry_versions AS version
                   ON version.user_id=entry.user_id
                  AND version.entry_id=entry.id
                  AND version.version=entry.current_version
@@ -2321,7 +2321,7 @@ async fn insert_story_urls(
     for (url_hash, canonical) in rows {
         sqlx::query(
             r#"
-            INSERT INTO straylight.briefing_story_urls (user_id,url_hash,story_key,url)
+            INSERT INTO brunn.briefing_story_urls (user_id,url_hash,story_key,url)
             VALUES ($1,$2,$3,$4)
             ON CONFLICT (user_id,url_hash) DO NOTHING
             "#,

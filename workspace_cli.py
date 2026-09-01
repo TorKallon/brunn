@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
-from straylight_eval import (
+from brunn_eval import (
     BM25Index,
     Chunk,
     Document,
@@ -266,7 +266,7 @@ def read_path(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Minimal Straylight agent workspace CLI")
+    parser = argparse.ArgumentParser(description="Minimal Brunn agent workspace CLI")
     parser.add_argument("--corpus", type=Path, required=True)
     parser.add_argument("--session", type=Path, required=True)
     parser.add_argument(

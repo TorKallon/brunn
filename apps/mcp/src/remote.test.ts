@@ -6,7 +6,7 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-import { StraylightOAuthProvider } from "./oauth-provider.js";
+import { BrunnOAuthProvider } from "./oauth-provider.js";
 import {
   createRemoteMcpApp,
   decodeSealingKey,
@@ -14,8 +14,8 @@ import {
   verifyRemoteCredential,
 } from "./remote.js";
 
-const publicUrl = new URL("https://straylight.example/");
-const resourceUrl = new URL("https://straylight.example/mcp");
+const publicUrl = new URL("https://brunn.example/");
+const resourceUrl = new URL("https://brunn.example/mcp");
 
 test("remote credential validation requires dedicated root read/write access", async () => {
   const valid = credentialResponse({});
@@ -91,7 +91,7 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
       headers: { "content-type": "application/json" },
     });
   };
-  const provider = new StraylightOAuthProvider({
+  const provider = new BrunnOAuthProvider({
     secret: randomBytes(32),
     resourceUrl,
     verifyUpstreamToken: async (token) => token === "dedicated-upstream-token",
@@ -109,6 +109,10 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
   const baseUrl = `http://127.0.0.1:${address.port}`;
 
   try {
+    assert.deepEqual(await json(await fetch(`${baseUrl}/healthz`)), {
+      status: "ok",
+      service: "brunn-remote-mcp",
+    });
     const requestedHeaders = [
       "authorization",
       "content-type",
@@ -146,7 +150,7 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
     assert.match(unauthorized.headers.get("access-control-expose-headers") ?? "", /WWW-Authenticate/u);
     assert.match(
       unauthorized.headers.get("www-authenticate") ?? "",
-      /resource_metadata="https:\/\/straylight\.example\/\.well-known\/oauth-protected-resource\/mcp"/,
+      /resource_metadata="https:\/\/brunn\.example\/\.well-known\/oauth-protected-resource\/mcp"/,
     );
 
     const originless = await fetch(`${baseUrl}/mcp`, {
@@ -194,6 +198,7 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
     assert.equal(rootMetadataResponse.headers.get("access-control-allow-origin"), "*");
     const rootMetadata = await json(rootMetadataResponse);
     assert.equal(rootMetadata.resource, resourceUrl.href);
+    assert.equal(rootMetadata.resource_name, "Brunn");
     for (const path of [
       "/.well-known/oauth-protected-resource",
       "/.well-known/oauth-protected-resource/mcp",
@@ -257,7 +262,7 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
       /form-action 'self' https:\/\/client\.example/u,
     );
     const approvalHtml = await approval.text();
-    assert.match(approvalHtml, /Connect Straylight/);
+    assert.match(approvalHtml, /Connect Brunn/);
     assert.equal(approvalHtml.includes("dedicated-upstream-token"), false);
 
     const approvalPost = await fetch(`${baseUrl}/authorize`, {
@@ -266,7 +271,7 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         ...authorizationFields,
-        straylight_token: "dedicated-upstream-token",
+        brunn_token: "dedicated-upstream-token",
       }),
     });
     assert.equal(approvalPost.status, 302);
@@ -308,10 +313,11 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
       // SDK 1.29's concrete HTTP transport declaration is not compatible with
       // its exact-optional base declaration under this repository's TS mode.
       await client.connect(transport as never);
+      assert.equal(client.getServerVersion()?.name, "Brunn");
       const tools = await client.listTools();
       assert.equal(
         tools.tools.length,
-        process.env.STRAYLIGHT_MESSAGING_ENABLED === "true" ? 37 : 32,
+        process.env.BRUNN_MESSAGING_ENABLED === "true" ? 37 : 32,
       );
       assert.equal(tools.tools.some((tool) => tool.name === "memory.stage"), false);
       assert.equal(tools.tools.some((tool) => tool.name === "asset.fetch"), false);

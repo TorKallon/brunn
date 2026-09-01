@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 
-STEP_POLICY_SCHEMA = "straylight-e09-step-policy@v1"
+STEP_POLICY_SCHEMA = "brunn-e09-step-policy@v1"
 STEP_ARM = "deadline_cache_600"
 STEP_EXPERIMENT_ARM = "e09-deadline-cache-600"
 BASE_EXPERIMENT_ARM = "e09-deadline-cache"
@@ -158,7 +158,7 @@ def load_step_authorization(
     ):
         raise ValueError("step-policy authorization identity is invalid")
     return {
-        "schema": "straylight-e09-step-authorization-binding@v1",
+        "schema": "brunn-e09-step-authorization-binding@v1",
         "artifact": str(path),
         "artifact_sha256": digest,
         "authorization_id": authorization_id,

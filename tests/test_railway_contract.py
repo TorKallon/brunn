@@ -53,27 +53,27 @@ class RailwayContractTests(unittest.TestCase):
         )
         self.assertIn(
             "COPY infra/postgres/healthcheck.sh "
-            "/usr/local/bin/straylight-postgres-healthcheck",
+            "/usr/local/bin/brunn-postgres-healthcheck",
             DATABASE_DOCKERFILE,
         )
 
     def test_public_web_is_the_only_domain_boundary(self):
         self.assertNotIn("domains:", RAILWAY)
         self.assertIn(
-            'STRAYLIGHT_API_HOST: api.env.RAILWAY_PRIVATE_DOMAIN',
+            'BRUNN_API_HOST: api.env.RAILWAY_PRIVATE_DOMAIN',
             RAILWAY,
         )
         self.assertIn(
-            'STRAYLIGHT_MCP_HOST: mcp.env.RAILWAY_PRIVATE_DOMAIN',
+            'BRUNN_MCP_HOST: mcp.env.RAILWAY_PRIVATE_DOMAIN',
             RAILWAY,
         )
-        self.assertIn('STRAYLIGHT_DNS_RESOLVER: "[fd12::10]"', RAILWAY)
+        self.assertIn('BRUNN_DNS_RESOLVER: "[fd12::10]"', RAILWAY)
         self.assertIn(
-            "resolver ${STRAYLIGHT_DNS_RESOLVER} valid=10s ipv6=on;",
+            "resolver ${BRUNN_DNS_RESOLVER} valid=10s ipv6=on;",
             WEB_PROXY,
         )
-        self.assertIn("server ${STRAYLIGHT_API_HOST}:8080 resolve;", WEB_PROXY)
-        self.assertIn("server ${STRAYLIGHT_MCP_HOST}:8080 resolve;", WEB_PROXY)
+        self.assertIn("server ${BRUNN_API_HOST}:8080 resolve;", WEB_PROXY)
+        self.assertIn("server ${BRUNN_MCP_HOST}:8080 resolve;", WEB_PROXY)
         self.assertRegex(
             WEB_PROXY,
             r"location \^~ /api/v1/admin/ \{\s*return 404;",
@@ -127,7 +127,7 @@ class RailwayContractTests(unittest.TestCase):
             self.assertIn("restartPolicyMaxRetries: null", block)
 
     def test_semantic_only_has_a_realistic_bound_but_hybrid_stays_optional(self):
-        self.assertIn('STRAYLIGHT_SEMANTIC_DEADLINE_MS: "2500"', RAILWAY)
+        self.assertIn('BRUNN_SEMANTIC_DEADLINE_MS: "2500"', RAILWAY)
         self.assertIn(
             "hybrid requests take semantic evidence only when it is ready",
             (ROOT / "docs" / "Architecture.md").read_text(),
@@ -138,7 +138,7 @@ class RailwayContractTests(unittest.TestCase):
             WEB_PROXY,
             r"location = /api/v1/workspace/binaries/content \{[\s\S]*?"
             r"client_max_body_size 4g;[\s\S]*?"
-            r"proxy_pass http://straylight_api/v1/workspace/binaries/content;[\s\S]*?"
+            r"proxy_pass http://brunn_api/v1/workspace/binaries/content;[\s\S]*?"
             r"proxy_request_buffering off;",
         )
 
@@ -152,11 +152,11 @@ class RailwayContractTests(unittest.TestCase):
         self.assertNotIn("DATABASE_URL_ADMIN", api_block)
         self.assertIn("DATABASE_URL_ADMIN: db.env.DATABASE_URL_ADMIN", worker_block)
         self.assertIn(
-            'preDeploy: "/usr/local/bin/straylight migrate"',
+            'preDeploy: "/usr/local/bin/brunn migrate"',
             worker_block,
         )
         self.assertIn(
-            'STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_URL:\n'
+            'BRUNN_EMBEDDING_BACKFILL_FOREGROUND_STATUS_URL:\n'
             '      "http://api.railway.internal:8080/health/foreground-latency"',
             worker_block,
         )
@@ -175,10 +175,10 @@ class RailwayContractTests(unittest.TestCase):
         self.assertNotIn("RESEND_API_KEY", worker_block)
         self.assertNotIn("RESEND_API_KEY", web_block)
         self.assertIn(
-            'STRAYLIGHT_PUBLIC_URL: "https://straylight.rourkem.com"',
+            'BRUNN_PUBLIC_URL: "https://brunn.ai"',
             RAILWAY,
         )
-        self.assertIn('AUTH_EMAIL_FROM: "Straylight <login@solark.io>"', RAILWAY)
+        self.assertIn('AUTH_EMAIL_FROM: "Brunn <login@solark.io>"', RAILWAY)
 
     def test_apns_delivery_is_enabled_with_provider_secrets_worker_only(self):
         api_block = RAILWAY.split('const api = service("api"', 1)[1].split(
@@ -188,20 +188,20 @@ class RailwayContractTests(unittest.TestCase):
             'const mcp = service("mcp"', 1
         )[0]
         self.assertIn(
-            'STRAYLIGHT_APNS_APP_ID: "com.rourkem.straylight"',
+            'BRUNN_APNS_APP_ID: "com.rourkem.brunn"',
             RAILWAY,
         )
-        self.assertIn('STRAYLIGHT_APNS_DELIVERY_ENABLED: "true"', RAILWAY)
+        self.assertIn('BRUNN_APNS_DELIVERY_ENABLED: "true"', RAILWAY)
         self.assertIn(
-            "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY: preserve()",
+            "BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY: preserve()",
             api_block,
         )
-        self.assertNotIn("STRAYLIGHT_APNS_TEAM_ID", api_block)
-        self.assertNotIn("STRAYLIGHT_APNS_KEY_ID", api_block)
-        self.assertNotIn("STRAYLIGHT_APNS_PRIVATE_KEY", api_block)
-        self.assertIn("STRAYLIGHT_APNS_TEAM_ID: preserve()", worker_block)
-        self.assertIn("STRAYLIGHT_APNS_KEY_ID: preserve()", worker_block)
-        self.assertIn("STRAYLIGHT_APNS_PRIVATE_KEY: preserve()", worker_block)
+        self.assertNotIn("BRUNN_APNS_TEAM_ID", api_block)
+        self.assertNotIn("BRUNN_APNS_KEY_ID", api_block)
+        self.assertNotIn("BRUNN_APNS_PRIVATE_KEY", api_block)
+        self.assertIn("BRUNN_APNS_TEAM_ID: preserve()", worker_block)
+        self.assertIn("BRUNN_APNS_KEY_ID: preserve()", worker_block)
+        self.assertIn("BRUNN_APNS_PRIVATE_KEY: preserve()", worker_block)
 
     def test_todoist_kill_switch_and_vault_key_are_shared_by_api_and_worker(self):
         api_block = RAILWAY.split('const api = service("api"', 1)[1].split(
@@ -212,17 +212,17 @@ class RailwayContractTests(unittest.TestCase):
         )[0]
         self.assertEqual(
             1,
-            RAILWAY.count("STRAYLIGHT_TODOIST_SYNC_ENABLED: preserve()"),
+            RAILWAY.count("BRUNN_TODOIST_SYNC_ENABLED: preserve()"),
         )
         self.assertIn(
-            "STRAYLIGHT_TODOIST_SYNC_ENABLED:\n"
-            "      api.env.STRAYLIGHT_TODOIST_SYNC_ENABLED",
+            "BRUNN_TODOIST_SYNC_ENABLED:\n"
+            "      api.env.BRUNN_TODOIST_SYNC_ENABLED",
             worker_block,
         )
-        self.assertIn("STRAYLIGHT_SECRET_ENCRYPTION_KEY: preserve()", api_block)
+        self.assertIn("BRUNN_SECRET_ENCRYPTION_KEY: preserve()", api_block)
         self.assertIn(
-            "STRAYLIGHT_SECRET_ENCRYPTION_KEY:\n"
-            "      api.env.STRAYLIGHT_SECRET_ENCRYPTION_KEY",
+            "BRUNN_SECRET_ENCRYPTION_KEY:\n"
+            "      api.env.BRUNN_SECRET_ENCRYPTION_KEY",
             worker_block,
         )
 
@@ -238,54 +238,54 @@ class RailwayContractTests(unittest.TestCase):
         )[0]
         self.assertEqual(
             1,
-            RAILWAY.count("STRAYLIGHT_MESSAGING_ENABLED: preserve()"),
+            RAILWAY.count("BRUNN_MESSAGING_ENABLED: preserve()"),
         )
         self.assertIn("...releaseRuntime", api_block)
         self.assertIn(
-            "STRAYLIGHT_MESSAGING_ENABLED:\n"
-            "      api.env.STRAYLIGHT_MESSAGING_ENABLED",
+            "BRUNN_MESSAGING_ENABLED:\n"
+            "      api.env.BRUNN_MESSAGING_ENABLED",
             worker_block,
         )
         self.assertIn(
-            "STRAYLIGHT_MESSAGING_ENABLED: api.env.STRAYLIGHT_MESSAGING_ENABLED",
+            "BRUNN_MESSAGING_ENABLED: api.env.BRUNN_MESSAGING_ENABLED",
             mcp_block,
         )
 
     def test_browser_auth_has_a_small_rate_limited_proxy_boundary(self):
         self.assertIn(
-            "zone=straylight_auth_limit:1m rate=2r/s",
+            "zone=brunn_auth_limit:1m rate=2r/s",
             WEB_PROXY,
         )
         auth_proxy = WEB_PROXY.split("location ^~ /api/v1/auth/ {", 1)[1].split(
             "location /api/ {", 1
         )[0]
         self.assertIn("client_max_body_size 16k;", auth_proxy)
-        self.assertIn("limit_req zone=straylight_auth_limit burst=10 nodelay;", auth_proxy)
-        self.assertIn("proxy_pass http://straylight_api/v1/auth/;", auth_proxy)
+        self.assertIn("limit_req zone=brunn_auth_limit burst=10 nodelay;", auth_proxy)
+        self.assertIn("proxy_pass http://brunn_api/v1/auth/;", auth_proxy)
 
     def test_reasoning_and_token_contract_is_frozen(self):
         expected = {
-            "STRAYLIGHT_LEGACY_API_ENABLED": "false",
-            "STRAYLIGHT_EVALUATION_API_ENABLED": "false",
-            "STRAYLIGHT_EMBEDDING_PROVIDER": "openai",
-            "STRAYLIGHT_ALLOW_DEGRADED_EMBEDDINGS": "false",
-            "STRAYLIGHT_EMBEDDING_MODEL": "text-embedding-3-small",
-            "STRAYLIGHT_EMBEDDING_DIMENSIONS": "1536",
-            "STRAYLIGHT_CAPTURE_MODEL": "gpt-5.6",
-            "STRAYLIGHT_CAPTURE_MAX_OUTPUT_TOKENS": "8192",
-            "STRAYLIGHT_DREAM_MODEL": "gpt-5.6",
-            "STRAYLIGHT_DREAM_SCHEDULER_ENABLED": "false",
-            "STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET": "24000",
+            "BRUNN_LEGACY_API_ENABLED": "false",
+            "BRUNN_EVALUATION_API_ENABLED": "false",
+            "BRUNN_EMBEDDING_PROVIDER": "openai",
+            "BRUNN_ALLOW_DEGRADED_EMBEDDINGS": "false",
+            "BRUNN_EMBEDDING_MODEL": "text-embedding-3-small",
+            "BRUNN_EMBEDDING_DIMENSIONS": "1536",
+            "BRUNN_CAPTURE_MODEL": "gpt-5.6",
+            "BRUNN_CAPTURE_MAX_OUTPUT_TOKENS": "8192",
+            "BRUNN_DREAM_MODEL": "gpt-5.6",
+            "BRUNN_DREAM_SCHEDULER_ENABLED": "false",
+            "BRUNN_MATERIALIZE_TOKEN_BUDGET": "24000",
         }
         for name, value in expected.items():
             self.assertIn(f'{name}: "{value}"', RAILWAY)
 
     def test_release_revision_is_available_to_every_runtime(self):
         self.assertGreaterEqual(
-            RAILWAY.count("STRAYLIGHT_BUILD_REVISION: preserve()"),
+            RAILWAY.count("BRUNN_BUILD_REVISION: preserve()"),
             3,
         )
-        self.assertIn("STRAYLIGHT_BUILD_REVISION: api.env.STRAYLIGHT_BUILD_REVISION", RAILWAY)
+        self.assertIn("BRUNN_BUILD_REVISION: api.env.BRUNN_BUILD_REVISION", RAILWAY)
         self.assertGreaterEqual(RAILWAY.count("DD_VERSION: preserve()"), 2)
 
     def test_remote_mcp_is_private_oauth_gateway(self):
@@ -295,23 +295,23 @@ class RailwayContractTests(unittest.TestCase):
         self.assertIn('dockerfilePath: "apps/mcp/Dockerfile.remote"', mcp_block)
         self.assertIn('healthcheck: "/healthz"', mcp_block)
         self.assertIn(
-            'STRAYLIGHT_API_URL: "http://api.railway.internal:8080"',
+            'BRUNN_API_URL: "http://api.railway.internal:8080"',
             mcp_block,
         )
         self.assertIn(
-            'STRAYLIGHT_MCP_PUBLIC_URL: "https://straylight.rourkem.com"',
+            'BRUNN_MCP_PUBLIC_URL: "https://brunn.ai"',
             mcp_block,
         )
         self.assertIn(
-            'STRAYLIGHT_MCP_ALLOWED_ORIGINS:',
+            'BRUNN_MCP_ALLOWED_ORIGINS:',
             mcp_block,
         )
         self.assertIn(
-            '"https://chatgpt.com,https://claude.ai,https://straylight.rourkem.com"',
+            '"https://chatgpt.com,https://claude.ai,https://brunn.ai"',
             mcp_block,
         )
-        self.assertIn("STRAYLIGHT_MCP_SEALING_KEY: preserve()", mcp_block)
-        self.assertNotIn("STRAYLIGHT_API_TOKEN", mcp_block)
+        self.assertIn("BRUNN_MCP_SEALING_KEY: preserve()", mcp_block)
+        self.assertNotIn("BRUNN_API_TOKEN", mcp_block)
 
         oauth_proxy = WEB_PROXY.split(
             "# The public web service is the only edge.", 1
@@ -321,24 +321,24 @@ class RailwayContractTests(unittest.TestCase):
         self.assertIn('ENTRYPOINT ["/nodejs/bin/node", "dist/remote.js"]', MCP_DOCKERFILE)
 
     def test_hosted_object_store_is_external_versioned_s3(self):
-        self.assertIn('STRAYLIGHT_S3_ENDPOINT: ""', RAILWAY)
-        self.assertIn('STRAYLIGHT_S3_REGION: "us-west-2"', RAILWAY)
-        self.assertIn('STRAYLIGHT_S3_FORCE_PATH_STYLE: "false"', RAILWAY)
-        self.assertIn('STRAYLIGHT_S3_CREATE_BUCKET: "false"', RAILWAY)
-        self.assertIn("STRAYLIGHT_S3_ACCESS_KEY: preserve()", RAILWAY)
-        self.assertIn("STRAYLIGHT_S3_SECRET_KEY: preserve()", RAILWAY)
+        self.assertIn('BRUNN_S3_ENDPOINT: ""', RAILWAY)
+        self.assertIn('BRUNN_S3_REGION: "us-west-2"', RAILWAY)
+        self.assertIn('BRUNN_S3_FORCE_PATH_STYLE: "false"', RAILWAY)
+        self.assertIn('BRUNN_S3_CREATE_BUCKET: "false"', RAILWAY)
+        self.assertIn("BRUNN_S3_ACCESS_KEY: preserve()", RAILWAY)
+        self.assertIn("BRUNN_S3_SECRET_KEY: preserve()", RAILWAY)
 
     def test_datadog_metrics_and_logs_stay_on_private_networking(self):
         self.assertIn(
-            'STRAYLIGHT_DOGSTATSD_ADDR: "datadog-agent.railway.internal:8125"',
+            'BRUNN_DOGSTATSD_ADDR: "datadog-agent.railway.internal:8125"',
             RAILWAY,
         )
         self.assertIn(
-            'STRAYLIGHT_SYSLOG_ADDR: "datadog-agent.railway.internal:514"',
+            'BRUNN_SYSLOG_ADDR: "datadog-agent.railway.internal:514"',
             RAILWAY,
         )
         self.assertIn(
-            'STRAYLIGHT_SYSLOG_ADDR: "datadog-agent.railway.internal:515"',
+            'BRUNN_SYSLOG_ADDR: "datadog-agent.railway.internal:515"',
             RAILWAY,
         )
         self.assertIn("DD_API_KEY: preserve()", RAILWAY)

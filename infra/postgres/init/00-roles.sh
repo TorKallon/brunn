@@ -50,8 +50,8 @@ SELECT format('ALTER ROLE app_rw PASSWORD %L', :'rw_password')
 SELECT format('ALTER ROLE app_ro PASSWORD %L', :'ro_password')
 \gexec
 
-ALTER ROLE app_rw SET search_path = straylight, public;
-ALTER ROLE app_ro SET search_path = straylight, public;
+ALTER ROLE app_rw SET search_path = brunn, public;
+ALTER ROLE app_ro SET search_path = brunn, public;
 
 SELECT format('REVOKE ALL ON DATABASE %I FROM PUBLIC', :'db_name')
 \gexec

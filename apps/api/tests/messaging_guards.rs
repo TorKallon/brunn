@@ -10,7 +10,7 @@ use sqlx::{PgPool, Row, postgres::PgPoolOptions};
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use straylight::{
+use brunn::{
     AppState, Config,
     auth::hash_token,
     messaging_protocol::{self, MessageKind, SendMessageInput},
@@ -38,11 +38,11 @@ struct WorkspaceFixture {
 }
 
 async fn connect_test_state() -> Option<(PgPool, AppState)> {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping messaging guard contract");
+        eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping messaging guard contract");
         return None;
     };
 
@@ -54,7 +54,7 @@ async fn connect_test_state() -> Option<(PgPool, AppState)> {
     sqlx::migrate!("./migrations")
         .run(&seed_pool)
         .await
-        .expect("apply Straylight migrations");
+        .expect("apply Brunn migrations");
 
     let mut config = Config::from_env().expect("load disposable API configuration");
     config.database_url_rw = database_url.clone();
@@ -79,7 +79,7 @@ async fn insert_credential(
     let token = format!("messaging-guard-test-{}", Uuid::now_v7());
     sqlx::query(
         r#"
-        INSERT INTO straylight.api_credentials (
+        INSERT INTO brunn.api_credentials (
           id,user_id,label,token_hash,capabilities
         ) VALUES ($1,$2,$3,$4,$5)
         "#,
@@ -94,7 +94,7 @@ async fn insert_credential(
     .expect("insert narrow messaging credential");
     sqlx::query(
         r#"
-        INSERT INTO straylight.credential_scope_grants (
+        INSERT INTO brunn.credential_scope_grants (
           credential_id,user_id,scope_id
         ) VALUES ($1,$2,$3)
         "#,
@@ -117,7 +117,7 @@ async fn insert_agent(
 ) {
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_agents (
+        INSERT INTO brunn.messaging_agents (
           user_id,agent_id,display_name,principal_kind,delivery_mode,
           created_by_credential_id
         ) VALUES ($1,$2,$3,$4,'pull',$5)
@@ -142,7 +142,7 @@ async fn bind_credential(
 ) {
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_credential_bindings (
+        INSERT INTO brunn.messaging_credential_bindings (
           user_id,credential_id,agent_id,bound_by_credential_id
         ) VALUES ($1,$2,$3,$4)
         "#,
@@ -159,14 +159,14 @@ async fn bind_credential(
 async fn seed_workspace(pool: &PgPool, label: &str) -> WorkspaceFixture {
     let user_id = Uuid::now_v7();
     let scope_id = Uuid::now_v7();
-    sqlx::query("INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
         .bind(user_id)
         .bind(format!("messaging-guard-test:{label}:{user_id}"))
         .bind(format!("Messaging guard {label}"))
         .execute(pool)
         .await
         .expect("insert messaging guard user");
-    sqlx::query("INSERT INTO straylight.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO brunn.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)")
         .bind(scope_id)
         .bind(user_id)
         .bind(format!("scope:messaging-guard-{scope_id}"))
@@ -290,7 +290,7 @@ async fn seed_messages(
     assert!(!senders.is_empty());
     let mut tx = pool.begin().await.expect("begin message seed");
     let base_cursor = sqlx::query_scalar::<_, i64>(
-        "SELECT current_cursor FROM straylight.messaging_sync_state WHERE user_id=$1 FOR UPDATE",
+        "SELECT current_cursor FROM brunn.messaging_sync_state WHERE user_id=$1 FOR UPDATE",
     )
     .bind(user_id)
     .fetch_one(&mut *tx)
@@ -317,7 +317,7 @@ async fn seed_messages(
         .collect::<Vec<_>>();
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_message_index (
+        INSERT INTO brunn.messaging_message_index (
           user_id,conversation_id,seq,message_id,from_agent_id,client_key,
           system_key,request_hash,kind,body_md,refs,in_reply_to,
           correlation_id,expects_reply,reply_by,reply_by_handled_at,
@@ -347,7 +347,7 @@ async fn seed_messages(
     let final_cursor = base_cursor + count;
     sqlx::query(
         r#"
-        UPDATE straylight.messaging_sync_state
+        UPDATE brunn.messaging_sync_state
         SET current_cursor=$2,updated_at=clock_timestamp()
         WHERE user_id=$1
         "#,
@@ -359,7 +359,7 @@ async fn seed_messages(
     .expect("advance seeded messaging cursor");
     sqlx::query(
         r#"
-        UPDATE straylight.messaging_conversations
+        UPDATE brunn.messaging_conversations
         SET last_seq=$3,last_message_at=$4,agent_streak=$5,
             latest_sync_cursor=$6,created_at=LEAST(created_at,$4),
             updated_at=clock_timestamp()
@@ -409,13 +409,13 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     let conflict_event_key = format!("message:{notification_conflict_conversation}:1");
     sqlx::query(
         r#"
-        INSERT INTO straylight.notifications (
+        INSERT INTO brunn.notifications (
           id,user_id,producer_credential_id,event_key,request_hash,
           correlation_id,kind,importance,title,body,source,target,
           occurred_at,expires_at
         ) VALUES (
           $1,$2,$3,$4,$5,$4,'operational','normal','New agent message',
-          'Open Straylight to view the conversation.',NULL,$6,
+          'Open Brunn to view the conversation.',NULL,$6,
           clock_timestamp(),clock_timestamp()+interval '24 hours'
         )
         "#,
@@ -449,7 +449,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     let conflicted_message_count = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT count(*)::bigint
-        FROM straylight.messaging_message_index
+        FROM brunn.messaging_message_index
         WHERE user_id=$1 AND conversation_id=$2
         "#,
     )
@@ -594,7 +594,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     let streak_row = sqlx::query(
         r#"
         SELECT status,agent_streak,needs_human,last_seq
-        FROM straylight.messaging_conversations
+        FROM brunn.messaging_conversations
         WHERE user_id=$1 AND conversation_id=$2
         "#,
     )
@@ -611,7 +611,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
         r#"
         SELECT count(*)::bigint AS total,
                count(*) FILTER (WHERE kind='system')::bigint AS systems
-        FROM straylight.messaging_message_index
+        FROM brunn.messaging_message_index
         WHERE user_id=$1 AND conversation_id=$2 AND seq>=20
         "#,
     )
@@ -625,7 +625,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     let needs_human_notifications = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT count(*)::bigint
-        FROM straylight.notifications
+        FROM brunn.notifications
         WHERE user_id=$1 AND event_key LIKE $2
         "#,
     )
@@ -635,7 +635,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     .await
     .expect("count needs-human notifications");
     let all_streak_notifications = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*)::bigint FROM straylight.notifications WHERE user_id=$1",
+        "SELECT count(*)::bigint FROM brunn.notifications WHERE user_id=$1",
     )
     .bind(streak.user_id)
     .fetch_one(&pool)
@@ -673,7 +673,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     let resumed_state = sqlx::query_as::<_, (String, i32, bool)>(
         r#"
         SELECT status,agent_streak,needs_human
-        FROM straylight.messaging_conversations
+        FROM brunn.messaging_conversations
         WHERE user_id=$1 AND conversation_id=$2
         "#,
     )
@@ -686,7 +686,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
 
     sqlx::query(
         r#"
-        UPDATE straylight.messaging_conversations
+        UPDATE brunn.messaging_conversations
         SET status='paused_for_human',agent_streak=20,needs_human=true
         WHERE user_id=$1 AND conversation_id=$2
         "#,
@@ -699,7 +699,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     let owner_role_before_post = sqlx::query_scalar::<_, String>(
         r#"
         SELECT role
-        FROM straylight.messaging_participants
+        FROM brunn.messaging_participants
         WHERE user_id=$1 AND conversation_id=$2 AND agent_id='owner'
         "#,
     )
@@ -721,7 +721,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     let owner_cleared = sqlx::query_as::<_, (String, i32, bool)>(
         r#"
         SELECT status,agent_streak,needs_human
-        FROM straylight.messaging_conversations
+        FROM brunn.messaging_conversations
         WHERE user_id=$1 AND conversation_id=$2
         "#,
     )
@@ -734,7 +734,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     let owner_role_after_post = sqlx::query_scalar::<_, String>(
         r#"
         SELECT role
-        FROM straylight.messaging_participants
+        FROM brunn.messaging_participants
         WHERE user_id=$1 AND conversation_id=$2 AND agent_id='owner'
         "#,
     )
@@ -750,7 +750,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     let owner_post_shape = sqlx::query_as::<_, (String, Option<String>)>(
         r#"
         SELECT conversation_kind,direct_key
-        FROM straylight.messaging_conversations
+        FROM brunn.messaging_conversations
         WHERE user_id=$1 AND conversation_id=$2
         "#,
     )
@@ -805,7 +805,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     let pause_events = sqlx::query_scalar::<_, Vec<String>>(
         r#"
         SELECT array_agg(event_key ORDER BY event_key)
-        FROM straylight.notifications
+        FROM brunn.notifications
         WHERE user_id=$1
         "#,
     )
@@ -891,7 +891,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     let old_rollover = sqlx::query_as::<_, (String, i64, Option<Uuid>)>(
         r#"
         SELECT status,last_seq,continues_from
-        FROM straylight.messaging_conversations
+        FROM brunn.messaging_conversations
         WHERE user_id=$1 AND conversation_id=$2
         "#,
     )
@@ -904,7 +904,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     let continuation = sqlx::query_as::<_, (String, i64, Option<Uuid>)>(
         r#"
         SELECT status,last_seq,continues_from
-        FROM straylight.messaging_conversations
+        FROM brunn.messaging_conversations
         WHERE user_id=$1 AND conversation_id=$2
         "#,
     )
@@ -922,7 +922,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
         SELECT count(*)::bigint
         FROM (
           SELECT conversation_id,count(*) AS message_count
-          FROM straylight.messaging_message_index
+          FROM brunn.messaging_message_index
           WHERE user_id=$1
             AND conversation_id IN ($2,$3)
           GROUP BY conversation_id
@@ -940,7 +940,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     let continuation_systems = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT count(*)::bigint
-        FROM straylight.messaging_message_index
+        FROM brunn.messaging_message_index
         WHERE user_id=$1 AND conversation_id=$2 AND seq=1 AND kind='system'
         "#,
     )
@@ -973,7 +973,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     let stored_reply = sqlx::query_as::<_, (Option<Uuid>, Option<i64>)>(
         r#"
         SELECT in_reply_to_conversation_id,in_reply_to
-        FROM straylight.messaging_message_index
+        FROM brunn.messaging_message_index
         WHERE user_id=$1 AND conversation_id=$2 AND seq=3
         "#,
     )
@@ -1073,7 +1073,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     let handled_at = sqlx::query_scalar::<_, Option<DateTime<Utc>>>(
         r#"
         SELECT reply_by_handled_at
-        FROM straylight.messaging_message_index
+        FROM brunn.messaging_message_index
         WHERE user_id=$1 AND conversation_id=$2 AND seq=$3
         "#,
     )
@@ -1088,7 +1088,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     let deadline_systems = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT count(*)::bigint
-        FROM straylight.messaging_message_index
+        FROM brunn.messaging_message_index
         WHERE user_id=$1 AND conversation_id=$2 AND system_key=$3
         "#,
     )
@@ -1101,7 +1101,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     let deadline_notifications = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT count(*)::bigint
-        FROM straylight.notifications
+        FROM brunn.notifications
         WHERE user_id=$1 AND event_key=$2
         "#,
     )
@@ -1153,7 +1153,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     let canceled_handled = sqlx::query_scalar::<_, Option<DateTime<Utc>>>(
         r#"
         SELECT reply_by_handled_at
-        FROM straylight.messaging_message_index
+        FROM brunn.messaging_message_index
         WHERE user_id=$1 AND conversation_id=$2 AND seq=$3
         "#,
     )
@@ -1169,7 +1169,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     );
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
-            "SELECT count(*)::bigint FROM straylight.messaging_message_index WHERE user_id=$1 AND system_key=$2",
+            "SELECT count(*)::bigint FROM brunn.messaging_message_index WHERE user_id=$1 AND system_key=$2",
         )
         .bind(canceled.user_id)
         .bind(format!(
@@ -1237,10 +1237,10 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
         r#"
         SELECT
           (SELECT count(*)::bigint
-           FROM straylight.messaging_message_index
+           FROM brunn.messaging_message_index
            WHERE user_id=$1 AND system_key=$2),
           (SELECT count(*)::bigint
-           FROM straylight.notifications
+           FROM brunn.notifications
            WHERE user_id=$1 AND event_key=$2)
         "#,
     )

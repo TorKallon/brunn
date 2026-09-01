@@ -31,11 +31,11 @@ export function workspaceEntryKind(
   entry: Pick<WorkspaceManifestEntry, "path" | "metadata">,
 ): string {
   const metadata = metadataObject(entry.metadata);
-  const kind = metadata.kind ?? metadata.straylight_kind;
+  const kind = metadata.kind ?? metadata.brunn_kind;
   if (typeof kind === "string") return kind;
-  if (entry.path.startsWith(".straylight/checkpoints/")) return "checkpoint";
-  if (entry.path.startsWith(".straylight/proposals/")) return "proposal";
-  if (entry.path.startsWith(".straylight/binaries/")) {
+  if (entry.path.startsWith(".brunn/checkpoints/")) return "checkpoint";
+  if (entry.path.startsWith(".brunn/proposals/")) return "proposal";
+  if (entry.path.startsWith(".brunn/binaries/")) {
     return "binary_description";
   }
   if (entry.path.startsWith("Briefings/Topics/")) return "briefing_topic";
@@ -48,7 +48,7 @@ export function isProposalEntry(entry: WorkspaceManifestEntry): boolean {
   const kind = workspaceEntryKind(entry).toLowerCase();
   return (
     kind.includes("proposal") ||
-    entry.path.startsWith(".straylight/proposals/") ||
+    entry.path.startsWith(".brunn/proposals/") ||
     entry.path.startsWith("Inbox/Proposals/")
   );
 }

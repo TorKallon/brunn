@@ -108,7 +108,7 @@ def multipart(
     media_type: str,
     content: bytes,
 ) -> tuple[str, bytes]:
-    boundary = f"----straylight-contract-{uuid.uuid4().hex}"
+    boundary = f"----brunn-contract-{uuid.uuid4().hex}"
     chunks: list[bytes] = []
     for name, value in fields.items():
         chunks.extend([
@@ -250,10 +250,10 @@ def upload_binary(
     return response
 
 
-def run(base_url: str, env: dict[str, str], carrystate: Path) -> dict[str, Any]:
+def run(base_url: str, env: dict[str, str], brunn_state: Path) -> dict[str, Any]:
     run_id = uuid.uuid4().hex
-    admin = Client(base_url, env["STRAYLIGHT_DEV_READ_WRITE_TOKEN"])
-    read_only = Client(base_url, env["STRAYLIGHT_DEV_READ_ONLY_TOKEN"])
+    admin = Client(base_url, env["BRUNN_DEV_READ_WRITE_TOKEN"])
+    read_only = Client(base_url, env["BRUNN_DEV_READ_ONLY_TOKEN"])
     isolated = provision_user(admin, run_id, "isolated")
     started = time.monotonic()
 
@@ -380,7 +380,7 @@ def run(base_url: str, env: dict[str, str], carrystate: Path) -> dict[str, Any]:
     reserved_id = uuid.uuid4()
     write(
         admin,
-        f".straylight/checkpoints/{reserved_id}.md",
+        f".brunn/checkpoints/{reserved_id}.md",
         "not a checkpoint",
         expected_version=0,
         expected=400,
@@ -557,7 +557,7 @@ def run(base_url: str, env: dict[str, str], carrystate: Path) -> dict[str, Any]:
 
     imported_checkpoint_id = uuid.uuid4()
     imported_checkpoint_path = (
-        f".straylight/checkpoints/{imported_checkpoint_id}.md"
+        f".brunn/checkpoints/{imported_checkpoint_id}.md"
     )
     imported_checkpoint_ref = f"checkpoint:{imported_checkpoint_id}"
     imported_source_path = f"Contracts/{run_id}/imported-source.md"
@@ -571,7 +571,7 @@ def run(base_url: str, env: dict[str, str], carrystate: Path) -> dict[str, Any]:
     )
     origin_generation = 9_000_000_000_000
     imported_checkpoint_content = (
-        "---\nstraylight_kind: checkpoint\n"
+        "---\nbrunn_kind: checkpoint\n"
         f"checkpoint_id: {imported_checkpoint_id}\n"
         f"workspace_generation: {origin_generation}\n---\n\n"
         "# Imported checkpoint\n\nPortable checkpoint marker.\n"
@@ -591,8 +591,8 @@ def run(base_url: str, env: dict[str, str], carrystate: Path) -> dict[str, Any]:
                 "version": imported_source["version"],
                 "content_hash": imported_source["content_hash"],
             }],
-            "_straylight_import": {
-                "format": "straylight-workspace-import-manifest@v1"
+            "_brunn_import": {
+                "format": "brunn-workspace-import-manifest@v1"
             },
         },
     )
@@ -606,8 +606,8 @@ def run(base_url: str, env: dict[str, str], carrystate: Path) -> dict[str, Any]:
             "kind": "checkpoint",
             "checkpoint_ref": imported_checkpoint_ref,
             "workspace_generation": origin_generation,
-            "_straylight_import": {
-                "format": "straylight-workspace-import-manifest@v1"
+            "_brunn_import": {
+                "format": "brunn-workspace-import-manifest@v1"
             },
         },
     )
@@ -619,9 +619,9 @@ def run(base_url: str, env: dict[str, str], carrystate: Path) -> dict[str, Any]:
     unresolved_parent_id = uuid.uuid4()
     write(
         isolated,
-        f".straylight/checkpoints/{unresolved_import_id}.md",
+        f".brunn/checkpoints/{unresolved_import_id}.md",
         (
-            "---\nstraylight_kind: checkpoint\n"
+            "---\nbrunn_kind: checkpoint\n"
             f"checkpoint_id: {unresolved_import_id}\n"
             f"parent_checkpoint_id: checkpoint:{unresolved_parent_id}\n"
             "---\n\nUnresolved portable child.\n"
@@ -631,20 +631,20 @@ def run(base_url: str, env: dict[str, str], carrystate: Path) -> dict[str, Any]:
             "kind": "checkpoint",
             "checkpoint_ref": f"checkpoint:{unresolved_import_id}",
             "parent_checkpoint_ref": f"checkpoint:{unresolved_parent_id}",
-            "_straylight_import": {
-                "format": "straylight-workspace-import-manifest@v1"
+            "_brunn_import": {
+                "format": "brunn-workspace-import-manifest@v1"
             },
         },
         expected=409,
     )
     imported_child_id = uuid.uuid4()
     imported_child_ref = f"checkpoint:{imported_child_id}"
-    imported_child_path = f".straylight/checkpoints/{imported_child_id}.md"
+    imported_child_path = f".brunn/checkpoints/{imported_child_id}.md"
     imported_child = write(
         isolated,
         imported_child_path,
         (
-            "---\nstraylight_kind: checkpoint\n"
+            "---\nbrunn_kind: checkpoint\n"
             f"checkpoint_id: {imported_child_id}\n"
             f"parent_checkpoint_id: {imported_checkpoint_ref}\n"
             "---\n\nPortable child checkpoint.\n"
@@ -655,8 +655,8 @@ def run(base_url: str, env: dict[str, str], carrystate: Path) -> dict[str, Any]:
             "checkpoint_ref": imported_child_ref,
             "parent_checkpoint_ref": imported_checkpoint_ref,
             "workspace_generation": origin_generation + 1,
-            "_straylight_import": {
-                "format": "straylight-workspace-import-manifest@v1"
+            "_brunn_import": {
+                "format": "brunn-workspace-import-manifest@v1"
             },
         },
     )
@@ -685,8 +685,8 @@ def run(base_url: str, env: dict[str, str], carrystate: Path) -> dict[str, Any]:
             "kind": "checkpoint",
             "checkpoint_ref": imported_checkpoint_ref,
             "workspace_generation": origin_generation,
-            "_straylight_import": {
-                "format": "straylight-workspace-import-manifest@v1"
+            "_brunn_import": {
+                "format": "brunn-workspace-import-manifest@v1"
             },
         },
         expected=409,
@@ -749,23 +749,23 @@ def run(base_url: str, env: dict[str, str], carrystate: Path) -> dict[str, Any]:
         source_refs=[export_path],
     )
     exported_checkpoint_ref = str(data(exported_checkpoint)["checkpoint_ref"])
-    with tempfile.TemporaryDirectory(prefix="straylight-contract-export-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="brunn-contract-export-") as temporary:
         root = Path(temporary)
         exported_root = root / "export"
         state_root = root / "state"
         base_env = {
             **os.environ,
-            "CARRYSTATE_API_URL": base_url,
+            "BRUNN_STATE_API_URL": base_url,
         }
         exported = subprocess.run(
             [
-                str(carrystate),
+                str(brunn_state),
                 "workspace",
                 "export",
                 "--output",
                 str(exported_root),
             ],
-            env={**base_env, "CARRYSTATE_API_TOKEN": export_source.token},
+            env={**base_env, "BRUNN_STATE_API_TOKEN": export_source.token},
             text=True,
             capture_output=True,
             check=False,
@@ -776,7 +776,7 @@ def run(base_url: str, env: dict[str, str], carrystate: Path) -> dict[str, Any]:
         )
         imported_result = subprocess.run(
             [
-                str(carrystate),
+                str(brunn_state),
                 "workspace",
                 "import",
                 "--root",
@@ -786,7 +786,7 @@ def run(base_url: str, env: dict[str, str], carrystate: Path) -> dict[str, Any]:
                 "--describe-binaries",
                 "false",
             ],
-            env={**base_env, "CARRYSTATE_API_TOKEN": export_target.token},
+            env={**base_env, "BRUNN_STATE_API_TOKEN": export_target.token},
             text=True,
             capture_output=True,
             check=False,
@@ -844,7 +844,7 @@ def run(base_url: str, env: dict[str, str], carrystate: Path) -> dict[str, Any]:
     )
 
     return {
-        "schema": "straylight-simple-workspace-live-contract@v1",
+        "schema": "brunn-simple-workspace-live-contract@v1",
         "status": "pass",
         "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
         "checks": {
@@ -874,21 +874,21 @@ def main() -> int:
     parser.add_argument("--base-url", default="http://127.0.0.1:55213")
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument(
-        "--carrystate",
+        "--brunn-state",
         type=Path,
         default=Path(__file__).resolve().parents[1]
         / "apps"
         / "api"
         / "target"
         / "debug"
-        / "carrystate",
+        / "brunn-state",
     )
     args = parser.parse_args()
     try:
-        result = run(args.base_url, load_env(args.env_file), args.carrystate.resolve())
+        result = run(args.base_url, load_env(args.env_file), args.brunn_state.resolve())
     except (ContractFailure, KeyError, OSError, ValueError) as error:
         result = {
-            "schema": "straylight-simple-workspace-live-contract@v1",
+            "schema": "brunn-simple-workspace-live-contract@v1",
             "status": "fail",
             "error": str(error),
         }

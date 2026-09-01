@@ -72,20 +72,20 @@ read_account_key() {
 postgres_admin_password=$(random_hex 32)
 postgres_app_rw_password=$(random_hex 32)
 postgres_app_ro_password=$(random_hex 32)
-minio_root_user="straylight-root-$(random_hex 8)"
+minio_root_user="brunn-root-$(random_hex 8)"
 minio_root_password=$(random_hex 32)
-minio_app_access_key="straylight-app-$(random_hex 8)"
+minio_app_access_key="brunn-app-$(random_hex 8)"
 minio_app_secret_key=$(random_hex 32)
 
 write_secret postgres_admin_password "$postgres_admin_password"
 write_secret postgres_app_rw_password "$postgres_app_rw_password"
 write_secret postgres_app_ro_password "$postgres_app_ro_password"
 write_secret database_url_rw \
-  "postgres://app_rw:$postgres_app_rw_password@db:5432/straylight"
+  "postgres://app_rw:$postgres_app_rw_password@db:5432/brunn"
 write_secret database_url_ro \
-  "postgres://app_ro:$postgres_app_ro_password@db:5432/straylight"
+  "postgres://app_ro:$postgres_app_ro_password@db:5432/brunn"
 write_secret database_url_admin \
-  "postgres://admin:$postgres_admin_password@db:5432/straylight"
+  "postgres://admin:$postgres_admin_password@db:5432/brunn"
 write_secret minio_root_user "$minio_root_user"
 write_secret minio_root_password "$minio_root_password"
 write_secret minio_app_access_key "$minio_app_access_key"

@@ -8,7 +8,7 @@ deploy_step() {
   step_name=$1
   shift
 
-  if [ "${STRAYLIGHT_DEPLOY_FAIL_STEP:-}" = "$step_name" ]; then
+  if [ "${BRUNN_DEPLOY_FAIL_STEP:-}" = "$step_name" ]; then
     echo "deployment step failed by fault injection: $step_name" >&2
     return 97
   fi

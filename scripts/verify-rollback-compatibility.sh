@@ -13,9 +13,9 @@ root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 env_file=${ENV_FILE:-"$root/production.env"}
 compose_override_file=${COMPOSE_OVERRIDE_FILE-"$root/compose.production.yaml"}
 compose_managed_s3_file=${COMPOSE_MANAGED_S3_FILE:-}
-project=${COMPOSE_PROJECT_NAME:-straylight}
+project=${COMPOSE_PROJECT_NAME:-brunn}
 probe_name="$project-rollback-probe-$$"
-temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/straylight-rollback-probe.XXXXXX")
+temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/brunn-rollback-probe.XXXXXX")
 override_file="$temp_dir/compose.rollback-probe.yaml"
 
 [ -f "$env_file" ] || {
@@ -28,7 +28,7 @@ printf '%s\n' \
   'services:' \
   '  api:' \
   '    build: !reset null' \
-  '    image: ${STRAYLIGHT_ROLLBACK_PROBE_IMAGE:?set probe image}' \
+  '    image: ${BRUNN_ROLLBACK_PROBE_IMAGE:?set probe image}' \
   >"$override_file"
 
 compose() {
@@ -72,7 +72,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-export STRAYLIGHT_ROLLBACK_PROBE_IMAGE=$target_image
+export BRUNN_ROLLBACK_PROBE_IMAGE=$target_image
 compose run --detach --no-deps \
   --name "$probe_name" \
   --publish "127.0.0.1::8080" \

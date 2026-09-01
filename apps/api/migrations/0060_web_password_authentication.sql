@@ -2,18 +2,18 @@
 -- credentials. Passwords use application-generated Argon2id PHC strings; only
 -- SHA-256 hashes of random session and reset secrets reach PostgreSQL.
 
-CREATE TABLE straylight.web_identities (
-  user_id uuid PRIMARY KEY REFERENCES straylight.users(id),
-  username straylight.nonempty_text NOT NULL,
-  username_normalized straylight.nonempty_text NOT NULL UNIQUE,
-  email straylight.nonempty_text NOT NULL,
-  email_normalized straylight.nonempty_text NOT NULL UNIQUE,
+CREATE TABLE brunn.web_identities (
+  user_id uuid PRIMARY KEY REFERENCES brunn.users(id),
+  username brunn.nonempty_text NOT NULL,
+  username_normalized brunn.nonempty_text NOT NULL UNIQUE,
+  email brunn.nonempty_text NOT NULL,
+  email_normalized brunn.nonempty_text NOT NULL UNIQUE,
   password_hash text,
   web_credential_id uuid NOT NULL UNIQUE,
   configured_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   FOREIGN KEY (user_id, web_credential_id)
-    REFERENCES straylight.api_credentials(user_id, id),
+    REFERENCES brunn.api_credentials(user_id, id),
   CHECK (username_normalized = lower(btrim(username::text))),
   CHECK (email_normalized = lower(btrim(email::text))),
   CHECK (username_normalized ~ '^[a-z0-9][a-z0-9._-]{2,63}$'),
@@ -21,29 +21,29 @@ CREATE TABLE straylight.web_identities (
   CHECK (password_hash IS NULL OR password_hash LIKE '$argon2id$%')
 );
 
-CREATE TABLE straylight.web_sessions (
+CREATE TABLE brunn.web_sessions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES straylight.users(id),
+  user_id uuid NOT NULL REFERENCES brunn.users(id),
   credential_id uuid NOT NULL,
-  token_hash straylight.sha256_hex NOT NULL UNIQUE,
+  token_hash brunn.sha256_hex NOT NULL UNIQUE,
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   expires_at timestamptz NOT NULL,
   revoked_at timestamptz,
   FOREIGN KEY (user_id, credential_id)
-    REFERENCES straylight.api_credentials(user_id, id),
+    REFERENCES brunn.api_credentials(user_id, id),
   CHECK (expires_at > created_at),
   CHECK (expires_at <= created_at + interval '12 hours 1 minute'),
   CHECK (revoked_at IS NULL OR revoked_at >= created_at)
 );
 
 CREATE INDEX web_sessions_active_idx
-  ON straylight.web_sessions (user_id, expires_at)
+  ON brunn.web_sessions (user_id, expires_at)
   WHERE revoked_at IS NULL;
 
-CREATE TABLE straylight.password_reset_tokens (
+CREATE TABLE brunn.password_reset_tokens (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES straylight.users(id),
-  token_hash straylight.sha256_hex NOT NULL UNIQUE,
+  user_id uuid NOT NULL REFERENCES brunn.users(id),
+  token_hash brunn.sha256_hex NOT NULL UNIQUE,
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   expires_at timestamptz NOT NULL,
   used_at timestamptz,
@@ -53,16 +53,16 @@ CREATE TABLE straylight.password_reset_tokens (
 );
 
 CREATE INDEX password_reset_tokens_active_idx
-  ON straylight.password_reset_tokens (user_id, expires_at)
+  ON brunn.password_reset_tokens (user_id, expires_at)
   WHERE used_at IS NULL;
 
 -- Identifier keys are HMAC-SHA-256 values generated with the continuation
 -- secret. They bound brute force and reset-email amplification without storing
 -- usernames or email addresses in the rate-limit ledger.
-CREATE TABLE straylight.web_auth_rate_limits (
+CREATE TABLE brunn.web_auth_rate_limits (
   kind text NOT NULL CHECK (kind IN ('login', 'reset')),
-  identifier_hash straylight.sha256_hex NOT NULL,
-  user_id uuid REFERENCES straylight.users(id),
+  identifier_hash brunn.sha256_hex NOT NULL,
+  user_id uuid REFERENCES brunn.users(id),
   window_started_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   attempts integer NOT NULL DEFAULT 1 CHECK (attempts > 0),
   updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
@@ -70,31 +70,31 @@ CREATE TABLE straylight.web_auth_rate_limits (
 );
 
 CREATE INDEX web_auth_rate_limits_updated_idx
-  ON straylight.web_auth_rate_limits (updated_at);
+  ON brunn.web_auth_rate_limits (updated_at);
 
 -- Disabling the permanent Web UI principal must immediately invalidate every
 -- browser session. This also covers operator recovery and account lifecycle
 -- paths that disable credentials without going through the web-auth module.
-CREATE FUNCTION straylight.revoke_web_sessions_on_credential_disable()
+CREATE FUNCTION brunn.revoke_web_sessions_on_credential_disable()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 BEGIN
   IF NEW.disabled_at IS NOT NULL AND OLD.disabled_at IS DISTINCT FROM NEW.disabled_at THEN
-    UPDATE straylight.web_sessions
+    UPDATE brunn.web_sessions
     SET revoked_at = coalesce(revoked_at, clock_timestamp())
     WHERE user_id = NEW.user_id
       AND credential_id = NEW.id
       AND revoked_at IS NULL;
     IF EXISTS (
-      SELECT 1 FROM straylight.web_identities AS identity
+      SELECT 1 FROM brunn.web_identities AS identity
       WHERE identity.user_id = NEW.user_id
         AND identity.web_credential_id = NEW.id
     ) THEN
-      UPDATE straylight.password_reset_tokens
+      UPDATE brunn.password_reset_tokens
       SET used_at = coalesce(used_at, clock_timestamp())
       WHERE user_id = NEW.user_id AND used_at IS NULL;
     END IF;
@@ -104,23 +104,23 @@ END;
 $$;
 
 CREATE TRIGGER api_credentials_revoke_web_sessions
-AFTER UPDATE OF disabled_at ON straylight.api_credentials
-FOR EACH ROW EXECUTE FUNCTION straylight.revoke_web_sessions_on_credential_disable();
+AFTER UPDATE OF disabled_at ON brunn.api_credentials
+FOR EACH ROW EXECUTE FUNCTION brunn.revoke_web_sessions_on_credential_disable();
 
 -- Re-running operator identity configuration may change the sign-in address
 -- or rebind its principal. Existing sessions must not survive that change.
-CREATE FUNCTION straylight.revoke_web_sessions_on_identity_change()
+CREATE FUNCTION brunn.revoke_web_sessions_on_identity_change()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 BEGIN
-  UPDATE straylight.web_sessions
+  UPDATE brunn.web_sessions
   SET revoked_at = coalesce(revoked_at, clock_timestamp())
   WHERE user_id = NEW.user_id AND revoked_at IS NULL;
-  UPDATE straylight.password_reset_tokens
+  UPDATE brunn.password_reset_tokens
   SET used_at = coalesce(used_at, clock_timestamp())
   WHERE user_id = NEW.user_id AND used_at IS NULL;
   RETURN NEW;
@@ -129,27 +129,27 @@ $$;
 
 CREATE TRIGGER web_identities_revoke_web_sessions
 AFTER UPDATE OF username, username_normalized, email, email_normalized,
-                web_credential_id ON straylight.web_identities
-FOR EACH ROW EXECUTE FUNCTION straylight.revoke_web_sessions_on_identity_change();
+                web_credential_id ON brunn.web_identities
+FOR EACH ROW EXECUTE FUNCTION brunn.revoke_web_sessions_on_identity_change();
 
-REVOKE ALL ON FUNCTION straylight.revoke_web_sessions_on_credential_disable() FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight.revoke_web_sessions_on_identity_change() FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn.revoke_web_sessions_on_credential_disable() FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn.revoke_web_sessions_on_identity_change() FROM PUBLIC;
 
-ALTER TABLE straylight.web_identities ENABLE ROW LEVEL SECURITY;
-ALTER TABLE straylight.web_identities FORCE ROW LEVEL SECURITY;
-ALTER TABLE straylight.web_sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE straylight.web_sessions FORCE ROW LEVEL SECURITY;
-ALTER TABLE straylight.password_reset_tokens ENABLE ROW LEVEL SECURITY;
-ALTER TABLE straylight.password_reset_tokens FORCE ROW LEVEL SECURITY;
-ALTER TABLE straylight.web_auth_rate_limits ENABLE ROW LEVEL SECURITY;
-ALTER TABLE straylight.web_auth_rate_limits FORCE ROW LEVEL SECURITY;
+ALTER TABLE brunn.web_identities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE brunn.web_identities FORCE ROW LEVEL SECURITY;
+ALTER TABLE brunn.web_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE brunn.web_sessions FORCE ROW LEVEL SECURITY;
+ALTER TABLE brunn.password_reset_tokens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE brunn.password_reset_tokens FORCE ROW LEVEL SECURITY;
+ALTER TABLE brunn.web_auth_rate_limits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE brunn.web_auth_rate_limits FORCE ROW LEVEL SECURITY;
 
-REVOKE ALL ON straylight.web_identities FROM app_rw, app_ro;
-REVOKE ALL ON straylight.web_sessions FROM app_rw, app_ro;
-REVOKE ALL ON straylight.password_reset_tokens FROM app_rw, app_ro;
-REVOKE ALL ON straylight.web_auth_rate_limits FROM app_rw, app_ro;
+REVOKE ALL ON brunn.web_identities FROM app_rw, app_ro;
+REVOKE ALL ON brunn.web_sessions FROM app_rw, app_ro;
+REVOKE ALL ON brunn.password_reset_tokens FROM app_rw, app_ro;
+REVOKE ALL ON brunn.web_auth_rate_limits FROM app_rw, app_ro;
 
-CREATE FUNCTION straylight_auth.lookup_web_identity(p_identifier text)
+CREATE FUNCTION brunn_auth.lookup_web_identity(p_identifier text)
 RETURNS TABLE (
   user_id uuid,
   credential_id uuid,
@@ -161,7 +161,7 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
   SELECT identity.user_id,
@@ -170,9 +170,9 @@ AS $$
          identity.email::text,
          user_row.display_name::text,
          identity.password_hash
-  FROM straylight.web_identities AS identity
-  JOIN straylight.users AS user_row ON user_row.id = identity.user_id
-  JOIN straylight.api_credentials AS credential
+  FROM brunn.web_identities AS identity
+  JOIN brunn.users AS user_row ON user_row.id = identity.user_id
+  JOIN brunn.api_credentials AS credential
     ON credential.user_id = identity.user_id
    AND credential.id = identity.web_credential_id
   WHERE user_row.account_status = 'active'
@@ -184,7 +184,7 @@ AS $$
   LIMIT 1
 $$;
 
-CREATE FUNCTION straylight_auth.consume_web_auth_rate_limit(
+CREATE FUNCTION brunn_auth.consume_web_auth_rate_limit(
   p_kind text,
   p_identifier_hash text,
   p_user_id uuid DEFAULT NULL
@@ -192,7 +192,7 @@ CREATE FUNCTION straylight_auth.consume_web_auth_rate_limit(
 RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 DECLARE
@@ -215,10 +215,10 @@ BEGIN
       RAISE EXCEPTION 'rate-limit kind is invalid' USING ERRCODE = '22023';
   END CASE;
 
-  DELETE FROM straylight.web_auth_rate_limits
+  DELETE FROM brunn.web_auth_rate_limits
   WHERE updated_at < clock_timestamp() - interval '2 days';
 
-  INSERT INTO straylight.web_auth_rate_limits AS bucket (
+  INSERT INTO brunn.web_auth_rate_limits AS bucket (
     kind, identifier_hash, user_id
   ) VALUES (
     p_kind, p_identifier_hash, p_user_id
@@ -241,21 +241,21 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION straylight_auth.clear_web_auth_rate_limit(
+CREATE FUNCTION brunn_auth.clear_web_auth_rate_limit(
   p_kind text,
   p_identifier_hash text
 )
 RETURNS void
 LANGUAGE sql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
-  DELETE FROM straylight.web_auth_rate_limits
+  DELETE FROM brunn.web_auth_rate_limits
   WHERE kind = p_kind AND identifier_hash = p_identifier_hash
 $$;
 
-CREATE FUNCTION straylight_auth.create_web_session(
+CREATE FUNCTION brunn_auth.create_web_session(
   p_user_id uuid,
   p_token_hash text,
   p_expires_at timestamptz,
@@ -265,7 +265,7 @@ CREATE FUNCTION straylight_auth.create_web_session(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 DECLARE
@@ -280,11 +280,11 @@ BEGIN
   END IF;
 
   SELECT credential.id INTO principal_id
-  FROM straylight.api_credentials AS credential
-  JOIN straylight.web_identities AS identity
+  FROM brunn.api_credentials AS credential
+  JOIN brunn.web_identities AS identity
     ON credential.user_id = identity.user_id
    AND credential.id = identity.web_credential_id
-  JOIN straylight.users AS user_row ON user_row.id = identity.user_id
+  JOIN brunn.users AS user_row ON user_row.id = identity.user_id
   WHERE identity.user_id = p_user_id
     AND user_row.account_status = 'active'
     AND credential.disabled_at IS NULL
@@ -295,7 +295,7 @@ BEGIN
   END IF;
 
   PERFORM 1
-  FROM straylight.web_identities AS identity
+  FROM brunn.web_identities AS identity
   WHERE identity.user_id = p_user_id
     AND identity.web_credential_id = principal_id
     AND identity.password_hash = p_verified_password_hash
@@ -305,17 +305,17 @@ BEGIN
     RAISE EXCEPTION 'verified password changed' USING ERRCODE = 'P0002';
   END IF;
 
-  DELETE FROM straylight.web_sessions
+  DELETE FROM brunn.web_sessions
   WHERE user_id = p_user_id
     AND (revoked_at IS NOT NULL OR expires_at <= clock_timestamp());
 
-  INSERT INTO straylight.web_sessions (
+  INSERT INTO brunn.web_sessions (
     user_id, credential_id, token_hash, expires_at
   ) VALUES (
     p_user_id, principal_id, p_token_hash, p_expires_at
   ) RETURNING id INTO created_session_id;
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, credential_id, action, details, content_free
   ) VALUES (
     p_user_id, principal_id, 'auth.web.login',
@@ -326,7 +326,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION straylight_auth.authenticate_web_session(p_token_hash text)
+CREATE FUNCTION brunn_auth.authenticate_web_session(p_token_hash text)
 RETURNS TABLE (
   web_session_id uuid,
   credential_id uuid,
@@ -341,7 +341,7 @@ RETURNS TABLE (
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
   SELECT session.id,
@@ -357,18 +357,18 @@ AS $$
          identity.username::text,
          identity.email::text,
          user_row.display_name::text
-  FROM straylight.web_sessions AS session
-  JOIN straylight.web_identities AS identity
+  FROM brunn.web_sessions AS session
+  JOIN brunn.web_identities AS identity
     ON identity.user_id = session.user_id
    AND identity.web_credential_id = session.credential_id
-  JOIN straylight.users AS user_row ON user_row.id = session.user_id
-  JOIN straylight.api_credentials AS credential
+  JOIN brunn.users AS user_row ON user_row.id = session.user_id
+  JOIN brunn.api_credentials AS credential
     ON credential.user_id = session.user_id
    AND credential.id = session.credential_id
-  LEFT JOIN straylight.credential_scope_grants AS scope_grant
+  LEFT JOIN brunn.credential_scope_grants AS scope_grant
     ON scope_grant.user_id = credential.user_id
    AND scope_grant.credential_id = credential.id
-  LEFT JOIN straylight.scopes AS scope
+  LEFT JOIN brunn.scopes AS scope
     ON scope.user_id = scope_grant.user_id
    AND scope.id = scope_grant.scope_id
   WHERE session.token_hash = p_token_hash
@@ -380,11 +380,11 @@ AS $$
            user_row.display_name
 $$;
 
-CREATE FUNCTION straylight_auth.revoke_web_session(p_token_hash text)
+CREATE FUNCTION brunn_auth.revoke_web_session(p_token_hash text)
 RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 DECLARE
@@ -392,7 +392,7 @@ DECLARE
   revoked_credential_id uuid;
   revoked_session_id uuid;
 BEGIN
-  UPDATE straylight.web_sessions AS session
+  UPDATE brunn.web_sessions AS session
   SET revoked_at = coalesce(session.revoked_at, clock_timestamp())
   WHERE session.token_hash = p_token_hash
     AND session.revoked_at IS NULL
@@ -403,7 +403,7 @@ BEGIN
     RETURN false;
   END IF;
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, credential_id, action, details, content_free
   ) VALUES (
     revoked_user_id, revoked_credential_id, 'auth.web.logout',
@@ -413,7 +413,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION straylight_auth.issue_password_reset(
+CREATE FUNCTION brunn_auth.issue_password_reset(
   p_user_id uuid,
   p_token_hash text,
   p_expires_at timestamptz,
@@ -422,7 +422,7 @@ CREATE FUNCTION straylight_auth.issue_password_reset(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 DECLARE
@@ -436,11 +436,11 @@ BEGIN
   END IF;
 
   SELECT credential.id INTO principal_id
-  FROM straylight.api_credentials AS credential
-  JOIN straylight.web_identities AS identity
+  FROM brunn.api_credentials AS credential
+  JOIN brunn.web_identities AS identity
     ON credential.user_id = identity.user_id
    AND credential.id = identity.web_credential_id
-  JOIN straylight.users AS user_row ON user_row.id = identity.user_id
+  JOIN brunn.users AS user_row ON user_row.id = identity.user_id
   WHERE identity.user_id = p_user_id
     AND identity.email_normalized = lower(btrim(p_expected_email))
     AND user_row.account_status = 'active'
@@ -451,7 +451,7 @@ BEGIN
   END IF;
 
   PERFORM 1
-  FROM straylight.web_identities AS identity
+  FROM brunn.web_identities AS identity
   WHERE identity.user_id = p_user_id
     AND identity.web_credential_id = principal_id
     AND identity.email_normalized = lower(btrim(p_expected_email))
@@ -460,13 +460,13 @@ BEGIN
     RAISE EXCEPTION 'web identity changed' USING ERRCODE = 'P0002';
   END IF;
 
-  INSERT INTO straylight.password_reset_tokens (
+  INSERT INTO brunn.password_reset_tokens (
     user_id, token_hash, expires_at
   ) VALUES (
     p_user_id, p_token_hash, p_expires_at
   ) RETURNING id INTO reset_id;
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, credential_id, action, details, content_free
   ) VALUES (
     p_user_id, principal_id, 'auth.password_reset.request',
@@ -476,18 +476,18 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION straylight_auth.consume_password_reset(
+CREATE FUNCTION brunn_auth.consume_password_reset(
   p_token_hash text,
   p_password_hash text
 )
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 DECLARE
-  reset_row straylight.password_reset_tokens%ROWTYPE;
+  reset_row brunn.password_reset_tokens%ROWTYPE;
   reset_user_id uuid;
   principal_id uuid;
 BEGIN
@@ -497,7 +497,7 @@ BEGIN
   END IF;
 
   SELECT token.user_id INTO reset_user_id
-  FROM straylight.password_reset_tokens AS token
+  FROM brunn.password_reset_tokens AS token
   WHERE token.token_hash = p_token_hash;
   IF reset_user_id IS NULL THEN
     RAISE EXCEPTION 'password reset token is invalid or expired'
@@ -505,11 +505,11 @@ BEGIN
   END IF;
 
   SELECT credential.id INTO principal_id
-  FROM straylight.api_credentials AS credential
-  JOIN straylight.web_identities AS identity
+  FROM brunn.api_credentials AS credential
+  JOIN brunn.web_identities AS identity
     ON credential.user_id = identity.user_id
    AND credential.id = identity.web_credential_id
-  JOIN straylight.users AS user_row ON user_row.id = identity.user_id
+  JOIN brunn.users AS user_row ON user_row.id = identity.user_id
   WHERE identity.user_id = reset_user_id
     AND user_row.account_status = 'active'
     AND credential.disabled_at IS NULL
@@ -520,7 +520,7 @@ BEGIN
   END IF;
 
   PERFORM 1
-  FROM straylight.web_identities AS identity
+  FROM brunn.web_identities AS identity
   WHERE identity.user_id = reset_user_id
     AND identity.web_credential_id = principal_id
   FOR UPDATE;
@@ -530,7 +530,7 @@ BEGIN
   END IF;
 
   SELECT token.* INTO reset_row
-  FROM straylight.password_reset_tokens AS token
+  FROM brunn.password_reset_tokens AS token
   WHERE token.token_hash = p_token_hash
     AND token.user_id = reset_user_id
     AND token.used_at IS NULL
@@ -542,7 +542,7 @@ BEGIN
       USING ERRCODE = 'P0002';
   END IF;
 
-  UPDATE straylight.web_identities
+  UPDATE brunn.web_identities
   SET password_hash = p_password_hash,
       updated_at = clock_timestamp()
   WHERE user_id = reset_row.user_id
@@ -551,16 +551,16 @@ BEGIN
     RAISE EXCEPTION 'web identity not found' USING ERRCODE = 'P0002';
   END IF;
 
-  UPDATE straylight.password_reset_tokens
+  UPDATE brunn.password_reset_tokens
   SET used_at = coalesce(used_at, clock_timestamp())
   WHERE user_id = reset_row.user_id AND used_at IS NULL;
-  UPDATE straylight.web_sessions
+  UPDATE brunn.web_sessions
   SET revoked_at = coalesce(revoked_at, clock_timestamp())
   WHERE user_id = reset_row.user_id AND revoked_at IS NULL;
-  DELETE FROM straylight.web_auth_rate_limits
+  DELETE FROM brunn.web_auth_rate_limits
   WHERE user_id = reset_row.user_id;
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, credential_id, action, details, content_free
   ) VALUES (
     reset_row.user_id, principal_id, 'auth.password_reset.complete',
@@ -572,7 +572,7 @@ $$;
 
 -- The permanent Web UI principal has no usable bearer secret and must not be
 -- listed or revoked through ordinary credential-management endpoints.
-CREATE OR REPLACE FUNCTION straylight_auth.list_credentials(p_user_id uuid)
+CREATE OR REPLACE FUNCTION brunn_auth.list_credentials(p_user_id uuid)
 RETURNS TABLE (
   id uuid,
   label text,
@@ -584,13 +584,13 @@ RETURNS TABLE (
 LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 BEGIN
-  IF NOT straylight_auth.context_is_valid()
-     OR straylight_auth.current_user_id() IS DISTINCT FROM p_user_id
-     OR NOT straylight_auth.has_any_capability(ARRAY['status', 'read']) THEN
+  IF NOT brunn_auth.context_is_valid()
+     OR brunn_auth.current_user_id() IS DISTINCT FROM p_user_id
+     OR NOT brunn_auth.has_any_capability(ARRAY['status', 'read']) THEN
     RAISE EXCEPTION 'authenticated same-user status or read capability is required'
       USING ERRCODE = '42501';
   END IF;
@@ -606,16 +606,16 @@ BEGIN
          ),
          credential.created_at,
          credential.disabled_at
-  FROM straylight.api_credentials AS credential
-  LEFT JOIN straylight.credential_scope_grants AS scope_grant
+  FROM brunn.api_credentials AS credential
+  LEFT JOIN brunn.credential_scope_grants AS scope_grant
     ON scope_grant.user_id = credential.user_id
    AND scope_grant.credential_id = credential.id
-  LEFT JOIN straylight.scopes AS scope_row
+  LEFT JOIN brunn.scopes AS scope_row
     ON scope_row.user_id = scope_grant.user_id
    AND scope_row.id = scope_grant.scope_id
   WHERE credential.user_id = p_user_id
     AND NOT EXISTS (
-      SELECT 1 FROM straylight.web_identities AS identity
+      SELECT 1 FROM brunn.web_identities AS identity
       WHERE identity.user_id = credential.user_id
         AND identity.web_credential_id = credential.id
     )
@@ -625,27 +625,27 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION straylight_auth.revoke_credential(
+CREATE OR REPLACE FUNCTION brunn_auth.revoke_credential(
   p_user_id uuid,
   p_credential_id uuid
 )
 RETURNS timestamptz
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
   revoked_at timestamptz;
 BEGIN
-  PERFORM straylight_auth.require_credential_control(p_user_id);
+  PERFORM brunn_auth.require_credential_control(p_user_id);
 
-  UPDATE straylight.api_credentials AS credential
+  UPDATE brunn.api_credentials AS credential
   SET disabled_at = coalesce(credential.disabled_at, clock_timestamp())
   WHERE credential.user_id = p_user_id
     AND credential.id = p_credential_id
     AND NOT EXISTS (
-      SELECT 1 FROM straylight.web_identities AS identity
+      SELECT 1 FROM brunn.web_identities AS identity
       WHERE identity.user_id = credential.user_id
         AND identity.web_credential_id = credential.id
     )
@@ -655,10 +655,10 @@ BEGIN
     RAISE EXCEPTION 'credential not found for user' USING ERRCODE = 'P0002';
   END IF;
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, scope_id, credential_id, action, details, content_free
   ) VALUES (
-    p_user_id, NULL, straylight_auth.current_credential_id(),
+    p_user_id, NULL, brunn_auth.current_credential_id(),
     'auth.credential.revoke',
     jsonb_build_object('credential_id', p_credential_id, 'revoked_at', revoked_at),
     true
@@ -667,20 +667,20 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION straylight_auth.lookup_web_identity(text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight_auth.consume_web_auth_rate_limit(text, text, uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight_auth.clear_web_auth_rate_limit(text, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight_auth.create_web_session(uuid, text, timestamptz, text, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight_auth.authenticate_web_session(text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight_auth.revoke_web_session(text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight_auth.issue_password_reset(uuid, text, timestamptz, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION straylight_auth.consume_password_reset(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn_auth.lookup_web_identity(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn_auth.consume_web_auth_rate_limit(text, text, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn_auth.clear_web_auth_rate_limit(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn_auth.create_web_session(uuid, text, timestamptz, text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn_auth.authenticate_web_session(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn_auth.revoke_web_session(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn_auth.issue_password_reset(uuid, text, timestamptz, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION brunn_auth.consume_password_reset(text, text) FROM PUBLIC;
 
-GRANT EXECUTE ON FUNCTION straylight_auth.lookup_web_identity(text) TO app_rw;
-GRANT EXECUTE ON FUNCTION straylight_auth.consume_web_auth_rate_limit(text, text, uuid) TO app_rw;
-GRANT EXECUTE ON FUNCTION straylight_auth.clear_web_auth_rate_limit(text, text) TO app_rw;
-GRANT EXECUTE ON FUNCTION straylight_auth.create_web_session(uuid, text, timestamptz, text, text) TO app_rw;
-GRANT EXECUTE ON FUNCTION straylight_auth.authenticate_web_session(text) TO app_rw, app_ro;
-GRANT EXECUTE ON FUNCTION straylight_auth.revoke_web_session(text) TO app_rw;
-GRANT EXECUTE ON FUNCTION straylight_auth.issue_password_reset(uuid, text, timestamptz, text) TO app_rw;
-GRANT EXECUTE ON FUNCTION straylight_auth.consume_password_reset(text, text) TO app_rw;
+GRANT EXECUTE ON FUNCTION brunn_auth.lookup_web_identity(text) TO app_rw;
+GRANT EXECUTE ON FUNCTION brunn_auth.consume_web_auth_rate_limit(text, text, uuid) TO app_rw;
+GRANT EXECUTE ON FUNCTION brunn_auth.clear_web_auth_rate_limit(text, text) TO app_rw;
+GRANT EXECUTE ON FUNCTION brunn_auth.create_web_session(uuid, text, timestamptz, text, text) TO app_rw;
+GRANT EXECUTE ON FUNCTION brunn_auth.authenticate_web_session(text) TO app_rw, app_ro;
+GRANT EXECUTE ON FUNCTION brunn_auth.revoke_web_session(text) TO app_rw;
+GRANT EXECUTE ON FUNCTION brunn_auth.issue_password_reset(uuid, text, timestamptz, text) TO app_rw;
+GRANT EXECUTE ON FUNCTION brunn_auth.consume_password_reset(text, text) TO app_rw;

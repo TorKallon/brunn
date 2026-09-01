@@ -5,7 +5,7 @@ umask 077
 root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 env_file=${ENV_FILE:-"$root/production.env"}
 backup_root_arg=${1:-}
-project=${COMPOSE_PROJECT_NAME:-straylight}
+project=${COMPOSE_PROJECT_NAME:-brunn}
 production_overlay=${COMPOSE_OVERRIDE_FILE:-"$root/compose.production.yaml"}
 managed_overlay=${COMPOSE_MANAGED_S3_FILE:-"$root/compose.managed-s3.yaml"}
 
@@ -24,12 +24,12 @@ read_value() {
 }
 backup_root=$backup_root_arg
 [ -n "$backup_root" ] ||
-  backup_root=${STRAYLIGHT_MANAGED_BACKUP_ROOT:-}
+  backup_root=${BRUNN_MANAGED_BACKUP_ROOT:-}
 [ -n "$backup_root" ] ||
-  backup_root=$(read_value STRAYLIGHT_MANAGED_BACKUP_ROOT)
-retention_days=${STRAYLIGHT_BACKUP_RETENTION_DAYS:-}
+  backup_root=$(read_value BRUNN_MANAGED_BACKUP_ROOT)
+retention_days=${BRUNN_BACKUP_RETENTION_DAYS:-}
 [ -n "$retention_days" ] ||
-  retention_days=$(read_value STRAYLIGHT_BACKUP_RETENTION_DAYS)
+  retention_days=$(read_value BRUNN_BACKUP_RETENTION_DAYS)
 retention_days=${retention_days:-30}
 
 case "$backup_root" in
@@ -42,12 +42,12 @@ case "$backup_root" in
 esac
 case "$retention_days" in
   ''|*[!0-9]*)
-    echo "STRAYLIGHT_BACKUP_RETENTION_DAYS must be a positive integer" >&2
+    echo "BRUNN_BACKUP_RETENTION_DAYS must be a positive integer" >&2
     exit 64
     ;;
 esac
 [ "$retention_days" -ge 1 ] && [ "$retention_days" -le 90 ] || {
-  echo "STRAYLIGHT_BACKUP_RETENTION_DAYS must be between 1 and 90" >&2
+  echo "BRUNN_BACKUP_RETENTION_DAYS must be between 1 and 90" >&2
   exit 64
 }
 compose() {
@@ -173,7 +173,7 @@ api_container=$(compose ps -q api)
 worker_container=$(compose ps -q worker)
 db_user=$(container_env "$db_container" POSTGRES_USER)
 db_name=$(container_env "$db_container" POSTGRES_DB)
-bucket=$(container_env "$api_container" STRAYLIGHT_S3_BUCKET)
+bucket=$(container_env "$api_container" BRUNN_S3_BUCKET)
 for value_name in db_user db_name bucket; do
   eval "value=\${$value_name}"
   [ -n "$value" ] || {
@@ -206,7 +206,7 @@ compose run --rm migrate >/dev/null
 active_deletions=$(docker exec "$db_container" psql \
   --username "$db_user" --dbname "$db_name" --tuples-only --no-align \
   --no-psqlrc \
-  --command "SELECT count(*) FROM straylight.account_deletion_requests WHERE status IN ('queued','running')" |
+  --command "SELECT count(*) FROM brunn.account_deletion_requests WHERE status IN ('queued','running')" |
   tr -d '[:space:]')
 [ "$active_deletions" = "0" ] || {
   echo "cannot back up while $active_deletions account deletion request(s) are active" >&2
@@ -215,7 +215,7 @@ active_deletions=$(docker exec "$db_container" psql \
 active_uploads=$(docker exec "$db_container" psql \
   --username "$db_user" --dbname "$db_name" --tuples-only --no-align \
   --no-psqlrc \
-  --command "SELECT count(*) FROM straylight.asset_uploads WHERE status IN ('uploading','verifying')" |
+  --command "SELECT count(*) FROM brunn.asset_uploads WHERE status IN ('uploading','verifying')" |
   tr -d '[:space:]')
 [ "$active_uploads" = "0" ] || {
   echo "cannot back up while $active_uploads resumable upload(s) are incomplete" >&2
@@ -258,7 +258,7 @@ jq -e '.safe == true' "$work_dir/database-invariants.json" >/dev/null || {
 }
 docker exec -i "$db_container" psql \
   --username "$db_user" --dbname "$db_name" --quiet --no-psqlrc \
-  --command "SET straylight.backup_object_bucket TO '$bucket';" \
+  --command "SET brunn.backup_object_bucket TO '$bucket';" \
   --file - <"$root/scripts/database-object-references.sql" |
   jq -S . >"$work_dir/database-object-references.json"
 
@@ -306,7 +306,7 @@ jq -n \
   --argjson retention_days "$retention_days" \
   --argjson quiesced_seconds "$((finished_epoch - started_epoch))" \
   '{
-    format: "straylight-managed-s3-coordinated-backup@v1",
+    format: "brunn-managed-s3-coordinated-backup@v1",
     backup_id: $backup_id,
     created_at: $created_at,
     completed_at: $completed_at,

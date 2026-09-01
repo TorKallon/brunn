@@ -21,7 +21,7 @@ describe("simplified workspace continuity", () => {
             workspace_generation: 42,
             checkpoint: {
               checkpoint_id: "checkpoint:parent",
-              path: ".straylight/checkpoints/parent.md",
+              path: ".brunn/checkpoints/parent.md",
               workspace_generation: 39,
               text: "# Checkpoint\n\nContinue the trip plan.",
               source_entries: ["entry:trip"],
@@ -87,13 +87,13 @@ describe("simplified workspace continuity", () => {
           data: {
             checkpoint_id: "checkpoint:next",
             checkpoint_ref: "checkpoint:next",
-            path: ".straylight/checkpoints/next.md",
+            path: ".brunn/checkpoints/next.md",
             workspace_generation: 43,
             source_entries: ["entry:trip"],
             write: {
               entry_ref: "entry:checkpoint",
               version_ref: "entry-version:checkpoint-v1",
-              path: ".straylight/checkpoints/next.md",
+              path: ".brunn/checkpoints/next.md",
               version: 1,
               content_hash: "sha256:checkpoint",
               workspace_generation: 43,

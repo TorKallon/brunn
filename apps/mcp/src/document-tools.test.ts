@@ -4,8 +4,8 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
-import { StraylightApiClient } from "./api-client.js";
-import { createStraylightMcpServer } from "./index.js";
+import { BrunnApiClient } from "./api-client.js";
+import { createBrunnMcpServer } from "./index.js";
 
 interface RecordedCall {
   url: string;
@@ -36,8 +36,8 @@ async function connectedPair(fetchImpl: typeof fetch): Promise<{
   close: () => Promise<void>;
 }> {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const server = createStraylightMcpServer(
-    new StraylightApiClient("https://api.invalid", "test-token", fetchImpl),
+  const server = createBrunnMcpServer(
+    new BrunnApiClient("https://api.invalid", "test-token", fetchImpl),
     { includeStructuredContent: false },
   );
   const client = new Client({ name: "document-tools-test", version: "0.1.0" });
@@ -72,8 +72,8 @@ test("document.publish posts curated Markdown verbatim and preserves direct link
       path: "Documents/europe-summer-plan.md",
       entry_ref: "entry:019f8800-0000-7000-8000-000000000001",
       version: 2,
-      url: "https://straylight.example/documents/europe-summer-plan",
-      version_url: "https://straylight.example/documents/europe-summer-plan?version=2",
+      url: "https://brunn.example/documents/europe-summer-plan",
+      version_url: "https://brunn.example/documents/europe-summer-plan?version=2",
     },
   };
   const { client, close } = await connectedPair(recordingFetch(calls, 200, envelope));
@@ -112,8 +112,8 @@ test("document.get issues bodyless current and historical GET requests", async (
     status: "complete",
     data: {
       slug: "feature-specification",
-      url: "https://straylight.example/documents/feature-specification",
-      version_url: "https://straylight.example/documents/feature-specification?version=3",
+      url: "https://brunn.example/documents/feature-specification",
+      version_url: "https://brunn.example/documents/feature-specification?version=3",
     },
   };
   const { client, close } = await connectedPair(recordingFetch(calls, 200, envelope));

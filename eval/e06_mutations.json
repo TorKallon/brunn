@@ -1,5 +1,5 @@
 {
-  "schema": "straylight-e06-mutations@v1",
+  "schema": "brunn-e06-mutations@v1",
   "cases": {
     "warmind-alpha-budget-transition": {
       "delta_path": "eval/transition-deltas/warmind-alpha-budget-change.md",
@@ -73,20 +73,20 @@
         }
       ]
     },
-    "straylight-api-gate-transition": {
-      "delta_path": "eval/transition-deltas/straylight-api-gate.md",
+    "brunn-api-gate-transition": {
+      "delta_path": "eval/transition-deltas/brunn-api-gate.md",
       "targets": [
         {
-          "path": "Evaluation/E06/straylight-api-gate-transition.md",
-          "fixture": "eval/e06-sources/straylight-api-gate-transition.md",
+          "path": "Evaluation/E06/brunn-api-gate-transition.md",
+          "fixture": "eval/e06-sources/brunn-api-gate-transition.md",
           "operation": "append_delta"
         },
         {
-          "path": "Projects/Straylight/Decisions.md",
+          "path": "Projects/Brunn/Decisions.md",
           "operation": "append_pointer"
         },
         {
-          "path": "Projects/Straylight/Straylight.md",
+          "path": "Projects/Brunn/Brunn.md",
           "operation": "append_pointer"
         }
       ]

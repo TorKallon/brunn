@@ -26,7 +26,7 @@ done
 (cd "$backup_dir" && shasum -a 256 -c CHECKSUMS.sha256)
 
 jq -e '
-  .format == "straylight-managed-s3-coordinated-backup@v1"
+  .format == "brunn-managed-s3-coordinated-backup@v1"
   and (.backup_id | type == "string" and length > 0)
   and (.created_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T"))
   and (.completed_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T"))
@@ -48,7 +48,7 @@ object_manifest="$backup_dir/object-store/manifest.json"
 coordinated_bucket=$(jq -r '.object_bucket' "$backup_dir/manifest.json")
 jq -e '
   . as $manifest
-  | .format == "straylight-object-version-archive@v1"
+  | .format == "brunn-object-version-archive@v1"
   and .bucket_versioning == "Enabled"
   and (.source_bucket | type == "string" and length > 0)
   and (.entries | type == "array")
@@ -89,7 +89,7 @@ jq -e '
   exit 1
 }
 
-expected_file=$(mktemp "${TMPDIR:-/tmp}/straylight-managed-backup.XXXXXX")
+expected_file=$(mktemp "${TMPDIR:-/tmp}/brunn-managed-backup.XXXXXX")
 trap 'rm -f "$expected_file"' EXIT INT TERM
 jq -r '
   .entries[]
@@ -195,7 +195,7 @@ fi
 
 database_references="$backup_dir/database-object-references.json"
 jq -e --arg bucket "$coordinated_bucket" '
-  .format == "straylight-database-object-references@v1"
+  .format == "brunn-database-object-references@v1"
   and .object_bucket == $bucket
   and (.references | type == "array")
   and (.summary.reference_count == (.references | length))

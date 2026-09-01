@@ -33,12 +33,12 @@ from native_eval import (
 )
 
 
-INVENTORY_SCHEMA = "straylight-owner-snapshot-inventory@v1"
-AUDIT_SCHEMA = "straylight-owner-snapshot-audit@v1"
-LINK_CANDIDATES_SCHEMA = "straylight-owner-link-candidates@v1"
-LEAK_REQUEST_SCHEMA = "straylight-owner-link-leak-request@v1"
-LEAK_REPORT_SCHEMA = "straylight-owner-link-leak-report@v1"
-CREDENTIAL_SCHEMA = "straylight-owner-eval-credential@v1"
+INVENTORY_SCHEMA = "brunn-owner-snapshot-inventory@v1"
+AUDIT_SCHEMA = "brunn-owner-snapshot-audit@v1"
+LINK_CANDIDATES_SCHEMA = "brunn-owner-link-candidates@v1"
+LEAK_REQUEST_SCHEMA = "brunn-owner-link-leak-request@v1"
+LEAK_REPORT_SCHEMA = "brunn-owner-link-leak-report@v1"
+CREDENTIAL_SCHEMA = "brunn-owner-eval-credential@v1"
 
 MAX_TEXT_BYTES = 4 * 1024 * 1024
 DEFAULT_BATCH_SIZE = 1_000
@@ -99,7 +99,7 @@ BINARY_SIGNATURES = (
 
 WIKI_LINK_RE = re.compile(r"!?\[\[([^\]\r\n]+)\]\]")
 CHECKPOINT_PATH_RE = re.compile(
-    r"^\.straylight/checkpoints/([0-9a-fA-F-]{32,36})\.md$"
+    r"^\.brunn/checkpoints/([0-9a-fA-F-]{32,36})\.md$"
 )
 CHECKPOINT_ID_RE = re.compile(
     r"^(?:checkpoint:)?([0-9a-fA-F]{32}|[0-9a-fA-F-]{36})$"
@@ -1168,11 +1168,11 @@ def parser() -> argparse.ArgumentParser:
     importer.add_argument("--root", type=Path)
     importer.add_argument(
         "--api-url",
-        default=os.environ.get("STRAYLIGHT_API_URL"),
+        default=os.environ.get("BRUNN_API_URL"),
     )
     importer.add_argument(
         "--admin-token-env",
-        default="STRAYLIGHT_EVAL_TOKEN",
+        default="BRUNN_EVAL_TOKEN",
     )
     importer.add_argument("--run-id", required=True)
     importer.add_argument("--case-id", default="owner-snapshot")
@@ -1211,7 +1211,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "import":
             inventory = load_inventory(args.inventory)
             if not args.api_url:
-                raise SnapshotError("--api-url or STRAYLIGHT_API_URL is required")
+                raise SnapshotError("--api-url or BRUNN_API_URL is required")
             admin_token = os.environ.get(args.admin_token_env, "")
             if not admin_token:
                 raise SnapshotError(

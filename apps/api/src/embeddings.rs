@@ -47,17 +47,17 @@ pub fn from_config(config: &Config) -> ApiResult<SharedEmbedder> {
                 )))
             } else {
                 Err(ApiError::configuration(
-                    "OPENAI_API_KEY is required when STRAYLIGHT_EMBEDDING_PROVIDER=openai; set STRAYLIGHT_EMBEDDING_PROVIDER=hashing explicitly for an offline degraded deployment",
+                    "OPENAI_API_KEY is required when BRUNN_EMBEDDING_PROVIDER=openai; set BRUNN_EMBEDDING_PROVIDER=hashing explicitly for an offline degraded deployment",
                 ))
             }
         }
         "hashing" => Ok(Arc::new(HashingEmbedder::new(
-            "straylight-hashing-v1".to_owned(),
+            "brunn-hashing-v1".to_owned(),
             config.embedding_dimensions,
             true,
         ))),
         other => Err(ApiError::configuration(format!(
-            "unsupported STRAYLIGHT_EMBEDDING_PROVIDER: {other}"
+            "unsupported BRUNN_EMBEDDING_PROVIDER: {other}"
         ))),
     }
 }

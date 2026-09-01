@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row, Transaction, postgres::PgPoolOptions};
 use uuid::Uuid;
 
-use straylight::{
+use brunn::{
     auth::AuthContext,
     db::set_context,
     models::{CredentialId, UserId},
@@ -17,11 +17,11 @@ struct Principal {
 }
 
 async fn connect_test_pool() -> Option<PgPool> {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping dashboard telemetry test");
+        eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping dashboard telemetry test");
         return None;
     };
     let pool = PgPoolOptions::new()
@@ -32,7 +32,7 @@ async fn connect_test_pool() -> Option<PgPool> {
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .expect("apply Straylight migrations");
+        .expect("apply Brunn migrations");
     Some(pool)
 }
 
@@ -47,14 +47,14 @@ async fn insert_principal(pool: &PgPool, label: &str) -> Principal {
         "read".to_owned(),
         "status".to_owned(),
     ];
-    sqlx::query("INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
         .bind(user_id)
         .bind(format!("telemetry-test:{user_id}"))
         .bind(format!("Telemetry test {label}"))
         .execute(pool)
         .await
         .expect("insert telemetry test user");
-    sqlx::query("INSERT INTO straylight.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO brunn.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)")
         .bind(scope_id)
         .bind(user_id)
         .bind(&scope_ref)
@@ -64,7 +64,7 @@ async fn insert_principal(pool: &PgPool, label: &str) -> Principal {
         .expect("insert telemetry test scope");
     sqlx::query(
         r#"
-        INSERT INTO straylight.api_credentials (
+        INSERT INTO brunn.api_credentials (
           id,user_id,label,token_hash,capabilities
         ) VALUES ($1,$2,$3,$4,$5)
         "#,
@@ -79,7 +79,7 @@ async fn insert_principal(pool: &PgPool, label: &str) -> Principal {
     .expect("insert telemetry test credential");
     sqlx::query(
         r#"
-        INSERT INTO straylight.credential_scope_grants (
+        INSERT INTO brunn.credential_scope_grants (
           credential_id,user_id,scope_id
         ) VALUES ($1,$2,$3)
         "#,
@@ -108,7 +108,7 @@ async fn insert_entry(pool: &PgPool, user_id: Uuid, label: &str) -> Uuid {
     let mut tx = pool.begin().await.expect("begin telemetry entry insert");
     sqlx::query(
         r#"
-        INSERT INTO straylight.entries (
+        INSERT INTO brunn.entries (
           id,user_id,path,title,kind,media_type,current_version
         ) VALUES ($1,$2,$3,$4,'markdown','text/markdown',1)
         "#,
@@ -122,7 +122,7 @@ async fn insert_entry(pool: &PgPool, user_id: Uuid, label: &str) -> Uuid {
     .expect("insert telemetry test entry");
     sqlx::query(
         r#"
-        INSERT INTO straylight.entry_versions (
+        INSERT INTO brunn.entry_versions (
           id,user_id,entry_id,version,content_sha256,content,size_bytes
         ) VALUES ($1,$2,$3,1,$4,$5,$6)
         "#,
@@ -174,7 +174,7 @@ async fn write_product(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
-        SELECT straylight_auth.write_product_activity(
+        SELECT brunn_auth.write_product_activity(
           $1,$2,$3,$4,$5,$6,$7,$8
         )
         "#,
@@ -211,7 +211,7 @@ async fn telemetry_writers_are_exact_principal_validated_and_additive() {
             AS ro_can_execute
         FROM pg_proc AS procedure
         JOIN pg_namespace AS namespace ON namespace.oid=procedure.pronamespace
-        WHERE namespace.nspname='straylight_auth'
+        WHERE namespace.nspname='brunn_auth'
           AND procedure.proname IN (
             'write_entry_usage',
             'write_product_activity',
@@ -235,7 +235,7 @@ async fn telemetry_writers_are_exact_principal_validated_and_additive() {
     let mut direct_tx = begin_as_app_rw(&pool, &first.auth).await;
     let direct_error = sqlx::query(
         r#"
-        INSERT INTO straylight.product_activity_minutely (
+        INSERT INTO brunn.product_activity_minutely (
           user_id,credential_id,bucket_start,operation,
           operation_count,byte_count,first_recorded_at,last_recorded_at
         ) VALUES ($1,$2,$3,'read',1,1,$4,$4)
@@ -276,7 +276,7 @@ async fn telemetry_writers_are_exact_principal_validated_and_additive() {
     )
     .await
     .expect("add second product activity batch");
-    sqlx::query("SELECT straylight_auth.write_entry_usage($1,$2,$3,$4,$5)")
+    sqlx::query("SELECT brunn_auth.write_entry_usage($1,$2,$3,$4,$5)")
         .bind(first.user_id)
         .bind(first.credential_id)
         .bind(vec![first_entry])
@@ -285,7 +285,7 @@ async fn telemetry_writers_are_exact_principal_validated_and_additive() {
         .execute(&mut *valid_tx)
         .await
         .expect("write entry usage");
-    sqlx::query("SELECT straylight_auth.write_credential_activity($1,$2,$3,$4,$5)")
+    sqlx::query("SELECT brunn_auth.write_credential_activity($1,$2,$3,$4,$5)")
         .bind(first.user_id)
         .bind(first.credential_id)
         .bind("read")
@@ -294,7 +294,7 @@ async fn telemetry_writers_are_exact_principal_validated_and_additive() {
         .execute(&mut *valid_tx)
         .await
         .expect("write credential activity");
-    sqlx::query("SELECT straylight_auth.write_credential_activity($1,$2,$3,$4,$5)")
+    sqlx::query("SELECT brunn_auth.write_credential_activity($1,$2,$3,$4,$5)")
         .bind(first.user_id)
         .bind(first.credential_id)
         .bind("search")
@@ -308,7 +308,7 @@ async fn telemetry_writers_are_exact_principal_validated_and_additive() {
     let product = sqlx::query(
         r#"
         SELECT operation_count,byte_count,first_recorded_at,last_recorded_at
-        FROM straylight.product_activity_minutely
+        FROM brunn.product_activity_minutely
         WHERE user_id=$1 AND credential_id=$2
           AND bucket_start=$3 AND operation='read'
         "#,
@@ -334,7 +334,7 @@ async fn telemetry_writers_are_exact_principal_validated_and_additive() {
         later_seen
     );
     let entry_usage = sqlx::query(
-        "SELECT read_count,search_count FROM straylight.entry_usage WHERE user_id=$1 AND entry_id=$2",
+        "SELECT read_count,search_count FROM brunn.entry_usage WHERE user_id=$1 AND entry_id=$2",
     )
     .bind(first.user_id)
     .bind(first_entry)
@@ -346,7 +346,7 @@ async fn telemetry_writers_are_exact_principal_validated_and_additive() {
     let credential = sqlx::query(
         r#"
         SELECT last_operation,last_used_at,request_count
-        FROM straylight.credential_activity
+        FROM brunn.credential_activity
         WHERE user_id=$1 AND credential_id=$2
         "#,
     )
@@ -426,7 +426,7 @@ async fn telemetry_writers_are_exact_principal_validated_and_additive() {
     drop(missing_context_tx);
 
     let mut stale_context_tx = begin_as_app_rw(&pool, &second.auth).await;
-    sqlx::query("UPDATE straylight.api_credentials SET disabled_at=clock_timestamp() WHERE id=$1")
+    sqlx::query("UPDATE brunn.api_credentials SET disabled_at=clock_timestamp() WHERE id=$1")
         .bind(second.credential_id)
         .execute(&pool)
         .await

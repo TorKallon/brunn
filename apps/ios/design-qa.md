@@ -4,9 +4,9 @@ Final result: passed
 
 ## Evidence
 
-- Reference: `/Users/aether/.codex/attachments/18c8c445-f675-4206-a74b-612d041259ab/Straylight.png`
-- Final native capture: `/Users/aether/.codex/visualizations/2026/08/02/019fc3f1-7046-7be2-a009-84ad4e8f1ac0/straylight-ios-mvp/today-final.png`
-- Normalized side-by-side comparison: `/Users/aether/.codex/visualizations/2026/08/02/019fc3f1-7046-7be2-a009-84ad4e8f1ac0/straylight-ios-mvp/reference-vs-native-final.png`
+- Reference: archived attachment `18c8c445-f675-4206-a74b-612d041259ab`.
+- Final native capture: archived visualization `019fc3f1-7046-7be2-a009-84ad4e8f1ac0`, `today-final.png`.
+- Normalized comparison: the same visualization, `reference-vs-native-final.png`.
 - Device: iPhone 14 simulator, iOS 26.5, 1170 x 2532 screenshot.
 
 The web reference was normalized to the native screenshot dimensions for the

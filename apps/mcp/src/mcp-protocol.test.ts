@@ -19,12 +19,12 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
     args: [fileURLToPath(new URL("./index.js", import.meta.url))],
     env: {
       ...environment,
-      STRAYLIGHT_API_TOKEN: "protocol-test-token",
-      STRAYLIGHT_API_URL: "http://127.0.0.1:1",
-      STRAYLIGHT_MCP_RETRY_BACKOFF_MS: "1,1,1,1,1,1",
+      BRUNN_API_TOKEN: "protocol-test-token",
+      BRUNN_API_URL: "http://127.0.0.1:1",
+      BRUNN_MCP_RETRY_BACKOFF_MS: "1,1,1,1,1,1",
     },
   });
-  const client = new Client({ name: "straylight-adapter-test", version: "0.1.0" });
+  const client = new Client({ name: "brunn-adapter-test", version: "0.1.0" });
   context.after(async () => {
     await client.close();
   });
@@ -69,7 +69,7 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
     "task.sync_status",
     "task.update",
   ];
-  if (process.env.STRAYLIGHT_MESSAGING_ENABLED === "true") {
+  if (process.env.BRUNN_MESSAGING_ENABLED === "true") {
     expectedNames.push(
       "agent.list",
       "message.list",
@@ -343,7 +343,7 @@ test("binary MCP tools return metadata or a verified local path, never payload b
   const bytes = Buffer.from("literal receipt payload that must stay outside model context");
   const base64 = bytes.toString("base64");
   const digest = createHash("sha256").update(bytes).digest("hex");
-  const assetRoot = await mkdtemp(join(tmpdir(), "carrystate-mcp-protocol-assets-"));
+  const assetRoot = await mkdtemp(join(tmpdir(), "brunn-state-mcp-protocol-assets-"));
   const requests: string[] = [];
   const httpServer = createServer((request, response) => {
     const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -369,9 +369,9 @@ test("binary MCP tools return metadata or a verified local path, never payload b
       response.writeHead(200, {
         "content-length": String(bytes.byteLength),
         "content-type": "image/jpeg",
-        "x-carrystate-asset-ref": assetRef,
-        "x-carrystate-asset-version": "2",
-        "x-carrystate-sha256": digest,
+        "x-brunn-state-asset-ref": assetRef,
+        "x-brunn-state-asset-version": "2",
+        "x-brunn-state-sha256": digest,
       });
       response.write(bytes.subarray(0, 11));
       response.end(bytes.subarray(11));
@@ -395,12 +395,12 @@ test("binary MCP tools return metadata or a verified local path, never payload b
     args: [fileURLToPath(new URL("./index.js", import.meta.url))],
     env: {
       ...environment,
-      STRAYLIGHT_API_TOKEN: "protocol-test-token",
-      STRAYLIGHT_API_URL: `http://127.0.0.1:${address.port}`,
-      CARRYSTATE_MCP_ASSET_ROOT: assetRoot,
+      BRUNN_API_TOKEN: "protocol-test-token",
+      BRUNN_API_URL: `http://127.0.0.1:${address.port}`,
+      BRUNN_STATE_MCP_ASSET_ROOT: assetRoot,
     },
   });
-  const client = new Client({ name: "carrystate-asset-test", version: "0.1.0" });
+  const client = new Client({ name: "brunn-state-asset-test", version: "0.1.0" });
 
   try {
     await client.connect(transport);

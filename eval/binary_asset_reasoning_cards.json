@@ -1,9 +1,9 @@
 {
   "benchmark_version": "1.0",
-  "name": "CarryState mixed Markdown and binary reasoning evaluation",
+  "name": "Brunn State mixed Markdown and binary reasoning evaluation",
   "fixture": {
     "generator": "eval/binary_asset_fixture.py",
-    "format": "carrystate-binary-fixture-v1",
+    "format": "brunn-state-binary-fixture-v1",
     "snapshot": "r2"
   },
   "grading_mode": "evidence_claims_and_cost_v1",
@@ -22,7 +22,7 @@
     }
   },
   "conditions": {
-    "carrystate": {
+    "brunn-state": {
       "interface": "memory open/query/read plus asset metadata/range/full download",
       "corpus_projection": "The complete r2 fixture is imported. Search may return source Markdown and explicitly non-authoritative generated descriptions; native bytes are fetched only when useful.",
       "source_parity": "Every source byte available to either filesystem condition is retained and addressable by hash and logical path.",
@@ -45,9 +45,9 @@
       ]
     },
     "matched-filesystem": {
-      "interface": "filesystem tools over a per-card directory containing exactly the evidence bytes selected in the successful CarryState run",
-      "corpus_projection": "Content-matched control. Discovery is removed, but source Markdown, generated descriptions, and native files are byte-identical to CarryState.",
-      "source_parity": "The model receives no fact or file that was unavailable to the paired CarryState run.",
+      "interface": "filesystem tools over a per-card directory containing exactly the evidence bytes selected in the successful Brunn State run",
+      "corpus_projection": "Content-matched control. Discovery is removed, but source Markdown, generated descriptions, and native files are byte-identical to Brunn State.",
+      "source_parity": "The model receives no fact or file that was unavailable to the paired Brunn State run.",
       "allowed_tools": [
         "rg",
         "read_file",
@@ -70,7 +70,7 @@
     "operational-filesystem": {
       "interface": "ordinary agent filesystem tools over the complete r2 mixed vault",
       "corpus_projection": "Realistic local-vault control. The agent must discover relevant files in the full current snapshot and may inspect native files with standard local utilities.",
-      "source_parity": "The full current fixture has the same logical paths and native bytes as CarryState; no preselected context pack is supplied.",
+      "source_parity": "The full current fixture has the same logical paths and native bytes as Brunn State; no preselected context pack is supplied.",
       "allowed_tools": [
         "find",
         "rg",
@@ -784,11 +784,11 @@
       ]
     },
     {
-      "id": "carrystate-alpha-artifact",
+      "id": "brunn-state-alpha-artifact",
       "workload": "product_work",
       "capability": "artifact_backed_launch_readiness",
       "scope": "work",
-      "task": "Review the CarryState owner-alpha candidate. Identify the build and commit, inspect the native release archive manifest, state what asset capability passed, and decide whether the candidate is launch-ready. Preserve the pending restore gate as a blocker.",
+      "task": "Review the Brunn State owner-alpha candidate. Identify the build and commit, inspect the native release archive manifest, state what asset capability passed, and decide whether the candidate is launch-ready. Preserve the pending restore gate as a blocker.",
       "withheld_values": [
         "0123456789abcdef"
       ],
@@ -803,21 +803,21 @@
         {
           "id": "alpha_checklist",
           "kind": "source_path",
-          "path": "Projects/CarryState/Alpha Checklist.md",
+          "path": "Projects/Brunn State/Alpha Checklist.md",
           "authority": "source",
           "required_access": "search"
         },
         {
           "id": "artifact_description",
           "kind": "generated_description",
-          "path": "Projects/CarryState/Artifacts/cs-alpha-17.zip",
+          "path": "Projects/Brunn State/Artifacts/cs-alpha-17.zip",
           "authority": "derived_non_authoritative",
           "required_access": "search"
         },
         {
           "id": "artifact_native",
           "kind": "asset_path",
-          "path": "Projects/CarryState/Artifacts/cs-alpha-17.zip",
+          "path": "Projects/Brunn State/Artifacts/cs-alpha-17.zip",
           "authority": "native",
           "required_access": "full"
         }

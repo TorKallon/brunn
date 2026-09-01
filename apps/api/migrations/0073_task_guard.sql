@@ -1,7 +1,7 @@
 -- Deterministic task deadline/cost guard. The worker owns scheduling; this
 -- migration owns the narrow producer identity and atomic inbox/outbox write.
 
-ALTER TABLE straylight.notifications
+ALTER TABLE brunn.notifications
   DROP CONSTRAINT notifications_kind_check,
   ADD CONSTRAINT notifications_kind_check CHECK (
     kind IN (
@@ -9,86 +9,86 @@ ALTER TABLE straylight.notifications
     )
   );
 
-CREATE TABLE straylight.task_guard_producers (
-  user_id uuid PRIMARY KEY REFERENCES straylight.users(id) ON DELETE CASCADE,
+CREATE TABLE brunn.task_guard_producers (
+  user_id uuid PRIMARY KEY REFERENCES brunn.users(id) ON DELETE CASCADE,
   credential_id uuid NOT NULL UNIQUE,
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   FOREIGN KEY (user_id, credential_id)
-    REFERENCES straylight.api_credentials(user_id, id) ON DELETE CASCADE
+    REFERENCES brunn.api_credentials(user_id, id) ON DELETE CASCADE
 );
 
-ALTER TABLE straylight.task_guard_producers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE straylight.task_guard_producers FORCE ROW LEVEL SECURITY;
-REVOKE ALL ON straylight.task_guard_producers FROM PUBLIC, app_rw, app_ro;
+ALTER TABLE brunn.task_guard_producers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE brunn.task_guard_producers FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON brunn.task_guard_producers FROM PUBLIC, app_rw, app_ro;
 
-CREATE OR REPLACE FUNCTION straylight.ensure_task_guard_producer(p_user_id uuid)
+CREATE OR REPLACE FUNCTION brunn.ensure_task_guard_producer(p_user_id uuid)
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 DECLARE
   producer_id uuid;
 BEGIN
   PERFORM pg_advisory_xact_lock(hashtextextended(
-    'straylight.task-guard.producer.v1|' || p_user_id::text,
+    'brunn.task-guard.producer.v1|' || p_user_id::text,
     0
   ));
   SELECT credential_id INTO producer_id
-  FROM straylight.task_guard_producers
+  FROM brunn.task_guard_producers
   WHERE user_id=p_user_id;
   IF producer_id IS NOT NULL THEN
     RETURN producer_id;
   END IF;
 
   producer_id := gen_random_uuid();
-  INSERT INTO straylight.api_credentials (
+  INSERT INTO brunn.api_credentials (
     id,user_id,label,token_hash,capabilities
   ) VALUES (
     producer_id,
     p_user_id,
-    '__straylight_task_guard__',
+    '__brunn_task_guard__',
     -- This is an already-hashed, random non-bearer value. No plaintext token
     -- exists, is returned, or can be reconstructed from public identifiers.
     encode(public.gen_random_bytes(32), 'hex'),
     ARRAY['task.read','notification:publish']::text[]
   );
-  INSERT INTO straylight.task_guard_producers (user_id,credential_id)
+  INSERT INTO brunn.task_guard_producers (user_id,credential_id)
   VALUES (p_user_id,producer_id);
   RETURN producer_id;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION straylight.ensure_task_guard_producer(uuid)
+REVOKE ALL ON FUNCTION brunn.ensure_task_guard_producer(uuid)
 FROM PUBLIC, app_rw, app_ro;
 
-CREATE OR REPLACE FUNCTION straylight.seed_task_guard_producer()
+CREATE OR REPLACE FUNCTION brunn.seed_task_guard_producer()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 BEGIN
-  PERFORM straylight.ensure_task_guard_producer(NEW.id);
+  PERFORM brunn.ensure_task_guard_producer(NEW.id);
   RETURN NEW;
 END;
 $$;
 
 CREATE TRIGGER users_seed_task_guard_producer
-AFTER INSERT ON straylight.users
-FOR EACH ROW EXECUTE FUNCTION straylight.seed_task_guard_producer();
+AFTER INSERT ON brunn.users
+FOR EACH ROW EXECUTE FUNCTION brunn.seed_task_guard_producer();
 
-SELECT straylight.ensure_task_guard_producer(id)
-FROM straylight.users;
+SELECT brunn.ensure_task_guard_producer(id)
+FROM brunn.users;
 
-REVOKE ALL ON FUNCTION straylight.seed_task_guard_producer()
+REVOKE ALL ON FUNCTION brunn.seed_task_guard_producer()
 FROM PUBLIC, app_rw, app_ro;
 
 -- This is the only guard write primitive. It creates the inbox row even when
 -- quiet hours defer transport, and inserts the delivery outbox atomically.
-CREATE OR REPLACE FUNCTION straylight.enqueue_task_guard_notification(
+CREATE OR REPLACE FUNCTION brunn.enqueue_task_guard_notification(
   p_user_id uuid,
   p_task_id uuid,
   p_event_key text,
@@ -106,7 +106,7 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight
+SET search_path = pg_catalog, brunn
 SET row_security = off
 AS $$
 DECLARE
@@ -135,7 +135,7 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM straylight.task_index
+    SELECT 1 FROM brunn.task_index
     WHERE user_id=p_user_id
       AND task_id=p_task_id
       AND status IN ('open','waiting')
@@ -145,10 +145,10 @@ BEGIN
   END IF;
 
   SELECT credential_id INTO producer_id
-  FROM straylight.task_guard_producers
+  FROM brunn.task_guard_producers
   WHERE user_id=p_user_id;
   IF producer_id IS NULL THEN
-    producer_id := straylight.ensure_task_guard_producer(p_user_id);
+    producer_id := brunn.ensure_task_guard_producer(p_user_id);
   END IF;
 
   canonical_request := jsonb_build_object(
@@ -166,7 +166,7 @@ BEGIN
     'hex'
   );
 
-  INSERT INTO straylight.notifications (
+  INSERT INTO brunn.notifications (
     id,user_id,producer_credential_id,event_key,request_hash,
     correlation_id,kind,importance,title,body,source,target,
     occurred_at,expires_at
@@ -184,11 +184,11 @@ BEGIN
   did_insert := affected_rows = 1;
 
   SELECT id INTO resolved_id
-  FROM straylight.notifications
+  FROM brunn.notifications
   WHERE user_id=p_user_id AND event_key=p_event_key;
 
   IF NOT EXISTS (
-    SELECT 1 FROM straylight.notifications AS notification
+    SELECT 1 FROM brunn.notifications AS notification
     WHERE notification.user_id=p_user_id
       AND notification.id=resolved_id
       AND notification.producer_credential_id=producer_id
@@ -203,14 +203,14 @@ BEGIN
   END IF;
 
   IF did_insert THEN
-    INSERT INTO straylight.notification_deliveries (
+    INSERT INTO brunn.notification_deliveries (
       user_id,notification_id,installation_id,state,available_at,last_error_code
     )
     SELECT p_user_id,resolved_id,installation.id,
            CASE WHEN p_delivery_enabled THEN 'queued' ELSE 'suppressed' END,
            p_delivery_available_at,
            CASE WHEN p_delivery_enabled THEN NULL ELSE 'transport_disabled' END
-    FROM straylight.notification_installations AS installation
+    FROM brunn.notification_installations AS installation
     WHERE installation.user_id=p_user_id
       AND installation.enabled
       AND installation.revoked_at IS NULL
@@ -219,19 +219,19 @@ BEGIN
 
   RETURN QUERY
   SELECT resolved_id,did_insert,count(delivery.id)
-  FROM straylight.notification_deliveries AS delivery
+  FROM brunn.notification_deliveries AS delivery
   WHERE delivery.user_id=p_user_id
     AND delivery.notification_id=resolved_id;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION straylight.enqueue_task_guard_notification(
+REVOKE ALL ON FUNCTION brunn.enqueue_task_guard_notification(
   uuid,uuid,text,text,text,timestamptz,timestamptz,timestamptz,boolean
 ) FROM PUBLIC, app_rw, app_ro;
 
 -- Internal guard credentials are deliberately absent from public credential
 -- inventory and cannot be revoked through its ordinary control function.
-CREATE OR REPLACE FUNCTION straylight_auth.list_credentials(p_user_id uuid)
+CREATE OR REPLACE FUNCTION brunn_auth.list_credentials(p_user_id uuid)
 RETURNS TABLE (
   id uuid,
   label text,
@@ -243,13 +243,13 @@ RETURNS TABLE (
 LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 BEGIN
-  IF NOT straylight_auth.context_is_valid()
-     OR straylight_auth.current_user_id() IS DISTINCT FROM p_user_id
-     OR NOT straylight_auth.has_any_capability(ARRAY['status', 'read']) THEN
+  IF NOT brunn_auth.context_is_valid()
+     OR brunn_auth.current_user_id() IS DISTINCT FROM p_user_id
+     OR NOT brunn_auth.has_any_capability(ARRAY['status', 'read']) THEN
     RAISE EXCEPTION 'authenticated same-user status or read capability is required'
       USING ERRCODE = '42501';
   END IF;
@@ -265,21 +265,21 @@ BEGIN
          ),
          credential.created_at,
          credential.disabled_at
-  FROM straylight.api_credentials AS credential
-  LEFT JOIN straylight.credential_scope_grants AS scope_grant
+  FROM brunn.api_credentials AS credential
+  LEFT JOIN brunn.credential_scope_grants AS scope_grant
     ON scope_grant.user_id = credential.user_id
    AND scope_grant.credential_id = credential.id
-  LEFT JOIN straylight.scopes AS scope_row
+  LEFT JOIN brunn.scopes AS scope_row
     ON scope_row.user_id = scope_grant.user_id
    AND scope_row.id = scope_grant.scope_id
   WHERE credential.user_id = p_user_id
     AND NOT EXISTS (
-      SELECT 1 FROM straylight.web_identities AS identity
+      SELECT 1 FROM brunn.web_identities AS identity
       WHERE identity.user_id = credential.user_id
         AND identity.web_credential_id = credential.id
     )
     AND NOT EXISTS (
-      SELECT 1 FROM straylight.task_guard_producers AS guard
+      SELECT 1 FROM brunn.task_guard_producers AS guard
       WHERE guard.user_id=credential.user_id
         AND guard.credential_id=credential.id
     )
@@ -289,32 +289,32 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION straylight_auth.revoke_credential(
+CREATE OR REPLACE FUNCTION brunn_auth.revoke_credential(
   p_user_id uuid,
   p_credential_id uuid
 )
 RETURNS timestamptz
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
   revoked_at timestamptz;
 BEGIN
-  PERFORM straylight_auth.require_credential_control(p_user_id);
+  PERFORM brunn_auth.require_credential_control(p_user_id);
 
-  UPDATE straylight.api_credentials AS credential
+  UPDATE brunn.api_credentials AS credential
   SET disabled_at = coalesce(credential.disabled_at, clock_timestamp())
   WHERE credential.user_id = p_user_id
     AND credential.id = p_credential_id
     AND NOT EXISTS (
-      SELECT 1 FROM straylight.web_identities AS identity
+      SELECT 1 FROM brunn.web_identities AS identity
       WHERE identity.user_id = credential.user_id
         AND identity.web_credential_id = credential.id
     )
     AND NOT EXISTS (
-      SELECT 1 FROM straylight.task_guard_producers AS guard
+      SELECT 1 FROM brunn.task_guard_producers AS guard
       WHERE guard.user_id=credential.user_id
         AND guard.credential_id=credential.id
     )
@@ -324,10 +324,10 @@ BEGIN
     RAISE EXCEPTION 'credential not found for user' USING ERRCODE = 'P0002';
   END IF;
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, scope_id, credential_id, action, details, content_free
   ) VALUES (
-    p_user_id, NULL, straylight_auth.current_credential_id(),
+    p_user_id, NULL, brunn_auth.current_credential_id(),
     'auth.credential.revoke',
     jsonb_build_object('credential_id', p_credential_id, 'revoked_at', revoked_at),
     true

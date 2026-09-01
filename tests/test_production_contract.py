@@ -25,15 +25,15 @@ class ProductionContractTests(unittest.TestCase):
         compose_environment = {
             **os.environ,
             "OPENAI_API_KEY": "",
-            "STRAYLIGHT_S3_ACCESS_KEY": "",
-            "STRAYLIGHT_S3_SECRET_KEY": "",
-            "STRAYLIGHT_MINIO_ACCESS_KEY": "",
-            "STRAYLIGHT_MINIO_SECRET_KEY": "",
-            "AUTH_EMAIL_FROM": "Straylight <login@example.com>",
-            "STRAYLIGHT_PUBLIC_URL": "https://straylight.example.com",
-            "STRAYLIGHT_APNS_APP_ID": "com.rourkem.straylight",
-            "STRAYLIGHT_APNS_TEAM_ID": "ABCDEFGHIJ",
-            "STRAYLIGHT_APNS_KEY_ID": "KLMNOPQRST",
+            "BRUNN_S3_ACCESS_KEY": "",
+            "BRUNN_S3_SECRET_KEY": "",
+            "BRUNN_MINIO_ACCESS_KEY": "",
+            "BRUNN_MINIO_SECRET_KEY": "",
+            "AUTH_EMAIL_FROM": "Brunn <login@example.com>",
+            "BRUNN_PUBLIC_URL": "https://brunn.example.com",
+            "BRUNN_APNS_APP_ID": "com.rourkem.brunn",
+            "BRUNN_APNS_TEAM_ID": "ABCDEFGHIJ",
+            "BRUNN_APNS_KEY_ID": "KLMNOPQRST",
         }
         result = subprocess.run(
             [
@@ -108,33 +108,33 @@ class ProductionContractTests(unittest.TestCase):
         expected_files = {
             "DATABASE_URL_RW_FILE": "/run/secrets/database_url_rw",
             "DATABASE_URL_RO_FILE": "/run/secrets/database_url_ro",
-            "STRAYLIGHT_S3_ACCESS_KEY_FILE": "/run/secrets/minio_app_access_key",
-            "STRAYLIGHT_S3_SECRET_KEY_FILE": "/run/secrets/minio_app_secret_key",
-            "STRAYLIGHT_CONTINUATION_SECRET_FILE": "/run/secrets/continuation_signing_key",
+            "BRUNN_S3_ACCESS_KEY_FILE": "/run/secrets/minio_app_access_key",
+            "BRUNN_S3_SECRET_KEY_FILE": "/run/secrets/minio_app_secret_key",
+            "BRUNN_CONTINUATION_SECRET_FILE": "/run/secrets/continuation_signing_key",
             "OPENAI_API_KEY_FILE": "/run/secrets/openai_api_key",
         }
         direct_secrets = {
             "DATABASE_URL_RW",
             "DATABASE_URL_RO",
-            "STRAYLIGHT_DATABASE_URL",
-            "STRAYLIGHT_READ_ONLY_DATABASE_URL",
-            "STRAYLIGHT_S3_ACCESS_KEY",
-            "STRAYLIGHT_S3_SECRET_KEY",
-            "STRAYLIGHT_MINIO_ACCESS_KEY",
-            "STRAYLIGHT_MINIO_SECRET_KEY",
-            "STRAYLIGHT_CONTINUATION_SECRET",
-            "STRAYLIGHT_CONTINUATION_SIGNING_KEY",
+            "BRUNN_DATABASE_URL",
+            "BRUNN_READ_ONLY_DATABASE_URL",
+            "BRUNN_S3_ACCESS_KEY",
+            "BRUNN_S3_SECRET_KEY",
+            "BRUNN_MINIO_ACCESS_KEY",
+            "BRUNN_MINIO_SECRET_KEY",
+            "BRUNN_CONTINUATION_SECRET",
+            "BRUNN_CONTINUATION_SIGNING_KEY",
             "OPENAI_API_KEY",
-            "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY",
-            "STRAYLIGHT_SECRET_ENCRYPTION_KEY",
-            "STRAYLIGHT_APNS_PRIVATE_KEY",
+            "BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY",
+            "BRUNN_SECRET_ENCRYPTION_KEY",
+            "BRUNN_APNS_PRIVATE_KEY",
             "RESEND_API_KEY",
-            "STRAYLIGHT_DEV_READ_WRITE_TOKEN",
-            "STRAYLIGHT_DEV_READ_ONLY_TOKEN",
+            "BRUNN_DEV_READ_WRITE_TOKEN",
+            "BRUNN_DEV_READ_ONLY_TOKEN",
         }
         for service in ["migrate", "api", "worker"]:
             environment = self.compose["services"][service]["environment"]
-            self.assertEqual("production", environment["STRAYLIGHT_ENV"])
+            self.assertEqual("production", environment["BRUNN_ENV"])
             self.assertEqual("production", environment["DD_ENV"])
             self.assertEqual("unreleased", environment["DD_VERSION"])
             for name, path in expected_files.items():
@@ -145,34 +145,34 @@ class ProductionContractTests(unittest.TestCase):
             environment = self.compose["services"][service]["environment"]
             self.assertEqual(
                 "/run/secrets/notification_token_encryption_key",
-                environment["STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE"],
+                environment["BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE"],
             )
             self.assertEqual(
                 "/run/secrets/secret_encryption_key",
-                environment["STRAYLIGHT_SECRET_ENCRYPTION_KEY_FILE"],
+                environment["BRUNN_SECRET_ENCRYPTION_KEY_FILE"],
             )
-            self.assertEqual("false", environment["STRAYLIGHT_TODOIST_SYNC_ENABLED"])
+            self.assertEqual("false", environment["BRUNN_TODOIST_SYNC_ENABLED"])
             self.assertEqual(
-                "com.rourkem.straylight",
-                environment["STRAYLIGHT_APNS_APP_ID"],
+                "com.rourkem.brunn",
+                environment["BRUNN_APNS_APP_ID"],
             )
         self.assertNotIn(
-            "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE",
+            "BRUNN_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE",
             self.compose["services"]["migrate"]["environment"],
         )
         worker_environment = self.compose["services"]["worker"]["environment"]
-        self.assertEqual("ABCDEFGHIJ", worker_environment["STRAYLIGHT_APNS_TEAM_ID"])
-        self.assertEqual("KLMNOPQRST", worker_environment["STRAYLIGHT_APNS_KEY_ID"])
+        self.assertEqual("ABCDEFGHIJ", worker_environment["BRUNN_APNS_TEAM_ID"])
+        self.assertEqual("KLMNOPQRST", worker_environment["BRUNN_APNS_KEY_ID"])
         self.assertEqual(
             "/run/secrets/apns_private_key",
-            worker_environment["STRAYLIGHT_APNS_PRIVATE_KEY_FILE"],
+            worker_environment["BRUNN_APNS_PRIVATE_KEY_FILE"],
         )
         for service in ["migrate", "api"]:
             environment = self.compose["services"][service]["environment"]
             for name in [
-                "STRAYLIGHT_APNS_TEAM_ID",
-                "STRAYLIGHT_APNS_KEY_ID",
-                "STRAYLIGHT_APNS_PRIVATE_KEY_FILE",
+                "BRUNN_APNS_TEAM_ID",
+                "BRUNN_APNS_KEY_ID",
+                "BRUNN_APNS_PRIVATE_KEY_FILE",
             ]:
                 self.assertNotIn(name, environment, f"{service}:{name}")
         for service in ["migrate", "worker"]:
@@ -200,14 +200,14 @@ class ProductionContractTests(unittest.TestCase):
                 self.assertEqual(
                     "false",
                     rendered["services"][service]["environment"][
-                        "STRAYLIGHT_MESSAGING_ENABLED"
+                        "BRUNN_MESSAGING_ENABLED"
                     ],
                     service,
                 )
         self.assertEqual(
             "false",
             self.compose["services"]["mcp"]["environment"][
-                "STRAYLIGHT_MESSAGING_ENABLED"
+                "BRUNN_MESSAGING_ENABLED"
             ],
         )
 
@@ -222,11 +222,11 @@ class ProductionContractTests(unittest.TestCase):
                     continue
                 key, value = line.split("=", 1)
                 values[key] = value
-            self.assertEqual("false", values["STRAYLIGHT_MESSAGING_ENABLED"], filename)
+            self.assertEqual("false", values["BRUNN_MESSAGING_ENABLED"], filename)
 
         validator = (ROOT / "scripts/validate-production-config.sh").read_text()
         self.assertIn(
-            "STRAYLIGHT_MESSAGING_ENABLED must be true or false",
+            "BRUNN_MESSAGING_ENABLED must be true or false",
             validator,
         )
 
@@ -248,15 +248,15 @@ class ProductionContractTests(unittest.TestCase):
 
     def test_production_uses_prebuilt_release_images(self):
         expected = {
-            "db": "straylight-postgres:release-blocked",
-            "migrate": "straylight-api:release-blocked",
-            "api": "straylight-api:release-blocked",
-            "worker": "straylight-api:release-blocked",
-            "web": "straylight-web:release-blocked",
-            "mcp": "straylight-mcp:release-blocked",
-            "edge": "straylight-caddy:release-blocked",
-            "minio": "straylight-object-store:release-blocked",
-            "minio-init": "straylight-object-store-client:release-blocked",
+            "db": "brunn-postgres:release-blocked",
+            "migrate": "brunn-api:release-blocked",
+            "api": "brunn-api:release-blocked",
+            "worker": "brunn-api:release-blocked",
+            "web": "brunn-web:release-blocked",
+            "mcp": "brunn-mcp:release-blocked",
+            "edge": "brunn-caddy:release-blocked",
+            "minio": "brunn-object-store:release-blocked",
+            "minio-init": "brunn-object-store-client:release-blocked",
         }
         for service, image in expected.items():
             self.assertEqual(image, self.compose["services"][service]["image"])
@@ -274,7 +274,7 @@ class ProductionContractTests(unittest.TestCase):
         self.assertIn("--encoding=UTF8", initdb_args)
         self.assertIn("--data-checksums", initdb_args)
         self.assertEqual(
-            ["CMD", "/usr/local/bin/straylight-postgres-healthcheck"],
+            ["CMD", "/usr/local/bin/brunn-postgres-healthcheck"],
             database["healthcheck"]["test"],
         )
         healthcheck = (ROOT / "infra/postgres/healthcheck.sh").read_text()
@@ -320,13 +320,13 @@ class ProductionContractTests(unittest.TestCase):
         ]:
             self.assertIn(declaration, config)
         for alias in [
-            "STRAYLIGHT_MINIO_ENDPOINT",
-            "STRAYLIGHT_MINIO_REGION",
-            "STRAYLIGHT_MINIO_BUCKET",
-            "STRAYLIGHT_MINIO_ACCESS_KEY",
-            "STRAYLIGHT_MINIO_SECRET_KEY",
-            "STRAYLIGHT_MINIO_FORCE_PATH_STYLE",
-            "STRAYLIGHT_MINIO_CREATE_BUCKET",
+            "BRUNN_MINIO_ENDPOINT",
+            "BRUNN_MINIO_REGION",
+            "BRUNN_MINIO_BUCKET",
+            "BRUNN_MINIO_ACCESS_KEY",
+            "BRUNN_MINIO_SECRET_KEY",
+            "BRUNN_MINIO_FORCE_PATH_STYLE",
+            "BRUNN_MINIO_CREATE_BUCKET",
         ]:
             self.assertIn(alias, config)
 
@@ -349,8 +349,8 @@ class ProductionContractTests(unittest.TestCase):
         self.assertIn("if !self.create_bucket", object_store)
 
         for setting in [
-            "STRAYLIGHT_S3_FORCE_PATH_STYLE",
-            "STRAYLIGHT_S3_CREATE_BUCKET",
+            "BRUNN_S3_FORCE_PATH_STYLE",
+            "BRUNN_S3_CREATE_BUCKET",
         ]:
             self.assertIn(setting, example)
             self.assertIn(setting, evaluation)
@@ -365,19 +365,19 @@ class ProductionContractTests(unittest.TestCase):
         self.assertNotIn("minio-init", services)
         for service in ["migrate", "api", "worker"]:
             environment = services[service]["environment"]
-            self.assertEqual("", environment["STRAYLIGHT_S3_ENDPOINT"])
-            self.assertEqual("us-west-2", environment["STRAYLIGHT_S3_REGION"])
+            self.assertEqual("", environment["BRUNN_S3_ENDPOINT"])
+            self.assertEqual("us-west-2", environment["BRUNN_S3_REGION"])
             self.assertEqual(
-                "replace-carrystate-production",
-                environment["STRAYLIGHT_S3_BUCKET"],
+                "replace-brunn-state-production",
+                environment["BRUNN_S3_BUCKET"],
             )
-            self.assertEqual("false", environment["STRAYLIGHT_S3_CREATE_BUCKET"])
-            self.assertEqual("", environment["STRAYLIGHT_MINIO_ENDPOINT"])
-            self.assertEqual("", environment["STRAYLIGHT_MINIO_BUCKET"])
-            self.assertEqual("", environment["STRAYLIGHT_MINIO_ACCESS_KEY"])
-            self.assertEqual("", environment["STRAYLIGHT_MINIO_SECRET_KEY"])
-            self.assertEqual("", environment["STRAYLIGHT_S3_ACCESS_KEY"])
-            self.assertEqual("", environment["STRAYLIGHT_S3_SECRET_KEY"])
+            self.assertEqual("false", environment["BRUNN_S3_CREATE_BUCKET"])
+            self.assertEqual("", environment["BRUNN_MINIO_ENDPOINT"])
+            self.assertEqual("", environment["BRUNN_MINIO_BUCKET"])
+            self.assertEqual("", environment["BRUNN_MINIO_ACCESS_KEY"])
+            self.assertEqual("", environment["BRUNN_MINIO_SECRET_KEY"])
+            self.assertEqual("", environment["BRUNN_S3_ACCESS_KEY"])
+            self.assertEqual("", environment["BRUNN_S3_SECRET_KEY"])
             self.assertNotIn("AWS_ACCESS_KEY_ID", environment)
             self.assertNotIn("AWS_SECRET_ACCESS_KEY", environment)
             self.assertNotIn("AWS_SESSION_TOKEN", environment)
@@ -427,18 +427,18 @@ class ProductionContractTests(unittest.TestCase):
         verifier = paths[2].read_text()
         makefile = (ROOT / "Makefile").read_text()
 
-        self.assertIn("STRAYLIGHT_OBJECT_STORE_MODE", deploy)
+        self.assertIn("BRUNN_OBJECT_STORE_MODE", deploy)
         self.assertIn("compose.managed-s3.yaml", deploy)
         self.assertIn("scripts/managed-s3-backup.sh", deploy)
         self.assertIn("object_store_mode", deploy)
         self.assertIn("COMPOSE_MANAGED_S3_FILE", rollback)
         self.assertIn("COMPOSE_MANAGED_S3_FILE", compatibility)
         self.assertIn("portable-all-versions", managed_backup)
-        self.assertIn("STRAYLIGHT_MANAGED_BACKUP_ROOT", managed_backup)
-        self.assertIn("STRAYLIGHT_RESTORE_DRILL", managed_restore)
+        self.assertIn("BRUNN_MANAGED_BACKUP_ROOT", managed_backup)
+        self.assertIn("BRUNN_RESTORE_DRILL", managed_restore)
         self.assertIn("cleanup-restore", managed_restore)
         self.assertIn("verify_host_stability", managed_restore)
-        self.assertIn("straylight-managed-s3-coordinated-backup@v1", verifier)
+        self.assertIn("brunn-managed-s3-coordinated-backup@v1", verifier)
         self.assertIn("managed-production-backup:", makefile)
         self.assertIn("managed-production-restore-drill:", makefile)
 
@@ -452,7 +452,7 @@ class ProductionContractTests(unittest.TestCase):
         for path in production_sources:
             source = path.read_text()
             self.assertNotIn("todoist-fixture", source, path)
-            self.assertNotIn("STRAYLIGHT_TODOIST_FIXTURE_ORIGIN", source, path)
+            self.assertNotIn("BRUNN_TODOIST_FIXTURE_ORIGIN", source, path)
 
     def test_shipped_base_images_are_digest_pinned(self):
         dockerfiles = [
@@ -496,12 +496,12 @@ class ProductionContractTests(unittest.TestCase):
         environment = self.compose["services"]["worker"]["environment"]
         backup_days = int(
             re.search(
-                r"STRAYLIGHT_BACKUP_RETENTION_DAYS=(\d+)",
+                r"BRUNN_BACKUP_RETENTION_DAYS=(\d+)",
                 (ROOT / ".env.example").read_text(),
             ).group(1)
         )
         deletion_days = int(
-            environment["STRAYLIGHT_ACCOUNT_DELETION_BACKUP_RETENTION_DAYS"]
+            environment["BRUNN_ACCOUNT_DELETION_BACKUP_RETENTION_DAYS"]
         )
         self.assertLessEqual(backup_days, deletion_days)
 
@@ -520,24 +520,24 @@ class ProductionContractTests(unittest.TestCase):
     def test_public_proxy_has_independent_bounded_request_limits(self):
         nginx = (ROOT / "apps/web/nginx.conf").read_text()
         self.assertIn(
-            "limit_req_zone $binary_remote_addr zone=straylight_ready:1m rate=1r/s;",
+            "limit_req_zone $binary_remote_addr zone=brunn_ready:1m rate=1r/s;",
             nginx,
         )
         self.assertIn(
             "limit_req_zone $binary_remote_addr "
-            "zone=straylight_api_limit:10m rate=20r/s;",
+            "zone=brunn_api_limit:10m rate=20r/s;",
             nginx,
         )
         self.assertRegex(
             nginx,
             r"location = /api/ready \{[\s\S]*?"
-            r"limit_req zone=straylight_ready burst=5 nodelay;[\s\S]*?"
+            r"limit_req zone=brunn_ready burst=5 nodelay;[\s\S]*?"
             r'add_header Cache-Control "no-store" always;',
         )
         self.assertRegex(
             nginx,
             r"location /api/ \{[\s\S]*?"
-            r"limit_req zone=straylight_api_limit burst=40 nodelay;",
+            r"limit_req zone=brunn_api_limit burst=40 nodelay;",
         )
         self.assertRegex(
             nginx,
@@ -555,7 +555,7 @@ class ProductionContractTests(unittest.TestCase):
             nginx,
             r"location = /api/v1/workspace/binaries/content \{[\s\S]*?"
             r"client_max_body_size 4g;[\s\S]*?"
-            r"proxy_pass http://straylight_api/v1/workspace/binaries/content;[\s\S]*?"
+            r"proxy_pass http://brunn_api/v1/workspace/binaries/content;[\s\S]*?"
             r"proxy_request_buffering off;",
         )
 
@@ -565,8 +565,8 @@ class ProductionContractTests(unittest.TestCase):
         compose = (ROOT / "compose.yaml").read_text()
         validator = (ROOT / "scripts/validate-production-config.sh").read_text()
         for setting in [
-            "STRAYLIGHT_TRANSFER_TIMEOUT_SECONDS",
-            "STRAYLIGHT_MAX_CONCURRENT_TRANSFERS",
+            "BRUNN_TRANSFER_TIMEOUT_SECONDS",
+            "BRUNN_MAX_CONCURRENT_TRANSFERS",
         ]:
             self.assertIn(setting, config)
             self.assertIn(setting, compose)
@@ -585,13 +585,13 @@ class ProductionContractTests(unittest.TestCase):
 
     def test_browser_auth_has_a_small_rate_limited_proxy_boundary(self):
         nginx = (ROOT / "apps/web/nginx.conf").read_text()
-        self.assertIn("zone=straylight_auth_limit:1m rate=2r/s", nginx)
+        self.assertIn("zone=brunn_auth_limit:1m rate=2r/s", nginx)
         auth_proxy = nginx.split("location ^~ /api/v1/auth/ {", 1)[1].split(
             "location /api/ {", 1
         )[0]
         self.assertIn("client_max_body_size 16k;", auth_proxy)
-        self.assertIn("limit_req zone=straylight_auth_limit burst=10 nodelay;", auth_proxy)
-        self.assertIn("proxy_pass http://straylight_api/v1/auth/;", auth_proxy)
+        self.assertIn("limit_req zone=brunn_auth_limit burst=10 nodelay;", auth_proxy)
+        self.assertIn("proxy_pass http://brunn_api/v1/auth/;", auth_proxy)
 
     def test_build_context_excludes_secrets_and_operational_data(self):
         patterns = set((ROOT / ".dockerignore").read_text().splitlines())
@@ -624,9 +624,9 @@ class ProductionContractTests(unittest.TestCase):
                 "postgres_admin_password": admin_password,
                 "postgres_app_rw_password": rw_password,
                 "postgres_app_ro_password": ro_password,
-                "database_url_rw": f"postgres://app_rw:{rw_password}@db:5432/straylight",
-                "database_url_ro": f"postgres://app_ro:{ro_password}@db:5432/straylight",
-                "database_url_admin": f"postgres://admin:{admin_password}@db:5432/straylight",
+                "database_url_rw": f"postgres://app_rw:{rw_password}@db:5432/brunn",
+                "database_url_ro": f"postgres://app_ro:{ro_password}@db:5432/brunn",
+                "database_url_admin": f"postgres://admin:{admin_password}@db:5432/brunn",
                 "minio_root_user": "root-user",
                 "minio_root_password": "m" * 24,
                 "minio_app_access_key": "app-access",
@@ -647,51 +647,51 @@ class ProductionContractTests(unittest.TestCase):
             env_file.write_text(
                 "\n".join(
                     [
-                        "STRAYLIGHT_ENV=production",
-                        f"STRAYLIGHT_RELEASE_REVISION={revision}",
+                        "BRUNN_ENV=production",
+                        f"BRUNN_RELEASE_REVISION={revision}",
                         f"DD_VERSION={revision}",
                         "DD_ENV=production",
-                        "STRAYLIGHT_EMBEDDING_PROVIDER=openai",
-                        "STRAYLIGHT_ALLOW_DEGRADED_EMBEDDINGS=false",
-                        "STRAYLIGHT_EMBEDDING_MODEL=text-embedding-3-small",
-                        "STRAYLIGHT_EMBEDDING_DIMENSIONS=1536",
-                        "STRAYLIGHT_CAPTURE_MODEL=gpt-5.6",
-                        "STRAYLIGHT_CAPTURE_MAX_OUTPUT_TOKENS=8192",
-                        "STRAYLIGHT_DREAM_MODEL=gpt-5.6",
-                        "STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET=24000",
+                        "BRUNN_EMBEDDING_PROVIDER=openai",
+                        "BRUNN_ALLOW_DEGRADED_EMBEDDINGS=false",
+                        "BRUNN_EMBEDDING_MODEL=text-embedding-3-small",
+                        "BRUNN_EMBEDDING_DIMENSIONS=1536",
+                        "BRUNN_CAPTURE_MODEL=gpt-5.6",
+                        "BRUNN_CAPTURE_MAX_OUTPUT_TOKENS=8192",
+                        "BRUNN_DREAM_MODEL=gpt-5.6",
+                        "BRUNN_MATERIALIZE_TOKEN_BUDGET=24000",
                         "OPENAI_BASE_URL=https://api.openai.com/v1",
-                        "AUTH_EMAIL_FROM=Straylight <login@solark.io>",
-                        "AUTH_EMAIL_REPLY_TO=owner@straylight.dev",
-                        "STRAYLIGHT_PUBLIC_URL=https://alpha.straylight.dev",
-                        "STRAYLIGHT_APNS_APP_ID=com.rourkem.straylight",
-                        "STRAYLIGHT_APNS_TEAM_ID=ABCDEFGHIJ",
-                        "STRAYLIGHT_APNS_KEY_ID=KLMNOPQRST",
-                        "STRAYLIGHT_DREAM_SCHEDULER_ENABLED=false",
-                        "STRAYLIGHT_METRICS_ENABLED=true",
-                        "STRAYLIGHT_DOGSTATSD_ADDR=datadog-agent:8125",
-                        "STRAYLIGHT_REQUESTS_PER_MINUTE=600",
-                        "STRAYLIGHT_REQUEST_TIMEOUT_SECONDS=30",
-                        "STRAYLIGHT_TRANSFER_TIMEOUT_SECONDS=3600",
-                        "STRAYLIGHT_MAX_CONCURRENT_TRANSFERS=8",
-                        "STRAYLIGHT_READINESS_TIMEOUT_SECONDS=3",
-                        "STRAYLIGHT_METRICS_FLUSH_SECONDS=3",
-                        "STRAYLIGHT_BACKUP_RETENTION_DAYS=30",
-                        "STRAYLIGHT_ACCOUNT_DELETION_BACKUP_RETENTION_DAYS=30",
-                        "STRAYLIGHT_DATADOG_NOTIFY=ops@straylight.dev",
-                        "STRAYLIGHT_ALLOWED_ORIGINS=",
-                        "STRAYLIGHT_PUBLIC_HOST=alpha.straylight.dev",
-                        "STRAYLIGHT_ACME_EMAIL=ops@straylight.dev",
-                        "STRAYLIGHT_DATABASE_IMAGE=database@sha256:" + ("d" * 64),
-                        "STRAYLIGHT_OBJECT_STORE_IMAGE=object-store@sha256:"
+                        "AUTH_EMAIL_FROM=Brunn <login@solark.io>",
+                        "AUTH_EMAIL_REPLY_TO=owner@brunn.dev",
+                        "BRUNN_PUBLIC_URL=https://alpha.brunn.ai",
+                        "BRUNN_APNS_APP_ID=com.rourkem.brunn",
+                        "BRUNN_APNS_TEAM_ID=ABCDEFGHIJ",
+                        "BRUNN_APNS_KEY_ID=KLMNOPQRST",
+                        "BRUNN_DREAM_SCHEDULER_ENABLED=false",
+                        "BRUNN_METRICS_ENABLED=true",
+                        "BRUNN_DOGSTATSD_ADDR=datadog-agent:8125",
+                        "BRUNN_REQUESTS_PER_MINUTE=600",
+                        "BRUNN_REQUEST_TIMEOUT_SECONDS=30",
+                        "BRUNN_TRANSFER_TIMEOUT_SECONDS=3600",
+                        "BRUNN_MAX_CONCURRENT_TRANSFERS=8",
+                        "BRUNN_READINESS_TIMEOUT_SECONDS=3",
+                        "BRUNN_METRICS_FLUSH_SECONDS=3",
+                        "BRUNN_BACKUP_RETENTION_DAYS=30",
+                        "BRUNN_ACCOUNT_DELETION_BACKUP_RETENTION_DAYS=30",
+                        "BRUNN_DATADOG_NOTIFY=ops@brunn.dev",
+                        "BRUNN_ALLOWED_ORIGINS=",
+                        "BRUNN_PUBLIC_HOST=alpha.brunn.ai",
+                        "BRUNN_ACME_EMAIL=ops@brunn.dev",
+                        "BRUNN_DATABASE_IMAGE=database@sha256:" + ("d" * 64),
+                        "BRUNN_OBJECT_STORE_IMAGE=object-store@sha256:"
                         + ("e" * 64),
-                        "STRAYLIGHT_OBJECT_STORE_CLIENT_IMAGE=object-store-client@sha256:"
+                        "BRUNN_OBJECT_STORE_CLIENT_IMAGE=object-store-client@sha256:"
                         + ("f" * 64),
-                        "STRAYLIGHT_API_IMAGE=straylight-api@sha256:" + ("1" * 64),
-                        "STRAYLIGHT_WEB_IMAGE=straylight-web@sha256:" + ("2" * 64),
-                        "STRAYLIGHT_MCP_IMAGE=straylight-mcp@sha256:" + ("3" * 64),
-                        "STRAYLIGHT_EDGE_IMAGE=straylight-caddy@sha256:" + ("4" * 64),
+                        "BRUNN_API_IMAGE=brunn-api@sha256:" + ("1" * 64),
+                        "BRUNN_WEB_IMAGE=brunn-web@sha256:" + ("2" * 64),
+                        "BRUNN_MCP_IMAGE=brunn-mcp@sha256:" + ("3" * 64),
+                        "BRUNN_EDGE_IMAGE=brunn-caddy@sha256:" + ("4" * 64),
                         "DATADOG_AGENT_IMAGE=agent@sha256:" + ("b" * 64),
-                        "STRAYLIGHT_SECRETS_DIR=./secrets",
+                        "BRUNN_SECRETS_DIR=./secrets",
                         "",
                     ]
                 )
@@ -709,7 +709,7 @@ class ProductionContractTests(unittest.TestCase):
 
             env_file.write_text(
                 env_file.read_text().replace(
-                    "alpha.straylight.dev", "memory.example.com"
+                    "alpha.brunn.ai", "memory.example.com"
                 )
             )
             rejected = subprocess.run(
@@ -724,11 +724,11 @@ class ProductionContractTests(unittest.TestCase):
             self.assertIn("placeholder", rejected.stderr)
 
             mutable = env_file.read_text().replace(
-                "STRAYLIGHT_API_IMAGE=straylight-api@sha256:" + ("1" * 64),
-                "STRAYLIGHT_API_IMAGE=straylight-api:latest",
+                "BRUNN_API_IMAGE=brunn-api@sha256:" + ("1" * 64),
+                "BRUNN_API_IMAGE=brunn-api:latest",
             )
             env_file.write_text(
-                mutable.replace("memory.example.com", "alpha.straylight.dev")
+                mutable.replace("memory.example.com", "alpha.brunn.ai")
             )
             rejected = subprocess.run(
                 [str(validator), str(env_file)],
@@ -744,12 +744,12 @@ class ProductionContractTests(unittest.TestCase):
             env_file.write_text(
                 env_file.read_text()
                 .replace(
-                    "STRAYLIGHT_API_IMAGE=straylight-api:latest",
-                    "STRAYLIGHT_API_IMAGE=straylight-api@sha256:" + ("1" * 64),
+                    "BRUNN_API_IMAGE=brunn-api:latest",
+                    "BRUNN_API_IMAGE=brunn-api@sha256:" + ("1" * 64),
                 )
                 .replace(
-                    "STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET=24000",
-                    "STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET=12000",
+                    "BRUNN_MATERIALIZE_TOKEN_BUDGET=24000",
+                    "BRUNN_MATERIALIZE_TOKEN_BUDGET=12000",
                 )
             )
             rejected = subprocess.run(
@@ -768,12 +768,12 @@ class ProductionContractTests(unittest.TestCase):
             env_file.write_text(
                 env_file.read_text()
                 .replace(
-                    "STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET=12000",
-                    "STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET=24000",
+                    "BRUNN_MATERIALIZE_TOKEN_BUDGET=12000",
+                    "BRUNN_MATERIALIZE_TOKEN_BUDGET=24000",
                 )
                 .replace(
-                    "STRAYLIGHT_METRICS_ENABLED=true",
-                    "STRAYLIGHT_METRICS_ENABLED=false",
+                    "BRUNN_METRICS_ENABLED=true",
+                    "BRUNN_METRICS_ENABLED=false",
                 )
             )
             rejected = subprocess.run(
@@ -804,13 +804,13 @@ class ProductionContractTests(unittest.TestCase):
                 "postgres_app_rw_password": rw_password,
                 "postgres_app_ro_password": ro_password,
                 "database_url_rw": (
-                    f"postgres://app_rw:{rw_password}@db:5432/straylight"
+                    f"postgres://app_rw:{rw_password}@db:5432/brunn"
                 ),
                 "database_url_ro": (
-                    f"postgres://app_ro:{ro_password}@db:5432/straylight"
+                    f"postgres://app_ro:{ro_password}@db:5432/brunn"
                 ),
                 "database_url_admin": (
-                    f"postgres://admin:{admin_password}@db:5432/straylight"
+                    f"postgres://admin:{admin_password}@db:5432/brunn"
                 ),
                 "continuation_signing_key": "c" * 32,
                 "notification_token_encryption_key": TEST_NOTIFICATION_TOKEN_KEY,
@@ -829,63 +829,63 @@ class ProductionContractTests(unittest.TestCase):
             env_file.write_text(
                 "\n".join(
                     [
-                        "STRAYLIGHT_ENV=production",
-                        "STRAYLIGHT_OBJECT_STORE_MODE=managed-s3",
-                        f"STRAYLIGHT_RELEASE_REVISION={revision}",
+                        "BRUNN_ENV=production",
+                        "BRUNN_OBJECT_STORE_MODE=managed-s3",
+                        f"BRUNN_RELEASE_REVISION={revision}",
                         f"DD_VERSION={revision}",
                         "DD_ENV=production",
-                        "STRAYLIGHT_EMBEDDING_PROVIDER=openai",
-                        "STRAYLIGHT_ALLOW_DEGRADED_EMBEDDINGS=false",
-                        "STRAYLIGHT_EMBEDDING_MODEL=text-embedding-3-small",
-                        "STRAYLIGHT_EMBEDDING_DIMENSIONS=1536",
-                        "STRAYLIGHT_CAPTURE_MODEL=gpt-5.6",
-                        "STRAYLIGHT_CAPTURE_MAX_OUTPUT_TOKENS=8192",
-                        "STRAYLIGHT_DREAM_MODEL=gpt-5.6",
-                        "STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET=24000",
+                        "BRUNN_EMBEDDING_PROVIDER=openai",
+                        "BRUNN_ALLOW_DEGRADED_EMBEDDINGS=false",
+                        "BRUNN_EMBEDDING_MODEL=text-embedding-3-small",
+                        "BRUNN_EMBEDDING_DIMENSIONS=1536",
+                        "BRUNN_CAPTURE_MODEL=gpt-5.6",
+                        "BRUNN_CAPTURE_MAX_OUTPUT_TOKENS=8192",
+                        "BRUNN_DREAM_MODEL=gpt-5.6",
+                        "BRUNN_MATERIALIZE_TOKEN_BUDGET=24000",
                         "OPENAI_BASE_URL=https://api.openai.com/v1",
-                        "AUTH_EMAIL_FROM=Straylight <login@solark.io>",
-                        "AUTH_EMAIL_REPLY_TO=owner@carrystate.dev",
-                        "STRAYLIGHT_PUBLIC_URL=https://alpha.carrystate.dev",
-                        "STRAYLIGHT_APNS_APP_ID=com.rourkem.straylight",
-                        "STRAYLIGHT_APNS_TEAM_ID=ABCDEFGHIJ",
-                        "STRAYLIGHT_APNS_KEY_ID=KLMNOPQRST",
-                        "STRAYLIGHT_DREAM_SCHEDULER_ENABLED=false",
-                        "STRAYLIGHT_METRICS_ENABLED=true",
-                        "STRAYLIGHT_DOGSTATSD_ADDR=datadog-agent:8125",
-                        "STRAYLIGHT_REQUESTS_PER_MINUTE=600",
-                        "STRAYLIGHT_REQUEST_TIMEOUT_SECONDS=30",
-                        "STRAYLIGHT_TRANSFER_TIMEOUT_SECONDS=3600",
-                        "STRAYLIGHT_MAX_CONCURRENT_TRANSFERS=8",
-                        "STRAYLIGHT_READINESS_TIMEOUT_SECONDS=3",
-                        "STRAYLIGHT_METRICS_FLUSH_SECONDS=3",
-                        "STRAYLIGHT_BACKUP_RETENTION_DAYS=30",
-                        "STRAYLIGHT_ACCOUNT_DELETION_BACKUP_RETENTION_DAYS=30",
-                        "STRAYLIGHT_DATADOG_NOTIFY=ops@carrystate.dev",
-                        "STRAYLIGHT_ALLOWED_ORIGINS=",
-                        "STRAYLIGHT_PUBLIC_HOST=alpha.carrystate.dev",
-                        "STRAYLIGHT_ACME_EMAIL=ops@carrystate.dev",
-                        "STRAYLIGHT_S3_ENDPOINT=",
-                        "STRAYLIGHT_S3_REGION=us-west-2",
-                        "STRAYLIGHT_S3_BUCKET=carrystate-production",
-                        "STRAYLIGHT_S3_FORCE_PATH_STYLE=false",
-                        "STRAYLIGHT_S3_CREATE_BUCKET=false",
-                        "STRAYLIGHT_S3_ACCESS_KEY=",
-                        "STRAYLIGHT_S3_SECRET_KEY=",
-                        "STRAYLIGHT_S3_ACCESS_KEY_FILE=",
-                        "STRAYLIGHT_S3_SECRET_KEY_FILE=",
-                        "STRAYLIGHT_MANAGED_BACKUP_ROOT=/var/backups/carrystate",
-                        "STRAYLIGHT_DATABASE_IMAGE=database@sha256:"
+                        "AUTH_EMAIL_FROM=Brunn <login@solark.io>",
+                        "AUTH_EMAIL_REPLY_TO=owner@brunn.ai",
+                        "BRUNN_PUBLIC_URL=https://alpha.brunn.ai",
+                        "BRUNN_APNS_APP_ID=com.rourkem.brunn",
+                        "BRUNN_APNS_TEAM_ID=ABCDEFGHIJ",
+                        "BRUNN_APNS_KEY_ID=KLMNOPQRST",
+                        "BRUNN_DREAM_SCHEDULER_ENABLED=false",
+                        "BRUNN_METRICS_ENABLED=true",
+                        "BRUNN_DOGSTATSD_ADDR=datadog-agent:8125",
+                        "BRUNN_REQUESTS_PER_MINUTE=600",
+                        "BRUNN_REQUEST_TIMEOUT_SECONDS=30",
+                        "BRUNN_TRANSFER_TIMEOUT_SECONDS=3600",
+                        "BRUNN_MAX_CONCURRENT_TRANSFERS=8",
+                        "BRUNN_READINESS_TIMEOUT_SECONDS=3",
+                        "BRUNN_METRICS_FLUSH_SECONDS=3",
+                        "BRUNN_BACKUP_RETENTION_DAYS=30",
+                        "BRUNN_ACCOUNT_DELETION_BACKUP_RETENTION_DAYS=30",
+                        "BRUNN_DATADOG_NOTIFY=ops@brunn.ai",
+                        "BRUNN_ALLOWED_ORIGINS=",
+                        "BRUNN_PUBLIC_HOST=alpha.brunn.ai",
+                        "BRUNN_ACME_EMAIL=ops@brunn.ai",
+                        "BRUNN_S3_ENDPOINT=",
+                        "BRUNN_S3_REGION=us-west-2",
+                        "BRUNN_S3_BUCKET=brunn-state-production",
+                        "BRUNN_S3_FORCE_PATH_STYLE=false",
+                        "BRUNN_S3_CREATE_BUCKET=false",
+                        "BRUNN_S3_ACCESS_KEY=",
+                        "BRUNN_S3_SECRET_KEY=",
+                        "BRUNN_S3_ACCESS_KEY_FILE=",
+                        "BRUNN_S3_SECRET_KEY_FILE=",
+                        "BRUNN_MANAGED_BACKUP_ROOT=/var/backups/brunn-state",
+                        "BRUNN_DATABASE_IMAGE=database@sha256:"
                         + ("d" * 64),
-                        "STRAYLIGHT_API_IMAGE=straylight-api@sha256:"
+                        "BRUNN_API_IMAGE=brunn-api@sha256:"
                         + ("1" * 64),
-                        "STRAYLIGHT_WEB_IMAGE=straylight-web@sha256:"
+                        "BRUNN_WEB_IMAGE=brunn-web@sha256:"
                         + ("2" * 64),
-                        "STRAYLIGHT_MCP_IMAGE=straylight-mcp@sha256:"
+                        "BRUNN_MCP_IMAGE=brunn-mcp@sha256:"
                         + ("3" * 64),
-                        "STRAYLIGHT_EDGE_IMAGE=straylight-caddy@sha256:"
+                        "BRUNN_EDGE_IMAGE=brunn-caddy@sha256:"
                         + ("4" * 64),
                         "DATADOG_AGENT_IMAGE=agent@sha256:" + ("b" * 64),
-                        "STRAYLIGHT_SECRETS_DIR=./secrets",
+                        "BRUNN_SECRETS_DIR=./secrets",
                         "",
                     ]
                 )
@@ -904,8 +904,8 @@ class ProductionContractTests(unittest.TestCase):
 
             env_file.write_text(
                 env_file.read_text().replace(
-                    "STRAYLIGHT_S3_ACCESS_KEY=",
-                    "STRAYLIGHT_S3_ACCESS_KEY=one-sided-key",
+                    "BRUNN_S3_ACCESS_KEY=",
+                    "BRUNN_S3_ACCESS_KEY=one-sided-key",
                 )
             )
             rejected = subprocess.run(
@@ -922,12 +922,12 @@ class ProductionContractTests(unittest.TestCase):
             env_file.write_text(
                 env_file.read_text()
                 .replace(
-                    "STRAYLIGHT_S3_ACCESS_KEY=one-sided-key",
-                    "STRAYLIGHT_S3_ACCESS_KEY=",
+                    "BRUNN_S3_ACCESS_KEY=one-sided-key",
+                    "BRUNN_S3_ACCESS_KEY=",
                 )
                 .replace(
-                    "STRAYLIGHT_S3_ACCESS_KEY_FILE=",
-                    "STRAYLIGHT_S3_ACCESS_KEY_FILE=/run/secrets/s3-access-key",
+                    "BRUNN_S3_ACCESS_KEY_FILE=",
+                    "BRUNN_S3_ACCESS_KEY_FILE=/run/secrets/s3-access-key",
                 )
             )
             rejected = subprocess.run(
@@ -944,10 +944,10 @@ class ProductionContractTests(unittest.TestCase):
             env_file.write_text(
                 env_file.read_text()
                 .replace(
-                    "STRAYLIGHT_S3_ACCESS_KEY_FILE=/run/secrets/s3-access-key",
-                    "STRAYLIGHT_S3_ACCESS_KEY_FILE=",
+                    "BRUNN_S3_ACCESS_KEY_FILE=/run/secrets/s3-access-key",
+                    "BRUNN_S3_ACCESS_KEY_FILE=",
                 )
-                + "STRAYLIGHT_MINIO_ENDPOINT=http://minio:9000\n"
+                + "BRUNN_MINIO_ENDPOINT=http://minio:9000\n"
             )
             rejected = subprocess.run(
                 [str(validator), str(env_file)],
@@ -959,7 +959,7 @@ class ProductionContractTests(unittest.TestCase):
             )
             self.assertNotEqual(0, rejected.returncode)
             self.assertIn(
-                "STRAYLIGHT_MINIO_ENDPOINT must be empty in managed-s3 mode",
+                "BRUNN_MINIO_ENDPOINT must be empty in managed-s3 mode",
                 rejected.stderr,
             )
 
@@ -1023,7 +1023,7 @@ class ProductionContractTests(unittest.TestCase):
         self.assertIn("immutable_image_id", backup)
         self.assertIn("runtime_identity", backup)
         self.assertIn("scripts/database-invariants.sql", backup)
-        self.assertIn("straylight-postgres-healthcheck", (ROOT / "scripts/restore-drill.sh").read_text())
+        self.assertIn("brunn-postgres-healthcheck", (ROOT / "scripts/restore-drill.sh").read_text())
 
     def test_backup_normalizes_relative_destination_before_docker_mount(self):
         backup = (ROOT / "scripts/backup.sh").read_text()
@@ -1079,7 +1079,7 @@ class ProductionContractTests(unittest.TestCase):
         self.assertIn("/ready", compatibility)
 
         public_health = scripts["check-public-health.sh"].read_text()
-        self.assertIn("STRAYLIGHT_PUBLIC_HEALTH_PROBES:-24", public_health)
+        self.assertIn("BRUNN_PUBLIC_HEALTH_PROBES:-24", public_health)
         self.assertIn('"https://$host/healthz"', public_health)
         repeated_probes = public_health.split(
             'while [ "$probe" -le "$probe_count" ]; do', 1
@@ -1139,8 +1139,8 @@ candidate() {
   deploy_step "$fault_step" run_command || return $?
   printf continued >"$marker_path"
 }
-STRAYLIGHT_DEPLOY_FAIL_STEP=$fault_step
-export STRAYLIGHT_DEPLOY_FAIL_STEP
+BRUNN_DEPLOY_FAIL_STEP=$fault_step
+export BRUNN_DEPLOY_FAIL_STEP
 if candidate; then
   exit 90
 else
@@ -1227,8 +1227,8 @@ fi
             "minio-client",
             "caddy",
         ]:
-            self.assertIn(f'"straylight-{component}:$revision"', fingerprint)
-        self.assertIn('grep -v \'^straylight-\'', fingerprint)
+            self.assertIn(f'"brunn-{component}:$revision"', fingerprint)
+        self.assertIn('grep -v \'^brunn-\'', fingerprint)
 
     def test_production_example_requires_digest_pinned_release_images(self):
         values = {}
@@ -1238,13 +1238,13 @@ fi
             key, value = line.split("=", 1)
             values[key] = value
         for name in [
-            "STRAYLIGHT_API_IMAGE",
-            "STRAYLIGHT_DATABASE_IMAGE",
-            "STRAYLIGHT_WEB_IMAGE",
-            "STRAYLIGHT_MCP_IMAGE",
-            "STRAYLIGHT_EDGE_IMAGE",
-            "STRAYLIGHT_OBJECT_STORE_IMAGE",
-            "STRAYLIGHT_OBJECT_STORE_CLIENT_IMAGE",
+            "BRUNN_API_IMAGE",
+            "BRUNN_DATABASE_IMAGE",
+            "BRUNN_WEB_IMAGE",
+            "BRUNN_MCP_IMAGE",
+            "BRUNN_EDGE_IMAGE",
+            "BRUNN_OBJECT_STORE_IMAGE",
+            "BRUNN_OBJECT_STORE_CLIENT_IMAGE",
         ]:
             self.assertRegex(values[name], r"@sha256:[0-9a-f]{64}$", name)
 

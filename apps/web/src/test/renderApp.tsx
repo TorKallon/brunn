@@ -2,7 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import { StrictMode } from "react";
 import { vi } from "vitest";
-import { StraylightApp } from "../App";
+import { BrunnApp } from "../App";
 import { createTestRouter } from "../router";
 import { defaultTaskRoutes } from "./taskFixtures";
 
@@ -116,7 +116,7 @@ export const defaultDashboard = {
     access: [
       {
         id: "credential:current",
-        name: "Straylight Web",
+        name: "Brunn Web",
         kind: "web_ui",
         manageable: false,
         access: "owner",
@@ -273,7 +273,7 @@ export function renderApp(
     },
   });
   const router = createTestRouter(path);
-  const app = <StraylightApp router={router} queryClient={queryClient} />;
+  const app = <BrunnApp router={router} queryClient={queryClient} />;
   return {
     ...render(options.strict ? <StrictMode>{app}</StrictMode> : app),
     queryClient,

@@ -15,12 +15,11 @@ use crate::{
 
 pub async fn me(state: &AppState, auth: &AuthContext) -> ApiResult<Value> {
     let mut tx = state.begin_read(auth).await?;
-    let user = sqlx::query(
-        "SELECT external_ref,display_name,created_at FROM straylight.users WHERE id=$1",
-    )
-    .bind(auth.user_id.0)
-    .fetch_one(&mut *tx)
-    .await?;
+    let user =
+        sqlx::query("SELECT external_ref,display_name,created_at FROM brunn.users WHERE id=$1")
+            .bind(auth.user_id.0)
+            .fetch_one(&mut *tx)
+            .await?;
     let scopes = scope_items(&mut tx, auth).await?;
     let active_scope = scopes.first().cloned();
     // The legacy manifest model is gone; identity carries no corpus pin.
@@ -60,8 +59,8 @@ pub async fn list_policies(state: &AppState, auth: &AuthContext) -> ApiResult<Va
         r#"
         SELECT policy.id,policy.policy_ref,policy.name,policy.current_version,
                policy.is_default,revision.default_effect,revision.rules,revision.recorded_at
-        FROM straylight.policies AS policy
-        JOIN straylight.policy_revisions AS revision
+        FROM brunn.policies AS policy
+        JOIN brunn.policy_revisions AS revision
           ON revision.user_id=policy.user_id AND revision.policy_id=policy.id
          AND revision.version=policy.current_version
         WHERE policy.user_id=$1 ORDER BY policy.is_default DESC,policy.name
@@ -93,7 +92,7 @@ pub async fn list_policies(state: &AppState, auth: &AuthContext) -> ApiResult<Va
 pub async fn list_credentials(state: &AppState, auth: &AuthContext) -> ApiResult<Value> {
     auth.require(Capability::Status)?;
     let mut tx = state.begin_read(auth).await?;
-    let rows = sqlx::query("SELECT * FROM straylight_auth.list_credentials($1)")
+    let rows = sqlx::query("SELECT * FROM brunn_auth.list_credentials($1)")
         .bind(auth.user_id.0)
         .fetch_all(&mut *tx)
         .await?;
@@ -164,7 +163,7 @@ pub async fn create_credential(
                     .map_err(|_| ApiError::invalid("scope_ids must contain scope refs or UUIDs"))?;
                 values.push(
                     sqlx::query_scalar::<_, String>(
-                        "SELECT scope_ref FROM straylight.scopes WHERE user_id=$1 AND id=$2",
+                        "SELECT scope_ref FROM brunn.scopes WHERE user_id=$1 AND id=$2",
                     )
                     .bind(auth.user_id.0)
                     .bind(id)
@@ -181,7 +180,7 @@ pub async fn create_credential(
     let token = format!("sl_{}", URL_SAFE_NO_PAD.encode(secret));
     let token_hash = hex::encode(Sha256::digest(token.as_bytes()));
     let credential_id =
-        sqlx::query_scalar::<_, Uuid>("SELECT straylight_auth.issue_credential($1,$2,$3,$4,$5)")
+        sqlx::query_scalar::<_, Uuid>("SELECT brunn_auth.issue_credential($1,$2,$3,$4,$5)")
             .bind(auth.user_id.0)
             .bind(&name)
             .bind(token_hash)
@@ -326,7 +325,7 @@ pub async fn revoke_credential(
     }
     let mut tx = state.begin_write(auth).await?;
     let revoked_at =
-        sqlx::query_scalar::<_, DateTime<Utc>>("SELECT straylight_auth.revoke_credential($1,$2)")
+        sqlx::query_scalar::<_, DateTime<Utc>>("SELECT brunn_auth.revoke_credential($1,$2)")
             .bind(auth.user_id.0)
             .bind(credential_id)
             .fetch_one(&mut *tx)
@@ -347,7 +346,7 @@ async fn scope_items(
         r#"
         SELECT scope.id,scope.scope_ref,scope.name,scope.created_at,
                0::bigint AS object_count
-        FROM straylight.scopes AS scope
+        FROM brunn.scopes AS scope
         WHERE scope.user_id=$1
         ORDER BY scope.name,scope.scope_ref
         "#,

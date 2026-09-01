@@ -158,7 +158,7 @@ function isInferredSource(source: string): boolean {
 
 function provenanceLabel(source: string): string {
   if (source === "todoist") return "Set by Todoist";
-  if (source === "derived") return "Derived by Straylight";
+  if (source === "derived") return "Derived by Brunn";
   if (source.startsWith("agent:")) return `Inferred by ${source}`;
   return `Set by ${source}`;
 }

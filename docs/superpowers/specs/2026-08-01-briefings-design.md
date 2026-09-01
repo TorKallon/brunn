@@ -1,12 +1,12 @@
-# Straylight Briefings: Platform Design
+# Brunn Briefings: Platform Design
 
 Status: approved by owner 2026-08-01 (fresh design superseding the 2026-07-26
 "Daily Surfaces" specification's briefing/alert scope)
 
 Owner decisions recorded 2026-08-01:
 
-- Agents research and generate; Straylight is the platform (storage, dedupe,
-  topics, surface). No collectors, feeds, or clustering inside Straylight.
+- Agents research and generate; Brunn is the platform (storage, dedupe,
+  topics, surface). No collectors, feeds, or clustering inside Brunn.
 - Briefings become structured editions surfaced in the existing SPA.
 - Item expansion is both stored detail (instant) and a durable "go deeper"
   request loop answered by a later agent run.
@@ -31,7 +31,7 @@ prompt wrote to Obsidian and local memory files (`news-brief-state.json`,
 ## 2. Why the prior design is superseded
 
 The 2026-07-26 Daily Surfaces spec bundled briefings, real-time alerts, agent
-tasks, and a secret vault; moved news collection into Straylight (feed
+tasks, and a secret vault; moved news collection into Brunn (feed
 collectors, WebSub, story clustering, fact extraction); and assumed the
 pre-cutover rich schema. The simplified cutover removed that schema, and both
 mechanisms the old spec leaned on (dream scheduler, semantic lane) are off in
@@ -51,7 +51,7 @@ Current contracts constrain and pre-authorize the feature:
 ## 3. Architecture
 
 Agents (the 6:30 cron, the 10:00 health job, intraday alert checks, on-demand
-sessions) do research, judgment, and prose. Straylight provides:
+sessions) do research, judgment, and prose. Brunn provides:
 
 1. **Canonical Markdown conventions** for editions, topics, and expansion
    requests (ordinary entries: versioned, searchable, exportable, in the
@@ -187,7 +187,7 @@ topic tuning, surfaced in the topics snapshot.
 
 ## 5. Story ledger (the one new table)
 
-Migration `0059_briefing_story_ledger.sql`, schema `straylight`, RLS-scoped by
+Migration `0059_briefing_story_ledger.sql`, schema `brunn`, RLS-scoped by
 `user_id` like all 0051 tables. **Derived and rebuildable** from edition
 metadata (`sections[].items[].story` and `omitted[]`) — it is an operational
 projection in the sense of `search_chunks`, not a new canonical record kind.
@@ -250,7 +250,7 @@ and rides the existing API service (no `railway.ts` / contract-test change).
 
 ## 7. MCP tools
 
-Three thin tools in `createStraylightMcpServer`, dot-named, zod-bounded,
+Three thin tools in `createBrunnMcpServer`, dot-named, zod-bounded,
 filesystem-free, exposed on **both** local stdio and the hosted gateway (so a
 claude.ai scheduled agent can run the briefing):
 
@@ -289,7 +289,7 @@ A contract document + rewritten cron prompt, no repo code required:
 - Dedupe state → `Briefings/State/news-brief-state.md` (fenced JSON block, the
   existing state schema, replacing the retired local file).
 - Trackers → `Briefings/State/daily-trackers.md`.
-- Fail closed: if Straylight is unreachable, report and stop; never write a
+- Fail closed: if Brunn is unreachable, report and stop; never write a
   local fallback.
 - Idempotency keys on all writes; the 10:00 health job updates the same
   edition entry.
@@ -301,7 +301,7 @@ the contract and prompt are the deliverable; wiring and re-enabling the cron
 
 ## 10. Out of scope
 
-Collectors/feeds/WebSub in Straylight; story clustering and fact extraction as
+Collectors/feeds/WebSub in Brunn; story clustering and fact extraction as
 product code; tasks; secrets; PWA/Web Push (alerts are intraday editions
 delivered via the agent's existing iMessage channel); semantic-embedding
 dedupe; cross-user sharing; a new capability; changes to accepted read/write/
@@ -337,4 +337,4 @@ checkpoint/dreaming semantics.
 5. Backfill: import existing `sources/Briefings/` editions and interim state
    into the ledger; switch the cron prompt from interim writes to
    `briefing.publish`/`briefing.dedupe`/`briefing.topics`.
-6. Record decisions and checkpoint in Straylight.
+6. Record decisions and checkpoint in Brunn.

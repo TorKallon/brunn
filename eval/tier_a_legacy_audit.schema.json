@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://straylight.local/schemas/tier_a_legacy_audit.schema.json",
-  "title": "Straylight Tier-A legacy fidelity audit",
+  "$id": "https://brunn.local/schemas/tier_a_legacy_audit.schema.json",
+  "title": "Brunn Tier-A legacy fidelity audit",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -16,7 +16,7 @@
     "tier_a_assessment"
   ],
   "properties": {
-    "schema": {"const": "straylight-tier-a-legacy-audit@v1"},
+    "schema": {"const": "brunn-tier-a-legacy-audit@v1"},
     "created_at": {"type": "string", "format": "date-time"},
     "scope": {
       "enum": ["composite_local", "isolated_simplified_service"]

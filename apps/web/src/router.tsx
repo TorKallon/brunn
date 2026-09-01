@@ -287,8 +287,8 @@ function safeInternalRedirect(value: unknown): string | undefined {
     return undefined;
   }
   try {
-    const url = new URL(value, "https://straylight.invalid");
-    if (url.origin !== "https://straylight.invalid") return undefined;
+    const url = new URL(value, "https://brunn.invalid");
+    if (url.origin !== "https://brunn.invalid") return undefined;
     if (["/login", "/forgot-password", "/reset-password"].includes(url.pathname)) {
       return undefined;
     }

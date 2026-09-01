@@ -11,7 +11,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 import { messagingChildEnvironment } from "./messaging-release-profile.mjs";
 
-const SCHEMA = "straylight-agent-first-tasks-gate12@v1";
+const SCHEMA = "brunn-agent-first-tasks-gate12@v1";
 const EXPECTED_TASK_TOOLS = [
   "project.register",
   "project.state",
@@ -57,10 +57,10 @@ try {
     env: {
       ...environment,
       ...messagingChildEnvironment(process.env),
-      STRAYLIGHT_API_URL: config.apiUrl.href,
-      STRAYLIGHT_API_TOKEN: config.apiToken,
-      STRAYLIGHT_MCP_INCLUDE_STRUCTURED_CONTENT: "1",
-      STRAYLIGHT_MCP_RETRY_BACKOFF_MS: "10,20,40,80,160,320",
+      BRUNN_API_URL: config.apiUrl.href,
+      BRUNN_API_TOKEN: config.apiToken,
+      BRUNN_MCP_INCLUDE_STRUCTURED_CONTENT: "1",
+      BRUNN_MCP_RETRY_BACKOFF_MS: "10,20,40,80,160,320",
     },
   });
   client = new Client({ name: "task-gate12-scenario", version: "1.0.0" });
@@ -101,7 +101,7 @@ async function runScenario(mcp) {
   const projectSlug = `gate12-${suffix}`;
   const hubDirectory = `sources/Projects/Gate12-${suffix}`;
   const hubPath = `${hubDirectory}/Project.md`;
-  const repoPath = `/tmp/straylight-gate12-${suffix}/`;
+  const repoPath = `/tmp/brunn-gate12-${suffix}/`;
   const scenarioAsOf = new Date();
   const tomorrow = new Date(scenarioAsOf.getTime() + 24 * 60 * 60 * 1_000)
     .toISOString()
@@ -240,7 +240,7 @@ async function runScenario(mcp) {
   }));
   const taskRef = requireTaskReference(capture);
   const taskId = requireTaskId(capture, taskRef);
-  const taskPath = `.straylight/tasks/${taskId}.md`;
+  const taskPath = `.brunn/tasks/${taskId}.md`;
   const capturedVersion = requirePositiveInteger(findValue(capture, "version"), "capture version");
   assert.equal(
     hasSourceForValue(capture, projectSlug, source),
@@ -608,15 +608,15 @@ function parseArguments(args) {
     values[argument] = next;
     index += 1;
   }
-  const apiUrl = new URL(values["--api-url"] ?? requiredEnvironment("STRAYLIGHT_API_URL"));
-  const apiToken = requiredEnvironment("STRAYLIGHT_API_TOKEN");
+  const apiUrl = new URL(values["--api-url"] ?? requiredEnvironment("BRUNN_API_URL"));
+  const apiToken = requiredEnvironment("BRUNN_API_TOKEN");
   const scriptDirectory = dirname(fileURLToPath(import.meta.url));
   return {
     apiUrl,
     apiToken,
     mcpEntry: resolve(values["--mcp-entry"] ?? `${scriptDirectory}/../dist/index.js`),
-    jsonOutput: resolve(values["--json-output"] ?? requiredEnvironment("STRAYLIGHT_TASK_GATE12_JSON")),
-    junitOutput: resolve(values["--junit-output"] ?? requiredEnvironment("STRAYLIGHT_TASK_GATE12_JUNIT")),
+    jsonOutput: resolve(values["--json-output"] ?? requiredEnvironment("BRUNN_TASK_GATE12_JSON")),
+    junitOutput: resolve(values["--junit-output"] ?? requiredEnvironment("BRUNN_TASK_GATE12_JUNIT")),
     preflightOnly: values.preflightOnly === true,
   };
 }

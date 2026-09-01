@@ -25,14 +25,14 @@ RUN git clone --filter=blob:none https://github.com/tianon/gosu.git . \
 
 FROM postgres:17.10-alpine3.24@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
 
-ARG STRAYLIGHT_BUILD_REVISION=unknown
-LABEL org.opencontainers.image.title="Straylight PostgreSQL with pgvector" \
-      org.opencontainers.image.revision="${STRAYLIGHT_BUILD_REVISION}" \
+ARG BRUNN_BUILD_REVISION=unknown
+LABEL org.opencontainers.image.title="Brunn PostgreSQL with pgvector" \
+      org.opencontainers.image.revision="${BRUNN_BUILD_REVISION}" \
       org.opencontainers.image.version="17.10-pgvector0.8.5"
 COPY --from=pgvector-build /usr/local/lib/postgresql/vector.so /usr/local/lib/postgresql/vector.so
 COPY --from=pgvector-build /usr/local/share/postgresql/extension/vector* /usr/local/share/postgresql/extension/
 COPY --from=gosu-build /out/gosu /usr/local/bin/gosu
-COPY infra/postgres/healthcheck.sh /usr/local/bin/straylight-postgres-healthcheck
+COPY infra/postgres/healthcheck.sh /usr/local/bin/brunn-postgres-healthcheck
 COPY infra/postgres/init/ /docker-entrypoint-initdb.d/
 
 USER postgres:postgres

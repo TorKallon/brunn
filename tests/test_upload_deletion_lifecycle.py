@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 UPLOAD = ROOT / "apps/api/src/upload_service.rs"
-WRITE = ROOT / "apps/api/src/write_service.rs"
+BINARY = ROOT / "apps/api/src/simple_core.rs"
 QUOTA = ROOT / "apps/api/src/quota.rs"
 ACCOUNT = ROOT / "apps/api/src/account_worker.rs"
 ACCOUNT_SERVICE = ROOT / "apps/api/src/account_service.rs"
@@ -27,7 +27,7 @@ class UploadDeletionLifecycleContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.upload = UPLOAD.read_text(encoding="utf-8")
-        cls.write = WRITE.read_text(encoding="utf-8")
+        cls.binary = BINARY.read_text(encoding="utf-8")
         cls.quota = QUOTA.read_text(encoding="utf-8")
         cls.account = ACCOUNT.read_text(encoding="utf-8")
         cls.account_service = ACCOUNT_SERVICE.read_text(encoding="utf-8")
@@ -44,71 +44,95 @@ class UploadDeletionLifecycleContractTest(unittest.TestCase):
         cls.live_alpha = LIVE_ALPHA.read_text(encoding="utf-8")
 
     def test_deletion_transition_installs_an_immutable_storage_fence(self) -> None:
-        self.assertIn("CREATE TABLE straylight.account_deletion_fences", self.migration)
+        self.assertIn("CREATE TABLE brunn.account_deletion_fences", self.migration)
         self.assertIn("account_deletion_fences_immutable", self.migration)
         transition = self.migration.index("OLD.account_status = 'active'")
         storage_lock = self.migration.index(
             "hashtextextended('storage:' || NEW.id::text, 0)", transition
         )
         fence_insert = self.migration.index(
-            "INSERT INTO straylight.account_deletion_fences", storage_lock
+            "INSERT INTO brunn.account_deletion_fences", storage_lock
         )
         self.assertLess(transition, storage_lock)
         self.assertLess(storage_lock, fence_insert)
         self.assertIn("a deletion-fenced account cannot be reactivated", self.migration)
 
-    def test_upload_creation_has_a_durable_pre_s3_intent_and_compensation(self) -> None:
-        intent = self.upload.index(
-            "INSERT INTO straylight.asset_multipart_intents"
+    def test_binary_upload_hashes_bytes_before_atomic_publication(self) -> None:
+        upload = self.binary[
+            self.binary.index("pub async fn upload_binary") :
+            self.binary.index("pub async fn upload_binary_stream")
+        ]
+        path = upload.index("validate_public_path(&path)?")
+        expected_hash = upload.index('"expected_content_hash is required"', path)
+        object_write = upload.index(".put_user_blob(", expected_hash)
+        stored_hash = upload.index("validate_sha256(&stored.sha256)?", object_write)
+        mismatch = upload.index('"content_hash_mismatch"', stored_hash)
+        publish = upload.index("commit_binary_with_companion(", mismatch)
+        self.assertLess(path, expected_hash)
+        self.assertLess(expected_hash, object_write)
+        self.assertLess(object_write, stored_hash)
+        self.assertLess(stored_hash, mismatch)
+        self.assertLess(mismatch, publish)
+
+    def test_streamed_upload_is_bounded_and_always_unlinks_its_buffer(self) -> None:
+        stream = self.binary[
+            self.binary.index("pub async fn upload_binary_stream") :
+            self.binary.index("pub async fn fetch_binary")
+        ]
+        self.assertIn("auth.require(Capability::Stage)?", stream)
+        self.assertIn("validate_sha256(&query.expected_content_hash)?", stream)
+        self.assertIn(".create_new(true)", stream)
+        self.assertIn("checked_add", stream)
+        self.assertIn("MAX_STREAMED_BINARY_BYTES", stream)
+        self.assertIn("put_user_file_blob", stream)
+        transfer = stream.index("let transfer = async")
+        cleanup = stream.index("tokio::fs::remove_file(&temporary_path)", transfer)
+        unwrap = stream.index("let stored = transfer?", cleanup)
+        hash_check = stream.index("validate_sha256(&stored.sha256)?", unwrap)
+        publish = stream.index("commit_binary_with_companion(", hash_check)
+        self.assertLess(transfer, cleanup)
+        self.assertLess(cleanup, unwrap)
+        self.assertLess(unwrap, hash_check)
+        self.assertLess(hash_check, publish)
+
+    def test_binary_commit_locks_paths_and_fences_versions(self) -> None:
+        commit = self.binary[self.binary.index("async fn commit_binary_with_companion") :]
+        exact_object = commit.index("object_version_id.ok_or_else")
+        transaction = commit.index("let mut tx = state.begin_write(auth).await?", exact_object)
+        lock = commit.index("require_local_publish_lock", transaction)
+        row_lock = commit.index("FOR UPDATE OF entry", lock)
+        version_check = commit.index("entry_version_conflict", row_lock)
+        version_insert = commit.index("INSERT INTO brunn.entry_versions", version_check)
+        head_update = commit.index("UPDATE brunn.entries", version_insert)
+        generation = commit.index("INSERT INTO brunn.workspace_changes", head_update)
+        durable = commit.index("tx.commit().await?", generation)
+        self.assertLess(exact_object, transaction)
+        self.assertLess(transaction, lock)
+        self.assertLess(lock, row_lock)
+        self.assertLess(row_lock, version_check)
+        self.assertLess(version_check, version_insert)
+        self.assertLess(version_insert, head_update)
+        self.assertLess(head_update, generation)
+        self.assertLess(generation, durable)
+
+    def test_account_multipart_abort_verifies_the_prefix_is_empty(self) -> None:
+        abort = self.upload.index("pub async fn abort_multipart_prefix")
+        validate = self.upload.index("validate_user_prefix(prefix)?", abort)
+        first_list = self.upload.index("list_multipart_uploads(state, Some(prefix))", validate)
+        abort_object = self.upload.index(".abort_multipart_upload(", first_list)
+        second_list = self.upload.index(
+            "list_multipart_uploads(state, Some(prefix))", first_list + 1
         )
-        intent_commit = self.upload.index("intent_tx.commit().await?", intent)
-        multipart_create = self.upload.index(".create_multipart_upload(", intent_commit)
-        audit = self.upload.index('"asset.upload.create"', multipart_create)
-        final_commit = self.upload.index("tx.commit().await?", audit)
-        compensation = self.upload.index(".abort_multipart_upload(", final_commit)
-        self.assertLess(intent, intent_commit)
-        self.assertLess(intent_commit, multipart_create)
-        self.assertLess(multipart_create, audit)
-        self.assertLess(audit, final_commit)
-        self.assertLess(final_commit, compensation)
-        self.assertIn("reconcile_one_orphan_multipart", self.upload)
+        remaining = self.upload.index("if !remaining.is_empty()", second_list)
+        self.assertLess(validate, first_list)
+        self.assertLess(first_list, abort_object)
+        self.assertLess(abort_object, second_list)
+        self.assertLess(second_list, remaining)
         self.assertIn(".list_multipart_uploads()", self.upload)
+        self.assertIn("next_key_marker", self.upload)
+        self.assertIn("next_upload_id_marker", self.upload)
 
-    def test_completion_rechecks_exact_lease_after_multipart_completion(self) -> None:
-        complete = self.upload.index("pub async fn complete")
-        storage_lock = self.upload.index("lock_storage_write(&mut promote_tx", complete)
-        multipart_complete = self.upload.index(".complete_multipart_upload(", storage_lock)
-        row_lock = self.upload.index(
-            "load_upload(&mut promote_tx, auth, upload_id, true)", multipart_complete
-        )
-        lease_check = self.upload.index("completion_lease_owned(", row_lock)
-        promotion = self.upload.index(".promote_verified_upload(", lease_check)
-        self.assertLess(storage_lock, multipart_complete)
-        self.assertLess(multipart_complete, row_lock)
-        self.assertLess(row_lock, lease_check)
-        self.assertLess(lease_check, promotion)
-        self.assertIn("compensate_promoted_object", self.upload)
-        self.assertIn("purge_exact_object_version", self.upload)
-
-    def test_completed_upload_is_leased_through_exactly_once_consumption(self) -> None:
-        complete = self.upload.index("pub async fn complete")
-        published = self.upload.index("SET status='completed'", complete)
-        retained_token = self.upload.index("failure_code=NULL,completion_token=$6", published)
-        retained_lease = self.upload.index(
-            "completion_lease_expires_at=clock_timestamp()", retained_token
-        )
-        stage = self.upload.index("write_service::stage_uploads(", retained_lease)
-        consumed = self.upload.index("SET status='consumed'", stage)
-        token_match = self.upload.index("AND completion_token=$4", consumed)
-        affected = self.upload.index(".rows_affected()", token_match)
-        exact = self.upload.index("if completion_update != 1", affected)
-        self.assertLess(published, retained_token)
-        self.assertLess(retained_token, retained_lease)
-        self.assertLess(retained_lease, stage)
-        self.assertLess(stage, consumed)
-        self.assertLess(consumed, token_match)
-        self.assertLess(token_match, affected)
-        self.assertLess(affected, exact)
+    def test_historical_completed_upload_rows_retain_exact_lease_constraints(self) -> None:
         self.assertIn(
             "OR status IN ('verifying','completed')",
             self.completed_upload_lease_migration,
@@ -118,60 +142,16 @@ class UploadDeletionLifecycleContractTest(unittest.TestCase):
             self.completed_upload_lease_migration,
         )
 
-        expiry = self.upload.index("pub async fn expire_one")
-        expiry_body = self.upload[expiry : self.upload.index("pub async fn expire_one_stage")]
-        self.assertGreaterEqual(expiry_body.count("status <> 'completed'"), 2)
-        self.assertGreaterEqual(
-            expiry_body.count(
-                "completion_lease_expires_at <= clock_timestamp()"
-            ),
-            2,
-        )
-
-    def test_stored_stage_validates_exact_object_identity_before_replay(self) -> None:
-        stage = self.write.index("async fn stage_uploads_inner")
-        storage_lock = self.write.index(
-            "pg_advisory_xact_lock(hashtextextended('storage:'", stage
-        )
-        validation = self.write.index(
-            "validate_stored_stage_objects(state, auth, &prepared)", storage_lock
-        )
-        replay_lookup = self.write.index(
-            "SELECT id,input_hash,inventory_hash", validation
-        )
-        helper = self.write.index("async fn validate_stored_stage_objects")
-        exact_version = self.write.index(
-            ".verify_object_identity_version(", helper
-        )
-        self.assertLess(storage_lock, validation)
-        self.assertLess(validation, replay_lookup)
-        self.assertLess(helper, exact_version)
-        self.assertIn("Some(object_version_id)", self.write[helper:exact_version + 200])
-        self.assertIn(
-            'format!("{}/blobs/{digest}", auth.user_id.0)',
-            self.write[helper:exact_version],
-        )
-
-    def test_verifying_abort_clears_completion_lease_atomically(self) -> None:
-        abort = self.upload.index("pub async fn abort_active_for_user")
-        update = self.upload.index("SET status='aborted'", abort)
-        token_clear = self.upload.index("completion_token=NULL", update)
-        lease_clear = self.upload.index("completion_lease_expires_at=NULL", token_clear)
-        self.assertLess(update, token_clear)
-        self.assertLess(token_clear, lease_clear)
-
     def test_account_deletion_holds_lock_through_two_storage_sweeps(self) -> None:
         advance = self.account.index("async fn advance_account_deletion")
         lock = self.account.index("pg_advisory_xact_lock", advance)
-        abort_rows = self.account.index("abort_active_for_user", lock)
-        abort_first = self.account.index("abort_multipart_prefix", abort_rows)
+        abort_first = self.account.index("abort_multipart_prefix", lock)
         purge_first = self.account.index("purge_prefix", abort_first)
         abort_second = self.account.index("abort_multipart_prefix", purge_first)
         purge_second = self.account.index("purge_prefix", abort_second)
         redact = self.account.index("redact_account_for_retention", purge_second)
         commit = self.account.index("tx.commit().await?", redact)
-        self.assertLess(lock, abort_rows)
-        self.assertLess(abort_rows, abort_first)
+        self.assertLess(lock, abort_first)
         self.assertLess(abort_first, purge_first)
         self.assertLess(purge_first, abort_second)
         self.assertLess(abort_second, purge_second)
@@ -214,7 +194,7 @@ class UploadDeletionLifecycleContractTest(unittest.TestCase):
                 "impl UsageReservation", temporary_start
             )
         ]
-        self.assertNotIn("straylight.account_exports", durable_quota)
+        self.assertNotIn("brunn.account_exports", durable_quota)
         self.assertIn("temporary_export_limit(storage_limit)", temporary_quota)
         self.assertIn("TEMPORARY_EXPORT_MAX_OVERHEAD_BYTES", self.quota)
 
@@ -241,12 +221,12 @@ class UploadDeletionLifecycleContractTest(unittest.TestCase):
     def test_export_delete_is_durable_before_object_purge(self) -> None:
         delete = self.account_service.index("pub async fn delete_export")
         begin = self.account_service.index(
-            "straylight_auth.begin_account_export_delete", delete
+            "brunn_auth.begin_account_export_delete", delete
         )
         durable = self.account_service.index("tx.commit().await?", begin)
         purge = self.account_service.index(".purge_all_versions(", durable)
         finish = self.account_service.index(
-            "straylight_auth.finish_account_export_delete", purge
+            "brunn_auth.finish_account_export_delete", purge
         )
         completed = self.account_service.index("tx.commit().await?", finish)
         self.assertLess(begin, durable)
@@ -256,13 +236,13 @@ class UploadDeletionLifecycleContractTest(unittest.TestCase):
         self.assertIn("SECURITY DEFINER", self.export_delete_migration)
         self.assertIn("FOR UPDATE", self.export_delete_migration)
         self.assertIn(
-            "straylight_auth.require_credential_control",
+            "brunn_auth.require_credential_control",
             self.export_delete_migration,
         )
         self.assertIn("SET status='deleting'", self.export_delete_migration)
         self.assertIn("TO app_rw", self.export_delete_migration)
         self.assertIn(
-            "DROP FUNCTION straylight_auth.lock_account_export_for_delete",
+            "DROP FUNCTION brunn_auth.lock_account_export_for_delete",
             self.export_delete_migration,
         )
 
@@ -294,17 +274,21 @@ class UploadDeletionLifecycleContractTest(unittest.TestCase):
             claim_body,
         )
 
-    def test_account_export_includes_completed_upload_crash_window(self) -> None:
+    def test_account_export_includes_legacy_and_simple_binary_versions(self) -> None:
+        query = self.account.index("const ACCOUNT_EXPORT_OBJECT_REFERENCES_SQL")
         build = self.account.index("async fn build_export_inner")
-        query = self.account.index("WITH object_references AS", build)
-        asset_versions = self.account.index(
-            "FROM straylight.asset_versions", query
+        query_use = self.account.index(
+            "sqlx::query(ACCOUNT_EXPORT_OBJECT_REFERENCES_SQL)", build
         )
-        completed_uploads = self.account.index(
-            "FROM straylight.asset_uploads", asset_versions
+        asset_versions = self.account.index(
+            "FROM brunn.asset_versions", query
+        )
+        union = self.account.index("UNION ALL", asset_versions)
+        entry_versions = self.account.index(
+            "FROM brunn.entry_versions", union
         )
         exact_dedupe = self.account.index(
-            "GROUP BY bucket,object_key,object_version_id", completed_uploads
+            "GROUP BY bucket,object_key,object_version_id", entry_versions
         )
         download = self.account.index(
             ".download_version_to_path(", exact_dedupe
@@ -313,35 +297,41 @@ class UploadDeletionLifecycleContractTest(unittest.TestCase):
             "export object integrity check failed", download
         )
         self.assertLess(query, asset_versions)
-        self.assertLess(asset_versions, completed_uploads)
-        self.assertLess(completed_uploads, exact_dedupe)
+        self.assertLess(asset_versions, union)
+        self.assertLess(union, entry_versions)
+        self.assertLess(entry_versions, exact_dedupe)
         self.assertLess(exact_dedupe, download)
         self.assertLess(download, hash_check)
-        self.assertIn("status IN ('completed','consumed')", self.account[query:exact_dedupe])
-        self.assertIn("canonical_object_version_id IS NOT NULL", self.account[query:exact_dedupe])
+        self.assertLess(query, build)
+        self.assertLess(build, query_use)
+        self.assertIn("object_key IS NOT NULL", self.account[entry_versions:exact_dedupe])
+        self.assertIn("object_version_id IS NOT NULL", self.account[entry_versions:exact_dedupe])
+        self.assertIn("'entry_version'::text", self.account[union:exact_dedupe])
         self.assertIn("count(DISTINCT content_hash)", self.account[query:exact_dedupe])
         self.assertIn("count(DISTINCT size_bytes)", self.account[query:exact_dedupe])
         self.assertIn(
-            "application/x-straylight-deleted",
-            self.account[query:completed_uploads],
+            "application/x-brunn-deleted",
+            self.account[query:union],
         )
         self.assertIn(
             "redacted_by_deletion_job",
-            self.account[query:completed_uploads],
+            self.account[query:union],
         )
 
-    def test_live_alpha_exercises_deletion_during_verification(self) -> None:
-        self.assertIn("force_upload_verifying", self.live_alpha)
-        self.assertIn("completion_lease_expires_at", self.live_alpha)
-        self.assertIn('"asset_upload_sessions_aborted"', self.live_alpha)
+    def test_live_alpha_exports_and_purges_simple_workspace_binary_bytes(self) -> None:
+        self.assertIn('"/v1/workspace/binaries/content?', self.live_alpha)
+        self.assertIn("expected_content_hash", self.live_alpha)
+        self.assertIn('"kind": "entry_version"', self.live_alpha)
+        self.assertIn("object_file.read() == binary_bytes", self.live_alpha)
+        self.assertIn('awaiting["result"]["object_versions_deleted"] >= 1', self.live_alpha)
         self.assertIn('"storage_reconciliation_passes"', self.live_alpha)
 
-    def test_live_alpha_injects_create_and_orphan_failures(self) -> None:
-        self.assertIn('for phase in ("audit", "commit")', self.live_alpha)
-        self.assertIn("DEFERRABLE INITIALLY DEFERRED", self.live_alpha)
-        self.assertIn("assert_orphan_multipart_reconciliation", self.live_alpha)
-        self.assertIn("create-multipart-upload", self.live_alpha)
-        self.assertIn("asset_multipart_intents", self.live_alpha)
+    def test_live_alpha_keeps_schema_derived_purge_and_backup_gates(self) -> None:
+        self.assertIn("assert_nonreceipt_user_rows_are_purged", self.live_alpha)
+        self.assertIn("record_backup_erasure_proof", self.live_alpha)
+        self.assertIn("only_status_credential_active", self.live_alpha)
+        self.assertIn("backup_status", self.live_alpha)
+        self.assertIn("retained_until_deadline", self.live_alpha)
 
 
 if __name__ == "__main__":

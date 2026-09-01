@@ -33,14 +33,14 @@ Projects/N24 RaceWatch/2027 Endurance Calendar and Timing Research.md
 Projects/N24 RaceWatch/Cleanup audit 2026-05-15.md
 Projects/N24 RaceWatch/Concurrent websocket load 2026-05-16.md
 Projects/N24 RaceWatch/N24 RaceWatch.md
-Projects/Straylight/Decisions.md
-Projects/Straylight/Dreaming Architecture and Plan - Initial Design.md
-Projects/Straylight/Open questions.md
-Projects/Straylight/Portable Personal Context Layer.md
-Projects/Straylight/Retrieval API - Initial Design.md
-Projects/Straylight/Straylight.md
-Projects/Straylight/Worklog.md
-Projects/Straylight/Write API and Dreaming - Initial Design.md
+Projects/Brunn/Decisions.md
+Projects/Brunn/Dreaming Architecture and Plan - Initial Design.md
+Projects/Brunn/Open questions.md
+Projects/Brunn/Portable Personal Context Layer.md
+Projects/Brunn/Retrieval API - Initial Design.md
+Projects/Brunn/Brunn.md
+Projects/Brunn/Worklog.md
+Projects/Brunn/Write API and Dreaming - Initial Design.md
 Projects/Warmind/Warmind.md
 Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md
 Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md

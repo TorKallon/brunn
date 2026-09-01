@@ -18,7 +18,7 @@ import type { OAuthClientInformationFull } from "@modelcontextprotocol/sdk/share
 
 import {
   StatelessOAuthClientsStore,
-  StraylightOAuthProvider,
+  BrunnOAuthProvider,
   UPSTREAM_TOKEN_EXTRA_KEY,
 } from "./oauth-provider.js";
 
@@ -186,7 +186,7 @@ test("authorization GET is a protected no-script approval form and POST verifies
   assert.match(get.state.body ?? "", /name="resource" value="https:\/\/memory\.example\/mcp"/u);
   assert.equal(verified.length, 0);
 
-  const post = mockResponse("POST", { straylight_token: "  dedicated-upstream-token  " });
+  const post = mockResponse("POST", { brunn_token: "  dedicated-upstream-token  " });
   await provider.authorize(client, params, post.response);
   assert.deepEqual(verified, ["dedicated-upstream-token"]);
   const redirect = new URL(required(post.state.redirectUrl));
@@ -206,7 +206,7 @@ test("authorization GET is a protected no-script approval form and POST verifies
     rejected.authorize(
       rejectedClient,
       params,
-      mockResponse("POST", { straylight_token: "bad-token" }).response,
+      mockResponse("POST", { brunn_token: "bad-token" }).response,
     ),
     AccessDeniedError,
   );
@@ -214,7 +214,7 @@ test("authorization GET is a protected no-script approval form and POST verifies
     provider.authorize(
       client,
       params,
-      mockResponse("POST", { straylight_token: "x".repeat(8_193) }).response,
+      mockResponse("POST", { brunn_token: "x".repeat(8_193) }).response,
     ),
     /credential is required/u,
   );
@@ -404,8 +404,8 @@ function createProvider(overrides: Partial<{
   accessTokenTtlSeconds: number;
   refreshTokenTtlSeconds: number;
   now: () => number;
-}> = {}): StraylightOAuthProvider {
-  return new StraylightOAuthProvider({
+}> = {}): BrunnOAuthProvider {
+  return new BrunnOAuthProvider({
     secret: SECRET,
     resourceUrl: RESOURCE,
     verifyUpstreamToken: overrides.verifyUpstreamToken ?? (async () => true),
@@ -444,12 +444,12 @@ function authorizationParams(
 }
 
 async function issueAuthorizationCode(
-  provider: StraylightOAuthProvider,
+  provider: BrunnOAuthProvider,
   client: OAuthClientInformationFull,
   upstreamToken: string,
   params = authorizationParams(),
 ): Promise<string> {
-  const response = mockResponse("POST", { straylight_token: upstreamToken });
+  const response = mockResponse("POST", { brunn_token: upstreamToken });
   await provider.authorize(client, params, response.response);
   const redirect = new URL(required(response.state.redirectUrl));
   return required(redirect.searchParams.get("code") ?? undefined);

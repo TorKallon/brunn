@@ -5,8 +5,8 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
-import { StraylightApiClient } from "./api-client.js";
-import { createStraylightMcpServer } from "./index.js";
+import { BrunnApiClient } from "./api-client.js";
+import { createBrunnMcpServer } from "./index.js";
 
 const EXISTING_LOCAL_TOOLS = [
   "asset.fetch",
@@ -60,8 +60,8 @@ const MESSAGING_TOOL_NAMES = [
 // These hashes bind both each pre-messaging tool name and its complete,
 // byte-exact description while keeping this regression snapshot readable.
 const EXISTING_DESCRIPTION_HASHES = {
-  local: "dd223c9a9dbd09c631502d3ae06d4f9dd604fd1221728618587366f6339f469a",
-  remote: "dbf05c5b95eb731581c3bf2ec2eff50d09105fffd8231a0fef3d1a6f11669c8d",
+  local: "23bc82cb245fd57fce2581450486f5a457496668968c20d44594f57a7621c8f5",
+  remote: "066075b8450b5a2380cc7da43248bde68472b9bb71dc29c53bb2e1d280de8618",
 } as const;
 
 const MESSAGING_DESCRIPTIONS = {
@@ -150,7 +150,7 @@ async function connectedPair(options: {
     status: 200,
     body: { status: "complete", data: {} },
   }]);
-  const apiClient = new StraylightApiClient(
+  const apiClient = new BrunnApiClient(
     "https://api.invalid",
     "test-token",
     fetchImpl,
@@ -161,7 +161,7 @@ async function connectedPair(options: {
       : { retryBackoffMs: options.retryBackoffMs },
   );
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const server = createStraylightMcpServer(apiClient, {
+  const server = createBrunnMcpServer(apiClient, {
     surface: options.surface ?? "local",
     includeStructuredContent: false,
     messagingEnabled: options.messagingEnabled,

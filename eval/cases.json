@@ -1,12 +1,12 @@
 {
   "benchmark_version": "0.1",
   "created_at": "2026-07-10T21:45:00-07:00",
-  "description": "Frozen retrieval-first Straylight benchmark over non-private Obsidian project notes.",
+  "description": "Frozen retrieval-first Brunn benchmark over non-private Obsidian project notes.",
   "corpus_roots": [
     {"project": "Metis", "path": "Projects/Metis", "glob": "*.md"},
     {"project": "N24 RaceWatch", "path": "Projects/N24 RaceWatch", "glob": "*.md"},
     {"project": "Home Network Improvements", "path": "Projects/Home Network Improvements", "glob": "*.md"},
-    {"project": "Straylight", "path": "Projects/Straylight", "glob": "*.md"}
+    {"project": "Brunn", "path": "Projects/Brunn", "glob": "*.md"}
   ],
   "budgets": {
     "chunk_chars": 1200,
@@ -184,54 +184,54 @@
       ]
     },
     {
-      "id": "straylight-save-stage",
-      "project": "Straylight",
+      "id": "brunn-save-stage",
+      "project": "Brunn",
       "category": "api_contract",
       "question": "When should an agent call memory.save versus memory.stage?",
       "gold": [
-        {"path": "Projects/Straylight/Write API and Dreaming - Initial Design.md", "contains": "Ordinary explicit and implicit saves should take one `memory.save` call."},
-        {"path": "Projects/Straylight/Write API and Dreaming - Initial Design.md", "contains": "`memory.stage` is needed only when the model must inspect or select uploaded material first."}
+        {"path": "Projects/Brunn/Write API and Dreaming - Initial Design.md", "contains": "Ordinary explicit and implicit saves should take one `memory.save` call."},
+        {"path": "Projects/Brunn/Write API and Dreaming - Initial Design.md", "contains": "`memory.stage` is needed only when the model must inspect or select uploaded material first."}
       ]
     },
     {
-      "id": "straylight-directional-trust",
-      "project": "Straylight",
+      "id": "brunn-directional-trust",
+      "project": "Brunn",
       "category": "trust",
       "question": "What exact directional trust guarantee does Rourke require, including query and embedding behavior?",
       "gold": [
-        {"path": "Projects/Straylight/Portable Personal Context Layer.md", "contains": "personal context may flow into the work environment; work context must never flow into the personal system"},
-        {"path": "Projects/Straylight/Portable Personal Context Layer.md", "contains": "no work query or embedding is sent to the personal system"}
+        {"path": "Projects/Brunn/Portable Personal Context Layer.md", "contains": "personal context may flow into the work environment; work context must never flow into the personal system"},
+        {"path": "Projects/Brunn/Portable Personal Context Layer.md", "contains": "no work query or embedding is sent to the personal system"}
       ]
     },
     {
-      "id": "straylight-retrieval-priority",
-      "project": "Straylight",
+      "id": "brunn-retrieval-priority",
+      "project": "Brunn",
       "category": "multi_hop",
       "question": "What does retrieval optimize first, and what role may context packs play?",
       "gold": [
-        {"path": "Projects/Straylight/Retrieval API - Initial Design.md", "contains": "Final-answer correctness and completeness"},
-        {"path": "Projects/Straylight/Retrieval API - Initial Design.md", "contains": "the optional initial case file returned by `memory.open`"},
-        {"path": "Projects/Straylight/Retrieval API - Initial Design.md", "contains": "They are not: - the primary retrieval interface"}
+        {"path": "Projects/Brunn/Retrieval API - Initial Design.md", "contains": "Final-answer correctness and completeness"},
+        {"path": "Projects/Brunn/Retrieval API - Initial Design.md", "contains": "the optional initial case file returned by `memory.open`"},
+        {"path": "Projects/Brunn/Retrieval API - Initial Design.md", "contains": "They are not: - the primary retrieval interface"}
       ]
     },
     {
-      "id": "straylight-dream-authority",
-      "project": "Straylight",
+      "id": "brunn-dream-authority",
+      "project": "Brunn",
       "category": "authority",
       "question": "What is authoritative in dreaming, and how are canonical changes handled?",
       "gold": [
-        {"path": "Projects/Straylight/Dreaming Architecture and Plan - Initial Design.md", "contains": "The evidence ledger is memory. The consolidated layer is a disposable, versioned optimization over that evidence."},
-        {"path": "Projects/Straylight/Dreaming Architecture and Plan - Initial Design.md", "contains": "Canonical changes remain proposals for review."}
+        {"path": "Projects/Brunn/Dreaming Architecture and Plan - Initial Design.md", "contains": "The evidence ledger is memory. The consolidated layer is a disposable, versioned optimization over that evidence."},
+        {"path": "Projects/Brunn/Dreaming Architecture and Plan - Initial Design.md", "contains": "Canonical changes remain proposals for review."}
       ]
     },
     {
-      "id": "straylight-dream-output-policy",
-      "project": "Straylight",
+      "id": "brunn-dream-output-policy",
+      "project": "Brunn",
       "category": "authority",
       "question": "Give one automatically publishable dream output and one destructive output that must remain a proposal.",
       "gold": [
-        {"path": "Projects/Straylight/Write API and Dreaming - Initial Design.md", "contains": "derived summaries labeled 'derived'"},
-        {"path": "Projects/Straylight/Write API and Dreaming - Initial Design.md", "contains": "deletion or destructive consolidation"}
+        {"path": "Projects/Brunn/Write API and Dreaming - Initial Design.md", "contains": "derived summaries labeled 'derived'"},
+        {"path": "Projects/Brunn/Write API and Dreaming - Initial Design.md", "contains": "deletion or destructive consolidation"}
       ]
     }
   ]

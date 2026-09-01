@@ -1,7 +1,7 @@
-# Straylight for iOS
+# Brunn for iOS
 
 Native SwiftUI home dashboard, briefing reader, bounded task client, and durable
-Alerts inbox for hosted Straylight.
+Alerts inbox for hosted Brunn.
 
 ## Implemented MVP
 
@@ -39,7 +39,7 @@ push remains gated on provider configuration and a signed-device canary. See
 ## Open
 
 ```sh
-open /Users/Shared/projects/straylight/apps/ios/Straylight.xcodeproj
+open /Users/Shared/projects/brunn/apps/ios/Brunn.xcodeproj
 ```
 
 Launch with `--demo` to bypass the account sign-in screen and use the
@@ -49,18 +49,18 @@ deterministic briefing, alert, archive, and dashboard fixtures.
 
 ```sh
 swift test \
-  --package-path /Users/Shared/projects/straylight/apps/ios \
-  --scratch-path /tmp/straylight-ios-spm
+  --package-path /Users/Shared/projects/brunn/apps/ios \
+  --scratch-path /tmp/brunn-ios-spm
 
 xcodebuild \
-  -project /Users/Shared/projects/straylight/apps/ios/Straylight.xcodeproj \
-  -scheme Straylight \
+  -project /Users/Shared/projects/brunn/apps/ios/Brunn.xcodeproj \
+  -scheme Brunn \
   -destination 'platform=iOS Simulator,name=RuptureOps iPhone 14' \
   test
 
 xcodebuild \
-  -project /Users/Shared/projects/straylight/apps/ios/Straylight.xcodeproj \
-  -scheme Straylight \
+  -project /Users/Shared/projects/brunn/apps/ios/Brunn.xcodeproj \
+  -scheme Brunn \
   -sdk iphoneos \
   -destination 'generic/platform=iOS' \
   CODE_SIGNING_ALLOWED=NO \

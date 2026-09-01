@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use uuid::Uuid;
 
-use straylight::task_engine::{
+use brunn::task_engine::{
     CandidateRequest, CostOfDelay, CostPeriod, EngineSettings, ProjectInterest, Sourced,
     TaskSnapshot, TaskStatus, TaskView, rank_tasks, snooze_transition,
 };

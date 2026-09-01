@@ -4,8 +4,8 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
-import { StraylightApiClient } from "./api-client.js";
-import { createStraylightMcpServer } from "./index.js";
+import { BrunnApiClient } from "./api-client.js";
+import { createBrunnMcpServer } from "./index.js";
 
 interface RecordedCall {
   url: string;
@@ -50,8 +50,8 @@ async function connectedPair(
     });
   };
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const server = createStraylightMcpServer(
-    new StraylightApiClient("https://api.invalid", "test-token", fetchImpl),
+  const server = createBrunnMcpServer(
+    new BrunnApiClient("https://api.invalid", "test-token", fetchImpl),
     { surface: options.surface ?? "local", includeStructuredContent: true },
   );
   const client = new Client({ name: "task-tools-test", version: "0.1.0" });
@@ -484,7 +484,7 @@ test("deliberate all candidate filters use the frozen backend query contract", a
       view: "all",
       deliberate_all: true,
       limit: 25,
-      project: "straylight",
+      project: "brunn",
       context: "phone",
       status: "done",
       date_type: "hard",
@@ -495,7 +495,7 @@ test("deliberate all candidate filters use the frozen backend query contract", a
       cursor: taskRef,
     });
     assert.deepEqual(calls, [{
-      url: "https://api.invalid/v1/workspace/tasks/candidates?view=all&limit=25&project=straylight&context=phone&status=done&date_type=hard&source=agent&include_waiting=true&include_parked=true&as_of=2026-08-27T16%3A00%3A00-07%3A00&cursor=019f8800-0000-7000-8000-000000000001&deliberate_all=true",
+      url: "https://api.invalid/v1/workspace/tasks/candidates?view=all&limit=25&project=brunn&context=phone&status=done&date_type=hard&source=agent&include_waiting=true&include_parked=true&as_of=2026-08-27T16%3A00%3A00-07%3A00&cursor=019f8800-0000-7000-8000-000000000001&deliberate_all=true",
       method: "GET",
       body: undefined,
     }]);
@@ -529,15 +529,15 @@ test("task.settings and project tools map get and optimistic mutations exactly",
       },
     });
     await callOk(client, "project.register", {
-      slug: "straylight",
-      title: "Straylight",
+      slug: "brunn",
+      title: "Brunn",
       aliases: ["carry state"],
       description: "Durable context service",
-      hub_path: "sources/Projects/Straylight/Straylight.md",
-      repo_path: "/Volumes/NyxFastData/dev/projects/straylight",
+      hub_path: "sources/Projects/Brunn/Brunn.md",
+      repo_path: "/Volumes/NyxFastData/dev/projects/brunn",
       source: "agent:aether",
       expected_version: 0,
-      idempotency_key: "project:register:straylight",
+      idempotency_key: "project:register:brunn",
     });
     await callOk(client, "project.list", {
       include_archived: false,
@@ -545,13 +545,13 @@ test("task.settings and project tools map get and optimistic mutations exactly",
       cursor: "next-project",
       as_of: asOf,
     });
-    await callOk(client, "project.state", { slug: "straylight", as_of: asOf });
+    await callOk(client, "project.state", { slug: "brunn", as_of: asOf });
     await callOk(client, "project.set_interest", {
-      slug: "straylight",
+      slug: "brunn",
       interest: "hot",
       source: "agent:aether",
       expected_version: 2,
-      idempotency_key: "project:interest:straylight:v2",
+      idempotency_key: "project:interest:brunn:v2",
     });
 
     assert.deepEqual(calls, [
@@ -581,17 +581,17 @@ test("task.settings and project tools map get and optimistic mutations exactly",
         }),
       },
       {
-        url: "https://api.invalid/v1/workspace/projects/straylight",
+        url: "https://api.invalid/v1/workspace/projects/brunn",
         method: "PUT",
         body: JSON.stringify({
-          title: "Straylight",
+          title: "Brunn",
           aliases: ["carry state"],
           description: "Durable context service",
-          hub_path: "sources/Projects/Straylight/Straylight.md",
-          repo_path: "/Volumes/NyxFastData/dev/projects/straylight",
+          hub_path: "sources/Projects/Brunn/Brunn.md",
+          repo_path: "/Volumes/NyxFastData/dev/projects/brunn",
           source: "agent:aether",
           expected_version: 0,
-          idempotency_key: "project:register:straylight",
+          idempotency_key: "project:register:brunn",
         }),
       },
       {
@@ -600,18 +600,18 @@ test("task.settings and project tools map get and optimistic mutations exactly",
         body: undefined,
       },
       {
-        url: "https://api.invalid/v1/workspace/projects/straylight/state?as_of=2026-08-27T16%3A00%3A00-07%3A00",
+        url: "https://api.invalid/v1/workspace/projects/brunn/state?as_of=2026-08-27T16%3A00%3A00-07%3A00",
         method: "GET",
         body: undefined,
       },
       {
-        url: "https://api.invalid/v1/workspace/projects/straylight/interest",
+        url: "https://api.invalid/v1/workspace/projects/brunn/interest",
         method: "PUT",
         body: JSON.stringify({
           interest: "hot",
           source: "agent:aether",
           expected_version: 2,
-          idempotency_key: "project:interest:straylight:v2",
+          idempotency_key: "project:interest:brunn:v2",
         }),
       },
     ]);
@@ -920,8 +920,8 @@ test("every mutating task tool preserves a read-only capability denial", async (
     {
       name: "project.register",
       arguments: {
-        slug: "straylight",
-        title: "Straylight",
+        slug: "brunn",
+        title: "Brunn",
         source: "agent:aether",
         idempotency_key: "deny:project",
       },
@@ -929,7 +929,7 @@ test("every mutating task tool preserves a read-only capability denial", async (
     {
       name: "project.set_interest",
       arguments: {
-        slug: "straylight",
+        slug: "brunn",
         interest: "hot",
         source: "agent:aether",
         expected_version: 1,

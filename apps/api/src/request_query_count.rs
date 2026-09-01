@@ -103,7 +103,7 @@ mod tests {
         let guard = tracing::dispatcher::set_default(&dispatch);
         let observed = scope(async {
             tracing::debug!(target: "sqlx::query", "SELECT 1");
-            tracing::debug!(target: "straylight::test", "not a query");
+            tracing::debug!(target: "brunn::test", "not a query");
             current()
         })
         .await;
@@ -125,7 +125,7 @@ mod tests {
             );
             tracing::debug!(
                 target: "sqlx::query",
-                summary = "SELECT max(generation) FROM straylight.workspace_changes …",
+                summary = "SELECT max(generation) FROM brunn.workspace_changes …",
                 "application statement"
             );
             current()

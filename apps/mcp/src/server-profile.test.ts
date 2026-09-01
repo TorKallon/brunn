@@ -4,12 +4,12 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
-import { StraylightApiClient } from "./api-client.js";
-import { createStraylightMcpServer } from "./index.js";
+import { BrunnApiClient } from "./api-client.js";
+import { createBrunnMcpServer } from "./index.js";
 
 test("remote profile exposes only hosted-safe tools with bounded reads", async () => {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const apiClient = new StraylightApiClient(
+  const apiClient = new BrunnApiClient(
     "https://api.invalid",
     "test-token",
     async () => new Response(JSON.stringify({ status: "ok" }), {
@@ -17,7 +17,7 @@ test("remote profile exposes only hosted-safe tools with bounded reads", async (
       headers: { "content-type": "application/json" },
     }),
   );
-  const server = createStraylightMcpServer(apiClient, {
+  const server = createBrunnMcpServer(apiClient, {
     surface: "remote",
     includeStructuredContent: true,
   });
@@ -26,6 +26,7 @@ test("remote profile exposes only hosted-safe tools with bounded reads", async (
   try {
     await server.connect(serverTransport);
     await client.connect(clientTransport);
+    assert.equal(client.getServerVersion()?.name, "Brunn");
     assert.match(client.getInstructions() ?? "", /Start substantive work with memory\.open/);
     assert.match(client.getInstructions() ?? "", /memory\.checkpoint/);
     const response = await client.listTools();
@@ -63,7 +64,7 @@ test("remote profile exposes only hosted-safe tools with bounded reads", async (
       "task.sync_status",
       "task.update",
     ];
-    if (process.env.STRAYLIGHT_MESSAGING_ENABLED === "true") {
+    if (process.env.BRUNN_MESSAGING_ENABLED === "true") {
       expectedNames.push(
         "agent.list",
         "message.list",

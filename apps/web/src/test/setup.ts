@@ -10,8 +10,8 @@ afterEach(() => {
   window.localStorage.clear();
   delete document.documentElement.dataset.theme;
   document.documentElement.style.colorScheme = "";
-  document.cookie = "straylight_csrf=; Max-Age=0; Path=/";
-  document.cookie = "__Host-straylight_csrf=; Max-Age=0; Path=/; Secure";
+  document.cookie = "brunn_csrf=; Max-Age=0; Path=/";
+  document.cookie = "__Host-brunn_csrf=; Max-Age=0; Path=/; Secure";
   window.history.replaceState({}, "", "/");
   vi.unstubAllGlobals();
 });

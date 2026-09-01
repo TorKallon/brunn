@@ -1,7 +1,7 @@
 -- Keep every owner issuance path aligned with the full owner capability
 -- contract established by migration 0057.
 
-CREATE OR REPLACE FUNCTION straylight_auth.admin_issue_credential(
+CREATE OR REPLACE FUNCTION brunn_auth.admin_issue_credential(
   p_user_id uuid,
   p_label text,
   p_token_hash text,
@@ -11,7 +11,7 @@ CREATE OR REPLACE FUNCTION straylight_auth.admin_issue_credential(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
@@ -23,7 +23,7 @@ DECLARE
   created_credential_id uuid;
   matched_scope_count integer;
 BEGIN
-  PERFORM straylight_auth.require_admin();
+  PERFORM brunn_auth.require_admin();
 
   IF p_capabilities IS NULL
      OR cardinality(p_capabilities) = 0
@@ -50,7 +50,7 @@ BEGIN
 
   IF NOT EXISTS (
     SELECT 1
-    FROM straylight.users
+    FROM brunn.users
     WHERE id = p_user_id AND account_status = 'active'
   ) THEN
     RAISE EXCEPTION 'active recovery user not found'
@@ -58,7 +58,7 @@ BEGIN
   END IF;
 
   SELECT count(*) INTO matched_scope_count
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = p_user_id
     AND scope_row.scope_ref::text = ANY(p_scope_refs);
   IF matched_scope_count <> cardinality(p_scope_refs) THEN
@@ -66,26 +66,26 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  INSERT INTO straylight.api_credentials (
+  INSERT INTO brunn.api_credentials (
     user_id, label, token_hash, capabilities
   ) VALUES (
     p_user_id, p_label, p_token_hash, p_capabilities
   )
   RETURNING id INTO created_credential_id;
 
-  INSERT INTO straylight.credential_scope_grants (
+  INSERT INTO brunn.credential_scope_grants (
     credential_id, user_id, scope_id
   )
   SELECT created_credential_id, p_user_id, scope_row.id
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = p_user_id
     AND scope_row.scope_ref::text = ANY(p_scope_refs);
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, credential_id, action, details, content_free
   ) VALUES (
-    straylight_auth.current_user_id(),
-    straylight_auth.current_credential_id(),
+    brunn_auth.current_user_id(),
+    brunn_auth.current_credential_id(),
     'admin.credential.recover',
     jsonb_build_object(
       'target_user_id', p_user_id,
@@ -99,7 +99,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION straylight_auth.admin_provision_user(
+CREATE OR REPLACE FUNCTION brunn_auth.admin_provision_user(
   p_external_ref text,
   p_display_name text,
   p_credential_label text,
@@ -115,7 +115,7 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, straylight, straylight_auth
+SET search_path = pg_catalog, brunn, brunn_auth
 SET row_security = off
 AS $$
 DECLARE
@@ -131,7 +131,7 @@ DECLARE
   initial_revision_id uuid := gen_random_uuid();
   manifest_id uuid := gen_random_uuid();
 BEGIN
-  PERFORM straylight_auth.require_admin();
+  PERFORM brunn_auth.require_admin();
 
   IF p_external_ref IS NULL OR btrim(p_external_ref) = ''
      OR length(p_external_ref) > 200
@@ -145,54 +145,54 @@ BEGIN
 
   IF EXISTS (
     SELECT 1
-    FROM straylight.users AS existing_user
+    FROM brunn.users AS existing_user
     WHERE existing_user.external_ref = p_external_ref
   ) THEN
     RAISE EXCEPTION 'external_ref already exists'
       USING ERRCODE = '23505';
   END IF;
 
-  INSERT INTO straylight.users (external_ref, display_name)
+  INSERT INTO brunn.users (external_ref, display_name)
   VALUES (p_external_ref, p_display_name)
   RETURNING users.id INTO created_user_id;
 
   SELECT scope_row.id INTO root_scope_id
-  FROM straylight.scopes AS scope_row
+  FROM brunn.scopes AS scope_row
   WHERE scope_row.user_id = created_user_id
     AND scope_row.scope_ref = 'scope:root';
 
   SELECT policy_row.id INTO default_policy_id
-  FROM straylight.policies AS policy_row
+  FROM brunn.policies AS policy_row
   WHERE policy_row.user_id = created_user_id
     AND policy_row.is_default;
 
-  INSERT INTO straylight.api_credentials (
+  INSERT INTO brunn.api_credentials (
     user_id, label, token_hash, capabilities
   ) VALUES (
     created_user_id, p_credential_label, p_token_hash, owner_capabilities
   )
   RETURNING api_credentials.id INTO created_credential_id;
 
-  INSERT INTO straylight.credential_scope_grants (
+  INSERT INTO brunn.credential_scope_grants (
     credential_id, user_id, scope_id
   ) VALUES (
     created_credential_id, created_user_id, root_scope_id
   );
 
-  INSERT INTO straylight.corpus_revisions (
+  INSERT INTO brunn.corpus_revisions (
     id, user_id, scope_id, parent_revision_id, revision_number, manifest_hash
   ) VALUES (
     initial_revision_id, created_user_id, root_scope_id, NULL, 1, p_empty_manifest_hash
   );
 
-  INSERT INTO straylight.active_manifests (
+  INSERT INTO brunn.active_manifests (
     id, user_id, scope_id, active_corpus_revision_id, manifest_hash, generation
   ) VALUES (
     manifest_id, created_user_id, root_scope_id,
     initial_revision_id, p_empty_manifest_hash, 1
   );
 
-  INSERT INTO straylight.active_manifest_history (
+  INSERT INTO brunn.active_manifest_history (
     id, user_id, scope_id, manifest_id, generation, corpus_revision_id,
     manifest_hash, change_kind
   ) VALUES (
@@ -200,11 +200,11 @@ BEGIN
     initial_revision_id, p_empty_manifest_hash, 'initial'
   );
 
-  INSERT INTO straylight.audit_events (
+  INSERT INTO brunn.audit_events (
     user_id, credential_id, action, details, content_free
   ) VALUES (
-    straylight_auth.current_user_id(),
-    straylight_auth.current_credential_id(),
+    brunn_auth.current_user_id(),
+    brunn_auth.current_credential_id(),
     'admin.user.provision',
     jsonb_build_object('target_user_id', created_user_id),
     true

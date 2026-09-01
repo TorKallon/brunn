@@ -235,7 +235,7 @@ impl ObjectStore {
                 secret_key.clone(),
                 None,
                 None,
-                "straylight-config",
+                "brunn-config",
             );
             loader = loader.credentials_provider(SharedCredentialsProvider::new(credentials));
         }
@@ -496,7 +496,7 @@ impl ObjectStore {
                 )
                 .increment(1);
                 return Err(ApiError::configuration(
-                    "object bucket is missing and STRAYLIGHT_S3_CREATE_BUCKET is false",
+                    "object bucket is missing and BRUNN_S3_CREATE_BUCKET is false",
                 ));
             }
             self.client
@@ -1550,7 +1550,7 @@ impl ObjectStore {
         let user_id = UserId(run_id);
         let qualification_prefix = format!("qualification/{run_id}/");
         let versioned_key = format!("{qualification_prefix}versioned");
-        let payload = Bytes::from(format!("straylight-object-store-qualification:{run_id}"));
+        let payload = Bytes::from(format!("brunn-object-store-qualification:{run_id}"));
 
         let result = async {
             let first = self
@@ -2743,8 +2743,8 @@ mod tests {
 
     #[tokio::test]
     async fn live_reads_stay_on_the_pinned_version_after_latest_changes() {
-        if std::env::var("STRAYLIGHT_LIVE_S3_VERSION_TEST").as_deref() != Ok("1") {
-            eprintln!("STRAYLIGHT_LIVE_S3_VERSION_TEST is unset; skipping live S3 version test");
+        if std::env::var("BRUNN_LIVE_S3_VERSION_TEST").as_deref() != Ok("1") {
+            eprintln!("BRUNN_LIVE_S3_VERSION_TEST is unset; skipping live S3 version test");
             return;
         }
         let config = Config::from_env().expect("load live S3 test configuration");

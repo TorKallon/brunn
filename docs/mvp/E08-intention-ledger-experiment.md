@@ -46,7 +46,7 @@ protocol; the frozen protocol must not simply be rerun. See
 
 **Resolved nuisance posture (2026-07-28):** E02 rejected D02, so every E08
 service and performance stack must start with
-`STRAYLIGHT_VERBATIM_SPANS=false` and every measured service arm must assert
+`BRUNN_VERBATIM_SPANS=false` and every measured service arm must assert
 `--expect-feature-flag verbatim_spans=off`. Verbatim spans are not an E08
 variable. An E08 pass cannot rehabilitate D02.
 
@@ -86,11 +86,11 @@ Prospective cases (5, in eval/e08_prospective_cases.json):
    This command intentionally exits nonzero because calibration artifacts are
    never acceptance evidence. Review all 30 samples per operation. Author the
    contract only from those observed counts, use schema
-   `straylight-query-budgets@v1`, set profile `e08-intention-ledger`, and copy
+   `brunn-query-budgets@v1`, set profile `e08-intention-ledger`, and copy
    the authenticated calibration runtime-feature applicability into the
    contract. Do not copy thresholds from `default-safe` or invent unmeasured
    headroom. Freeze and validate the reviewed artifact:
-   `E08_QUERY_BUDGET_CONTRACT="results/2026-MM-DD-e08-intention-ledger-query-budgets.json"; test -s "$E08_QUERY_BUDGET_CONTRACT"; python3 -m json.tool "$E08_QUERY_BUDGET_CONTRACT" >/dev/null; python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); assert p["schema"]=="straylight-query-budgets@v1"; assert p["profile"]=="e08-intention-ledger"; assert p["runtime_features"]["intention_ledger"] is True; assert p["operations"]' "$E08_QUERY_BUDGET_CONTRACT"; E08_QUERY_BUDGET_SHA256="$(shasum -a 256 "$E08_QUERY_BUDGET_CONTRACT" | awk '{print $1}')"; test -n "$E08_QUERY_BUDGET_SHA256"; chmod 0444 "$E08_QUERY_BUDGET_CONTRACT"`.
+   `E08_QUERY_BUDGET_CONTRACT="results/2026-MM-DD-e08-intention-ledger-query-budgets.json"; test -s "$E08_QUERY_BUDGET_CONTRACT"; python3 -m json.tool "$E08_QUERY_BUDGET_CONTRACT" >/dev/null; python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); assert p["schema"]=="brunn-query-budgets@v1"; assert p["profile"]=="e08-intention-ledger"; assert p["runtime_features"]["intention_ledger"] is True; assert p["operations"]' "$E08_QUERY_BUDGET_CONTRACT"; E08_QUERY_BUDGET_SHA256="$(shasum -a 256 "$E08_QUERY_BUDGET_CONTRACT" | awk '{print $1}')"; test -n "$E08_QUERY_BUDGET_SHA256"; chmod 0444 "$E08_QUERY_BUDGET_CONTRACT"`.
    Record the reviewer, calibration artifact SHA-256, contract SHA-256, and
    review decision. Any later contract change requires a new path, hash, and
    calibration review.

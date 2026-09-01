@@ -149,7 +149,7 @@ pub async fn authenticate(state: &AppState, token: &str) -> ApiResult<AuthContex
     let row = sqlx::query(
         r#"
         SELECT credential_id, user_id, capabilities, scope_refs
-        FROM straylight_auth.authenticate_credential($1)
+        FROM brunn_auth.authenticate_credential($1)
         "#,
     )
     .bind(token_hash)
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn token_hash_does_not_store_bearer_secret() {
-        let hash = hash_token("straylight-test-secret");
+        let hash = hash_token("brunn-test-secret");
         assert_eq!(hash.len(), 64);
         assert!(!hash.contains("secret"));
     }

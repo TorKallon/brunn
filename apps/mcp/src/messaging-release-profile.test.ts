@@ -42,14 +42,14 @@ test("task scenario and remote canary consume the shared release profile", async
 
 test("messaging child environment is present only when explicitly configured", () => {
   assert.deepEqual(profile.messagingChildEnvironment({}), {});
-  assert.deepEqual(profile.messagingChildEnvironment({ STRAYLIGHT_MESSAGING_ENABLED: "true" }), {
-    STRAYLIGHT_MESSAGING_ENABLED: "true",
+  assert.deepEqual(profile.messagingChildEnvironment({ BRUNN_MESSAGING_ENABLED: "true" }), {
+    BRUNN_MESSAGING_ENABLED: "true",
   });
-  assert.deepEqual(profile.messagingChildEnvironment({ STRAYLIGHT_MESSAGING_ENABLED: "false" }), {
-    STRAYLIGHT_MESSAGING_ENABLED: "false",
+  assert.deepEqual(profile.messagingChildEnvironment({ BRUNN_MESSAGING_ENABLED: "false" }), {
+    BRUNN_MESSAGING_ENABLED: "false",
   });
-  assert.deepEqual(profile.messagingChildEnvironment({ STRAYLIGHT_MESSAGING_ENABLED: "" }), {
-    STRAYLIGHT_MESSAGING_ENABLED: "",
+  assert.deepEqual(profile.messagingChildEnvironment({ BRUNN_MESSAGING_ENABLED: "" }), {
+    BRUNN_MESSAGING_ENABLED: "",
   });
 });
 
@@ -64,7 +64,7 @@ test("remote tools retain the exact gate-off inventory", () => {
 test("remote tools add exactly the five messaging tools only for literal true", () => {
   const existingTools = ["asset.list", "memory.open", "task.update"];
   const enabled = profile.expectedRemoteToolNames(existingTools, {
-    STRAYLIGHT_MESSAGING_ENABLED: "true",
+    BRUNN_MESSAGING_ENABLED: "true",
   });
 
   assert.deepEqual(enabled, [
@@ -86,13 +86,13 @@ test("remote tools add exactly the five messaging tools only for literal true", 
   ]);
   assert.strictEqual(
     profile.expectedRemoteToolNames(existingTools, {
-      STRAYLIGHT_MESSAGING_ENABLED: "TRUE",
+      BRUNN_MESSAGING_ENABLED: "TRUE",
     }),
     existingTools,
   );
   assert.strictEqual(
     profile.expectedRemoteToolNames(existingTools, {
-      STRAYLIGHT_MESSAGING_ENABLED: "false",
+      BRUNN_MESSAGING_ENABLED: "false",
     }),
     existingTools,
   );

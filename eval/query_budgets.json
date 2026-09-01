@@ -1,5 +1,5 @@
 {
-  "schema": "straylight-query-budgets@v1",
+  "schema": "brunn-query-budgets@v1",
   "profile": "default-safe",
   "runtime_features": {
     "intention_ledger": false,

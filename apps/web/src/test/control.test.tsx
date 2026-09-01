@@ -40,7 +40,7 @@ describe("workspace activity and access", () => {
               {
                 generation: 500,
                 operation: "update",
-                path: "Projects/Straylight/Status.md",
+                path: "Projects/Brunn/Status.md",
                 version: 12,
                 content_hash: "sha256:status",
                 recorded_at: "2026-07-26T18:00:00Z",
@@ -53,7 +53,7 @@ describe("workspace activity and access", () => {
     renderApp("/control", "owner-token");
 
     expect(
-      await screen.findByText("Projects/Straylight/Status.md"),
+      await screen.findByText("Projects/Brunn/Status.md"),
     ).toBeInTheDocument();
     expect(screen.getByText("g500")).toBeInTheDocument();
     expect(screen.getByText("v12")).toBeInTheDocument();

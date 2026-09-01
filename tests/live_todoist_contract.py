@@ -3,7 +3,7 @@
 """Real-stack gate-12e contract for the one-way Todoist integration.
 
 The runner owns only disposable state. It starts a loopback recorded API
-fixture plus the real Straylight API and worker binaries, provisions an owner
+fixture plus the real Brunn API and worker binaries, provisions an owner
 Web identity, stores a canary token through the vault API, and drives every
 mutation through the owner Web session with CSRF protection. Evidence is
 content-free and never contains the canary token or an Authorization header.
@@ -36,7 +36,7 @@ from typing import Any, Callable
 from xml.etree import ElementTree
 
 
-SCHEMA = "straylight-todoist-gate12@v1"
+SCHEMA = "brunn-todoist-gate12@v1"
 PASSWORD = "not-a-real-password"
 PASSWORD_HASH = (
     "$argon2id$v=19$m=19456,t=2,p=1$"
@@ -391,7 +391,7 @@ class WebClient:
 
     def csrf_token(self) -> str:
         for cookie in self.jar:
-            if cookie.name == "straylight_csrf":
+            if cookie.name == "brunn_csrf":
                 return cookie.value
         raise ContractFailure("Web session omitted the CSRF cookie")
 
@@ -484,7 +484,7 @@ def sync_state(database: Database, user_id: str) -> dict[str, Any]:
         "'cursor',cursor,'last_outcome',last_outcome,'last_error_code',last_error_code,"
         "'next_run_at',next_run_at,'manual_requested_at',manual_requested_at,"
         "'lease_owner',lease_owner,'configuration_generation',configuration_generation) "
-        "FROM straylight.task_sync_state WHERE user_id="
+        "FROM brunn.task_sync_state WHERE user_id="
         f"{sql_literal(user_id)}::uuid AND system='todoist'"
     )
 
@@ -496,8 +496,8 @@ def external_task(database: Database, user_id: str, external_id: str) -> dict[st
         "'occurrence_key',ref.occurrence_key,'ref_metadata',ref.metadata,"
         "'version',task.entry_version,'title',task.title,'status',task.status,"
         "'project',task.project_slug,'task',task.task) "
-        "FROM straylight.task_external_refs AS ref "
-        "JOIN straylight.task_index AS task ON task.user_id=ref.user_id AND task.task_id=ref.task_id "
+        "FROM brunn.task_external_refs AS ref "
+        "JOIN brunn.task_index AS task ON task.user_id=ref.user_id AND task.task_id=ref.task_id "
         f"WHERE ref.user_id={sql_literal(user_id)}::uuid AND ref.system='todoist' "
         f"AND ref.external_id={sql_literal(external_id)}"
     )
@@ -508,8 +508,8 @@ def occurrence_rows(database: Database, user_id: str, series_id: str) -> list[di
         "SELECT coalesce(json_agg(json_build_object("
         "'occurrence_key',occ.occurrence_key,'task_id',occ.task_id,'status',task.status) "
         "ORDER BY occ.occurrence_key),'[]'::json) "
-        "FROM straylight.task_todoist_occurrences AS occ "
-        "JOIN straylight.task_index AS task ON task.user_id=occ.user_id AND task.task_id=occ.task_id "
+        "FROM brunn.task_todoist_occurrences AS occ "
+        "JOIN brunn.task_index AS task ON task.user_id=occ.user_id AND task.task_id=occ.task_id "
         f"WHERE occ.user_id={sql_literal(user_id)}::uuid AND occ.series_id={sql_literal(series_id)}"
     )
     parsed = json.loads(raw)
@@ -520,7 +520,7 @@ def occurrence_rows(database: Database, user_id: str, series_id: str) -> list[di
 def task_count(database: Database, user_id: str) -> int:
     return int(
         database.scalar(
-            "SELECT count(*) FROM straylight.task_index WHERE user_id="
+            "SELECT count(*) FROM brunn.task_index WHERE user_id="
             f"{sql_literal(user_id)}::uuid"
         )
     )
@@ -672,13 +672,13 @@ def build_runtime_env(
     rw_password = docker_env(args.database_container, "APP_RW_PASSWORD")
     ro_password = docker_env(args.database_container, "APP_RO_PASSWORD")
     minio_access = docker_config_env(
-        args.minio_init_container, "STRAYLIGHT_MINIO_ACCESS_KEY"
+        args.minio_init_container, "BRUNN_MINIO_ACCESS_KEY"
     )
     minio_secret = docker_config_env(
-        args.minio_init_container, "STRAYLIGHT_MINIO_SECRET_KEY"
+        args.minio_init_container, "BRUNN_MINIO_SECRET_KEY"
     )
     minio_bucket = docker_config_env(
-        args.minio_init_container, "STRAYLIGHT_MINIO_BUCKET"
+        args.minio_init_container, "BRUNN_MINIO_BUCKET"
     )
     admin_url = (
         f"postgresql://admin:{admin_password}@127.0.0.1:{args.database_port}/"
@@ -686,8 +686,8 @@ def build_runtime_env(
     )
     env = {
         **os.environ,
-        "STRAYLIGHT_ENV": "development",
-        "STRAYLIGHT_BIND": f"127.0.0.1:{args.api_port}",
+        "BRUNN_ENV": "development",
+        "BRUNN_BIND": f"127.0.0.1:{args.api_port}",
         "DATABASE_URL_ADMIN": admin_url,
         "DATABASE_URL_RW": (
             f"postgresql://app_rw:{rw_password}@127.0.0.1:{args.database_port}/"
@@ -697,23 +697,23 @@ def build_runtime_env(
             f"postgresql://app_ro:{ro_password}@127.0.0.1:{args.database_port}/"
             f"{args.database_name}"
         ),
-        "STRAYLIGHT_CONTINUATION_SECRET": "gate12-continuation-secret-32-bytes-minimum",
-        "STRAYLIGHT_SECRET_ENCRYPTION_KEY": secret_key,
-        "STRAYLIGHT_S3_ENDPOINT": f"http://127.0.0.1:{args.minio_port}",
-        "STRAYLIGHT_S3_REGION": "us-east-1",
-        "STRAYLIGHT_S3_BUCKET": minio_bucket,
-        "STRAYLIGHT_S3_ACCESS_KEY": minio_access,
-        "STRAYLIGHT_S3_SECRET_KEY": minio_secret,
-        "STRAYLIGHT_S3_FORCE_PATH_STYLE": "true",
-        "STRAYLIGHT_S3_CREATE_BUCKET": "false",
-        "STRAYLIGHT_ALLOW_DEGRADED_EMBEDDINGS": "true",
-        "STRAYLIGHT_LEGACY_API_ENABLED": "false",
-        "STRAYLIGHT_EVALUATION_API_ENABLED": "false",
-        "STRAYLIGHT_DREAM_SCHEDULER_ENABLED": "false",
-        "STRAYLIGHT_APNS_DELIVERY_ENABLED": "false",
-        "STRAYLIGHT_TODOIST_SYNC_ENABLED": "true",
-        "STRAYLIGHT_TODOIST_FIXTURE_ORIGIN": fixture_origin,
-        "RUST_LOG": "info,straylight=debug",
+        "BRUNN_CONTINUATION_SECRET": "gate12-continuation-secret-32-bytes-minimum",
+        "BRUNN_SECRET_ENCRYPTION_KEY": secret_key,
+        "BRUNN_S3_ENDPOINT": f"http://127.0.0.1:{args.minio_port}",
+        "BRUNN_S3_REGION": "us-east-1",
+        "BRUNN_S3_BUCKET": minio_bucket,
+        "BRUNN_S3_ACCESS_KEY": minio_access,
+        "BRUNN_S3_SECRET_KEY": minio_secret,
+        "BRUNN_S3_FORCE_PATH_STYLE": "true",
+        "BRUNN_S3_CREATE_BUCKET": "false",
+        "BRUNN_ALLOW_DEGRADED_EMBEDDINGS": "true",
+        "BRUNN_LEGACY_API_ENABLED": "false",
+        "BRUNN_EVALUATION_API_ENABLED": "false",
+        "BRUNN_DREAM_SCHEDULER_ENABLED": "false",
+        "BRUNN_APNS_DELIVERY_ENABLED": "false",
+        "BRUNN_TODOIST_SYNC_ENABLED": "true",
+        "BRUNN_TODOIST_FIXTURE_ORIGIN": fixture_origin,
+        "RUST_LOG": "info,brunn=debug",
     }
     return env, admin_url
 
@@ -761,24 +761,24 @@ def provision_owner(binary: Path, env: dict[str, str], suffix: str) -> tuple[str
 
 def install_test_password(database: Database, user_id: str) -> None:
     database.scalar(
-        "UPDATE straylight.web_identities SET password_hash="
+        "UPDATE brunn.web_identities SET password_hash="
         f"{sql_literal(PASSWORD_HASH)},updated_at=clock_timestamp() "
         f"WHERE user_id={sql_literal(user_id)}::uuid RETURNING user_id"
     )
 
 
 def issue_narrow_bearer(database: Database, user_id: str, suffix: str) -> str:
-    token = f"straylight_gate12_read_only_{uuid7().hex}_{uuid7().hex}"
+    token = f"brunn_gate12_read_only_{uuid7().hex}_{uuid7().hex}"
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     credential_id = str(uuid7())
     database.scalar(
         "WITH created AS ("
-        "INSERT INTO straylight.api_credentials(id,user_id,label,token_hash,capabilities) VALUES ("
+        "INSERT INTO brunn.api_credentials(id,user_id,label,token_hash,capabilities) VALUES ("
         f"{sql_literal(credential_id)}::uuid,{sql_literal(user_id)}::uuid,"
         f"{sql_literal(f'Todoist gate read only {suffix}')},{sql_literal(token_hash)},"
         "ARRAY['read','task.read']::text[]) RETURNING id,user_id), "
-        "granted AS (INSERT INTO straylight.credential_scope_grants(credential_id,user_id,scope_id) "
-        "SELECT created.id,created.user_id,scope.id FROM created JOIN straylight.scopes AS scope "
+        "granted AS (INSERT INTO brunn.credential_scope_grants(credential_id,user_id,scope_id) "
+        "SELECT created.id,created.user_id,scope.id FROM created JOIN brunn.scopes AS scope "
         "ON scope.user_id=created.user_id ORDER BY scope.created_at LIMIT 1 RETURNING credential_id) "
         "SELECT credential_id FROM granted"
     )
@@ -800,7 +800,7 @@ def write_evidence(output: Path, evidence: dict[str, Any]) -> None:
     suite = ElementTree.Element(
         "testsuite",
         {
-            "name": "straylight.todoist.gate12",
+            "name": "brunn.todoist.gate12",
             "tests": str(len(evidence.get("checks", []))),
             "failures": "0" if evidence.get("status") == "pass" else "1",
             "time": f"{float(evidence.get('elapsed_ms', 0)) / 1000:.6f}",
@@ -825,12 +825,12 @@ def write_evidence(output: Path, evidence: dict[str, Any]) -> None:
     ElementTree.ElementTree(suite).write(xml_path, encoding="utf-8", xml_declaration=True)
 
 
-def scan_export(carrystate: Path, base_url: str, token: str, canary: str) -> int:
-    with tempfile.TemporaryDirectory(prefix="straylight-todoist-export-") as temporary:
+def scan_export(brunn_state: Path, base_url: str, token: str, canary: str) -> int:
+    with tempfile.TemporaryDirectory(prefix="brunn-todoist-export-") as temporary:
         export = Path(temporary) / "workspace"
         run_command(
             [
-                str(carrystate),
+                str(brunn_state),
                 "workspace",
                 "export",
                 "--output",
@@ -839,8 +839,8 @@ def scan_export(carrystate: Path, base_url: str, token: str, canary: str) -> int
             ],
             env={
                 **os.environ,
-                "CARRYSTATE_API_URL": base_url,
-                "CARRYSTATE_API_TOKEN": token,
+                "BRUNN_STATE_API_URL": base_url,
+                "BRUNN_STATE_API_TOKEN": token,
             },
         )
         files = 0
@@ -875,7 +875,7 @@ def scan_database(database: Database, canary: str) -> str:
 def scan_object_store(
     binary: Path, env: dict[str, str], canary: str
 ) -> tuple[int, str]:
-    with tempfile.TemporaryDirectory(prefix="straylight-todoist-objects-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="brunn-todoist-objects-") as temporary:
         output = Path(temporary) / "backup"
         run_command(
             [str(binary), "object-store-backup", "export", "--output", str(output)],
@@ -900,8 +900,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     started = time.monotonic()
     recorder = Recorder()
     require(port_is_free("127.0.0.1", args.api_port), f"API port {args.api_port} is occupied")
-    require(args.binary.exists(), f"missing Straylight binary: {args.binary}")
-    require(args.carrystate.exists(), f"missing carrystate binary: {args.carrystate}")
+    require(args.binary.exists(), f"missing Brunn binary: {args.binary}")
+    require(args.brunn_state.exists(), f"missing brunn-state binary: {args.brunn_state}")
     base_fixture = json.loads(args.full_fixture.read_text(encoding="utf-8"))
     recurring_template = next(
         item for item in base_fixture["items"] if item.get("id") == RECURRING_ID
@@ -1042,9 +1042,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "project.register",
             lambda: web.request(
                 "PUT",
-                "/v1/workspace/projects/straylight",
+                "/v1/workspace/projects/brunn",
                 body={
-                    "title": "Straylight",
+                    "title": "Brunn",
                     "description": "Project mapping fixture",
                     "aliases": [],
                     "source": "owner",
@@ -1104,7 +1104,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         require(hard_due.get("note") == "todoist_deadline", "deadline provenance marker missing")
         contexts = task_cell(ship, "required_contexts").get("value")
         require(isinstance(contexts, list) and {"online", "release"}.issubset(contexts), "labels did not map")
-        require(ship.get("project") == "straylight", "Todoist project did not map by registry name")
+        require(ship.get("project") == "brunn", "Todoist project did not map by registry name")
         recorder.checks.append(
             Check(
                 "todoist.mapping",
@@ -1374,7 +1374,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         captured_logs += worker.text() + api.text()
         worker = None
         api = None
-        off_env = {**env, "STRAYLIGHT_TODOIST_SYNC_ENABLED": "false"}
+        off_env = {**env, "BRUNN_TODOIST_SYNC_ENABLED": "false"}
         api = start_process(args.binary, "serve", off_env)
         worker = start_process(args.binary, "worker", off_env)
         recorder.record("kill_switch.stack_ready", lambda: wait_for_http(args.base_url, api))
@@ -1453,7 +1453,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
         export_files = recorder.record(
             "canary.workspace_export_scan",
-            lambda: scan_export(args.carrystate, args.base_url, owner_token, canary),
+            lambda: scan_export(args.brunn_state, args.base_url, owner_token, canary),
             lambda count: {"files_scanned": count},
         )
         require(export_files > 0, "workspace export contained no files")
@@ -1522,21 +1522,21 @@ def parse_args() -> argparse.Namespace:
     root = Path(__file__).resolve().parents[1]
     parser.add_argument("--repo", type=Path, default=root)
     parser.add_argument(
-        "--binary", type=Path, default=root / "apps/api/target/debug/straylight"
+        "--binary", type=Path, default=root / "apps/api/target/debug/brunn"
     )
     parser.add_argument(
-        "--carrystate", type=Path, default=root / "apps/api/target/debug/carrystate"
+        "--brunn-state", type=Path, default=root / "apps/api/target/debug/brunn-state"
     )
     parser.add_argument(
         "--full-fixture",
         type=Path,
         default=root / "apps/api/tests/fixtures/todoist/v1/full_sync.json",
     )
-    parser.add_argument("--database-container", default="straylight-task-todoist-db")
+    parser.add_argument("--database-container", default="brunn-task-todoist-db")
     parser.add_argument("--database-port", type=int, default=15111)
-    parser.add_argument("--database-name", default="straylight")
+    parser.add_argument("--database-name", default="brunn")
     parser.add_argument("--database-user", default="admin")
-    parser.add_argument("--minio-init-container", default="straylight-task-m2-minio-init-1")
+    parser.add_argument("--minio-init-container", default="brunn-task-m2-minio-init-1")
     parser.add_argument("--minio-port", type=int, default=19112)
     parser.add_argument("--api-port", type=int, default=18111)
     parser.add_argument("--artifact-dir", type=Path, default=root / "release-artifacts/task-gate12")
@@ -1547,7 +1547,7 @@ def main() -> int:
     args = parse_args()
     args.repo = args.repo.resolve()
     args.binary = args.binary.resolve()
-    args.carrystate = args.carrystate.resolve()
+    args.brunn_state = args.brunn_state.resolve()
     args.full_fixture = args.full_fixture.resolve()
     args.artifact_dir = args.artifact_dir.resolve()
     args.base_url = f"http://127.0.0.1:{args.api_port}"

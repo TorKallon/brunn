@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://carrystate.test/schemas/binary-asset-reasoning-cards-v1.json",
-  "title": "CarryState binary asset reasoning evaluation cards",
+  "$id": "https://brunn-state.test/schemas/binary-asset-reasoning-cards-v1.json",
+  "title": "Brunn State binary asset reasoning evaluation cards",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -34,7 +34,7 @@
           "const": "eval/binary_asset_fixture.py"
         },
         "format": {
-          "const": "carrystate-binary-fixture-v1"
+          "const": "brunn-state-binary-fixture-v1"
         },
         "snapshot": {
           "const": "r2"
@@ -106,12 +106,12 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "carrystate",
+        "brunn-state",
         "matched-filesystem",
         "operational-filesystem"
       ],
       "properties": {
-        "carrystate": {
+        "brunn-state": {
           "$ref": "#/$defs/condition"
         },
         "matched-filesystem": {

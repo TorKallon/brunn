@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row, Transaction, postgres::PgPoolOptions};
 use uuid::Uuid;
 
-use straylight::{
+use brunn::{
     auth::AuthContext,
     db::set_context,
     models::{CredentialId, UserId},
@@ -33,11 +33,11 @@ struct EntryFixture {
 }
 
 async fn connect_test_pool() -> Option<PgPool> {
-    let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+    let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
     else {
-        eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping messaging database test");
+        eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping messaging database test");
         return None;
     };
     let pool = PgPoolOptions::new()
@@ -48,7 +48,7 @@ async fn connect_test_pool() -> Option<PgPool> {
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .expect("apply Straylight migrations");
+        .expect("apply Brunn migrations");
     Some(pool)
 }
 
@@ -61,14 +61,14 @@ async fn insert_principal(pool: &PgPool, label: &str, capabilities: &[&str]) -> 
         .iter()
         .map(|capability| (*capability).to_owned())
         .collect::<Vec<_>>();
-    sqlx::query("INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+    sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
         .bind(user_id)
         .bind(format!("messaging-test:{label}:{user_id}"))
         .bind(format!("Messaging test {label}"))
         .execute(pool)
         .await
         .expect("insert messaging test user");
-    sqlx::query("INSERT INTO straylight.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)")
+    sqlx::query("INSERT INTO brunn.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)")
         .bind(scope_id)
         .bind(user_id)
         .bind(&scope_ref)
@@ -78,7 +78,7 @@ async fn insert_principal(pool: &PgPool, label: &str, capabilities: &[&str]) -> 
         .expect("insert messaging test scope");
     sqlx::query(
         r#"
-        INSERT INTO straylight.api_credentials (
+        INSERT INTO brunn.api_credentials (
           id,user_id,label,token_hash,capabilities
         ) VALUES ($1,$2,$3,$4,$5)
         "#,
@@ -93,7 +93,7 @@ async fn insert_principal(pool: &PgPool, label: &str, capabilities: &[&str]) -> 
     .expect("insert messaging test credential");
     sqlx::query(
         r#"
-        INSERT INTO straylight.credential_scope_grants (
+        INSERT INTO brunn.credential_scope_grants (
           credential_id,user_id,scope_id
         ) VALUES ($1,$2,$3)
         "#,
@@ -133,7 +133,7 @@ async fn insert_credential_for_user(
         .collect::<Vec<_>>();
     let credential_id = sqlx::query_scalar::<_, Uuid>(
         r#"
-        INSERT INTO straylight.api_credentials (
+        INSERT INTO brunn.api_credentials (
           id,user_id,label,token_hash,capabilities
         ) VALUES ($1,$2,$3,$4,$5)
         RETURNING id
@@ -147,14 +147,14 @@ async fn insert_credential_for_user(
     .fetch_one(pool)
     .await?;
     let scope_id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM straylight.scopes WHERE user_id=$1 ORDER BY id LIMIT 1",
+        "SELECT id FROM brunn.scopes WHERE user_id=$1 ORDER BY id LIMIT 1",
     )
     .bind(user_id)
     .fetch_one(pool)
     .await?;
     sqlx::query(
         r#"
-        INSERT INTO straylight.credential_scope_grants (
+        INSERT INTO brunn.credential_scope_grants (
           credential_id,user_id,scope_id
         ) VALUES ($1,$2,$3)
         "#,
@@ -205,7 +205,7 @@ fn conversation_metadata(conversation_id: Uuid) -> Value {
 
 fn conversation_body(conversation_id: Uuid) -> String {
     format!(
-        "# Database contract\n\n<!-- straylight:conversation.v1 {{\"id\":\"{conversation_id}\"}} -->\n"
+        "# Database contract\n\n<!-- brunn:conversation.v1 {{\"id\":\"{conversation_id}\"}} -->\n"
     )
 }
 
@@ -216,13 +216,13 @@ async fn insert_canonical_entry_as(
 ) -> EntryFixture {
     let entry_id = Uuid::now_v7();
     let version_id = Uuid::now_v7();
-    let path = format!(".straylight/conversations/{conversation_id}.md");
+    let path = format!(".brunn/conversations/{conversation_id}.md");
     let content = conversation_body(conversation_id);
     let content_sha256 = hex::encode(Sha256::digest(content.as_bytes()));
     let mut tx = begin_as_app_rw(pool, &principal.auth).await;
     sqlx::query(
         r#"
-        INSERT INTO straylight.entries (
+        INSERT INTO brunn.entries (
           id,user_id,path,title,kind,media_type,current_version
         ) VALUES ($1,$2,$3,'Database contract','markdown','text/markdown',1)
         "#,
@@ -235,7 +235,7 @@ async fn insert_canonical_entry_as(
     .expect("message.write inserts a canonical conversation entry");
     sqlx::query(
         r#"
-        INSERT INTO straylight.entry_versions (
+        INSERT INTO brunn.entry_versions (
           id,user_id,entry_id,version,content_sha256,content,size_bytes,
           metadata,created_by_credential_id
         ) VALUES ($1,$2,$3,1,$4,$5,$6,$7,$8)
@@ -254,7 +254,7 @@ async fn insert_canonical_entry_as(
     .expect("message.write inserts a typed conversation version");
     let generation = sqlx::query_scalar::<_, i64>(
         r#"
-        INSERT INTO straylight.workspace_changes (
+        INSERT INTO brunn.workspace_changes (
           user_id,entry_id,entry_version,operation,path,content_sha256
         ) VALUES ($1,$2,1,'create',$3,$4)
         RETURNING generation
@@ -286,7 +286,7 @@ async fn insert_ordinary_entry(pool: &PgPool, user_id: Uuid) {
     let mut tx = pool.begin().await.expect("begin ordinary fixture insert");
     sqlx::query(
         r#"
-        INSERT INTO straylight.entries (
+        INSERT INTO brunn.entries (
           id,user_id,path,title,kind,media_type,current_version
         ) VALUES ($1,$2,'Notes/ordinary.md','Ordinary','markdown','text/markdown',1)
         "#,
@@ -298,7 +298,7 @@ async fn insert_ordinary_entry(pool: &PgPool, user_id: Uuid) {
     .expect("insert ordinary entry fixture");
     sqlx::query(
         r#"
-        INSERT INTO straylight.entry_versions (
+        INSERT INTO brunn.entry_versions (
           id,user_id,entry_id,version,content_sha256,content,size_bytes,metadata
         ) VALUES ($1,$2,$3,1,$4,$5,$6,'{}'::jsonb)
         "#,
@@ -324,7 +324,7 @@ async fn assert_narrow_notification_side_effect(
     let agent_id = format!("writer-{}", &conversation_id.simple().to_string()[..12]);
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_agents (
+        INSERT INTO brunn.messaging_agents (
           user_id,agent_id,display_name,principal_kind,delivery_mode,
           created_by_credential_id
         ) VALUES ($1,$2,'Notification writer','resident','pull',$3)
@@ -338,7 +338,7 @@ async fn assert_narrow_notification_side_effect(
     .expect("seed messaging notification principal");
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_conversations (
+        INSERT INTO brunn.messaging_conversations (
           user_id,conversation_id,entry_id,path,conversation_kind,direct_key,
           created_by_agent_id,last_seq,last_message_at,latest_sync_cursor
         ) VALUES ($1,$2,$3,$4,'direct',$5,$6,1,clock_timestamp(),1)
@@ -355,7 +355,7 @@ async fn assert_narrow_notification_side_effect(
     .expect("seed messaging notification conversation");
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_participants (
+        INSERT INTO brunn.messaging_participants (
           user_id,conversation_id,agent_id,role
         ) VALUES ($1,$2,$3,'participant')
         "#,
@@ -368,7 +368,7 @@ async fn assert_narrow_notification_side_effect(
     .expect("seed messaging notification participant");
     sqlx::query(
         r#"
-        INSERT INTO straylight.messaging_message_index (
+        INSERT INTO brunn.messaging_message_index (
           user_id,conversation_id,seq,message_id,from_agent_id,client_key,
           request_hash,kind,body_md,sync_cursor
         ) VALUES ($1,$2,1,$3,$4,'01ARZ3NDEKTSV4RRFFQ69G5FAV',$5,'text','hello',1)
@@ -392,11 +392,11 @@ async fn assert_narrow_notification_side_effect(
     let installation_id = Uuid::now_v7();
     sqlx::query(
         r#"
-        INSERT INTO straylight.notification_installations (
+        INSERT INTO brunn.notification_installations (
           id,user_id,client_installation_id,registered_by_credential_id,
           platform,environment,app_id,token_ciphertext,token_nonce,token_hash,
           preview
-        ) VALUES ($1,$2,$3,$4,'ios','development','com.straylight.test',
+        ) VALUES ($1,$2,$3,$4,'ios','development','com.brunn.test',
                   $5,$6,$7,'generic')
         "#,
     )
@@ -414,13 +414,13 @@ async fn assert_narrow_notification_side_effect(
     let mut tx = begin_as_app_rw(pool, &writer.auth).await;
     sqlx::query(
         r#"
-        INSERT INTO straylight.notifications (
+        INSERT INTO brunn.notifications (
           id,user_id,producer_credential_id,event_key,request_hash,
           correlation_id,kind,importance,title,body,source,target,
           occurred_at,expires_at
         ) VALUES (
           $1,$2,$3,$4,$5,$4,'operational','normal','New agent message',
-          'Open Straylight to view the conversation.',NULL,$6,
+          'Open Brunn to view the conversation.',NULL,$6,
           clock_timestamp(),clock_timestamp()+interval '24 hours'
         )
         "#,
@@ -436,11 +436,11 @@ async fn assert_narrow_notification_side_effect(
     .expect("message.write publishes only its typed generic conversation side effect");
     let deliveries = sqlx::query(
         r#"
-        INSERT INTO straylight.notification_deliveries (
+        INSERT INTO brunn.notification_deliveries (
           user_id,notification_id,installation_id,state,last_error_code
         )
         SELECT $1,$2,installation.id,'suppressed','transport_disabled'
-        FROM straylight.notification_installations AS installation
+        FROM brunn.notification_installations AS installation
         WHERE installation.user_id=$1
           AND installation.enabled AND installation.revoked_at IS NULL
         "#,
@@ -453,25 +453,24 @@ async fn assert_narrow_notification_side_effect(
     .rows_affected();
     assert_eq!(deliveries, 1, "the live installation gets one outbox row");
     let visible_delivery_count = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM straylight.notification_deliveries WHERE notification_id=$1",
+        "SELECT count(*) FROM brunn.notification_deliveries WHERE notification_id=$1",
     )
     .bind(notification_id)
     .fetch_one(&mut *tx)
     .await
     .expect("message.write can read only its typed notification fan-out result");
     assert_eq!(visible_delivery_count, 1);
-    let visible_settings = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM straylight.task_settings WHERE user_id=$1",
-    )
-    .bind(writer.user_id)
-    .fetch_one(&mut *tx)
-    .await
-    .expect("message.write can read the owner's quiet-hours settings");
+    let visible_settings =
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM brunn.task_settings WHERE user_id=$1")
+            .bind(writer.user_id)
+            .fetch_one(&mut *tx)
+            .await
+            .expect("message.write can read the owner's quiet-hours settings");
     assert_eq!(visible_settings, 1);
 
     let forged = sqlx::query(
         r#"
-        INSERT INTO straylight.notifications (
+        INSERT INTO brunn.notifications (
           id,user_id,producer_credential_id,event_key,request_hash,
           correlation_id,kind,importance,title,body,source,target,
           occurred_at,expires_at
@@ -506,7 +505,7 @@ async fn assert_entry_insert_denied(
     let mut tx = begin_as_app_rw(pool, &principal.auth).await;
     let error = sqlx::query(
         r#"
-        INSERT INTO straylight.entries (
+        INSERT INTO brunn.entries (
           id,user_id,path,title,kind,media_type,current_version
         ) VALUES ($1,$2,$3,'Denied','markdown','text/markdown',0)
         "#,
@@ -527,7 +526,7 @@ async fn assert_schema_contract(pool: &PgPool) {
         SELECT class.relname,class.relrowsecurity,class.relforcerowsecurity
         FROM pg_class AS class
         JOIN pg_namespace AS namespace ON namespace.oid=class.relnamespace
-        WHERE namespace.nspname='straylight'
+        WHERE namespace.nspname='brunn'
           AND class.relkind IN ('r','p')
           AND class.relname LIKE 'messaging\_%' ESCAPE '\'
         ORDER BY class.relname
@@ -562,7 +561,7 @@ async fn assert_schema_contract(pool: &PgPool) {
         r#"
         SELECT table_name,is_nullable
         FROM information_schema.columns
-        WHERE table_schema='straylight'
+        WHERE table_schema='brunn'
           AND table_name=ANY($1)
           AND column_name='user_id'
         ORDER BY table_name
@@ -586,7 +585,7 @@ async fn assert_schema_contract(pool: &PgPool) {
         FROM pg_constraint AS constraint_row
         JOIN pg_class AS class ON class.oid=constraint_row.conrelid
         JOIN pg_namespace AS namespace ON namespace.oid=class.relnamespace
-        WHERE namespace.nspname='straylight'
+        WHERE namespace.nspname='brunn'
           AND class.relname=ANY($1)
           AND constraint_row.contype='f'
         "#,
@@ -604,7 +603,7 @@ async fn assert_schema_contract(pool: &PgPool) {
         assert!(
             definitions.iter().any(|definition| {
                 definition.contains("FOREIGN KEY (user_id)")
-                    && definition.contains("REFERENCES straylight.users(id)")
+                    && definition.contains("REFERENCES brunn.users(id)")
                     && definition.contains("ON DELETE CASCADE")
             }),
             "{table} must cascade from its direct user owner"
@@ -626,7 +625,7 @@ async fn assert_schema_contract(pool: &PgPool) {
         SELECT tablename,cmd,
                coalesce(qual,'') || ' ' || coalesce(with_check,'') AS expression
         FROM pg_policies
-        WHERE schemaname='straylight' AND tablename=ANY($1)
+        WHERE schemaname='brunn' AND tablename=ANY($1)
         "#,
     )
     .bind(MESSAGING_TABLES.map(str::to_owned).to_vec())
@@ -663,7 +662,7 @@ async fn assert_schema_contract(pool: &PgPool) {
         r#"
         SELECT indexdef
         FROM pg_indexes
-        WHERE schemaname='straylight' AND tablename='messaging_message_index'
+        WHERE schemaname='brunn' AND tablename='messaging_message_index'
         "#,
     )
     .fetch_all(pool)
@@ -767,7 +766,7 @@ async fn messaging_schema_capabilities_rls_and_managed_entries_fail_closed() {
 
     let mut read_tx = begin_as_app_rw(&pool, &same_user_reader.auth).await;
     let visible_paths =
-        sqlx::query_scalar::<_, String>("SELECT path FROM straylight.entries ORDER BY path")
+        sqlx::query_scalar::<_, String>("SELECT path FROM brunn.entries ORDER BY path")
             .fetch_all(&mut *read_tx)
             .await
             .expect("message.read lists its canonical conversation entries");
@@ -778,7 +777,7 @@ async fn messaging_schema_capabilities_rls_and_managed_entries_fail_closed() {
         &pool,
         &same_user_reader,
         writer.user_id,
-        &format!(".straylight/conversations/{}.md", Uuid::now_v7()),
+        &format!(".brunn/conversations/{}.md", Uuid::now_v7()),
     )
     .await;
     assert_entry_insert_denied(&pool, &writer, writer.user_id, "Notes/not-messaging.md").await;
@@ -786,19 +785,19 @@ async fn messaging_schema_capabilities_rls_and_managed_entries_fail_closed() {
         &pool,
         &writer,
         writer.user_id,
-        ".straylight/conversations/not-a-uuid.md",
+        ".brunn/conversations/not-a-uuid.md",
     )
     .await;
     assert_entry_insert_denied(&pool, &writer, neighbor.user_id, &neighbor_entry.path).await;
 
     let invalid_conversation_id = Uuid::now_v7();
     let invalid_entry_id = Uuid::now_v7();
-    let invalid_path = format!(".straylight/conversations/{invalid_conversation_id}.md");
+    let invalid_path = format!(".brunn/conversations/{invalid_conversation_id}.md");
     let invalid_content = conversation_body(invalid_conversation_id);
     let mut invalid_metadata_tx = begin_as_app_rw(&pool, &writer.auth).await;
     sqlx::query(
         r#"
-        INSERT INTO straylight.entries (
+        INSERT INTO brunn.entries (
           id,user_id,path,title,kind,media_type,current_version
         ) VALUES ($1,$2,$3,'Invalid metadata','markdown','text/markdown',1)
         "#,
@@ -811,7 +810,7 @@ async fn messaging_schema_capabilities_rls_and_managed_entries_fail_closed() {
     .expect("canonical path reaches the typed-version boundary");
     let invalid_metadata = sqlx::query(
         r#"
-        INSERT INTO straylight.entry_versions (
+        INSERT INTO brunn.entry_versions (
           id,user_id,entry_id,version,content_sha256,content,size_bytes,
           metadata,created_by_credential_id
         ) VALUES ($1,$2,$3,1,$4,$5,$6,$7,$8)
@@ -837,7 +836,7 @@ async fn messaging_schema_capabilities_rls_and_managed_entries_fail_closed() {
     let mut chunk_tx = begin_as_app_rw(&pool, &writer.auth).await;
     let chunk_error = sqlx::query(
         r#"
-        INSERT INTO straylight.search_chunks (
+        INSERT INTO brunn.search_chunks (
           id,user_id,entry_id,entry_version_id,chunk_index,path,heading,
           content,token_estimate
         ) VALUES ($1,$2,$3,$4,0,$5,'','must not index',3)
@@ -858,14 +857,13 @@ async fn messaging_schema_capabilities_rls_and_managed_entries_fail_closed() {
         .expect("rollback denied search chunk insert");
 
     let mut job_tx = begin_as_app_rw(&pool, &writer.auth).await;
-    let job_error = sqlx::query(
-        "INSERT INTO straylight.jobs (user_id,kind,payload) VALUES ($1,'embed_entry',$2)",
-    )
-    .bind(writer.user_id)
-    .bind(json!({"entry_id": own_entry.entry_id, "version": 1}))
-    .execute(&mut *job_tx)
-    .await
-    .expect_err("message.write must not gain embedding-job authority");
+    let job_error =
+        sqlx::query("INSERT INTO brunn.jobs (user_id,kind,payload) VALUES ($1,'embed_entry',$2)")
+            .bind(writer.user_id)
+            .bind(json!({"entry_id": own_entry.entry_id, "version": 1}))
+            .execute(&mut *job_tx)
+            .await
+            .expect_err("message.write must not gain embedding-job authority");
     assert_eq!(database_code(&job_error).as_deref(), Some("42501"));
     job_tx
         .rollback()
@@ -875,8 +873,8 @@ async fn messaging_schema_capabilities_rls_and_managed_entries_fail_closed() {
     let search_artifacts: (i64, i64) = sqlx::query_as(
         r#"
         SELECT
-          (SELECT count(*) FROM straylight.search_chunks WHERE user_id=$1 AND entry_id=$2),
-          (SELECT count(*) FROM straylight.jobs
+          (SELECT count(*) FROM brunn.search_chunks WHERE user_id=$1 AND entry_id=$2),
+          (SELECT count(*) FROM brunn.jobs
            WHERE user_id=$1 AND payload->>'entry_id'=$2::text)
         "#,
     )

@@ -14,8 +14,8 @@ interface ContextReceipt {
   };
 }
 
-const email = requiredEnvironment("STRAYLIGHT_GATE12_EMAIL");
-const password = requiredEnvironment("STRAYLIGHT_GATE12_PASSWORD");
+const email = requiredEnvironment("BRUNN_GATE12_EMAIL");
+const password = requiredEnvironment("BRUNN_GATE12_PASSWORD");
 
 test("gate 12c: authenticated agent-first Web flow", async ({ page }, testInfo) => {
   await signIn(page);
@@ -100,7 +100,7 @@ test("gate 12c: authenticated agent-first Web flow", async ({ page }, testInfo) 
   await expect(page.getByText(/^Page 1 ·/)).toBeVisible();
 
   await page.getByRole("combobox", { name: "Status", exact: true }).selectOption("open");
-  await page.getByRole("combobox", { name: "Project", exact: true }).selectOption("straylight");
+  await page.getByRole("combobox", { name: "Project", exact: true }).selectOption("brunn");
   await page.getByRole("combobox", { name: "Context", exact: true }).selectOption("online");
   await page.getByRole("combobox", { name: "Date type", exact: true }).selectOption("hard");
   await page.getByRole("combobox", { name: "Source", exact: true }).selectOption("owner");
@@ -201,8 +201,8 @@ async function apiJson<T>(
         .map((value) => value.trim())
         .find(
           (value) =>
-            value.startsWith("__Host-straylight_csrf=") ||
-            value.startsWith("straylight_csrf="),
+            value.startsWith("__Host-brunn_csrf=") ||
+            value.startsWith("brunn_csrf="),
         );
       if (!csrfCookie) throw new Error("The signed-in page did not receive a CSRF cookie");
       const csrf = decodeURIComponent(csrfCookie.slice(csrfCookie.indexOf("=") + 1));
@@ -234,7 +234,7 @@ function taskSeedItems(
 ) {
   const due = (hours: number) => new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
   const common = {
-    project: { value: "straylight", source: "owner" },
+    project: { value: "brunn", source: "owner" },
     required_contexts: { value: ["online"], source: "owner" },
   };
   const hard = (raw_text: string, hours: number, source: string) => ({

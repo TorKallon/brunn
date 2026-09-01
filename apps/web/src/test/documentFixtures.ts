@@ -37,21 +37,21 @@ export const publishedDocumentFixture = {
       {
         version: 1,
         created_at: "2026-08-06T17:00:00Z",
-        version_url: "https://straylight.test/documents/switzerland-itinerary?version=1",
+        version_url: "https://brunn.test/documents/switzerland-itinerary?version=1",
       },
       {
         version: 2,
         created_at: "2026-08-07T18:00:00Z",
-        version_url: "https://straylight.test/documents/switzerland-itinerary?version=2",
+        version_url: "https://brunn.test/documents/switzerland-itinerary?version=2",
       },
       {
         version: 3,
         created_at: "2026-08-08T19:30:00Z",
-        version_url: "https://straylight.test/documents/switzerland-itinerary?version=3",
+        version_url: "https://brunn.test/documents/switzerland-itinerary?version=3",
       },
     ],
-    url: "https://straylight.test/documents/switzerland-itinerary",
-    version_url: "https://straylight.test/documents/switzerland-itinerary?version=3",
+    url: "https://brunn.test/documents/switzerland-itinerary",
+    version_url: "https://brunn.test/documents/switzerland-itinerary?version=3",
     workspace_generation: 42,
   },
 };
@@ -63,7 +63,7 @@ export function historicalPublishedDocumentFixture(version = 2) {
       ...publishedDocumentFixture.data,
       version,
       updated_at: "2026-08-07T18:00:00Z",
-      version_url: `https://straylight.test/documents/switzerland-itinerary?version=${version}`,
+      version_url: `https://brunn.test/documents/switzerland-itinerary?version=${version}`,
     },
   };
 }

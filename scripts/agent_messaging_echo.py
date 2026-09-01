@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a small durable echo resident against Straylight agent messaging.
+"""Run a small durable echo resident against Brunn agent messaging.
 
 The resident long-polls the authenticated principal's inbox, atomically saves
 its cursor and pending replies, and sends each reply with one stable ULID. A
@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 
-STATE_SCHEMA = "straylight.echo-resident-state.v1"
+STATE_SCHEMA = "brunn.echo-resident-state.v1"
 SYNC_WAIT_SECONDS = 25
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 35.0
@@ -254,7 +254,7 @@ class JsonHttpClient:
         headers = {
             "accept": "application/json",
             "authorization": f"Bearer {self.token}",
-            "user-agent": "straylight-agent-messaging-echo/1",
+            "user-agent": "brunn-agent-messaging-echo/1",
         }
         encoded_body = None
         if body is not None:
@@ -495,23 +495,23 @@ class EchoResident:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run the Straylight agent-messaging echo resident.")
+    parser = argparse.ArgumentParser(description="Run the Brunn agent-messaging echo resident.")
     parser.add_argument(
         "--base-url",
-        default=os.environ.get("STRAYLIGHT_ECHO_BASE_URL"),
-        help="Straylight API origin (or STRAYLIGHT_ECHO_BASE_URL)",
+        default=os.environ.get("BRUNN_ECHO_BASE_URL"),
+        help="Brunn API origin (or BRUNN_ECHO_BASE_URL)",
     )
     parser.add_argument(
         "--credential-ref",
-        default=os.environ.get("STRAYLIGHT_ECHO_CREDENTIAL_REF"),
-        help="env:NAME or file:/path (or STRAYLIGHT_ECHO_CREDENTIAL_REF)",
+        default=os.environ.get("BRUNN_ECHO_CREDENTIAL_REF"),
+        help="env:NAME or file:/path (or BRUNN_ECHO_CREDENTIAL_REF)",
     )
     parser.add_argument(
         "--state-file",
         type=Path,
         default=(
-            Path(os.environ["STRAYLIGHT_ECHO_STATE_FILE"])
-            if "STRAYLIGHT_ECHO_STATE_FILE" in os.environ
+            Path(os.environ["BRUNN_ECHO_STATE_FILE"])
+            if "BRUNN_ECHO_STATE_FILE" in os.environ
             else None
         ),
         help="caller-selected durable cursor/outbox file",
@@ -528,9 +528,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     sanitizer = Sanitizer()
     try:
         if not args.base_url:
-            raise EchoFailure("--base-url or STRAYLIGHT_ECHO_BASE_URL is required")
+            raise EchoFailure("--base-url or BRUNN_ECHO_BASE_URL is required")
         if args.state_file is None:
-            raise EchoFailure("--state-file or STRAYLIGHT_ECHO_STATE_FILE is required")
+            raise EchoFailure("--state-file or BRUNN_ECHO_STATE_FILE is required")
         if args.slow < 0 or args.offline < 0 or args.request_timeout <= 0:
             raise EchoFailure("slow/offline must be nonnegative and request timeout must be positive")
         token = credential_from_reference(args.credential_ref, sanitizer)

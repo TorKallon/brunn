@@ -106,7 +106,7 @@ export function DashboardPage() {
             <div className="dashboard-section-heading">
               <div>
                 <span className="dashboard-eyebrow">Storage</span>
-                <h2 id="storage-heading">What Straylight is holding</h2>
+                <h2 id="storage-heading">What Brunn is holding</h2>
               </div>
               <span>Generation {numberFormat.format(dashboard.workspace_generation)}</span>
             </div>

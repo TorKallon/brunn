@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tarfile
 import time
+import urllib.parse
 import urllib.request
 import uuid
 from datetime import datetime, timezone
@@ -31,26 +32,26 @@ def bootstrap_privilege_is_locked() -> None:
     sql = (
         "SELECT "
         "has_function_privilege('app_rw',"
-        "'straylight_auth.bootstrap_user(text,text,text,text,text[])','EXECUTE'),"
+        "'brunn_auth.bootstrap_user(text,text,text,text,text[])','EXECUTE'),"
         "has_function_privilege('app_ro',"
-        "'straylight_auth.bootstrap_user(text,text,text,text,text[])','EXECUTE'),"
+        "'brunn_auth.bootstrap_user(text,text,text,text,text[])','EXECUTE'),"
         "has_function_privilege('app_rw',"
-        "'straylight_auth.bootstrap_evaluation_user(text,text,text,text,text[])',"
+        "'brunn_auth.bootstrap_evaluation_user(text,text,text,text,text[])',"
         "'EXECUTE'),"
         "has_function_privilege('app_ro',"
-        "'straylight_auth.bootstrap_evaluation_user(text,text,text,text,text[])',"
+        "'brunn_auth.bootstrap_evaluation_user(text,text,text,text,text[])',"
         "'EXECUTE')"
     )
     result = subprocess.run(
         [
             "docker",
             "exec",
-            "straylight-db-1",
+            "brunn-db-1",
             "psql",
             "-U",
             "admin",
             "-d",
-            "straylight",
+            "brunn",
             "-v",
             "ON_ERROR_STOP=1",
             "-At",
@@ -106,7 +107,7 @@ def download(base_url: str, token: str, path: str, timeout: float) -> bytes:
 
 def set_backup_deadline_expired(user_id: uuid.UUID) -> None:
     sql = (
-        "UPDATE straylight.account_deletion_requests "
+        "UPDATE brunn.account_deletion_requests "
         "SET backup_expiry_due_at=clock_timestamp()-interval '1 second' "
         f"WHERE user_id='{user_id}'::uuid AND status='awaiting_backup_expiry'"
     )
@@ -114,12 +115,12 @@ def set_backup_deadline_expired(user_id: uuid.UUID) -> None:
         [
             "docker",
             "exec",
-            "straylight-db-1",
+            "brunn-db-1",
             "psql",
             "-U",
             "admin",
             "-d",
-            "straylight",
+            "brunn",
             "-v",
             "ON_ERROR_STOP=1",
             "-Atc",
@@ -183,12 +184,12 @@ def admin_sql(sql: str, failure: str) -> str:
         [
             "docker",
             "exec",
-            "straylight-db-1",
+            "brunn-db-1",
             "psql",
             "-U",
             "admin",
             "-d",
-            "straylight",
+            "brunn",
             "-v",
             "ON_ERROR_STOP=1",
             "-Atc",
@@ -209,9 +210,9 @@ def database_account_status(user_id: uuid.UUID) -> tuple[str, bool, str]:
         "SELECT user_row.account_status,"
         "bool_and(credential.disabled_at IS NOT NULL),"
         "request.status "
-        "FROM straylight.users AS user_row "
-        "JOIN straylight.api_credentials AS credential ON credential.user_id=user_row.id "
-        "JOIN straylight.account_deletion_requests AS request ON request.user_id=user_row.id "
+        "FROM brunn.users AS user_row "
+        "JOIN brunn.api_credentials AS credential ON credential.user_id=user_row.id "
+        "JOIN brunn.account_deletion_requests AS request ON request.user_id=user_row.id "
         f"WHERE user_row.id='{user_id}'::uuid "
         "GROUP BY user_row.account_status,request.status"
     )
@@ -219,12 +220,12 @@ def database_account_status(user_id: uuid.UUID) -> tuple[str, bool, str]:
         [
             "docker",
             "exec",
-            "straylight-db-1",
+            "brunn-db-1",
             "psql",
             "-U",
             "admin",
             "-d",
-            "straylight",
+            "brunn",
             "-v",
             "ON_ERROR_STOP=1",
             "-At",
@@ -251,8 +252,8 @@ def database_retention_redaction(
 ) -> tuple[str, str, bool, bool, bool, bool]:
     sql = (
         "SELECT user_row.external_ref,user_row.display_name,"
-        "NOT EXISTS (SELECT 1 FROM straylight.scopes WHERE user_id=user_row.id),"
-        "NOT EXISTS (SELECT 1 FROM straylight.policies WHERE user_id=user_row.id),"
+        "NOT EXISTS (SELECT 1 FROM brunn.scopes WHERE user_id=user_row.id),"
+        "NOT EXISTS (SELECT 1 FROM brunn.policies WHERE user_id=user_row.id),"
         "bool_and(request.reason='deleted'),"
         "bool_and((credential.id=$status_credential$"
         f"{status_credential_id}"
@@ -262,9 +263,9 @@ def database_retention_redaction(
         "OR (credential.id<>$status_credential$"
         f"{status_credential_id}"
         "$status_credential$::uuid AND credential.disabled_at IS NOT NULL)) "
-        "FROM straylight.users AS user_row "
-        "JOIN straylight.api_credentials AS credential ON credential.user_id=user_row.id "
-        "JOIN straylight.account_deletion_requests AS request ON request.user_id=user_row.id "
+        "FROM brunn.users AS user_row "
+        "JOIN brunn.api_credentials AS credential ON credential.user_id=user_row.id "
+        "JOIN brunn.account_deletion_requests AS request ON request.user_id=user_row.id "
         f"WHERE user_row.id='{user_id}'::uuid "
         "GROUP BY user_row.id,user_row.external_ref,user_row.display_name"
     )
@@ -272,12 +273,12 @@ def database_retention_redaction(
         [
             "docker",
             "exec",
-            "straylight-db-1",
+            "brunn-db-1",
             "psql",
             "-U",
             "admin",
             "-d",
-            "straylight",
+            "brunn",
             "-v",
             "ON_ERROR_STOP=1",
             "-At",
@@ -310,7 +311,7 @@ def database_retention_redaction(
 def create_ungranted_scope(user_id: uuid.UUID, scope_id: uuid.UUID) -> str:
     scope_ref = f"scope:alpha-ungranted:{scope_id}"
     sql = (
-        "INSERT INTO straylight.scopes (id,user_id,scope_ref,name) VALUES "
+        "INSERT INTO brunn.scopes (id,user_id,scope_ref,name) VALUES "
         f"('{scope_id}'::uuid,'{user_id}'::uuid,"
         f"'{scope_ref}','Alpha ungranted scope')"
     )
@@ -318,12 +319,12 @@ def create_ungranted_scope(user_id: uuid.UUID, scope_id: uuid.UUID) -> str:
         [
             "docker",
             "exec",
-            "straylight-db-1",
+            "brunn-db-1",
             "psql",
             "-U",
             "admin",
             "-d",
-            "straylight",
+            "brunn",
             "-v",
             "ON_ERROR_STOP=1",
             "-Atc",
@@ -353,7 +354,7 @@ BEGIN
       ON base_table.table_schema=column_row.table_schema
      AND base_table.table_name=column_row.table_name
      AND base_table.table_type='BASE TABLE'
-    WHERE column_row.table_schema='straylight'
+    WHERE column_row.table_schema='brunn'
       AND column_row.column_name='user_id'
       AND column_row.table_name <> ALL(ARRAY[
         'api_credentials','account_deletion_requests','account_deletion_fences'
@@ -361,7 +362,7 @@ BEGIN
     ORDER BY column_row.table_name
   LOOP
     EXECUTE format(
-      'SELECT count(*) FROM straylight.%I WHERE user_id=$1',
+      'SELECT count(*) FROM brunn.%I WHERE user_id=$1',
       table_row.table_name
     ) INTO remaining USING '{user_id}'::uuid;
     IF remaining <> 0 THEN
@@ -375,12 +376,12 @@ $purge_audit$;
         [
             "docker",
             "exec",
-            "straylight-db-1",
+            "brunn-db-1",
             "psql",
             "-U",
             "admin",
             "-d",
-            "straylight",
+            "brunn",
             "-v",
             "ON_ERROR_STOP=1",
             "-Atc",
@@ -401,8 +402,8 @@ def run(args: argparse.Namespace, sanitizer: Sanitizer) -> None:
     bootstrap_privilege_is_locked()
     env = effective_env(args.env_file)
     sanitizer.register_env(env)
-    admin_token = env.get("STRAYLIGHT_DEV_READ_WRITE_TOKEN", "")
-    check(admin_token, "STRAYLIGHT_DEV_READ_WRITE_TOKEN is required")
+    admin_token = env.get("BRUNN_DEV_READ_WRITE_TOKEN", "")
+    check(admin_token, "BRUNN_DEV_READ_WRITE_TOKEN is required")
     admin = ApiClient(args.base_url, sanitizer, token=admin_token, timeout=args.timeout)
     me = admin.request("GET", "/v1/me").body
     check("admin" in me.get("capabilities", []), "dev credential lacks admin", me)
@@ -419,7 +420,7 @@ def run(args: argparse.Namespace, sanitizer: Sanitizer) -> None:
         args.base_url, sanitizer, token=limited_token, timeout=args.timeout
     )
     valid_eval = {
-        "schema": "straylight-eval-import@v1",
+        "schema": "brunn-eval-import@v1",
         "run_id": marker,
         "case_id": "authorization-denial",
         "authorization_scope": "scope:root",
@@ -513,6 +514,39 @@ def run(args: argparse.Namespace, sanitizer: Sanitizer) -> None:
     ).body
     check(saved.get("status") == "committed", "account purge fixture was not saved", saved)
 
+    binary_bytes = f"brunn account export binary {marker}".encode("utf-8")
+    binary_sha256 = hashlib.sha256(binary_bytes).hexdigest()
+    binary_path = f"alpha-safety/{marker}/purge-fixture.bin"
+    binary_query = urllib.parse.urlencode(
+        {
+            "path": binary_path,
+            "media_type": "application/octet-stream",
+            "expected_content_hash": f"sha256:{binary_sha256}",
+            "expected_version": "0",
+        }
+    )
+    binary_upload = replacement_owner.request(
+        "PUT",
+        f"/v1/workspace/binaries/content?{binary_query}",
+        raw_body=binary_bytes,
+        headers={"Content-Type": "application/octet-stream"},
+    ).body
+    check(
+        binary_upload.get("status") == "committed",
+        "simple-workspace binary was not committed",
+        binary_upload,
+    )
+    binary_receipt = binary_upload.get("data", {})
+    binary_entry_ref = binary_receipt.get("entry_ref", "")
+    binary_version = binary_receipt.get("version")
+    check(
+        isinstance(binary_entry_ref, str)
+        and binary_entry_ref.startswith("entry:")
+        and isinstance(binary_version, int),
+        "binary upload returned an invalid receipt",
+        binary_receipt,
+    )
+
     export = replacement_owner.request("POST", "/v1/account/exports").body
     export_id = export["id"]
     ready = poll(
@@ -531,11 +565,42 @@ def run(args: argparse.Namespace, sanitizer: Sanitizer) -> None:
     check(replacement_token.encode() not in archive, "replacement owner token leaked into export")
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as exported:
         names = set(exported.getnames())
-        credential_name = "straylight-export/tables/api_credentials.jsonl"
-        check("straylight-export/manifest.json" in names, "export manifest is missing", names)
+        credential_name = "brunn-export/tables/api_credentials.jsonl"
+        check("brunn-export/manifest.json" in names, "export manifest is missing", names)
         check(credential_name in names, "credential inventory is missing", names)
         credential_bytes = exported.extractfile(credential_name).read()
         check(b"token_hash" not in credential_bytes, "credential hashes leaked into export")
+        manifest_file = exported.extractfile("brunn-export/manifest.json")
+        check(manifest_file is not None, "export manifest could not be read")
+        manifest = json.loads(manifest_file.read())
+        matching_objects = [
+            item
+            for item in manifest.get("objects", [])
+            if item.get("content_hash") == f"sha256:{binary_sha256}"
+        ]
+        check(
+            len(matching_objects) == 1,
+            "simple-workspace binary is missing or duplicated in the export manifest",
+            matching_objects,
+        )
+        binary_object = matching_objects[0]
+        expected_reference = (
+            f"{binary_entry_ref.removeprefix('entry:')}:{binary_version}"
+        )
+        check(
+            {"kind": "entry_version", "ref": expected_reference}
+            in binary_object.get("references", []),
+            "exported binary is not bound to its exact entry version",
+            binary_object,
+        )
+        object_name = f"brunn-export/{binary_object['path']}"
+        check(object_name in names, "exported binary object is missing", object_name)
+        object_file = exported.extractfile(object_name)
+        check(object_file is not None, "exported binary object could not be read")
+        check(
+            object_file.read() == binary_bytes,
+            "exported binary bytes differ from the committed source",
+        )
 
     deletion = replacement_owner.request(
         "POST",
@@ -572,6 +637,11 @@ def run(args: argparse.Namespace, sanitizer: Sanitizer) -> None:
     check(
         awaiting["result"]["storage_reconciliation_passes"] == 2,
         "account deletion did not complete both storage reconciliation passes",
+        awaiting,
+    )
+    check(
+        awaiting["result"]["object_versions_deleted"] >= 1,
+        "account deletion did not purge the exported binary object version",
         awaiting,
     )
     (

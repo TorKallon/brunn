@@ -96,12 +96,12 @@ jobs:
           config --quiet
       - name: Caddy contract
         run: |
-          docker build --file infra/caddy/Dockerfile --tag straylight-caddy:ci infra/caddy
+          docker build --file infra/caddy/Dockerfile --tag brunn-caddy:ci infra/caddy
           docker run --rm \
-            --env STRAYLIGHT_PUBLIC_HOST=memory.example.com \
-            --env STRAYLIGHT_ACME_EMAIL=ops@example.com \
+            --env BRUNN_PUBLIC_HOST=memory.example.com \
+            --env BRUNN_ACME_EMAIL=ops@example.com \
             --volume "$PWD/infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
-            straylight-caddy:ci validate --config /etc/caddy/Caddyfile
+            brunn-caddy:ci validate --config /etc/caddy/Caddyfile
       - name: GitHub Actions contract
         run: >-
           docker run --rm
@@ -125,33 +125,33 @@ jobs:
               return prefix + secrets.token_urlsafe(bytes_)
 
           values = {
-              "POSTGRES_DB": "straylight",
-              "STRAYLIGHT_ENV": "test",
+              "POSTGRES_DB": "brunn",
+              "BRUNN_ENV": "test",
               "POSTGRES_ADMIN_PASSWORD": value("admin_"),
               "POSTGRES_APP_RW_PASSWORD": value("rw_"),
               "POSTGRES_APP_RO_PASSWORD": value("ro_"),
               "MINIO_ROOT_USER": value("root_", 12),
               "MINIO_ROOT_PASSWORD": value("root_secret_"),
-              "STRAYLIGHT_MINIO_BUCKET": "straylight",
-              "STRAYLIGHT_MINIO_REGION": "us-east-1",
-              "STRAYLIGHT_MINIO_ACCESS_KEY": value("app_", 12),
-              "STRAYLIGHT_MINIO_SECRET_KEY": value("app_secret_"),
-              "STRAYLIGHT_CONTINUATION_SIGNING_KEY": value("continuation_", 32),
-              "STRAYLIGHT_EMBEDDING_PROVIDER": "hashing",
-              "STRAYLIGHT_ALLOW_DEGRADED_EMBEDDINGS": "true",
-              "STRAYLIGHT_EMBEDDING_DIMENSIONS": "1536",
-              "STRAYLIGHT_DREAM_SCHEDULER_ENABLED": "false",
-              "STRAYLIGHT_DREAM_SCHEDULER_POLL_SECONDS": "1",
-              "STRAYLIGHT_DREAM_INACTIVITY_SECONDS": "1",
-              "STRAYLIGHT_DREAM_COOLDOWN_SECONDS": "1",
-              "STRAYLIGHT_DREAM_DIRTY_THRESHOLD": "1",
-              "STRAYLIGHT_DEV_USER_REF": "user:ci",
-              "STRAYLIGHT_DEV_USER_NAME": "CI alpha safety user",
-              "STRAYLIGHT_DEV_READ_WRITE_TOKEN": value("sl_ci_rw_", 30),
-              "STRAYLIGHT_DEV_READ_ONLY_TOKEN": value("sl_ci_ro_", 30),
-              "STRAYLIGHT_ACCOUNT_DELETION_BACKUP_RETENTION_DAYS": "1",
-              "STRAYLIGHT_BACKUP_RETENTION_DAYS": "1",
-              "STRAYLIGHT_METRICS_ENABLED": "false",
+              "BRUNN_MINIO_BUCKET": "brunn",
+              "BRUNN_MINIO_REGION": "us-east-1",
+              "BRUNN_MINIO_ACCESS_KEY": value("app_", 12),
+              "BRUNN_MINIO_SECRET_KEY": value("app_secret_"),
+              "BRUNN_CONTINUATION_SIGNING_KEY": value("continuation_", 32),
+              "BRUNN_EMBEDDING_PROVIDER": "hashing",
+              "BRUNN_ALLOW_DEGRADED_EMBEDDINGS": "true",
+              "BRUNN_EMBEDDING_DIMENSIONS": "1536",
+              "BRUNN_DREAM_SCHEDULER_ENABLED": "false",
+              "BRUNN_DREAM_SCHEDULER_POLL_SECONDS": "1",
+              "BRUNN_DREAM_INACTIVITY_SECONDS": "1",
+              "BRUNN_DREAM_COOLDOWN_SECONDS": "1",
+              "BRUNN_DREAM_DIRTY_THRESHOLD": "1",
+              "BRUNN_DEV_USER_REF": "user:ci",
+              "BRUNN_DEV_USER_NAME": "CI alpha safety user",
+              "BRUNN_DEV_READ_WRITE_TOKEN": value("sl_ci_rw_", 30),
+              "BRUNN_DEV_READ_ONLY_TOKEN": value("sl_ci_ro_", 30),
+              "BRUNN_ACCOUNT_DELETION_BACKUP_RETENTION_DAYS": "1",
+              "BRUNN_BACKUP_RETENTION_DAYS": "1",
+              "BRUNN_METRICS_ENABLED": "false",
               "DD_ENV": "ci",
               "DD_VERSION": os.environ["GITHUB_SHA"],
           }
@@ -178,20 +178,20 @@ jobs:
         run: >-
           python3 tests/live_runtime_safety.py
           --env-file ci.env
-          --project straylight
+          --project brunn
           --timeout 180
       - name: Current-schema rollback compatibility
         env:
           ENV_FILE: ci.env
           COMPOSE_OVERRIDE_FILE: ""
-        run: scripts/verify-rollback-compatibility.sh straylight-api:local
+        run: scripts/verify-rollback-compatibility.sh brunn-api:local
       - name: Coordinated backup and isolated restore
         run: |
           set -euo pipefail
-          backup_root="$RUNNER_TEMP/straylight-backups"
-          backup_log="$RUNNER_TEMP/straylight-backup.log"
+          backup_root="$RUNNER_TEMP/brunn-backups"
+          backup_log="$RUNNER_TEMP/brunn-backup.log"
           ENV_FILE="$PWD/ci.env" \
-            STRAYLIGHT_BACKUP_RETENTION_DAYS=1 \
+            BRUNN_BACKUP_RETENTION_DAYS=1 \
             scripts/backup.sh "$backup_root" | tee "$backup_log"
           backup_dir=$(sed -n 's/^coordinated backup complete: //p' "$backup_log")
           test -n "$backup_dir"
@@ -229,13 +229,13 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Build release images
         run: |
-          docker build --file apps/api/Dockerfile --tag straylight-api:ci .
-          docker build --file apps/web/Dockerfile --tag straylight-web:ci apps/web
-          docker build --file apps/mcp/Dockerfile --tag straylight-mcp:ci apps/mcp
-          docker build --file infra/postgres/Dockerfile --tag straylight-postgres:ci infra/postgres
-          docker build --file infra/minio/Dockerfile --tag straylight-minio:ci infra/minio
-          docker build --file infra/minio-client/Dockerfile --tag straylight-minio-client:ci infra/minio-client
-          docker build --file infra/caddy/Dockerfile --tag straylight-caddy:ci infra/caddy
+          docker build --file apps/api/Dockerfile --tag brunn-api:ci .
+          docker build --file apps/web/Dockerfile --tag brunn-web:ci apps/web
+          docker build --file apps/mcp/Dockerfile --tag brunn-mcp:ci apps/mcp
+          docker build --file infra/postgres/Dockerfile --tag brunn-postgres:ci .
+          docker build --file infra/minio/Dockerfile --tag brunn-minio:ci infra/minio
+          docker build --file infra/minio-client/Dockerfile --tag brunn-minio-client:ci infra/minio-client
+          docker build --file infra/caddy/Dockerfile --tag brunn-caddy:ci infra/caddy
       - name: Prepare supply-chain evidence directories
         run: mkdir -p release-scans
       - name: Scan repository
@@ -265,7 +265,7 @@ jobs:
               --volume "$PWD/release-scans:/output" \
               aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f \
               image --exit-code 1 --severity HIGH,CRITICAL --format json \
-              --output "/output/${image}.json" "straylight-${image}:ci"; then
+              --output "/output/${image}.json" "brunn-${image}:ci"; then
               printf '%s\n' PASS >"release-scans/${image}.status"
             else
               printf '%s\n' FAIL >"release-scans/${image}.status"
@@ -276,7 +276,7 @@ jobs:
               --volume "$PWD/release-sboms:/output" \
               aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f \
               image --format cyclonedx --output "/output/${image}.cdx.json" \
-              "straylight-${image}:ci"
+              "brunn-${image}:ci"
           done
           test -z "$failed" || {
             echo "release image vulnerability gate failed:$failed" >&2
@@ -291,7 +291,7 @@ jobs:
             config --format json |
             jq -r '.services[].image' |
             LC_ALL=C sort -u |
-            grep -v '^straylight-' >vendor-images.txt
+            grep -v '^brunn-' >vendor-images.txt
           index=0
           while IFS= read -r image; do
             index=$((index + 1))

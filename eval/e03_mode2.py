@@ -32,8 +32,8 @@ from eval.e03_mode3 import (  # noqa: E402
 
 MOCK = PROJECT_ROOT / "tests" / "mock_openai_embeddings.py"
 PERFORMANCE = PROJECT_ROOT / "performance_eval.py"
-SCHEMA = "straylight-e03-mode2-orchestration@v1"
-MOCK_HEALTH_SCHEMA = "straylight-mock-openai-embeddings-health@v1"
+SCHEMA = "brunn-e03-mode2-orchestration@v1"
+MOCK_HEALTH_SCHEMA = "brunn-mock-openai-embeddings-health@v1"
 
 
 def run_command(
@@ -206,19 +206,19 @@ def endpoint_contract(args: argparse.Namespace) -> dict[str, Any]:
                 == args.expected_openai_base_url
             ),
             "provider": (
-                environment.get("STRAYLIGHT_EMBEDDING_PROVIDER", "openai")
+                environment.get("BRUNN_EMBEDDING_PROVIDER", "openai")
                 == "openai"
             ),
             "exact_model": (
                 environment.get(
-                    "STRAYLIGHT_EMBEDDING_MODEL",
+                    "BRUNN_EMBEDDING_MODEL",
                     E03_EMBEDDING_MODELS["mode2"],
                 )
                 == E03_EMBEDDING_MODELS["mode2"]
             ),
             "exact_dimensions": (
                 environment.get(
-                    "STRAYLIGHT_EMBEDDING_DIMENSIONS",
+                    "BRUNN_EMBEDDING_DIMENSIONS",
                     str(E03_EMBEDDING_DIMENSIONS),
                 )
                 == str(E03_EMBEDDING_DIMENSIONS)
@@ -523,7 +523,7 @@ def annotate_result(
         value = json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError) as error:
         value = {
-            "schema": "straylight-performance-eval@v2",
+            "schema": "brunn-performance-eval@v2",
             "pass": False,
             "errors": [
                 {

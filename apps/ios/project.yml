@@ -1,4 +1,4 @@
-name: Straylight
+name: Brunn
 
 options:
   minimumXcodeGenVersion: 2.45.4
@@ -19,60 +19,60 @@ settings:
     TARGETED_DEVICE_FAMILY: "1"
 
 targets:
-  Straylight:
+  Brunn:
     type: application
     platform: iOS
     sources:
-      - path: Straylight
+      - path: Brunn
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.rourkem.straylight
-        PRODUCT_NAME: Straylight
+        PRODUCT_BUNDLE_IDENTIFIER: com.rourkem.brunn
+        PRODUCT_NAME: Brunn
         DEVELOPMENT_TEAM: 8WW8JUE95L
-        INFOPLIST_FILE: Straylight/Resources/Info.plist
-        CODE_SIGN_ENTITLEMENTS: Straylight/Resources/Straylight.entitlements
+        INFOPLIST_FILE: Brunn/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Brunn/Resources/Brunn.entitlements
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
       configs:
         Debug:
-          STRAYLIGHT_APNS_ENVIRONMENT: development
+          BRUNN_APNS_ENVIRONMENT: development
         Release:
-          STRAYLIGHT_APNS_ENVIRONMENT: production
+          BRUNN_APNS_ENVIRONMENT: production
 
-  StraylightTests:
+  BrunnTests:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - path: StraylightTests
+      - path: BrunnTests
     dependencies:
-      - target: Straylight
+      - target: Brunn
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.rourkem.straylight.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.rourkem.brunn.tests
         GENERATE_INFOPLIST_FILE: YES
 
-  StraylightUITests:
+  BrunnUITests:
     type: bundle.ui-testing
     platform: iOS
     sources:
-      - path: StraylightUITests
+      - path: BrunnUITests
     dependencies:
-      - target: Straylight
+      - target: Brunn
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.rourkem.straylight.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: com.rourkem.brunn.uitests
         GENERATE_INFOPLIST_FILE: YES
 
 schemes:
-  Straylight:
+  Brunn:
     build:
       targets:
-        Straylight: all
-        StraylightTests: [test]
-        StraylightUITests: [test]
+        Brunn: all
+        BrunnTests: [test]
+        BrunnUITests: [test]
     test:
       gatherCoverageData: true
       targets:
-        - name: StraylightTests
-        - name: StraylightUITests
+        - name: BrunnTests
+        - name: BrunnUITests

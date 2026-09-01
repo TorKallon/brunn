@@ -12,18 +12,18 @@ interface SendReceipt {
   };
 }
 
-const email = requiredEnvironment("STRAYLIGHT_GATE12_EMAIL");
-const password = requiredEnvironment("STRAYLIGHT_GATE12_PASSWORD");
-const baseUrl = requiredEnvironment("STRAYLIGHT_GATE12_BASE_URL");
+const email = requiredEnvironment("BRUNN_GATE12_EMAIL");
+const password = requiredEnvironment("BRUNN_GATE12_PASSWORD");
+const baseUrl = requiredEnvironment("BRUNN_GATE12_BASE_URL");
 const reboundCredentialName = requiredEnvironment(
-  "STRAYLIGHT_GATE12_REBIND_CREDENTIAL_NAME",
+  "BRUNN_GATE12_REBIND_CREDENTIAL_NAME",
 );
 const reboundCredential = requiredEnvironment(
-  "STRAYLIGHT_GATE12_REBIND_CREDENTIAL",
+  "BRUNN_GATE12_REBIND_CREDENTIAL",
 );
-const echoAgentId = process.env.STRAYLIGHT_GATE12_ECHO_AGENT_ID?.trim() || "echo";
+const echoAgentId = process.env.BRUNN_GATE12_ECHO_AGENT_ID?.trim() || "echo";
 const echoDisplayName =
-  process.env.STRAYLIGHT_GATE12_ECHO_DISPLAY_NAME?.trim() || "Echo";
+  process.env.BRUNN_GATE12_ECHO_DISPLAY_NAME?.trim() || "Echo";
 
 test("gate 12d: authenticated Web messaging and credential-derived sender", async ({
   page,
@@ -197,8 +197,8 @@ async function browserSessionJson(
         .map((value) => value.trim())
         .find(
           (value) =>
-            value.startsWith("__Host-straylight_csrf=") ||
-            value.startsWith("straylight_csrf="),
+            value.startsWith("__Host-brunn_csrf=") ||
+            value.startsWith("brunn_csrf="),
         );
       if (!csrfCookie) {
         throw new Error("The signed-in page did not receive a CSRF cookie");
