@@ -17,6 +17,7 @@ use crate::{
     embeddings::{SharedEmbedder, from_config as embedder_from_config},
     error::{ApiError, ApiResult},
     foreground_latency::ForegroundLatencyTracker,
+    migration_checksum_bridge,
     object_store::ObjectStore,
     quota::{PreauthRateLimiter, RequestRateLimiter},
     semantic_policy::SemanticRuntime,
@@ -275,6 +276,8 @@ pub async fn migrate_and_bootstrap(config: &Config) -> ApiResult<()> {
         .as_deref()
         .ok_or_else(|| ApiError::configuration("DATABASE_URL_ADMIN is required for migrations"))?;
     let admin = pool(admin_url, 2, "brunn-migrate").await?;
+    let bridge = migration_checksum_bridge::reconcile(&admin).await?;
+    tracing::info!(?bridge, "historical migration checksum bridge complete");
     sqlx::migrate!("./migrations").run(&admin).await?;
     bootstrap_dev_identity(&admin, config).await?;
     Ok(())

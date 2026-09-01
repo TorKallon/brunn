@@ -27,6 +27,8 @@ pub mod ingest;
 pub mod logging;
 pub mod messaging_protocol;
 pub mod messaging_service;
+mod migration_checksum_bridge;
+mod migration_checksum_map;
 pub mod models;
 pub mod notification_service;
 pub mod object_store;
