@@ -202,19 +202,6 @@ active_deletions=$(docker exec "$db_container" psql \
   echo "cannot snapshot while $active_deletions account deletion request(s) are mutating canonical data" >&2
   exit 1
 }
-active_uploads=$(docker exec "$db_container" psql \
-  --username "$db_user" \
-  --dbname "$db_name" \
-  --tuples-only \
-  --no-align \
-  --no-psqlrc \
-  --command "SELECT count(*) FROM brunn.asset_uploads WHERE status IN ('uploading','verifying')" |
-  tr -d '[:space:]')
-[ "$active_uploads" = "0" ] || {
-  echo "cannot snapshot while $active_uploads resumable upload(s) are incomplete" >&2
-  exit 1
-}
-
 echo "pinning legacy database references to exact object versions"
 compose run --rm -T migrate object-store-backup pin-database \
   >"$work_dir/database-object-pinning.json"

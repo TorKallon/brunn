@@ -79,6 +79,9 @@ class RecoveryContractTests(unittest.TestCase):
             recovery.count("application/x-brunn-deleted"),
             6,
         )
+        self.assertIn("FROM brunn.entry_versions", reference_inventory)
+        self.assertIn("content_sha256", reference_inventory)
+        self.assertNotIn("FROM brunn.asset_uploads", reference_inventory)
         self.assertNotIn("WHERE size_bytes > 0", reference_inventory)
 
     def test_restore_drill_retains_resumable_state_and_reverifies(self) -> None:

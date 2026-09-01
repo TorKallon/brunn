@@ -23,20 +23,6 @@ WITH authoritative_candidates AS (
   UNION ALL
 
   SELECT
-    'asset_uploads.canonical',
-    user_id,
-    current_setting('brunn.backup_object_bucket'),
-    canonical_object_key,
-    canonical_object_version_id,
-    'sha256:' || expected_content_hash,
-    expected_size_bytes
-  FROM brunn.asset_uploads
-  WHERE status IN ('completed', 'consumed')
-    AND canonical_object_key IS NOT NULL
-
-  UNION ALL
-
-  SELECT
     'account_exports',
     user_id,
     current_setting('brunn.backup_object_bucket'),
@@ -47,6 +33,19 @@ WITH authoritative_candidates AS (
   FROM brunn.account_exports
   WHERE status = 'ready'
     AND object_key IS NOT NULL
+
+  UNION ALL
+
+  SELECT
+    'entry_versions',
+    user_id,
+    current_setting('brunn.backup_object_bucket'),
+    object_key,
+    object_version_id,
+    'sha256:' || content_sha256,
+    size_bytes
+  FROM brunn.entry_versions
+  WHERE object_key IS NOT NULL
 ),
 authoritative_references AS (
   SELECT *

@@ -1196,10 +1196,10 @@ fi
             stop_flag = script.index("writers_stop_attempted=true")
             stop = script.index("compose stop --timeout 30 api worker", stop_flag)
             migrate = script.index("compose run --rm migrate", stop)
-            active_uploads = script.index("active_uploads=", migrate)
+            active_deletions = script.index("active_deletions=", migrate)
             pin = script.index(
                 "object-store-backup pin-database",
-                active_uploads,
+                active_deletions,
             )
             verify = script.index(
                 "object-store-backup verify-database",
@@ -1208,10 +1208,11 @@ fi
             snapshot = script.index("capturing PostgreSQL snapshot", verify)
             self.assertLess(stop_flag, stop)
             self.assertLess(stop, migrate)
-            self.assertLess(migrate, active_uploads)
-            self.assertLess(active_uploads, pin)
+            self.assertLess(migrate, active_deletions)
+            self.assertLess(active_deletions, pin)
             self.assertLess(pin, verify)
             self.assertLess(verify, snapshot)
+            self.assertNotIn("brunn.asset_uploads", script)
             self.assertIn("wait_original_container_ready", script)
             self.assertIn(
                 '.recovery-operation.lock"',
