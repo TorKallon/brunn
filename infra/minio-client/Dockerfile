@@ -3,6 +3,10 @@ FROM golang:1.25.13-bookworm@sha256:e401dae1bf814e29204a8cb7915682e1780951e609ca
 ARG MC_COMMIT=7394ce0dd2a80935aded936b09fa12cbb3cb8096
 ARG MC_RELEASE=RELEASE.2025-08-13T08-35-41Z
 
+# GitHub-hosted runners intermittently reset proxy.golang.org HTTP/2 streams.
+# This affects dependency download only and is not inherited by the runtime stage.
+ENV GODEBUG=http2client=0
+
 WORKDIR /src
 RUN git clone --filter=blob:none https://github.com/minio/mc.git . \
     && git checkout --detach "${MC_COMMIT}" \
