@@ -88,6 +88,11 @@ jobs:
       - name: Development Compose contract
         run: docker compose --env-file .env.example --file compose.yaml config --quiet
       - name: Production Compose contract
+        env:
+          AUTH_EMAIL_FROM: Brunn <login@example.com>
+          BRUNN_APNS_APP_ID: com.rourkem.brunn
+          BRUNN_APNS_KEY_ID: TESTKEY001
+          BRUNN_APNS_TEAM_ID: TESTTEAM01
         run: >-
           docker compose
           --env-file .env.example
@@ -262,9 +267,11 @@ jobs:
           for image in api web mcp postgres minio minio-client caddy; do
             if docker run --rm \
               --volume /var/run/docker.sock:/var/run/docker.sock \
+              --volume "$PWD/.trivyignore.yaml:/workspace/.trivyignore.yaml:ro" \
               --volume "$PWD/release-scans:/output" \
               aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f \
-              image --exit-code 1 --severity HIGH,CRITICAL --format json \
+              image --exit-code 1 --severity HIGH,CRITICAL \
+              --ignorefile /workspace/.trivyignore.yaml --show-suppressed --format json \
               --output "/output/${image}.json" "brunn-${image}:ci"; then
               printf '%s\n' PASS >"release-scans/${image}.status"
             else

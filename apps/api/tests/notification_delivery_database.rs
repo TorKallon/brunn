@@ -165,6 +165,7 @@ async fn insert_installation(
     (installation_id, client_installation_id, token)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn insert_delivery(
     pool: &PgPool,
     user_id: Uuid,

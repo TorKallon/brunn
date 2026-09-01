@@ -172,7 +172,7 @@ fn urgent_is_tiers_one_and_two_and_empty_is_first_class() {
     let as_of = instant(27, 12);
     let ordinary = task("ordinary", 1);
     let empty = rank_tasks(
-        &[ordinary.clone()],
+        std::slice::from_ref(&ordinary),
         &CandidateRequest {
             view: TaskView::Urgent,
             ..request(as_of)

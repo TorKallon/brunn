@@ -162,6 +162,7 @@ fn database_code(error: &sqlx::Error) -> Option<String> {
         .map(|code| code.into_owned())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn write_product(
     tx: &mut Transaction<'_, sqlx::Postgres>,
     principal: &Principal,

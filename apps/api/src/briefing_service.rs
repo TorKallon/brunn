@@ -2340,6 +2340,8 @@ async fn insert_story_urls(
 mod tests {
     use super::*;
 
+    type PublishFieldCapCase = (&'static str, Box<dyn Fn(&mut BriefingPublishRequest)>);
+
     fn fixture_request() -> BriefingPublishRequest {
         BriefingPublishRequest {
             date: "2026-08-01".to_owned(),
@@ -2896,7 +2898,7 @@ mod tests {
 
     #[test]
     fn validation_enforces_publish_field_caps() {
-        let cases: Vec<(&str, Box<dyn Fn(&mut BriefingPublishRequest)>)> = vec![
+        let cases: Vec<PublishFieldCapCase> = vec![
             (
                 "section topic",
                 Box::new(|request| {

@@ -157,15 +157,15 @@ impl QueryEmbeddingCache {
         let mut state = self.inner.lock().unwrap_or_else(|error| error.into_inner());
         state.clock = state.clock.saturating_add(1);
         let clock = state.clock;
-        if !state.entries.contains_key(&key) && state.entries.len() >= self.capacity {
-            if let Some(evicted) = state
+        if !state.entries.contains_key(&key)
+            && state.entries.len() >= self.capacity
+            && let Some(evicted) = state
                 .entries
                 .iter()
                 .min_by_key(|(_, entry)| entry.last_used)
                 .map(|(key, _)| key.clone())
-            {
-                state.entries.remove(&evicted);
-            }
+        {
+            state.entries.remove(&evicted);
         }
         state.entries.insert(
             key,
@@ -322,9 +322,7 @@ impl SemanticRuntime {
             .readiness
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let Some((ready, stored_at)) = readiness.get(&user_id).copied() else {
-            return None;
-        };
+        let (ready, stored_at) = readiness.get(&user_id).copied()?;
         let ttl = if ready {
             READINESS_POSITIVE_TTL
         } else {

@@ -417,6 +417,14 @@ fn credential_access_label(capabilities: &[String]) -> &'static str {
     }
 }
 
+fn parse_uuid_ref(value: &str, expected_prefix: &str) -> ApiResult<Uuid> {
+    let raw = value
+        .strip_prefix(&format!("{expected_prefix}:"))
+        .unwrap_or(value);
+    Uuid::parse_str(raw)
+        .map_err(|_| ApiError::invalid(format!("invalid {expected_prefix} reference")))
+}
+
 #[cfg(test)]
 mod credential_tests {
     use super::{credential_access_label, credential_template, credential_template_for_gate};
@@ -558,12 +566,4 @@ mod credential_tests {
             .collect::<Vec<_>>();
         assert_eq!(credential_access_label(&stored), "dreamer_runner");
     }
-}
-
-fn parse_uuid_ref(value: &str, expected_prefix: &str) -> ApiResult<Uuid> {
-    let raw = value
-        .strip_prefix(&format!("{expected_prefix}:"))
-        .unwrap_or(value);
-    Uuid::parse_str(raw)
-        .map_err(|_| ApiError::invalid(format!("invalid {expected_prefix} reference")))
 }

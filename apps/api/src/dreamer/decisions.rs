@@ -33,17 +33,17 @@ pub fn parse(content: &str) -> Decisions {
         if line.contains("hold-advance") {
             decisions.hold_advance = true;
         }
-        if let Some(rest) = split_after_keyword(line, "veto") {
-            if let Some(target) = rest.split_whitespace().find(|token| is_veto_target(token)) {
-                decisions
-                    .vetoes
-                    .insert(target.trim_end_matches(['.', ',', ';']).to_owned());
-            }
+        if let Some(rest) = split_after_keyword(line, "veto")
+            && let Some(target) = rest.split_whitespace().find(|token| is_veto_target(token))
+        {
+            decisions
+                .vetoes
+                .insert(target.trim_end_matches(['.', ',', ';']).to_owned());
         }
-        if let Some(rest) = split_after_keyword(line, "alias") {
-            if let Some(alias) = parse_alias(rest) {
-                decisions.aliases.push(alias);
-            }
+        if let Some(rest) = split_after_keyword(line, "alias")
+            && let Some(alias) = parse_alias(rest)
+        {
+            decisions.aliases.push(alias);
         }
     }
     decisions

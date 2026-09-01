@@ -11,7 +11,7 @@ RUN git clone --filter=blob:none https://github.com/pgvector/pgvector.git . \
     && make OPTFLAGS="" with_llvm=no \
     && make install with_llvm=no
 
-FROM golang:1.26.5-alpine3.23@sha256:622e56dbc11a8cfe87cafa2331e9a201877271cbff918af53d3be315f3da88cc AS gosu-build
+FROM golang:1.26.6-alpine3.23@sha256:e57c41c1d5864341031181b0db34b9a537bb5773eb6428e4e5bdaea0f9135406 AS gosu-build
 
 ARG GOSU_COMMIT=6456aaa0f3c854d199d0f037f068eb97515b7513
 ARG GOSU_RELEASE=1.19
@@ -29,6 +29,7 @@ ARG BRUNN_BUILD_REVISION=unknown
 LABEL org.opencontainers.image.title="Brunn PostgreSQL with pgvector" \
       org.opencontainers.image.revision="${BRUNN_BUILD_REVISION}" \
       org.opencontainers.image.version="17.10-pgvector0.8.5"
+RUN apk upgrade --no-cache libcrypto3 libssl3
 COPY --from=pgvector-build /usr/local/lib/postgresql/vector.so /usr/local/lib/postgresql/vector.so
 COPY --from=pgvector-build /usr/local/share/postgresql/extension/vector* /usr/local/share/postgresql/extension/
 COPY --from=gosu-build /out/gosu /usr/local/bin/gosu

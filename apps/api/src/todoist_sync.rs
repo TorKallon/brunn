@@ -41,6 +41,8 @@ const TODOIST_COMPLETION_MAX_RANGE: ChronoDuration = ChronoDuration::days(89);
 pub(crate) const TODOIST_POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const TODOIST_LEASE_DURATION: Duration = Duration::from_secs(2 * 60);
 
+type CompletionWindow = (DateTime<Utc>, DateTime<Utc>);
+
 /// Secret-bearing token wrapper. It intentionally implements neither Display,
 /// Serialize, nor Clone, and its Debug representation is always redacted.
 pub(crate) struct TodoistToken(String);
@@ -366,7 +368,7 @@ pub(crate) async fn fetch_logical_pull(
 fn todoist_completion_windows(
     since: DateTime<Utc>,
     until: DateTime<Utc>,
-) -> Result<Vec<(DateTime<Utc>, DateTime<Utc>)>, TodoistClientError> {
+) -> Result<Vec<CompletionWindow>, TodoistClientError> {
     if since >= until {
         return Err(TodoistClientError::new("todoist_completion_window_invalid"));
     }
@@ -995,20 +997,14 @@ pub(crate) fn map_item(item: &TodoistItem, owner_timezone: Tz) -> ApiResult<Mapp
             Some(local_end_of_day(date, owner_timezone)?),
             Some("todoist_deadline"),
         )
-    } else if item.priority == 4 && item.due.is_some() {
+    } else if let Some(due) = item.due.as_ref().filter(|_| item.priority == 4) {
         (
-            Some(due_instant(
-                item.due.as_ref().expect("checked due"),
-                owner_timezone,
-            )?),
+            Some(due_instant(due, owner_timezone)?),
             Some("todoist_priority_p1"),
         )
-    } else if hard_label && item.due.is_some() {
+    } else if let Some(due) = item.due.as_ref().filter(|_| hard_label) {
         (
-            Some(due_instant(
-                item.due.as_ref().expect("checked due"),
-                owner_timezone,
-            )?),
+            Some(due_instant(due, owner_timezone)?),
             Some("todoist_hard_label"),
         )
     } else {

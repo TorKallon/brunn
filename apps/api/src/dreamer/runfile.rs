@@ -29,7 +29,6 @@ pub fn applied_paths(content: &str) -> Vec<(String, i64)> {
         .filter_map(|line| {
             let token = line
                 .trim_start_matches(['-', '*'])
-                .trim()
                 .split_whitespace()
                 .next()?;
             let token = token

@@ -421,11 +421,11 @@ impl Dreamer {
 
         // 10. Run-file fallback: the audit trail must exist even when codex
         // died without writing it.
-        let run_file = self.workspace.read_markdown(&run_file_path).await;
-        let run_file = match run_file {
-            Ok(file) => file,
-            Err(_) => None,
-        };
+        let run_file = self
+            .workspace
+            .read_markdown(&run_file_path)
+            .await
+            .unwrap_or_default();
         if run_file.is_none() {
             let (status_label, detail) = match &exec {
                 ExecResult::Finished => ("failed", "codex finished without writing a run file."),
@@ -479,13 +479,13 @@ impl Dreamer {
         }
 
         // 12. Persist refreshed tokens back to the vault.
-        if let Some(refreshed) = run_home.read_auth() {
-            if refreshed != auth_json {
-                let _ = self
-                    .runner
-                    .secret_put(AUTH_SECRET, &refreshed, "Codex auth.json for the dreamer")
-                    .await;
-            }
+        if let Some(refreshed) = run_home.read_auth()
+            && refreshed != auth_json
+        {
+            let _ = self
+                .runner
+                .secret_put(AUTH_SECRET, &refreshed, "Codex auth.json for the dreamer")
+                .await;
         }
 
         report.outcome = match exec {

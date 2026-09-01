@@ -382,7 +382,7 @@ async fn task_schema_forces_rls_seeds_registries_and_scopes_entry_writes() {
     .fetch_all(&mut *scoped_read_tx)
     .await
     .expect("read entries through task-only RLS");
-    assert_eq!(visible_paths, [path.clone()]);
+    assert_eq!(visible_paths, std::slice::from_ref(&path));
     let visible_versions = sqlx::query_scalar::<_, Uuid>(
         "SELECT id FROM brunn.entry_versions WHERE user_id=$1 ORDER BY id",
     )

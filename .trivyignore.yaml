@@ -1,0 +1,31 @@
+vulnerabilities:
+  - id: CVE-2026-33322
+    purls:
+      - "pkg:golang/github.com/minio/minio@v0.0.0-20251015172955-9e49d5e7a648%2Bdirty"
+    expired_at: 2026-10-01
+    statement: Upstream archived OSS release has no fix. Brunn production uses AWS S3; this MinIO artifact is restricted to localhost development and isolated CI. Reassess before expiry.
+  - id: CVE-2026-33419
+    purls:
+      - "pkg:golang/github.com/minio/minio@v0.0.0-20251015172955-9e49d5e7a648%2Bdirty"
+    expired_at: 2026-10-01
+    statement: Upstream archived OSS release has no fix. Brunn production uses AWS S3; this MinIO artifact is restricted to localhost development and isolated CI. Reassess before expiry.
+  - id: CVE-2026-34204
+    purls:
+      - "pkg:golang/github.com/minio/minio@v0.0.0-20251015172955-9e49d5e7a648%2Bdirty"
+    expired_at: 2026-10-01
+    statement: Upstream archived OSS release has no fix. Brunn production uses AWS S3; this MinIO artifact is restricted to localhost development and isolated CI. Reassess before expiry.
+  - id: CVE-2026-39414
+    purls:
+      - "pkg:golang/github.com/minio/minio@v0.0.0-20251015172955-9e49d5e7a648%2Bdirty"
+    expired_at: 2026-10-01
+    statement: Upstream archived OSS release has no fix. Brunn production uses AWS S3; this MinIO artifact is restricted to localhost development and isolated CI. Reassess before expiry.
+  - id: CVE-2026-40344
+    purls:
+      - "pkg:golang/github.com/minio/minio@v0.0.0-20251015172955-9e49d5e7a648%2Bdirty"
+    expired_at: 2026-10-01
+    statement: Upstream archived OSS release has no fix. Brunn production uses AWS S3; this MinIO artifact is restricted to localhost development and isolated CI. Reassess before expiry.
+  - id: CVE-2026-41145
+    purls:
+      - "pkg:golang/github.com/minio/minio@v0.0.0-20251015172955-9e49d5e7a648%2Bdirty"
+    expired_at: 2026-10-01
+    statement: Upstream archived OSS release has no fix. Brunn production uses AWS S3; this MinIO artifact is restricted to localhost development and isolated CI. Reassess before expiry.

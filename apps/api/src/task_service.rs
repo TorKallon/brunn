@@ -39,6 +39,8 @@ struct Cell<'a> {
     set_at: Option<&'a str>,
 }
 
+type ParsedCost = (Option<i64>, Option<String>, bool, Option<NaiveDate>);
+
 #[derive(Clone, Debug)]
 struct TaskProjection {
     task_id: Uuid,
@@ -1211,9 +1213,7 @@ fn parse_projection(metadata: &Value) -> ApiResult<TaskProjection> {
     })
 }
 
-fn parse_cost(
-    task: &Map<String, Value>,
-) -> ApiResult<(Option<i64>, Option<String>, bool, Option<NaiveDate>)> {
+fn parse_cost(task: &Map<String, Value>) -> ApiResult<ParsedCost> {
     let Some(cell) = cell(task, "cost_of_delay")? else {
         return Ok((None, None, false, None));
     };
@@ -1580,8 +1580,8 @@ fn damerau_levenshtein(left: &str, right: &str) -> usize {
     for (index, row) in distances.iter_mut().enumerate() {
         row[0] = index;
     }
-    for index in 0..=right.len() {
-        distances[0][index] = index;
+    for (index, distance) in distances[0].iter_mut().enumerate() {
+        *distance = index;
     }
     for left_index in 1..=left.len() {
         for right_index in 1..=right.len() {

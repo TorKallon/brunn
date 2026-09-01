@@ -1,6 +1,8 @@
 #[path = "../src/messaging_protocol.rs"]
 mod messaging_protocol;
 
+const _: &str = messaging_protocol::CONTINUATION_SYSTEM_BODY;
+
 use chrono::{TimeZone, Utc};
 use messaging_protocol::{
     CanonicalMessage, ConversationHeader, ConversationKind, ConversationParticipant,

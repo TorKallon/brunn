@@ -80,3 +80,18 @@ Building the Agent image is not enough to activate this check. Deploy the
 `datadog-agent` Railway service, verify `http_check` under `agent status`, then
 run `make datadog-configure` with `DD_ENV` matching the Agent's deployment tag.
 This repository change does not deploy or create monitors by itself.
+
+## Railway rollout order
+
+The Rust DogStatsD exporter resolves `datadog-agent.railway.internal` when the
+process starts. A replacement Agent deployment can receive a new private
+address, while an already-running API or worker continues sending UDP packets
+to the address it resolved earlier. Deploy or restart the Agent first, then
+wait for the Agent health check and a local DogStatsD canary to pass before
+deploying the API and worker so both emitters resolve the current address.
+
+Close the rollout by checking `agent status` for increasing DogStatsD packet
+counts and confirming a recent `brunn.runtime.alive` series for both
+`component:api` and `component:worker` with the intended `env`, `service`, and
+`version` tags. The `version` value must equal the exact deployed Git SHA.
+Treat either missing series or a mismatched SHA as a failed deployment gate.

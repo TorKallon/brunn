@@ -83,22 +83,22 @@ async fn mock_read(State(shared): State<Shared>, Json(request): Json<Value>) -> 
 async fn mock_write(State(shared): State<Shared>, Json(request): Json<Value>) -> Response {
     let mut state = shared.lock().expect("mock state");
     let path = request["path"].as_str().unwrap_or_default().to_owned();
-    if let Some(remaining) = state.conflicts.get_mut(&path) {
-        if *remaining > 0 {
-            *remaining -= 1;
-            let actual = state.files.get(&path).map_or(0, |(_, v)| *v);
-            return (
-                StatusCode::CONFLICT,
-                Json(json!({
-                    "error": {
-                        "code": "entry_version_conflict",
-                        "message": "the entry changed since it was read",
-                        "details": {"path": path, "actual_version": actual}
-                    }
-                })),
-            )
-                .into_response();
-        }
+    if let Some(remaining) = state.conflicts.get_mut(&path)
+        && *remaining > 0
+    {
+        *remaining -= 1;
+        let actual = state.files.get(&path).map_or(0, |(_, v)| *v);
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "error": {
+                    "code": "entry_version_conflict",
+                    "message": "the entry changed since it was read",
+                    "details": {"path": path, "actual_version": actual}
+                }
+            })),
+        )
+            .into_response();
     }
     if let Some(expected) = request["expected_version"].as_i64() {
         let actual = state.files.get(&path).map_or(0, |(_, v)| *v);

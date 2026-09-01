@@ -175,6 +175,7 @@ async fn insert_installation(pool: &PgPool, principal: &Principal) {
     .expect("insert guard delivery installation");
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn insert_task(
     pool: &PgPool,
     principal: &Principal,

@@ -275,7 +275,7 @@ pub(crate) async fn publish_in_tx(
     delivery_available_at: Option<DateTime<Utc>>,
 ) -> ApiResult<PublishTxResult> {
     validate_publish_for_access(request, access)?;
-    let request_hash = canonical_request_hash(&request)?;
+    let request_hash = canonical_request_hash(request)?;
     let occurred_at = request.occurred_at.unwrap_or_else(Utc::now);
     let expires_at = effective_notification_expiry(occurred_at, request.expires_at);
     let source = request
@@ -935,7 +935,7 @@ fn validate_installation(request: &InstallationRequest) -> ApiResult<()> {
     let token = request.device_token.trim();
     if token.len() < 32
         || token.len() > 400
-        || token.len() % 2 != 0
+        || !token.len().is_multiple_of(2)
         || !token.bytes().all(|value| value.is_ascii_hexdigit())
     {
         return Err(ApiError::invalid(
@@ -1999,7 +1999,7 @@ fn retry_delay_seconds(attempt_number: i32, retry_after_seconds: Option<i64>) ->
 }
 
 fn provider_block_delay_seconds(retry_after_seconds: Option<i64>) -> i64 {
-    retry_after_seconds.unwrap_or(0).max(60).min(3_600)
+    retry_after_seconds.unwrap_or(0).clamp(60, 3_600)
 }
 
 fn sanitize_provider_code(value: &str) -> String {
