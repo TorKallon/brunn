@@ -258,6 +258,7 @@ class UploadDeletionLifecycleContractTest(unittest.TestCase):
             self.account,
         )
         self.assertIn("record_backup_erasure_proof", self.live_alpha)
+        self.assertIn('str(env_file.resolve())', self.live_alpha)
 
     def test_unready_backup_retention_does_not_starve_actionable_deletions(self) -> None:
         claim = self.account.index("async fn claim_account_deletion")

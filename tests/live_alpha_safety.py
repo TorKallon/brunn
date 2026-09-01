@@ -135,7 +135,7 @@ def set_backup_deadline_expired(user_id: uuid.UUID) -> None:
         raise SmokeFailure(f"could not expire test backup deadline: {result.stderr.strip()}")
 
 
-def record_backup_erasure_proof(user_id: uuid.UUID) -> None:
+def record_backup_erasure_proof(user_id: uuid.UUID, env_file: Path) -> None:
     marker = f"live-alpha-safety:{user_id}"
     receipt_sha256 = hashlib.sha256(marker.encode("ascii")).hexdigest()
     watermark = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -143,6 +143,8 @@ def record_backup_erasure_proof(user_id: uuid.UUID) -> None:
         [
             "docker",
             "compose",
+            "--env-file",
+            str(env_file.resolve()),
             "run",
             "--rm",
             "-T",
@@ -671,7 +673,7 @@ def run(args: argparse.Namespace, sanitizer: Sanitizer) -> None:
     )
     assert_nonreceipt_user_rows_are_purged(user_id)
     set_backup_deadline_expired(user_id)
-    record_backup_erasure_proof(user_id)
+    record_backup_erasure_proof(user_id, args.env_file)
 
     deadline = time.monotonic() + args.poll_timeout
     while time.monotonic() < deadline:

@@ -293,6 +293,11 @@ jobs:
           }
       - name: Inventory third-party runtime images
         if: always()
+        env:
+          AUTH_EMAIL_FROM: Brunn <login@example.com>
+          BRUNN_APNS_APP_ID: com.rourkem.brunn
+          BRUNN_APNS_KEY_ID: TESTKEY001
+          BRUNN_APNS_TEAM_ID: TESTTEAM01
         run: |
           mkdir -p vendor-scans vendor-sboms
           docker compose --env-file .env.example --profile '*' \
