@@ -319,6 +319,7 @@ test("access expiry and refresh rotation enforce resource, client, and scope nar
     scopesSupported: ["memory:read", "memory:write"],
     accessTokenTtlSeconds: 60,
     refreshTokenTtlSeconds: 600,
+    refreshTokenReplayWindowSeconds: 1,
   });
   const client = await registerPublicClient(provider.clientsStore, REDIRECT_URI);
   const otherClient = await registerPublicClient(
@@ -355,13 +356,23 @@ test("access expiry and refresh rotation enforce resource, client, and scope nar
   );
 
   now += 30_000;
-  const narrowed = await provider.exchangeRefreshToken(
-    client,
-    originalRefresh,
-    ["memory:read"],
-    RESOURCE,
-  );
+  const [narrowed, replayed] = await Promise.all([
+    provider.exchangeRefreshToken(client, originalRefresh, ["memory:read"], RESOURCE),
+    provider.exchangeRefreshToken(client, originalRefresh, ["memory:read"], RESOURCE),
+  ]);
   assert.deepEqual((await provider.verifyAccessToken(narrowed.access_token)).scopes, ["memory:read"]);
+  assert.deepEqual(replayed, narrowed);
+  await assert.rejects(
+    provider.exchangeRefreshToken(
+      client,
+      originalRefresh,
+      ["memory:write"],
+      RESOURCE,
+    ),
+    InvalidGrantError,
+  );
+
+  now += 2_000;
   await assert.rejects(
     provider.exchangeRefreshToken(client, originalRefresh, ["memory:read"], RESOURCE),
     InvalidGrantError,
@@ -376,7 +387,7 @@ test("access expiry and refresh rotation enforce resource, client, and scope nar
     InvalidScopeError,
   );
 
-  now += 31_000;
+  now += 29_000;
   await assert.rejects(provider.verifyAccessToken(original.access_token), InvalidTokenError);
   assert.equal(
     (await provider.verifyAccessToken(narrowed.access_token)).extra?.[UPSTREAM_TOKEN_EXTRA_KEY],
@@ -403,6 +414,7 @@ function createProvider(overrides: Partial<{
   authorizationCodeTtlSeconds: number;
   accessTokenTtlSeconds: number;
   refreshTokenTtlSeconds: number;
+  refreshTokenReplayWindowSeconds: number;
   now: () => number;
 }> = {}): BrunnOAuthProvider {
   return new BrunnOAuthProvider({
@@ -413,6 +425,7 @@ function createProvider(overrides: Partial<{
     authorizationCodeTtlSeconds: overrides.authorizationCodeTtlSeconds ?? 300,
     accessTokenTtlSeconds: overrides.accessTokenTtlSeconds ?? 3_600,
     refreshTokenTtlSeconds: overrides.refreshTokenTtlSeconds ?? 86_400,
+    refreshTokenReplayWindowSeconds: overrides.refreshTokenReplayWindowSeconds ?? 60,
     now: overrides.now ?? (() => Date.UTC(2026, 6, 31)),
   });
 }

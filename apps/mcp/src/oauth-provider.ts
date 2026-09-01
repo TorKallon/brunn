@@ -40,6 +40,7 @@ const DEFAULT_SCOPES = ["mcp:tools"] as const;
 const DEFAULT_AUTHORIZATION_CODE_TTL_SECONDS = 5 * 60;
 const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 60 * 60;
 const DEFAULT_REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
+const DEFAULT_REFRESH_TOKEN_REPLAY_WINDOW_SECONDS = 60;
 
 export const UPSTREAM_TOKEN_EXTRA_KEY = "upstreamToken";
 
@@ -55,6 +56,7 @@ export interface BrunnOAuthProviderOptions {
   authorizationCodeTtlSeconds?: number;
   accessTokenTtlSeconds?: number;
   refreshTokenTtlSeconds?: number;
+  refreshTokenReplayWindowSeconds?: number;
   now?: Clock;
 }
 
@@ -90,6 +92,15 @@ interface OAuthTokenEnvelope {
   clientId: string;
   scopes: string[];
   resource: string;
+}
+
+interface ConsumedRefreshToken {
+  expiresAt: number;
+  replayUntil: number;
+  clientId: string;
+  resource: string;
+  scopes: string[];
+  tokens?: OAuthTokens;
 }
 
 /**
@@ -184,10 +195,11 @@ export class BrunnOAuthProvider implements OAuthServerProvider {
   private readonly authorizationCodeTtlSeconds: number;
   private readonly accessTokenTtlSeconds: number;
   private readonly refreshTokenTtlSeconds: number;
+  private readonly refreshTokenReplayWindowSeconds: number;
   private readonly now: Clock;
   private readonly instanceId = randomUUID();
   private readonly consumedAuthorizationCodes = new Map<string, number>();
-  private readonly consumedRefreshTokens = new Map<string, number>();
+  private readonly consumedRefreshTokens = new Map<string, ConsumedRefreshToken>();
 
   constructor(options: BrunnOAuthProviderOptions) {
     this.sealer = new AesGcmSealer(options.secret);
@@ -205,6 +217,10 @@ export class BrunnOAuthProvider implements OAuthServerProvider {
     this.refreshTokenTtlSeconds = validateTtl(
       "refreshTokenTtlSeconds",
       options.refreshTokenTtlSeconds ?? DEFAULT_REFRESH_TOKEN_TTL_SECONDS,
+    );
+    this.refreshTokenReplayWindowSeconds = validateTtl(
+      "refreshTokenReplayWindowSeconds",
+      options.refreshTokenReplayWindowSeconds ?? DEFAULT_REFRESH_TOKEN_REPLAY_WINDOW_SECONDS,
     );
     this.now = options.now ?? Date.now;
     this.clientsStore = new StatelessOAuthClientsStore({
@@ -319,20 +335,38 @@ export class BrunnOAuthProvider implements OAuthServerProvider {
     if (envelope.resource !== resource.href) {
       throw new InvalidTargetError("Refresh token resource does not match");
     }
-    this.pruneConsumed(this.consumedRefreshTokens);
-    if (this.consumedRefreshTokens.has(envelope.id)) {
-      throw new InvalidGrantError("Refresh token has already been used");
-    }
-
     const narrowedScopes = scopes === undefined
       ? envelope.scopes
       : validateNarrowedScopes(scopes, envelope.scopes);
-    this.consumedRefreshTokens.set(envelope.id, envelope.expiresAt);
-    return this.issueTokenPair(
+    this.pruneConsumedRefreshTokens();
+    const consumed = this.consumedRefreshTokens.get(envelope.id);
+    if (consumed) {
+      if (
+        consumed.tokens
+        && consumed.replayUntil >= this.nowSeconds()
+        && consumed.clientId === client.client_id
+        && consumed.resource === resource.href
+        && sameScopes(consumed.scopes, narrowedScopes)
+      ) {
+        return cloneOAuthTokens(consumed.tokens);
+      }
+      throw new InvalidGrantError("Refresh token has already been used");
+    }
+
+    const tokens = this.issueTokenPair(
       envelope.upstreamToken,
       envelope.clientId,
       narrowedScopes,
     );
+    this.consumedRefreshTokens.set(envelope.id, {
+      expiresAt: envelope.expiresAt,
+      replayUntil: this.nowSeconds() + this.refreshTokenReplayWindowSeconds,
+      clientId: envelope.clientId,
+      resource: envelope.resource,
+      scopes: [...narrowedScopes],
+      tokens: cloneOAuthTokens(tokens),
+    });
+    return tokens;
   }
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {
@@ -459,6 +493,17 @@ export class BrunnOAuthProvider implements OAuthServerProvider {
     for (const [id, expiresAt] of entries) {
       if (expiresAt <= now) {
         entries.delete(id);
+      }
+    }
+  }
+
+  private pruneConsumedRefreshTokens(): void {
+    const now = this.nowSeconds();
+    for (const [id, consumed] of this.consumedRefreshTokens) {
+      if (consumed.expiresAt <= now) {
+        this.consumedRefreshTokens.delete(id);
+      } else if (consumed.replayUntil < now) {
+        delete consumed.tokens;
       }
     }
   }
@@ -676,6 +721,18 @@ function validateNarrowedScopes(requested: readonly string[], granted: readonly 
     throw new InvalidScopeError("Refresh scopes may only narrow the original grant");
   }
   return narrowed;
+}
+
+function sameScopes(first: readonly string[], second: readonly string[]): boolean {
+  if (first.length !== second.length) {
+    return false;
+  }
+  const expected = new Set(first);
+  return second.every((scope) => expected.has(scope));
+}
+
+function cloneOAuthTokens(tokens: OAuthTokens): OAuthTokens {
+  return { ...tokens };
 }
 
 function uniqueScopes(scopes: readonly string[]): string[] {
