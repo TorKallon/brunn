@@ -699,6 +699,10 @@ class InterfaceEvalTests(unittest.TestCase):
         self.assertEqual(filesystem["HOME"], "/tmp/env-test/.agent-home")
         self.assertEqual(filesystem["CODEX_HOME"], "/tmp/env-test/.agent-home/.codex")
 
+    @unittest.skipUnless(
+        sys.platform == "darwin" and Path("/usr/bin/sandbox-exec").is_file(),
+        "requires macOS sandbox-exec",
+    )
     def test_outer_sandbox_blocks_benchmark_source_but_allows_run_copy(self):
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary)
@@ -901,6 +905,10 @@ class InterfaceEvalTests(unittest.TestCase):
         self.assertIn("API-equivalent cost is unavailable", report)
         self.assertNotIn("## Distribution and API-equivalent cost", report)
 
+    @unittest.skipUnless(
+        sys.platform == "darwin" and Path("/usr/bin/sandbox-exec").is_file(),
+        "requires macOS sandbox-exec",
+    )
     def test_sandbox_preflight_denies_current_run_custody_and_local_escape_tools(self):
         with tempfile.TemporaryDirectory(dir="/Users/Shared") as temporary:
             root = Path(temporary)
