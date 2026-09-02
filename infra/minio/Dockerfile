@@ -16,11 +16,11 @@ RUN set -eu; \
           github.com/buger/jsonparser@v1.1.2 \
           github.com/go-jose/go-jose/v4@v4.1.4 \
           github.com/prometheus/prometheus@v0.311.3 \
-          go.opentelemetry.io/otel/sdk@v1.43.0 \
+          go.opentelemetry.io/otel/sdk@v1.44.0 \
           golang.org/x/crypto@v0.55.0 \
           golang.org/x/net@v0.57.0 \
           golang.org/x/text@v0.41.0 \
-          google.golang.org/grpc@v1.82.1 \
+          google.golang.org/grpc@v1.83.1 \
         && go mod download all; then \
         dependencies_ready=true; \
         break; \
