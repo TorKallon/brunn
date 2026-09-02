@@ -212,6 +212,52 @@ public actor BrunnAPI {
         return try await post(path: "credentials", body: Request())
     }
 
+    public func bootstrapDeviceLocationCredential() async throws -> DeviceTaskCredentialBootstrapResponse {
+        struct Request: Encodable, Sendable {
+            let name = "iOS location access"
+            let access = "ios_location"
+        }
+        return try await post(path: "credentials", body: Request())
+    }
+
+    func uploadLocationReports(
+        _ payload: LocationReportBatchRequest,
+        bearerToken: String
+    ) async throws -> LocationReportUploadResponse {
+        try await post(
+            path: "location/reports",
+            body: payload,
+            bearerToken: bearerToken,
+            sendCookies: false,
+            timeoutInterval: 8
+        )
+    }
+
+    func locationPresence(bearerToken: String) async throws -> LocationPresence {
+        try await get(
+            path: "location/presence",
+            bearerToken: bearerToken,
+            sendCookies: false
+        )
+    }
+
+    func deleteLiveLocation(bearerToken: String) async throws {
+        let url = try makeURL(path: "location/live", queryItems: [])
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.httpShouldHandleCookies = false
+        request.timeoutInterval = 8
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await session.data(for: request)
+        guard let response = response as? HTTPURLResponse else {
+            throw BrunnAPIError.invalidResponse
+        }
+        guard (200 ..< 300).contains(response.statusCode) else {
+            throw decodeServerError(data: data, status: response.statusCode)
+        }
+    }
+
     public func revokeCredential(reference: String) async throws -> CredentialRevocationResponse {
         try await delete(path: "credentials/\(reference)")
     }
@@ -673,7 +719,8 @@ public actor BrunnAPI {
         path: String,
         body: some Encodable & Sendable,
         bearerToken: String? = nil,
-        sendCookies: Bool = true
+        sendCookies: Bool = true,
+        timeoutInterval: TimeInterval? = nil
     ) async throws -> Response {
         let encoder = JSONEncoder()
         return try await request(
@@ -682,7 +729,8 @@ public actor BrunnAPI {
             method: "POST",
             body: encoder.encode(body),
             bearerToken: bearerToken,
-            sendCookies: sendCookies
+            sendCookies: sendCookies,
+            timeoutInterval: timeoutInterval
         )
     }
 
@@ -741,13 +789,17 @@ public actor BrunnAPI {
         method: String,
         body: Data?,
         bearerToken: String? = nil,
-        sendCookies: Bool = true
+        sendCookies: Bool = true,
+        timeoutInterval: TimeInterval? = nil
     ) async throws -> Response {
         let url = try makeURL(path: path, queryItems: queryItems)
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.httpBody = body
         request.httpShouldHandleCookies = sendCookies
+        if let timeoutInterval {
+            request.timeoutInterval = timeoutInterval
+        }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let unsafeMethod = !["GET", "HEAD", "OPTIONS"].contains(method.uppercased())
         let csrfToken = sendCookies

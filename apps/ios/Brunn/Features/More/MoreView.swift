@@ -3,6 +3,7 @@ import SwiftUI
 struct MoreView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var notifications: NotificationCoordinator
+    @EnvironmentObject private var locationReporter: LocationReporter
     @AppStorage(AppAppearance.storageKey) private var appearanceRawValue =
         AppAppearance.defaultValue.rawValue
     @State private var showingNotificationPrimer = false
@@ -100,6 +101,22 @@ struct MoreView: View {
                 LabeledContent("Account", value: model.user?.displayName ?? "Owner")
                 LabeledContent("Server", value: "brunn.ai")
                 LabeledContent("Access", value: accessLabel)
+            }
+
+            Section {
+                NavigationLink {
+                    LocationSettingsView()
+                } label: {
+                    Label("Location", systemImage: "location.circle")
+                }
+                LabeledContent(
+                    "Visit reporting",
+                    value: locationReporter.reportingEnabled ? "On" : "Off"
+                )
+            } header: {
+                Text("Location")
+            } footer: {
+                Text("Choose whether this iPhone reports visits and significant location changes to your own Brunn workspace.")
             }
 
             Section("Notifications") {

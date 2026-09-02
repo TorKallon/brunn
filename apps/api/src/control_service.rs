@@ -13,6 +13,29 @@ use crate::{
     models::Capability,
 };
 
+const IOS_LOCATION_NAME_PREFIX: &str = "iOS Location — ";
+const IOS_LOCATION_CAPABILITIES_MESSAGING_ON: [&str; 9] = [
+    "open",
+    "query",
+    "read",
+    "compute",
+    "verify",
+    "status",
+    "task.read",
+    "message.read",
+    "location.write",
+];
+const IOS_LOCATION_CAPABILITIES_MESSAGING_OFF: [&str; 8] = [
+    "open",
+    "query",
+    "read",
+    "compute",
+    "verify",
+    "status",
+    "task.read",
+    "location.write",
+];
+
 pub async fn me(state: &AppState, auth: &AuthContext) -> ApiResult<Value> {
     let mut tx = state.begin_read(auth).await?;
     let user =
@@ -125,7 +148,7 @@ pub async fn create_credential(
         request.get("access").and_then(Value::as_str),
         state.config.messaging_enabled,
     )?;
-    if access == "ios_tasks" {
+    if matches!(access, "ios_tasks" | "ios_location") {
         auth.require(Capability::Admin)?;
     }
     let name = if access == "ios_tasks" {
@@ -139,6 +162,8 @@ pub async fn create_credential(
             ));
         }
         label
+    } else if access == "ios_location" {
+        ios_location_credential_name(requested_name)?
     } else {
         requested_name.to_owned()
     };
@@ -202,6 +227,19 @@ pub async fn create_credential(
     }))
 }
 
+fn ios_location_credential_name(requested_name: &str) -> ApiResult<String> {
+    let device_name = requested_name
+        .strip_prefix(IOS_LOCATION_NAME_PREFIX)
+        .unwrap_or(requested_name);
+    let label = format!("{IOS_LOCATION_NAME_PREFIX}{device_name}");
+    if label.len() > 120 {
+        return Err(ApiError::invalid(
+            "credential name including the iOS Location prefix must be at most 120 characters",
+        ));
+    }
+    Ok(label)
+}
+
 fn credential_template(access: Option<&str>) -> ApiResult<(&'static str, Vec<&'static str>)> {
     match access.unwrap_or("read_write") {
         "read_only" => Ok((
@@ -234,11 +272,16 @@ fn credential_template(access: Option<&str>) -> ApiResult<(&'static str, Vec<&'s
                 "dream",
                 "task.read",
                 "task.write",
+                "location.write",
                 "message.read",
                 "message.write",
             ],
         )),
         "ios_tasks" => Ok(("ios_tasks", vec!["task.write", "notification:manage"])),
+        "ios_location" => Ok((
+            "ios_location",
+            IOS_LOCATION_CAPABILITIES_MESSAGING_ON.to_vec(),
+        )),
         // The dreamer wrapper: vault custody of the codex tokens plus the
         // run's single operational notification. Codex never holds this.
         "dreamer_runner" => Ok((
@@ -267,6 +310,7 @@ fn credential_template(access: Option<&str>) -> ApiResult<(&'static str, Vec<&'s
                 "secret:write",
                 "task.read",
                 "task.write",
+                "location.write",
                 "integration.manage",
                 "message.read",
                 "message.write",
@@ -274,7 +318,7 @@ fn credential_template(access: Option<&str>) -> ApiResult<(&'static str, Vec<&'s
             ],
         )),
         _ => Err(ApiError::invalid(
-            "credential access must be read_only, read_write, ios_tasks, dreamer_runner, or owner",
+            "credential access must be read_only, read_write, ios_tasks, ios_location, dreamer_runner, or owner",
         )),
     }
 }
@@ -402,6 +446,18 @@ fn credential_access_label(capabilities: &[String]) -> &'static str {
         && (capabilities.len() == 2 || capabilities.iter().any(|value| value == "message.write"))
     {
         "ios_tasks"
+    } else if [
+        IOS_LOCATION_CAPABILITIES_MESSAGING_ON.as_slice(),
+        IOS_LOCATION_CAPABILITIES_MESSAGING_OFF.as_slice(),
+    ]
+    .into_iter()
+    .any(|expected| {
+        capabilities.len() == expected.len()
+            && expected
+                .iter()
+                .all(|expected| capabilities.iter().any(|actual| actual == expected))
+    }) {
+        "ios_location"
     } else if capabilities
         .iter()
         .any(|value| value == "credential:manage")
@@ -427,7 +483,11 @@ fn parse_uuid_ref(value: &str, expected_prefix: &str) -> ApiResult<Uuid> {
 
 #[cfg(test)]
 mod credential_tests {
-    use super::{credential_access_label, credential_template, credential_template_for_gate};
+    use super::{
+        IOS_LOCATION_CAPABILITIES_MESSAGING_OFF, IOS_LOCATION_CAPABILITIES_MESSAGING_ON,
+        IOS_LOCATION_NAME_PREFIX, credential_access_label, credential_template,
+        credential_template_for_gate, ios_location_credential_name,
+    };
 
     #[test]
     fn omitted_credential_access_defaults_to_read_write() {
@@ -452,7 +512,7 @@ mod credential_tests {
     fn owner_template_has_every_capability() {
         let (access, capabilities) = credential_template(Some("owner")).expect("owner template");
         assert_eq!(access, "owner");
-        assert_eq!(capabilities.len(), 23);
+        assert_eq!(capabilities.len(), 24);
         assert!(capabilities.contains(&"dream"));
         assert!(capabilities.contains(&"credential:manage"));
         assert!(capabilities.contains(&"notification:publish"));
@@ -461,6 +521,7 @@ mod credential_tests {
         assert!(capabilities.contains(&"secret:write"));
         assert!(capabilities.contains(&"task.read"));
         assert!(capabilities.contains(&"task.write"));
+        assert!(capabilities.contains(&"location.write"));
         assert!(capabilities.contains(&"message.read"));
         assert!(capabilities.contains(&"message.write"));
         assert!(capabilities.contains(&"integration.manage"));
@@ -506,6 +567,98 @@ mod credential_tests {
         assert_eq!(
             credential_access_label(&on.into_iter().map(str::to_owned).collect::<Vec<_>>()),
             "ios_tasks"
+        );
+    }
+
+    #[test]
+    fn ios_location_template_is_exact_read_only_union_location_write() {
+        let (_, mut expected) = credential_template(Some("read_only")).expect("read-only template");
+        expected.push("location.write");
+
+        let (access, capabilities) =
+            credential_template(Some("ios_location")).expect("iOS location template");
+        assert_eq!(access, "ios_location");
+        assert_eq!(capabilities, expected);
+        assert_eq!(capabilities, IOS_LOCATION_CAPABILITIES_MESSAGING_ON);
+        assert!(!capabilities.contains(&"task.write"));
+        assert!(!capabilities.contains(&"notification:manage"));
+        assert!(!capabilities.contains(&"message.write"));
+    }
+
+    #[test]
+    fn ios_location_gate_and_inventory_accept_only_the_exact_capability_sets() {
+        let (off_access, off) =
+            credential_template_for_gate(Some("ios_location"), false).expect("gate-off template");
+        assert_eq!(off_access, "ios_location");
+        assert_eq!(off, IOS_LOCATION_CAPABILITIES_MESSAGING_OFF);
+
+        let (on_access, on) =
+            credential_template_for_gate(Some("ios_location"), true).expect("gate-on template");
+        assert_eq!(on_access, "ios_location");
+        assert_eq!(on, IOS_LOCATION_CAPABILITIES_MESSAGING_ON);
+
+        let stored_off = off.into_iter().map(str::to_owned).collect::<Vec<_>>();
+        let stored_on = on.into_iter().map(str::to_owned).collect::<Vec<_>>();
+        assert_eq!(credential_access_label(&stored_off), "ios_location");
+        assert_eq!(credential_access_label(&stored_on), "ios_location");
+
+        let mut with_extra = stored_on.clone();
+        with_extra.push("admin".to_owned());
+        assert_ne!(credential_access_label(&with_extra), "ios_location");
+
+        let mut missing = stored_off.clone();
+        missing.pop();
+        assert_ne!(credential_access_label(&missing), "ios_location");
+
+        let mut duplicate_in_place_of_message_read = stored_off.clone();
+        duplicate_in_place_of_message_read.push("location.write".to_owned());
+        assert_ne!(
+            credential_access_label(&duplicate_in_place_of_message_read),
+            "ios_location"
+        );
+
+        let mut wrong_message_capability = stored_off;
+        wrong_message_capability.push("message.write".to_owned());
+        assert_ne!(
+            credential_access_label(&wrong_message_capability),
+            "ios_location"
+        );
+    }
+
+    #[test]
+    fn ios_location_credential_name_applies_one_bounded_prefix() {
+        assert_eq!(
+            ios_location_credential_name("Aether's iPhone").expect("plain device name"),
+            "iOS Location — Aether's iPhone"
+        );
+        assert_eq!(
+            ios_location_credential_name("iOS Location — Aether's iPhone")
+                .expect("already-prefixed device name"),
+            "iOS Location — Aether's iPhone"
+        );
+
+        let maximum = "x".repeat(120 - IOS_LOCATION_NAME_PREFIX.len());
+        assert_eq!(
+            ios_location_credential_name(&maximum)
+                .expect("maximum-length label")
+                .len(),
+            120
+        );
+        assert_eq!(
+            ios_location_credential_name(&format!("{maximum}x"))
+                .expect_err("overlong label")
+                .to_string(),
+            "credential name including the iOS Location prefix must be at most 120 characters"
+        );
+    }
+
+    #[test]
+    fn invalid_access_error_lists_ios_location() {
+        assert_eq!(
+            credential_template(Some("mobile"))
+                .expect_err("unknown access")
+                .to_string(),
+            "credential access must be read_only, read_write, ios_tasks, ios_location, dreamer_runner, or owner"
         );
     }
 

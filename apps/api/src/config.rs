@@ -81,6 +81,8 @@ pub struct Config {
     pub apns_delivery_enabled: bool,
     pub messaging_enabled: bool,
     pub todoist_sync_enabled: bool,
+    pub location_pings_enabled: bool,
+    pub location_presence_in_open: bool,
     pub public_url: String,
     pub account_export_ttl: Duration,
     pub account_export_temp_dir: PathBuf,
@@ -275,6 +277,8 @@ impl Config {
             apns_delivery_enabled: env_parse("BRUNN_APNS_DELIVERY_ENABLED", "false")?,
             messaging_enabled: env_parse("BRUNN_MESSAGING_ENABLED", "false")?,
             todoist_sync_enabled: env_parse("BRUNN_TODOIST_SYNC_ENABLED", "false")?,
+            location_pings_enabled: env_parse("BRUNN_LOCATION_PINGS_ENABLED", "true")?,
+            location_presence_in_open: env_parse("BRUNN_LOCATION_PRESENCE_IN_OPEN", "true")?,
             public_url: env_default("BRUNN_PUBLIC_URL", "https://brunn.ai")
                 .trim()
                 .trim_end_matches('/')
@@ -862,6 +866,12 @@ mod tests {
         run_config_env_probe("todoist_with_secret_key");
     }
 
+    #[test]
+    fn location_flags_default_on_and_can_be_disabled() {
+        run_config_env_probe("location_flags_default_on");
+        run_config_env_probe("location_flags_disabled");
+    }
+
     fn run_config_env_probe(scenario: &str) {
         let mut command = Command::new(std::env::current_exe().unwrap());
         let mut resend_secret_file = None;
@@ -1003,6 +1013,12 @@ mod tests {
                 command
                     .env("BRUNN_TODOIST_SYNC_ENABLED", "true")
                     .env("BRUNN_SECRET_ENCRYPTION_KEY", STANDARD.encode([11_u8; 32]));
+            }
+            "location_flags_default_on" => {}
+            "location_flags_disabled" => {
+                command
+                    .env("BRUNN_LOCATION_PINGS_ENABLED", "false")
+                    .env("BRUNN_LOCATION_PRESENCE_IN_OPEN", "false");
             }
             scenario => panic!("unknown config probe scenario {scenario}"),
         }
@@ -1209,6 +1225,16 @@ mod tests {
                         .unwrap(),
                     [11_u8; 32]
                 );
+            }
+            "location_flags_default_on" => {
+                let config = Config::from_env().unwrap();
+                assert!(config.location_pings_enabled);
+                assert!(config.location_presence_in_open);
+            }
+            "location_flags_disabled" => {
+                let config = Config::from_env().unwrap();
+                assert!(!config.location_pings_enabled);
+                assert!(!config.location_presence_in_open);
             }
             scenario => panic!("unknown config probe scenario {scenario}"),
         }

@@ -21,8 +21,20 @@ let package = Package(
                 "Resources",
                 "Services",
                 "Shared",
+                "Location/LocationKeychainCredentialStore.swift",
+                "Location/LocationReportEnricher.swift",
+                "Location/LocationReporter.swift",
+                "Location/LocationSettingsView.swift",
             ],
-            sources: ["API", "Domain"]
+            sources: [
+                "API",
+                "Domain",
+                "Location/LocationCredentialCapabilities.swift",
+                "Location/LocationDiskQueue.swift",
+                "Location/LocationPresence.swift",
+                "Location/LocationReport.swift",
+                "Location/LocationStatusStore.swift",
+            ]
         ),
         .testTarget(
             name: "BrunnCoreTests",

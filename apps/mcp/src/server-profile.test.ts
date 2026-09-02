@@ -38,6 +38,8 @@ test("remote profile exposes only hosted-safe tools with bounded reads", async (
       "briefing.topics",
       "document.get",
       "document.publish",
+      "location.presence",
+      "location.rederive",
       "memory.capture",
       "memory.changes",
       "memory.checkpoint",

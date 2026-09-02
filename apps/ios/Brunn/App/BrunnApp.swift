@@ -12,6 +12,7 @@ struct BrunnApp: App {
             RootView()
                 .environmentObject(model)
                 .environmentObject(notifications)
+                .environmentObject(appDelegate.locationReporter)
                 .tint(BrunnTheme.signal)
                 .task {
                     if let token = PushTokenBuffer.shared.take() {
@@ -23,6 +24,9 @@ struct BrunnApp: App {
                     if model.phase == .launching {
                         await model.bootstrap()
                     }
+                    await appDelegate.locationReporter.applicationDidBecomeActive(
+                        expectedUserID: model.user?.id
+                    )
                     await notifications.synchronizeInstallation(
                         using: model.api,
                         canManageNotifications: model.canManageNotifications,
@@ -74,6 +78,9 @@ struct BrunnApp: App {
                         await model.refreshTaskSurface()
                         await model.refreshNotifications()
                         await model.refreshMessaging(.foreground)
+                        await appDelegate.locationReporter.applicationDidBecomeActive(
+                            expectedUserID: model.user?.id
+                        )
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .brunnPushToken)) { event in

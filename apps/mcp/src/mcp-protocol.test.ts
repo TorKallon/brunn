@@ -42,6 +42,8 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
     "briefing.topics",
     "document.get",
     "document.publish",
+    "location.presence",
+    "location.rederive",
     "memory.capture",
     "memory.changes",
     "memory.checkpoint",

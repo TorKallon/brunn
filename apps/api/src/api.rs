@@ -13,8 +13,8 @@ use tower_http::{
 
 use crate::{
     auth, briefing_service, dashboard_service, db::AppState, document_service, dreaming_service,
-    messaging_service, notification_service, request_context, secret_service, service, simple_core,
-    task_service, telemetry, web_auth,
+    location, messaging_service, notification_service, request_context, secret_service, service,
+    simple_core, task_service, telemetry, web_auth,
 };
 
 pub fn router(state: AppState) -> Router {
@@ -177,6 +177,10 @@ pub fn router(state: AppState) -> Router {
         .route("/workspace/manifest", get(simple_core::manifest))
         .route("/workspace/usage", get(simple_core::usage))
         .route("/workspace/jobs", get(simple_core::list_jobs))
+        .route("/location/reports", post(location::routes::reports))
+        .route("/location/presence", get(location::routes::presence))
+        .route("/location/rederive", post(location::routes::rederive))
+        .route("/location/live", delete(location::routes::delete_live))
         .route(
             "/workspace/entries/{entry_ref}",
             delete(simple_core::delete_entry),

@@ -60,6 +60,36 @@ test("open removes corpus samples and ranking mechanics while preserving evidenc
   });
 });
 
+test("open preserves the formatted owner presence block", () => {
+  const ownerPresence = {
+    status: "at_place",
+    place: {
+      label: "Home",
+      kind: "home",
+      confidence: "high",
+      since: "2026-09-01T09:10-07:00",
+    },
+    at_home: true,
+    city: "Bellevue",
+    region: "WA",
+    country: "US",
+    timezone: "America/Los_Angeles",
+    last_seen: "2026-09-01T11:42-07:00",
+  };
+  const compact = compactReasoningResponse("memory.open", {
+    status: "complete",
+    data: {
+      evidence: [],
+      owner_presence: ownerPresence,
+    },
+  });
+
+  assert.deepEqual(
+    (compact.data as Record<string, unknown>).owner_presence,
+    ownerPresence,
+  );
+});
+
 test("query keeps one candidate list instead of the flattened duplicate", () => {
   const candidate = {
     reference: "chunk:1",

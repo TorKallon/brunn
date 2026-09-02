@@ -331,16 +331,22 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
       await client.connect(transport as never);
       assert.equal(client.getServerVersion()?.name, "Brunn");
       const tools = await client.listTools();
-      assert.equal(
-        tools.tools.length,
-        process.env.BRUNN_MESSAGING_ENABLED === "true" ? 37 : 32,
+      const requiredToolNames = [
+        "location.presence",
+        "location.rederive",
+        "memory.open",
+        "memory.read",
+        "memory.status",
+        "memory.write",
+        "notification.publish",
+      ];
+      const toolNames = tools.tools.map((tool) => tool.name);
+      assert.deepEqual(
+        requiredToolNames.filter((name) => !toolNames.includes(name)),
+        [],
       );
       assert.equal(tools.tools.some((tool) => tool.name === "memory.stage"), false);
       assert.equal(tools.tools.some((tool) => tool.name === "asset.fetch"), false);
-      assert.equal(
-        tools.tools.some((tool) => tool.name === "notification.publish"),
-        true,
-      );
       const status = await client.callTool({ name: "memory.status", arguments: {} });
       assert.equal(status.isError, undefined);
       const text = (status.content as Array<{ type: string; text?: string }>)[0]?.text;

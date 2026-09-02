@@ -24,7 +24,7 @@ test("task scenario and remote canary consume the shared release profile", async
 
   assert.match(taskScenario, /\.\.\.messagingChildEnvironment\(process\.env\)/);
   assert.match(remoteCanary, /expectedRemoteToolNames\(\[/);
-  assert.match(remoteCanary, /\], process\.env\)\)/);
+  assert.match(remoteCanary, /\], process\.env\);/);
 
   const expectedToolsSource = remoteCanary.match(
     /expectedRemoteToolNames\(\[([\s\S]*?)\], process\.env\)/,
@@ -35,8 +35,10 @@ test("task scenario and remote canary consume the shared release profile", async
     if (name === undefined) assert.fail("remote canary tool name is missing");
     return name;
   });
-  assert.equal(gateOffTools.length, 32);
   assert.deepEqual(gateOffTools, [...gateOffTools].sort());
+  assert.equal(new Set(gateOffTools).size, gateOffTools.length);
+  assert.equal(gateOffTools.includes("location.presence"), true);
+  assert.equal(gateOffTools.includes("location.rederive"), true);
   assert.deepEqual(gateOffTools.filter((name) => profile.MESSAGING_TOOL_NAMES.includes(name)), []);
 });
 

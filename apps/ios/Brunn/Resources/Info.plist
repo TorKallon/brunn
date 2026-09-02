@@ -33,6 +33,10 @@
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Brunn records the places you visit so your assistants know where you are and can answer questions about where you have been. Location is used only for your own Brunn workspace.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Brunn records the places you visit so your assistants know where you are and can answer questions about where you have been. Location is used only for your own Brunn workspace.</string>
 	<key>BrunnAPNSEnvironment</key>
 	<string>$(BRUNN_APNS_ENVIRONMENT)</string>
 	<key>UIApplicationSceneManifest</key>

@@ -360,16 +360,22 @@ private enum NotificationInstallationIdentity {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    let locationReporter = LocationReporter()
+
     nonisolated static func handlesBackgroundURLSession(identifier: String) -> Bool {
         MessagingBackgroundTransport.handlesBackgroundSession(identifier: identifier)
     }
 
     func application(
         _: UIApplication,
-        didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]? = nil
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        locationReporter.applicationDidFinishLaunching(
+            relaunchedForLocation: launchOptions?[.location] != nil
+        )
         return true
     }
 

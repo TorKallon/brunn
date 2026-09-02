@@ -34,6 +34,7 @@ const OWNER_CAPABILITIES: &[&str] = &[
     "secret:write",
     "task.read",
     "task.write",
+    "location.write",
     "integration.manage",
     "message.read",
     "message.write",
@@ -220,8 +221,9 @@ mod tests {
     }
 
     #[test]
-    fn new_and_recovered_owner_credentials_include_messaging_authority() {
+    fn new_and_recovered_owner_credentials_include_messaging_and_location_authority() {
         assert!(OWNER_CAPABILITIES.contains(&"message.read"));
         assert!(OWNER_CAPABILITIES.contains(&"message.write"));
+        assert!(OWNER_CAPABILITIES.contains(&"location.write"));
     }
 }

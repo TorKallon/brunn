@@ -24,6 +24,7 @@ pub mod embeddings;
 pub mod error;
 pub mod foreground_latency;
 pub mod ingest;
+pub mod location;
 pub mod logging;
 pub mod messaging_protocol;
 pub mod messaging_service;

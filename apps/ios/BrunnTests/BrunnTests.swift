@@ -1,5 +1,7 @@
 @testable import Brunn
+import CoreLocation
 import Foundation
+import MapKit
 import XCTest
 
 final class BrunnTests: XCTestCase {
@@ -13,6 +15,226 @@ final class BrunnTests: XCTestCase {
             KeychainCredentialStore.legacyServiceForMigration,
             expectedService
         )
+    }
+
+    func testMapKitRestaurantCategoryNormalizesToHistoryKind() {
+        XCTAssertEqual(
+            LocationPOICategory.normalizedKind(
+                from: MKPointOfInterestCategory.restaurant.rawValue
+            ),
+            "restaurant"
+        )
+    }
+
+    @MainActor
+    func testLocationVisitHandlerPersistsRawReportBeforeAsyncWork() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let suite = "BrunnTests.location-visit.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let credentialStore = LocationKeychainCredentialStore(
+            account: "ios-location-test-\(UUID().uuidString)"
+        )
+        defer {
+            try? credentialStore.delete()
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let queue = LocationDiskQueue(
+            fileURL: directory.appendingPathComponent("location-queue.json")
+        )
+        let statusStore = LocationStatusStore(defaults: defaults)
+        statusStore.reportingEnabled = true
+        let reporter = LocationReporter(
+            manager: CLLocationManager(),
+            api: BrunnAPI(),
+            credentialStore: credentialStore,
+            queue: queue,
+            statusStore: statusStore,
+            enricher: LocationReportEnricher(statusStore: statusStore)
+        )
+        let arrival = Date(timeIntervalSince1970: 1_788_300_000)
+        let departure = Date(timeIntervalSince1970: 1_788_303_600)
+
+        reporter.handle(visit: TestLocationVisit(
+            coordinate: CLLocationCoordinate2D(latitude: 47.6156, longitude: -122.2035),
+            horizontalAccuracy: 30,
+            arrivalDate: arrival,
+            departureDate: departure
+        ))
+
+        let persisted = try XCTUnwrap(queue.nextPending())
+        XCTAssertFalse(persisted.isEnriched)
+        XCTAssertEqual(persisted.report.type, .visitDeparture)
+        XCTAssertEqual(persisted.report.lat, 47.6156)
+        XCTAssertEqual(persisted.report.lon, -122.2035)
+        XCTAssertEqual(persisted.report.arrivedAt, LocationTimestamp.string(from: arrival))
+        XCTAssertEqual(persisted.report.departedAt, LocationTimestamp.string(from: departure))
+        XCTAssertNil(persisted.report.geocode)
+        XCTAssertTrue(persisted.report.poi.isEmpty)
+        withExtendedLifetime(reporter) {}
+    }
+
+    @MainActor
+    func testSignificantLocationHandlerPersistsRawReportBeforeAsyncWork() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let suite = "BrunnTests.location-ping.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let credentialStore = LocationKeychainCredentialStore(
+            account: "ios-location-test-\(UUID().uuidString)"
+        )
+        defer {
+            try? credentialStore.delete()
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let queue = LocationDiskQueue(
+            fileURL: directory.appendingPathComponent("location-queue.json")
+        )
+        let statusStore = LocationStatusStore(defaults: defaults)
+        statusStore.reportingEnabled = true
+        let reporter = LocationReporter(
+            manager: CLLocationManager(),
+            api: BrunnAPI(),
+            credentialStore: credentialStore,
+            queue: queue,
+            statusStore: statusStore,
+            enricher: LocationReportEnricher(statusStore: statusStore)
+        )
+        let timestamp = Date(timeIntervalSince1970: 1_788_400_000)
+
+        reporter.handle(location: CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: 46.9965, longitude: -120.5478),
+            altitude: 0,
+            horizontalAccuracy: 65,
+            verticalAccuracy: -1,
+            timestamp: timestamp
+        ))
+
+        let persisted = try XCTUnwrap(queue.nextPending())
+        XCTAssertFalse(persisted.isEnriched)
+        XCTAssertEqual(persisted.report.type, .ping)
+        XCTAssertEqual(persisted.report.at, LocationTimestamp.string(from: timestamp))
+        XCTAssertEqual(persisted.report.lat, 46.9965)
+        XCTAssertEqual(persisted.report.lon, -120.5478)
+        XCTAssertNil(persisted.report.geocode)
+        XCTAssertTrue(persisted.report.poi.isEmpty)
+        withExtendedLifetime(reporter) {}
+    }
+
+    @MainActor
+    func testForegroundTriggerEnrichesAndDrainsMoreThanTwoHundredReports() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let queueURL = directory.appendingPathComponent("location-queue.json")
+        let suite = "BrunnTests.location-drain.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let credentialStore = LocationKeychainCredentialStore(
+            account: "ios-location-test-\(UUID().uuidString)"
+        )
+        defer {
+            NotificationRequestURLProtocol.handler = nil
+            try? credentialStore.delete()
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let capabilities = LocationCredentialCapabilities.canonicalReadOnly
+            + [LocationCredentialCapabilities.locationWrite]
+        let credentialRef = "credential:33333333-3333-4333-8333-333333333333"
+        try credentialStore.save(LocationDeviceCredential(
+            credentialRef: credentialRef,
+            token: "location-only-token",
+            userID: "user:location-test",
+            capabilities: capabilities
+        ))
+
+        let report = LocationReport(
+            type: .ping,
+            at: "2026-09-02T09:00:00.000-07:00",
+            lat: 47.6156,
+            lon: -122.2035,
+            accuracyM: 25
+        )
+        let queued = (0 ..< 401).map { index in
+            LocationQueuedReport(report: report, isEnriched: index != 199)
+        }
+        try JSONEncoder().encode(queued).write(to: queueURL, options: .atomic)
+        let queue = LocationDiskQueue(fileURL: queueURL)
+        XCTAssertEqual(try queue.batch().count, 199)
+
+        let recorder = NotificationRequestRecorder()
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            switch (request.httpMethod, request.url?.path) {
+            case ("GET", "/api/v1/me"):
+                return StubbedHTTPResponse(json: #"{"user":{"id":"user:location-test","display_name":"Owner"},"credential_id":"credential:33333333-3333-4333-8333-333333333333","capabilities":["open","query","read","compute","verify","status","task.read","location.write"],"read_only":false}"#)
+            case ("POST", "/api/v1/location/reports"):
+                let count = request.httpBody.flatMap { data in
+                    (try? JSONSerialization.jsonObject(with: data) as? [String: Any])
+                        .flatMap { $0["reports"] as? [[String: Any]] }?.count
+                } ?? 0
+                return StubbedHTTPResponse(
+                    json: "{\"accepted\":\(count),\"ignored\":{},\"presence\":null}"
+                )
+            case ("GET", "/api/v1/location/presence"):
+                return StubbedHTTPResponse(
+                    statusCode: 404,
+                    json: #"{"error":{"code":"location_presence_not_found","message":"none"}}"#
+                )
+            default:
+                return StubbedHTTPResponse(
+                    statusCode: 503,
+                    json: #"{"error":{"code":"unexpected_request","message":"unexpected"}}"#
+                )
+            }
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        let api = BrunnAPI(
+            configuration: .init(
+                baseURL: try XCTUnwrap(URL(string: "https://location-drain.brunn.test/api/v1"))
+            ),
+            session: URLSession(configuration: configuration)
+        )
+        let statusStore = LocationStatusStore(defaults: defaults)
+        statusStore.reportingEnabled = true
+        statusStore.lastGeocodedCoordinate = LocationStoredCoordinate(
+            latitude: report.lat,
+            longitude: report.lon
+        )
+        let reporter = LocationReporter(
+            manager: CLLocationManager(),
+            api: api,
+            credentialStore: credentialStore,
+            queue: queue,
+            statusStore: statusStore,
+            enricher: LocationReportEnricher(statusStore: statusStore)
+        )
+
+        await reporter.applicationDidBecomeActive(expectedUserID: "user:location-test")
+
+        let uploads = recorder.snapshot().filter {
+            $0.httpMethod == "POST" && $0.url?.path == "/api/v1/location/reports"
+        }
+        let batchCounts = try uploads.map { request in
+            let body = try XCTUnwrap(request.httpBody)
+            let object = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: body) as? [String: Any]
+            )
+            return try XCTUnwrap(object["reports"] as? [[String: Any]]).count
+        }
+        XCTAssertEqual(batchCounts, [200, 200, 1])
+        XCTAssertTrue(uploads.allSatisfy {
+            $0.value(forHTTPHeaderField: "Authorization") == "Bearer location-only-token"
+        })
+        XCTAssertTrue(uploads.allSatisfy {
+            $0.value(forHTTPHeaderField: "Cookie") == nil
+        })
+        XCTAssertEqual(try queue.count(), 0)
+        XCTAssertEqual(reporter.queuedReportCount, 0)
     }
 
     @MainActor
@@ -1822,6 +2044,35 @@ final class BrunnTests: XCTestCase {
         XCTAssertTrue(model.isNewsItemRead("ios-direction"))
         XCTAssertEqual(model.newsItems, before)
         XCTAssertEqual(model.latestBriefing, SampleData.briefing)
+    }
+}
+
+private final class TestLocationVisit: CLVisit {
+    private let testCoordinate: CLLocationCoordinate2D
+    private let testHorizontalAccuracy: CLLocationAccuracy
+    private let testArrivalDate: Date
+    private let testDepartureDate: Date
+
+    override var coordinate: CLLocationCoordinate2D { testCoordinate }
+    override var horizontalAccuracy: CLLocationAccuracy { testHorizontalAccuracy }
+    override var arrivalDate: Date { testArrivalDate }
+    override var departureDate: Date { testDepartureDate }
+
+    init(
+        coordinate: CLLocationCoordinate2D,
+        horizontalAccuracy: CLLocationAccuracy,
+        arrivalDate: Date,
+        departureDate: Date
+    ) {
+        testCoordinate = coordinate
+        testHorizontalAccuracy = horizontalAccuracy
+        testArrivalDate = arrivalDate
+        testDepartureDate = departureDate
+        super.init()
+    }
+
+    required init?(coder _: NSCoder) {
+        fatalError("TestLocationVisit does not support decoding")
     }
 }
 

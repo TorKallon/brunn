@@ -128,6 +128,8 @@ pub enum Capability {
     TaskRead,
     #[serde(rename = "task.write")]
     TaskWrite,
+    #[serde(rename = "location.write")]
+    LocationWrite,
     #[serde(rename = "integration.manage")]
     IntegrationManage,
     #[serde(rename = "message.read")]
@@ -159,6 +161,7 @@ impl Capability {
             Self::SecretWrite => "secret:write",
             Self::TaskRead => "task.read",
             Self::TaskWrite => "task.write",
+            Self::LocationWrite => "location.write",
             Self::IntegrationManage => "integration.manage",
             Self::MessageRead => "message.read",
             Self::MessageWrite => "message.write",
@@ -191,6 +194,7 @@ impl FromStr for Capability {
             "secret:write" => Ok(Self::SecretWrite),
             "task.read" => Ok(Self::TaskRead),
             "task.write" => Ok(Self::TaskWrite),
+            "location.write" => Ok(Self::LocationWrite),
             "integration.manage" => Ok(Self::IntegrationManage),
             "message.read" => Ok(Self::MessageRead),
             "message.write" => Ok(Self::MessageWrite),

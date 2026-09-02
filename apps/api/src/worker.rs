@@ -9,11 +9,13 @@ use crate::{
     account_worker,
     db::AppState,
     error::{ApiError, ApiResult},
-    messaging_service, notification_service, simple_worker, task_guard, telemetry, todoist_sync,
+    location, messaging_service, notification_service, simple_worker, task_guard, telemetry,
+    todoist_sync,
 };
 
 const ACCOUNT_MAINTENANCE_INTERVAL: Duration = Duration::from_secs(5);
 const TODOIST_QUEUE_SCAN_INTERVAL: Duration = Duration::from_secs(5);
+const LOCATION_RETENTION_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const BACKGROUND_WORK_PAUSE: Duration = Duration::from_millis(250);
 
 pub async fn run(state: AppState) -> ApiResult<()> {
@@ -41,6 +43,7 @@ pub async fn run(state: AppState) -> ApiResult<()> {
     // can never finalize after a replacement worker reclaims the row.
     let worker_id = boot_unique_worker_id();
     let mut next_account_maintenance = Instant::now();
+    let mut next_location_retention = Instant::now();
     let mut next_task_guard = Instant::now();
     let mut next_todoist_sync = Instant::now();
 
@@ -49,6 +52,10 @@ pub async fn run(state: AppState) -> ApiResult<()> {
         let mut cycle_failed = false;
         let now = Instant::now();
         let mut did_work = false;
+        if next_location_retention <= now {
+            next_location_retention = now + LOCATION_RETENTION_INTERVAL;
+            did_work |= run_location_retention(&state, &mut cycle_failed).await;
+        }
         if next_task_guard <= now {
             next_task_guard = now + task_guard::TASK_GUARD_SCHEDULER_INTERVAL;
             did_work |= run_task_guard(&state, &mut cycle_failed).await;
@@ -87,6 +94,21 @@ pub async fn run(state: AppState) -> ApiResult<()> {
             tokio::time::sleep(BACKGROUND_WORK_PAUSE).await;
         } else if !did_work {
             tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+}
+
+async fn run_location_retention(state: &AppState, cycle_failed: &mut bool) -> bool {
+    match location::store::delete_expired_reports(state, Utc::now()).await {
+        Ok(deleted) => {
+            metrics::counter!("brunn.location.retention_deleted").increment(deleted);
+            deleted > 0
+        }
+        Err(_error) => {
+            metrics::counter!("worker.cycle.errors", "stage" => "location_retention").increment(1);
+            tracing::warn!("location retention cycle failed");
+            *cycle_failed = true;
+            false
         }
     }
 }

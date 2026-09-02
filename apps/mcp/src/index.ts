@@ -715,6 +715,40 @@ registerJsonTool(
 );
 
 registerJsonTool(
+  "location.presence",
+  "Read the owner's current formatted location presence. Returns no raw location reports.",
+  {},
+  async () => {
+    try {
+      return await client.request("GET", "/v1/location/presence");
+    } catch (error) {
+      const detail = error instanceof BrunnApiError ? error.body.error : undefined;
+      if (
+        error instanceof BrunnApiError &&
+        error.status === 404 &&
+        typeof detail === "object" &&
+        detail !== null &&
+        "code" in detail &&
+        detail.code === "location_presence_not_found"
+      ) {
+        return { status: 200, body: { status: "none" }, elapsedMs: 0 };
+      }
+      throw error;
+    }
+  },
+);
+
+registerJsonTool(
+  "location.rederive",
+  "Rebuild derived location presence and visit month rows from retained raw reports for an optional bounded window. Returns counts only.",
+  {
+    from: rfc3339Timestamp.optional(),
+    to: rfc3339Timestamp.optional(),
+  },
+  (input) => client.request("POST", "/v1/location/rederive", input),
+);
+
+registerJsonTool(
   "asset.list",
   "List current binary workspace entries and their exact hashes, versions, sizes, and description metadata.",
   {
@@ -1277,6 +1311,7 @@ function registerJsonToolOnServer<Shape extends z.ZodRawShape>(
     "task.settings",
     "project.register",
     "project.set_interest",
+    "location.rederive",
     "secret.put",
     "secret.delete",
   ]).has(name);
@@ -1288,7 +1323,8 @@ function registerJsonToolOnServer<Shape extends z.ZodRawShape>(
     || name === "task.contexts"
     || name === "task.settings"
     || name === "project.register"
-    || name === "project.set_interest";
+    || name === "project.set_interest"
+    || name === "location.rederive";
   server.registerTool(name, {
     description,
     inputSchema,

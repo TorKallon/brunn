@@ -337,6 +337,7 @@ fn dev_write_capabilities(messaging_enabled: bool) -> Vec<&'static str> {
         "secret:write",
         "task.read",
         "task.write",
+        "location.write",
         "integration.manage",
         "admin",
     ];
@@ -385,6 +386,7 @@ mod tests {
     #[test]
     fn dev_credentials_add_messaging_capabilities_only_when_enabled() {
         let read_write_off = dev_write_capabilities(false);
+        assert!(read_write_off.contains(&"location.write"));
         assert!(!read_write_off.contains(&"message.read"));
         assert!(!read_write_off.contains(&"message.write"));
         let read_only_off = dev_read_capabilities(false);

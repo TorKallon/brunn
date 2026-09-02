@@ -61,6 +61,7 @@ function compactOpenData(data: JsonObject): JsonObject {
     "revision_delta",
     "initial_case_file",
   ]);
+  if (isPresent(data.owner_presence)) compact.owner_presence = data.owner_presence;
   if (Array.isArray(data.evidence)) {
     compact.initial_evidence = data.evidence
       .map(asObject)

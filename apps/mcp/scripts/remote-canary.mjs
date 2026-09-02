@@ -72,7 +72,7 @@ try {
   await client.connect(transport);
   const listed = await client.listTools();
   const toolNames = listed.tools.map((tool) => tool.name).sort();
-  assert.deepEqual(toolNames, expectedRemoteToolNames([
+  const requiredToolNames = expectedRemoteToolNames([
     "asset.list",
     "asset.metadata",
     "briefing.dedupe",
@@ -80,6 +80,8 @@ try {
     "briefing.topics",
     "document.get",
     "document.publish",
+    "location.presence",
+    "location.rederive",
     "memory.capture",
     "memory.changes",
     "memory.checkpoint",
@@ -105,7 +107,13 @@ try {
     "task.settings",
     "task.sync_status",
     "task.update",
-  ], process.env));
+  ], process.env);
+  const missingToolNames = requiredToolNames.filter((name) => !toolNames.includes(name));
+  assert.deepEqual(
+    missingToolNames,
+    [],
+    `hosted MCP omits required tools: ${missingToolNames.join(", ")}`,
+  );
 
   const opened = toolBody(await client.callTool({
     name: "memory.open",

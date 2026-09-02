@@ -43,6 +43,16 @@
 		F91DFAC9B86C2C8EC033F066 /* MessagingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC136BCE51797E2FE025114 /* MessagingModels.swift */; };
 		F96A127FCD80EDA063BCCAAA /* AgentMessagingTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D65A4E54EF4FF03A7748726 /* AgentMessagingTransportTests.swift */; };
 		FDCBDBAC6023BFE5C4D8137E /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F5AB3385284E27CC4B0F44E /* APIModels.swift */; };
+		A10000000000000000000001 /* LocationCredentialCapabilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* LocationCredentialCapabilities.swift */; };
+		A10000000000000000000002 /* LocationDiskQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* LocationDiskQueue.swift */; };
+		A10000000000000000000003 /* LocationKeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* LocationKeychainCredentialStore.swift */; };
+		A10000000000000000000004 /* LocationPresence.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* LocationPresence.swift */; };
+		A10000000000000000000005 /* LocationReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* LocationReport.swift */; };
+		A10000000000000000000006 /* LocationReportEnricher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* LocationReportEnricher.swift */; };
+		A10000000000000000000007 /* LocationReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* LocationReporter.swift */; };
+		A10000000000000000000008 /* LocationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* LocationSettingsView.swift */; };
+		A10000000000000000000009 /* LocationStatusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* LocationStatusStore.swift */; };
+		A1000000000000000000000A /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000A /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -104,6 +114,16 @@
 		F14DE1ED8732CDA6CD45778B /* ConnectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionView.swift; sourceTree = "<group>"; };
 		F9B2C3729BC469B6DBB96FC1 /* BrunnTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrunnTests.swift; sourceTree = "<group>"; };
 		FE81EB492B6F79BE0CC8513F /* AgentPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPickerView.swift; sourceTree = "<group>"; };
+		B10000000000000000000001 /* LocationCredentialCapabilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationCredentialCapabilities.swift; sourceTree = "<group>"; };
+		B10000000000000000000002 /* LocationDiskQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationDiskQueue.swift; sourceTree = "<group>"; };
+		B10000000000000000000003 /* LocationKeychainCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationKeychainCredentialStore.swift; sourceTree = "<group>"; };
+		B10000000000000000000004 /* LocationPresence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationPresence.swift; sourceTree = "<group>"; };
+		B10000000000000000000005 /* LocationReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationReport.swift; sourceTree = "<group>"; };
+		B10000000000000000000006 /* LocationReportEnricher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationReportEnricher.swift; sourceTree = "<group>"; };
+		B10000000000000000000007 /* LocationReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationReporter.swift; sourceTree = "<group>"; };
+		B10000000000000000000008 /* LocationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationSettingsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000009 /* LocationStatusStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationStatusStore.swift; sourceTree = "<group>"; };
+		B1000000000000000000000A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -268,6 +288,7 @@
 				E956402262612D72E366D793 /* Assets.xcassets */,
 				27F8AC7F78EA8741BB5603F0 /* Brunn.entitlements */,
 				24BC8100496C9079F87F704E /* Info.plist */,
+				B1000000000000000000000A /* PrivacyInfo.xcprivacy */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -298,6 +319,22 @@
 			path = Domain;
 			sourceTree = "<group>";
 		};
+		C10000000000000000000001 /* Location */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000001 /* LocationCredentialCapabilities.swift */,
+				B10000000000000000000002 /* LocationDiskQueue.swift */,
+				B10000000000000000000003 /* LocationKeychainCredentialStore.swift */,
+				B10000000000000000000004 /* LocationPresence.swift */,
+				B10000000000000000000005 /* LocationReport.swift */,
+				B10000000000000000000006 /* LocationReportEnricher.swift */,
+				B10000000000000000000007 /* LocationReporter.swift */,
+				B10000000000000000000008 /* LocationSettingsView.swift */,
+				B10000000000000000000009 /* LocationStatusStore.swift */,
+			);
+			path = Location;
+			sourceTree = "<group>";
+		};
 		B66C2B5ECC171DB1910FC4B3 = {
 			isa = PBXGroup;
 			children = (
@@ -315,6 +352,7 @@
 				43B08E7FD2D7AF641C312B83 /* App */,
 				AFF55DF1FB33FC54CDC22B82 /* Domain */,
 				ADB1F8405B5793D3D11631F5 /* Features */,
+				C10000000000000000000001 /* Location */,
 				A4E4CD7A51A30164C45E46D9 /* Resources */,
 				9557999100CAFF959C5A68DF /* Services */,
 				02F0BC238CED9A11328601CA /* Shared */,
@@ -428,6 +466,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E4DCF70150FA5E39007E5DBB /* Assets.xcassets in Resources */,
+				A1000000000000000000000A /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -462,6 +501,15 @@
 				66B5918BD21C6A065ECBA078 /* ConversationView.swift in Sources */,
 				8DA09BB63980776DD0142164 /* DashboardView.swift in Sources */,
 				5B3DB106A675056EE219CCE8 /* KeychainCredentialStore.swift in Sources */,
+				A10000000000000000000001 /* LocationCredentialCapabilities.swift in Sources */,
+				A10000000000000000000002 /* LocationDiskQueue.swift in Sources */,
+				A10000000000000000000003 /* LocationKeychainCredentialStore.swift in Sources */,
+				A10000000000000000000004 /* LocationPresence.swift in Sources */,
+				A10000000000000000000005 /* LocationReport.swift in Sources */,
+				A10000000000000000000006 /* LocationReportEnricher.swift in Sources */,
+				A10000000000000000000007 /* LocationReporter.swift in Sources */,
+				A10000000000000000000008 /* LocationSettingsView.swift in Sources */,
+				A10000000000000000000009 /* LocationStatusStore.swift in Sources */,
 				4745206E7283BBA05849D4A6 /* MessagingBackgroundTransport.swift in Sources */,
 				A0B7F1371B13E21825E99D5E /* MessagingController.swift in Sources */,
 				F91DFAC9B86C2C8EC033F066 /* MessagingModels.swift in Sources */,

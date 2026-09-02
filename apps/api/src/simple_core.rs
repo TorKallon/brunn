@@ -32,6 +32,10 @@ use crate::{
     error::{ApiError, ApiResult},
     foreground_latency::ForegroundOperation,
     ingest::{DocumentChunk, normalize_document},
+    location::{
+        rules::{PresenceState as LocationPresenceState, presence_view},
+        store as location_store,
+    },
     models::{Capability, CheckpointRequest, CredentialId, ResponseStatus, UserId, canonical_json},
     retrieval_sql::{
         SIMPLE_ENTRY_LINK_CANDIDATES_SQL, SIMPLE_LEXICAL_CANDIDATES_SQL,
@@ -698,11 +702,18 @@ pub async fn open(
         );
         (search, hinted, elapsed_ms(retrieval_started))
     };
-    let (checkpoint_and_changes, (search, hinted, retrieval_wall_ms)) =
+    let presence_now = Utc::now();
+    let retrieve_and_presence = async {
+        tokio::join!(
+            retrieve,
+            owner_presence_for_open(&state, &auth, presence_now)
+        )
+    };
+    let (checkpoint_and_changes, ((search, hinted, retrieval_wall_ms), owner_presence)) =
         if state.config.read_path_roundtrip_v1 {
-            tokio::join!(checkpoint_and_changes, retrieve)
+            tokio::join!(checkpoint_and_changes, retrieve_and_presence)
         } else {
-            (checkpoint_and_changes.await, retrieve.await)
+            (checkpoint_and_changes.await, retrieve_and_presence.await)
         };
     let (mut checkpoint, change_page, checkpoint_read_ms, changes_ms) = checkpoint_and_changes?;
 
@@ -832,6 +843,9 @@ pub async fn open(
             "pointer_source_count": evidence_leads.len()
         }
     });
+    if let Some(owner_presence) = owner_presence {
+        response_data["owner_presence"] = owner_presence;
+    }
     if state.config.intention_ledger {
         response_data["pending_intentions"] = json!(
             features
@@ -894,6 +908,59 @@ pub async fn open(
     metrics::histogram!("simple.open.evidence_leads").record(evidence_leads.len() as f64);
     record_serialized_product_read(&state, &auth, ProductActivityOperation::Open, &envelope);
     Ok(Json(envelope))
+}
+
+async fn owner_presence_for_open(
+    state: &AppState,
+    auth: &AuthContext,
+    now: DateTime<Utc>,
+) -> Option<Value> {
+    if !state.config.location_presence_in_open {
+        record_location_presence_block("false:flag_off");
+        return None;
+    }
+    render_owner_presence(location_store::read_presence(state, auth).await, now)
+}
+
+fn render_owner_presence(
+    presence: ApiResult<Option<LocationPresenceState>>,
+    now: DateTime<Utc>,
+) -> Option<Value> {
+    let presence = match presence {
+        Ok(Some(presence)) => presence,
+        Ok(None) => {
+            record_location_presence_block("false:no_row");
+            return None;
+        }
+        Err(_) => {
+            record_location_presence_block("false:lookup_error");
+            tracing::warn!("location presence lookup omitted from memory.open");
+            return None;
+        }
+    };
+    if now - presence.reported_at >= chrono::Duration::days(7) {
+        record_location_presence_block("false:stale");
+        return None;
+    }
+    match serde_json::to_value(presence_view(&presence, now)) {
+        Ok(value) => {
+            record_location_presence_block("true");
+            Some(value)
+        }
+        Err(_) => {
+            record_location_presence_block("false:render_error");
+            tracing::warn!("location presence rendering omitted from memory.open");
+            None
+        }
+    }
+}
+
+fn record_location_presence_block(included: &'static str) {
+    metrics::counter!(
+        "brunn.location.presence_block",
+        "included" => included
+    )
+    .increment(1);
 }
 
 pub async fn search(
@@ -9328,9 +9395,16 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use async_trait::async_trait;
+    use chrono::TimeZone as _;
 
     use super::*;
-    use crate::embeddings::Embedder;
+    use crate::{
+        embeddings::Embedder,
+        location::rules::{
+            Confidence as LocationConfidence, Coordinate as LocationCoordinate,
+            OpenVisit as LocationOpenVisit,
+        },
+    };
 
     struct RequestBatchProbeEmbedder {
         calls: AtomicUsize,
@@ -9363,6 +9437,67 @@ mod tests {
         fn is_degraded(&self) -> bool {
             false
         }
+    }
+
+    fn test_location_presence(reported_at: DateTime<Utc>) -> LocationPresenceState {
+        LocationPresenceState {
+            timezone: chrono_tz::America::Los_Angeles,
+            reported_at,
+            last_coordinate: LocationCoordinate {
+                lat: 47.6205,
+                lon: -122.2070,
+            },
+            last_accuracy_m: 20.0,
+            city: Some("Bellevue".to_owned()),
+            region: Some("WA".to_owned()),
+            country: Some("US".to_owned()),
+            visit: Some(LocationOpenVisit {
+                arrived_at: reported_at - chrono::Duration::hours(2),
+                coordinate: LocationCoordinate {
+                    lat: 47.6205,
+                    lon: -122.2070,
+                },
+                label: Some("Home".to_owned()),
+                kind: "home".to_owned(),
+                confidence: LocationConfidence::High,
+            }),
+        }
+    }
+
+    #[test]
+    fn owner_presence_open_block_is_formatted_and_omitted_when_unavailable_or_over_seven_days_old()
+    {
+        let now = Utc.with_ymd_and_hms(2026, 9, 2, 20, 0, 0).single().unwrap();
+        let value = render_owner_presence(
+            Ok(Some(test_location_presence(
+                now - chrono::Duration::hours(6),
+            ))),
+            now,
+        )
+        .unwrap();
+        assert_eq!(value["status"], "at_place");
+        assert_eq!(value["place"]["label"], "Home");
+        assert_eq!(value["at_home"], true);
+        assert_eq!(value["city"], "Bellevue");
+        assert_eq!(value["timezone"], "America/Los_Angeles");
+
+        assert!(
+            render_owner_presence(
+                Ok(Some(test_location_presence(
+                    now - chrono::Duration::days(7),
+                ))),
+                now,
+            )
+            .is_none()
+        );
+        assert!(render_owner_presence(Ok(None), now).is_none());
+        assert!(
+            render_owner_presence(
+                Err(ApiError::Internal("synthetic lookup failure".to_owned())),
+                now,
+            )
+            .is_none()
+        );
     }
 
     #[tokio::test]

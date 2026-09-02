@@ -17,6 +17,8 @@ const EXISTING_LOCAL_TOOLS = [
   "briefing.topics",
   "document.get",
   "document.publish",
+  "location.presence",
+  "location.rederive",
   "memory.capture",
   "memory.changes",
   "memory.checkpoint",
@@ -60,8 +62,8 @@ const MESSAGING_TOOL_NAMES = [
 // These hashes bind both each pre-messaging tool name and its complete,
 // byte-exact description while keeping this regression snapshot readable.
 const EXISTING_DESCRIPTION_HASHES = {
-  local: "056603ef83f6de555b9534a32bae510112828aae78939c62395dead1fc66c4e1",
-  remote: "7b20c09a2c9bfa5513760cfa739f92b06442bb3925fae6a06cc53060790f85d9",
+  local: "de90e8eb617d367d7d747aa962eb32217e37b001809a5106a7879cf88d2d2bcd",
+  remote: "de23efdd9e467d76c131085e9dcda2fc91d230f5f2acc8691b369af3a3c26f8b",
 } as const;
 
 const MESSAGING_DESCRIPTIONS = {
