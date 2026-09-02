@@ -113,6 +113,12 @@ struct MoreView: View {
                     "Visit reporting",
                     value: locationReporter.reportingEnabled ? "On" : "Off"
                 )
+                if let error = locationReporter.lastError {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .foregroundStyle(BrunnTheme.red)
+                        .accessibilityIdentifier("location-account-error")
+                }
             } header: {
                 Text("Location")
             } footer: {
@@ -178,6 +184,11 @@ struct MoreView: View {
             Section {
                 Button(model.isDemo ? "Leave demo" : "Disconnect this iPhone", role: .destructive) {
                     Task {
+                        if !model.isDemo {
+                            guard await locationReporter.disconnectFromAccount(
+                                ownerAPI: model.api
+                            ) else { return }
+                        }
                         if !model.isDemo, model.canManageNotifications {
                             let revoked = await notifications.revokeInstallation(
                                 using: model.api,
@@ -187,7 +198,11 @@ struct MoreView: View {
                             guard revoked else { return }
                             guard await model.revokeDeviceTaskAccess() else { return }
                         }
+                        let wasDemo = model.isDemo
                         await model.disconnect()
+                        if !wasDemo, model.phase == .connectionRequired {
+                            LocationPermissionPromptPolicy.reset()
+                        }
                     }
                 }
             } footer: {

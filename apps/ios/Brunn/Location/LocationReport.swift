@@ -1,4 +1,106 @@
+import CoreLocation
 import Foundation
+
+enum LocationPermissionPromptDecision: Equatable {
+    case present
+    case markHandled
+    case none
+}
+
+enum LocationPermissionPromptAction: Equatable {
+    case beginEnable
+    case openSettings
+    case unavailable
+}
+
+enum LocationPermissionState: Equatable {
+    case notDetermined
+    case restricted
+    case denied
+    case whenInUse
+    case always
+    case unknown
+
+    init(_ authorizationStatus: CLAuthorizationStatus) {
+        switch authorizationStatus {
+        case .notDetermined:
+            self = .notDetermined
+        case .restricted:
+            self = .restricted
+        case .denied:
+            self = .denied
+        case .authorizedWhenInUse:
+            self = .whenInUse
+        case .authorizedAlways:
+            self = .always
+        @unknown default:
+            self = .unknown
+        }
+    }
+}
+
+enum LocationPermissionPromptPolicy {
+    static let storageKey = "brunn.location.permission-prompt-revision"
+    static let userStorageKey = "brunn.location.permission-prompt-user-id"
+    static let currentRevision = 1
+
+    static func decision(
+        isReady: Bool,
+        connectionValidated: Bool,
+        isDemo: Bool,
+        userID: String?,
+        sceneIsActive: Bool,
+        reportingEnabled: Bool,
+        credentialBoundToUser: Bool,
+        storedRevision: Int,
+        storedUserID: String,
+        permissionState: LocationPermissionState
+    ) -> LocationPermissionPromptDecision {
+        guard let userID, !userID.isEmpty,
+              isReady,
+              connectionValidated,
+              !isDemo,
+              sceneIsActive
+        else { return .none }
+        guard storedRevision < currentRevision || storedUserID != userID else {
+            return .none
+        }
+
+        switch permissionState {
+        case .notDetermined, .whenInUse, .denied, .restricted:
+            return .present
+        case .always:
+            if reportingEnabled {
+                return credentialBoundToUser ? .markHandled : .none
+            }
+            return .present
+        case .unknown:
+            return .none
+        }
+    }
+
+    static func primaryAction(
+        for permissionState: LocationPermissionState
+    ) -> LocationPermissionPromptAction {
+        switch permissionState {
+        case .notDetermined, .whenInUse, .always:
+            .beginEnable
+        case .denied, .restricted:
+            .openSettings
+        case .unknown:
+            .unavailable
+        }
+    }
+
+    static func handledRevision(storedRevision: Int) -> Int {
+        max(storedRevision, currentRevision)
+    }
+
+    static func reset(defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: storageKey)
+        defaults.removeObject(forKey: userStorageKey)
+    }
+}
 
 enum LocationReportType: String, Codable, Sendable {
     case ping

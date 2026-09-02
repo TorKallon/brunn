@@ -186,10 +186,16 @@ struct LocationSettingsView: View {
     }
 }
 
-private struct LocationPrimerView: View {
+struct LocationPrimerView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var reporter: LocationReporter
+    let onFinish: () -> Void
+
+    init(onFinish: @escaping () -> Void = {}) {
+        self.onFinish = onFinish
+    }
 
     var body: some View {
         NavigationStack {
@@ -209,33 +215,107 @@ private struct LocationPrimerView: View {
                 }
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+                Text("You can change this any time in Settings → Location.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                if let error = reporter.lastError {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .foregroundStyle(BrunnTheme.red)
+                        .accessibilityIdentifier("location-permission-error")
+                }
                 Spacer()
                 Button {
-                    let userID = model.user?.id ?? ""
-                    dismiss()
-                    Task {
-                        await reporter.beginEnable(ownerAPI: model.api, expectedUserID: userID)
-                    }
+                    performPrimaryAction()
                 } label: {
                     if reporter.isWorking {
                         ProgressView("Preparing…")
                             .frame(maxWidth: .infinity)
                     } else {
-                        Text("Continue")
+                        Text(primaryActionLabel)
                             .frame(maxWidth: .infinity)
                     }
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrunnTheme.signal)
-                .disabled(reporter.isWorking || !model.connectionValidated || model.isDemo)
+                .disabled(primaryActionDisabled)
+                .accessibilityIdentifier("location-permission-primary-action")
             }
             .padding(24)
+            .accessibilityIdentifier("location-permission-primer")
             .navigationTitle("Location setup")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Not now") { dismiss() }
+                    Button("Not now") {
+                        onFinish()
+                        dismiss()
+                    }
+                    .accessibilityIdentifier("location-permission-not-now")
                 }
+            }
+        }
+    }
+
+    private var primaryAction: LocationPermissionPromptAction {
+        LocationPermissionPromptPolicy.primaryAction(
+            for: LocationPermissionState(reporter.authorizationStatus)
+        )
+    }
+
+    private var primaryActionLabel: String {
+        switch primaryAction {
+        case .openSettings:
+            "Open iPhone Settings"
+        case .beginEnable:
+            switch LocationPermissionState(reporter.authorizationStatus) {
+            case .whenInUse:
+                "Allow Always Access"
+            case .always:
+                "Start reporting"
+            default:
+                "Continue"
+            }
+        case .unavailable:
+            "Continue"
+        }
+    }
+
+    private var primaryActionDisabled: Bool {
+        guard !reporter.isWorking else { return true }
+        switch primaryAction {
+        case .openSettings:
+            return false
+        case .beginEnable:
+            return !model.connectionValidated || model.isDemo
+        case .unavailable:
+            return true
+        }
+    }
+
+    private func performPrimaryAction() {
+        guard primaryAction != .unavailable else { return }
+        let userID = model.user?.id ?? ""
+        Task {
+            switch primaryAction {
+            case .beginEnable:
+                await reporter.beginEnable(
+                    ownerAPI: model.api,
+                    expectedUserID: userID
+                ) {
+                    onFinish()
+                    dismiss()
+                }
+            case .openSettings:
+                guard await reporter.prepareEnableFromSettings(
+                    ownerAPI: model.api,
+                    expectedUserID: userID
+                ) else { return }
+                onFinish()
+                dismiss()
+                openURL(URL(string: UIApplication.openSettingsURLString)!)
+            case .unavailable:
+                break
             }
         }
     }

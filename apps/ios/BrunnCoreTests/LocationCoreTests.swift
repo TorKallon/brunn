@@ -3,6 +3,141 @@ import XCTest
 @testable import BrunnCore
 
 final class LocationCoreTests: XCTestCase {
+    func testLocationPermissionPromptCoversNewAndExistingUsersOnce() {
+        XCTAssertEqual(locationPromptDecision(state: .notDetermined), .present)
+        XCTAssertEqual(locationPromptDecision(state: .whenInUse), .present)
+        XCTAssertEqual(locationPromptDecision(state: .denied), .present)
+        XCTAssertEqual(locationPromptDecision(state: .restricted), .present)
+        XCTAssertEqual(locationPromptDecision(state: .always), .present)
+        XCTAssertEqual(
+            locationPromptDecision(
+                reportingEnabled: true,
+                credentialBoundToUser: true,
+                state: .always
+            ),
+            .markHandled
+        )
+        XCTAssertEqual(
+            locationPromptDecision(
+                reportingEnabled: true,
+                credentialBoundToUser: false,
+                state: .always
+            ),
+            .none,
+            "An unvalidated credential must not consume the account's prompt revision."
+        )
+        XCTAssertEqual(locationPromptDecision(state: .unknown), .none)
+
+        XCTAssertEqual(
+            locationPromptDecision(
+                storedRevision: LocationPermissionPromptPolicy.currentRevision,
+                storedUserID: "user:location-test",
+                state: .notDetermined
+            ),
+            .none
+        )
+        XCTAssertEqual(
+            locationPromptDecision(
+                storedRevision: LocationPermissionPromptPolicy.currentRevision + 1,
+                storedUserID: "user:location-test",
+                state: .notDetermined
+            ),
+            .none
+        )
+    }
+
+    func testLocationPermissionPromptUsesSettingsAfterDenial() {
+        XCTAssertEqual(
+            LocationPermissionPromptPolicy.primaryAction(for: .notDetermined),
+            .beginEnable
+        )
+        XCTAssertEqual(
+            LocationPermissionPromptPolicy.primaryAction(for: .whenInUse),
+            .beginEnable
+        )
+        XCTAssertEqual(
+            LocationPermissionPromptPolicy.primaryAction(for: .always),
+            .beginEnable
+        )
+        XCTAssertEqual(
+            LocationPermissionPromptPolicy.primaryAction(for: .denied),
+            .openSettings
+        )
+        XCTAssertEqual(
+            LocationPermissionPromptPolicy.primaryAction(for: .restricted),
+            .openSettings
+        )
+        XCTAssertEqual(
+            LocationPermissionPromptPolicy.primaryAction(for: .unknown),
+            .unavailable
+        )
+    }
+
+    func testLocationPermissionPromptWaitsForAuthenticatedForegroundReadyState() {
+        XCTAssertEqual(locationPromptDecision(isReady: false), .none)
+        XCTAssertEqual(locationPromptDecision(connectionValidated: false), .none)
+        XCTAssertEqual(locationPromptDecision(isDemo: true), .none)
+        XCTAssertEqual(locationPromptDecision(userID: nil), .none)
+        XCTAssertEqual(locationPromptDecision(userID: ""), .none)
+        XCTAssertEqual(locationPromptDecision(sceneIsActive: false), .none)
+
+        // AppModel accepts a credential by validating the connection before changing
+        // the phase to ready, so both transitions must be safe to evaluate.
+        XCTAssertEqual(
+            locationPromptDecision(isReady: false, connectionValidated: true),
+            .none
+        )
+        XCTAssertEqual(
+            locationPromptDecision(isReady: true, connectionValidated: true),
+            .present
+        )
+
+        // A cached/offline ready state must stay quiet, then present once validated.
+        XCTAssertEqual(
+            locationPromptDecision(isReady: true, connectionValidated: false),
+            .none
+        )
+        XCTAssertEqual(
+            locationPromptDecision(isReady: true, connectionValidated: true),
+            .present
+        )
+    }
+
+    func testLocationPermissionPromptDismissalRevisionPreventsRepeat() {
+        let handled = LocationPermissionPromptPolicy.handledRevision(storedRevision: 0)
+        XCTAssertEqual(handled, LocationPermissionPromptPolicy.currentRevision)
+        XCTAssertEqual(
+            locationPromptDecision(
+                storedRevision: handled,
+                storedUserID: "user:location-test",
+                state: .notDetermined
+            ),
+            .none
+        )
+        XCTAssertEqual(
+            locationPromptDecision(
+                storedRevision: handled,
+                storedUserID: "user:other",
+                state: .notDetermined
+            ),
+            .present,
+            "A different authenticated account receives its own setup prompt."
+        )
+        XCTAssertEqual(
+            LocationPermissionPromptPolicy.handledRevision(storedRevision: handled + 1),
+            handled + 1
+        )
+
+        let suite = "LocationCoreTests.location-prompt.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(handled, forKey: LocationPermissionPromptPolicy.storageKey)
+        defaults.set("user:location-test", forKey: LocationPermissionPromptPolicy.userStorageKey)
+        LocationPermissionPromptPolicy.reset(defaults: defaults)
+        XCTAssertNil(defaults.object(forKey: LocationPermissionPromptPolicy.storageKey))
+        XCTAssertNil(defaults.object(forKey: LocationPermissionPromptPolicy.userStorageKey))
+    }
+
     func testCredentialCapabilitiesAreOnlyCanonicalReadOnlyUnionLocationWrite() {
         let withoutMessaging = LocationCredentialCapabilities.canonicalReadOnly
             + [LocationCredentialCapabilities.locationWrite]
@@ -122,14 +257,19 @@ final class LocationCoreTests: XCTestCase {
         store.reportingEnabled = true
         store.lastGeocodedCoordinate = coordinate
         store.lastUploadAt = date
+        store.setupPending = true
 
         let reloaded = LocationStatusStore(defaults: defaults)
         XCTAssertTrue(reloaded.reportingEnabled)
         XCTAssertEqual(reloaded.lastGeocodedCoordinate, coordinate)
         XCTAssertEqual(reloaded.lastUploadAt, date)
+        XCTAssertTrue(reloaded.setupPending)
 
-        reloaded.clearLiveStatus()
+        reloaded.clearForDisconnect()
+        XCTAssertFalse(reloaded.reportingEnabled)
+        XCTAssertNil(reloaded.lastGeocodedCoordinate)
         XCTAssertNil(reloaded.lastUploadAt)
+        XCTAssertFalse(reloaded.setupPending)
     }
 
     private func ping(_ index: Int) -> LocationReport {
@@ -139,6 +279,32 @@ final class LocationCoreTests: XCTestCase {
             lat: Double(index),
             lon: 0,
             accuracyM: 10
+        )
+    }
+
+    private func locationPromptDecision(
+        isReady: Bool = true,
+        connectionValidated: Bool = true,
+        isDemo: Bool = false,
+        userID: String? = "user:location-test",
+        sceneIsActive: Bool = true,
+        reportingEnabled: Bool = false,
+        credentialBoundToUser: Bool = true,
+        storedRevision: Int = 0,
+        storedUserID: String = "",
+        state: LocationPermissionState = .notDetermined
+    ) -> LocationPermissionPromptDecision {
+        LocationPermissionPromptPolicy.decision(
+            isReady: isReady,
+            connectionValidated: connectionValidated,
+            isDemo: isDemo,
+            userID: userID,
+            sceneIsActive: sceneIsActive,
+            reportingEnabled: reportingEnabled,
+            credentialBoundToUser: credentialBoundToUser,
+            storedRevision: storedRevision,
+            storedUserID: storedUserID,
+            permissionState: state
         )
     }
 }

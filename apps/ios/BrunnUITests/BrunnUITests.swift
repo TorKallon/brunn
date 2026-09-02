@@ -21,6 +21,42 @@ final class BrunnUITests: XCTestCase {
         XCTAssertFalse(element("brunn-startup", in: app).exists)
     }
 
+    @MainActor
+    func testAuthenticatedInstallShowsLocationPermissionPrimerOnce() {
+        let app = XCUIApplication()
+        app.resetAuthorizationStatus(for: .location)
+        app.launchArguments = [
+            "--ui-test-location-permission-prompt",
+            "--ui-test-reset-location-prompt",
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US",
+        ]
+
+        app.launch()
+
+        let primer = element("location-permission-primer", in: app)
+        XCTAssertTrue(primer.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Let Brunn remember where you have been"].exists)
+        let notNow = app.buttons["location-permission-not-now"]
+        XCTAssertTrue(notNow.exists)
+        notNow.tap()
+        XCTAssertTrue(primer.waitForNonExistence(timeout: 2))
+
+        app.terminate()
+        app.launchArguments = [
+            "--ui-test-location-permission-prompt",
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US",
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
+        XCTAssertFalse(
+            element("location-permission-primer", in: app).waitForExistence(timeout: 2),
+            "The one-time location primer appeared again after dismissal."
+        )
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
     }

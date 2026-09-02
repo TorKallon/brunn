@@ -14,6 +14,8 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
     @Published private(set) var lastError: String?
     @Published private(set) var isWorking = false
     @Published private(set) var wasRelaunchedForLocation = false
+    @Published private(set) var setupPending: Bool
+    @Published private(set) var validatedCredentialUserID: String?
 
     private let manager: CLLocationManager
     private let api: BrunnAPI
@@ -21,10 +23,12 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
     private let queue: LocationDiskQueue
     private let statusStore: LocationStatusStore
     private let enricher: LocationReportEnricher
-    private var pendingEnable = false
+    private var pendingEnable: Bool
     private var deliveryTail: Task<Void, Never>?
     private var activeUploadTask: Task<LocationReportUploadResponse, Error>?
     private var isFlushing = false
+    private var credentialOperationHeld = false
+    private var credentialOperationWaiters: [CheckedContinuation<Void, Never>] = []
 
     override convenience init() {
         let statusStore = LocationStatusStore()
@@ -55,6 +59,9 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
         authorizationStatus = manager.authorizationStatus
         reportingEnabled = statusStore.reportingEnabled
         lastUploadAt = statusStore.lastUploadAt
+        pendingEnable = statusStore.setupPending
+        setupPending = statusStore.setupPending
+        validatedCredentialUserID = nil
         super.init()
         manager.delegate = self
         hasCredential = (try? credentialStore.load()) != nil
@@ -71,7 +78,12 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
 
     func applicationDidBecomeActive(expectedUserID: String?) async {
         authorizationStatus = manager.authorizationStatus
+        await acquireCredentialOperation()
         await validateStoredCredential(expectedUserID: expectedUserID)
+        releaseCredentialOperation()
+        if pendingEnable {
+            requestNextAuthorizationStep()
+        }
         if reportingEnabled {
             startMonitoring()
             await drainQueue()
@@ -79,38 +91,72 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
         }
     }
 
-    func beginEnable(ownerAPI: BrunnAPI, expectedUserID: String) async {
+    @discardableResult
+    func beginEnable(
+        ownerAPI: BrunnAPI,
+        expectedUserID: String,
+        onReadyToRequest: () -> Void = {}
+    ) async -> Bool {
+        guard !isWorking else { return false }
+        isWorking = true
+        await acquireCredentialOperation()
+        defer {
+            releaseCredentialOperation()
+            isWorking = false
+        }
         guard !expectedUserID.isEmpty else {
             lastError = "Connect this iPhone to Brunn before setting up location."
-            return
+            return false
         }
-        isWorking = true
-        defer { isWorking = false }
         do {
             try await ensureCredential(ownerAPI: ownerAPI, expectedUserID: expectedUserID)
-            pendingEnable = true
+            setPendingEnable(true)
+            onReadyToRequest()
+            await Task.yield()
             requestNextAuthorizationStep()
+            return true
         } catch {
-            pendingEnable = false
+            setPendingEnable(false)
             lastError = error.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
+    func prepareEnableFromSettings(ownerAPI: BrunnAPI, expectedUserID: String) async -> Bool {
+        guard !isWorking else { return false }
+        isWorking = true
+        await acquireCredentialOperation()
+        defer {
+            releaseCredentialOperation()
+            isWorking = false
+        }
+        guard !expectedUserID.isEmpty else {
+            lastError = "Connect this iPhone to Brunn before setting up location."
+            return false
+        }
+        do {
+            try await ensureCredential(ownerAPI: ownerAPI, expectedUserID: expectedUserID)
+            setPendingEnable(true)
+            lastError = nil
+            return true
+        } catch {
+            setPendingEnable(false)
+            lastError = error.localizedDescription
+            return false
         }
     }
 
     func disableReporting() async {
-        pendingEnable = false
-        reportingEnabled = false
-        statusStore.reportingEnabled = false
-        stopMonitoring()
-        let pendingDelivery = deliveryTail
-        deliveryTail = nil
-        pendingDelivery?.cancel()
-        activeUploadTask?.cancel()
-        if let activeUploadTask {
-            _ = try? await activeUploadTask.value
+        guard !isWorking else { return }
+        isWorking = true
+        await acquireCredentialOperation()
+        defer {
+            releaseCredentialOperation()
+            isWorking = false
         }
         do {
-            try queue.clear()
-            queuedReportCount = 0
+            try await stopReportingLocally()
         } catch {
             lastError = error.localizedDescription
         }
@@ -133,17 +179,88 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
         }
     }
 
+    func disconnectFromAccount(ownerAPI: BrunnAPI) async -> Bool {
+        guard !isWorking else { return false }
+        isWorking = true
+        await acquireCredentialOperation()
+        defer {
+            releaseCredentialOperation()
+            isWorking = false
+        }
+        do {
+            try await stopReportingLocally()
+        } catch {
+            lastError = "Disconnect stopped because queued location data could not be removed. \(error.localizedDescription)"
+            return false
+        }
+
+        let credential: LocationDeviceCredential?
+        do {
+            credential = try credentialStore.load()
+        } catch {
+            hasCredential = true
+            lastError = "Disconnect stopped because the protected location credential could not be read. Unlock this iPhone and retry."
+            return false
+        }
+
+        guard let credential else {
+            finishLocationDisconnect()
+            return true
+        }
+
+        var credentialAlreadyInvalid = false
+        do {
+            try await api.deleteLiveLocation(bearerToken: credential.token)
+        } catch let error as BrunnAPIError where error.isUnauthorized {
+            // A previous disconnect attempt may already have revoked this token.
+            // It is safe to finish removing the now-unusable local credential.
+            credentialAlreadyInvalid = true
+        } catch {
+            lastError = "Disconnect stopped because live location data could not be deleted from Brunn. Retry while online."
+            return false
+        }
+
+        if !credentialAlreadyInvalid {
+            do {
+                _ = try await ownerAPI.revokeCredential(reference: credential.credentialRef)
+            } catch {
+                lastError = "Disconnect stopped because iPhone location access could not be revoked on Brunn. Retry while online."
+                return false
+            }
+        }
+
+        do {
+            if let current = try credentialStore.load(), current != credential {
+                lastError = "Disconnect stopped because iPhone location access changed during cleanup. Retry."
+                return false
+            }
+            try credentialStore.delete()
+        } catch {
+            hasCredential = true
+            lastError = "Disconnect stopped because the revoked location credential could not be removed from this iPhone. Unlock it and retry."
+            return false
+        }
+        finishLocationDisconnect()
+        return true
+    }
+
     func deleteLiveData() async {
+        guard !isWorking else { return }
+        isWorking = true
+        await acquireCredentialOperation()
+        defer {
+            releaseCredentialOperation()
+            isWorking = false
+        }
         guard let credential = try? credentialStore.load() else {
             statusStore.clearLiveStatus()
             presence = nil
             lastUploadAt = nil
             return
         }
-        isWorking = true
-        defer { isWorking = false }
         do {
             try await api.deleteLiveLocation(bearerToken: credential.token)
+            guard credentialIsCurrent(credential) else { return }
             statusStore.clearLiveStatus()
             presence = nil
             lastUploadAt = nil
@@ -154,12 +271,17 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
     }
 
     func refreshPresence() async {
+        guard !isWorking else { return }
+        isWorking = true
+        defer { isWorking = false }
         guard let credential = validStoredCredential() else { return }
         do {
             let current = try await api.locationPresence(bearerToken: credential.token)
+            guard credentialIsCurrent(credential) else { return }
             presence = current
             lastError = nil
         } catch let error as BrunnAPIError {
+            guard credentialIsCurrent(credential) else { return }
             if case let .server(status, code, _) = error,
                status == 404,
                code == "location_presence_not_found"
@@ -167,10 +289,13 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
                 presence = nil
                 return
             }
-            handleCredentialFailureIfNeeded(error)
-            lastError = error.localizedDescription
+            if !handleCredentialFailureIfNeeded(error, credential: credential) {
+                lastError = error.localizedDescription
+            }
         } catch {
-            lastError = error.localizedDescription
+            if credentialIsCurrent(credential) {
+                lastError = error.localizedDescription
+            }
         }
     }
 
@@ -231,12 +356,12 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
         case .authorizedAlways:
             finishEnable()
         case .denied, .restricted:
-            pendingEnable = false
+            setPendingEnable(false)
             lastError = "Always Location Access is required to report visits in the background."
         case .notDetermined:
             break
         @unknown default:
-            pendingEnable = false
+            setPendingEnable(false)
         }
     }
 
@@ -263,20 +388,20 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
         case .authorizedAlways:
             finishEnable()
         case .denied, .restricted:
-            pendingEnable = false
+            setPendingEnable(false)
             lastError = "Location permission is off. Open Settings to allow Always access."
         @unknown default:
-            pendingEnable = false
+            setPendingEnable(false)
         }
     }
 
     private func finishEnable() {
         guard validStoredCredential() != nil else {
-            pendingEnable = false
+            setPendingEnable(false)
             lastError = "The protected location credential is unavailable."
             return
         }
-        pendingEnable = false
+        setPendingEnable(false)
         reportingEnabled = true
         statusStore.reportingEnabled = true
         lastError = nil
@@ -292,6 +417,39 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
     private func stopMonitoring() {
         manager.stopMonitoringVisits()
         manager.stopMonitoringSignificantLocationChanges()
+    }
+
+    private func setPendingEnable(_ pending: Bool) {
+        pendingEnable = pending
+        setupPending = pending
+        statusStore.setupPending = pending
+    }
+
+    private func stopReportingLocally() async throws {
+        setPendingEnable(false)
+        reportingEnabled = false
+        statusStore.reportingEnabled = false
+        stopMonitoring()
+        let pendingDelivery = deliveryTail
+        deliveryTail = nil
+        pendingDelivery?.cancel()
+        let uploadTask = activeUploadTask
+        uploadTask?.cancel()
+        if let uploadTask {
+            _ = try? await uploadTask.value
+        }
+        _ = await pendingDelivery?.value
+        try queue.clear()
+        queuedReportCount = 0
+    }
+
+    private func finishLocationDisconnect() {
+        hasCredential = false
+        validatedCredentialUserID = nil
+        statusStore.clearForDisconnect()
+        presence = nil
+        lastUploadAt = nil
+        lastError = nil
     }
 
     private func enqueue(_ report: LocationReport) {
@@ -327,7 +485,7 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
             isFlushing = false
         }
 
-        while reportingEnabled, !Task.isCancelled {
+        while reportingEnabled, !Task.isCancelled, credentialIsCurrent(credential) {
             let batch: [LocationQueuedReport]
             let pending: LocationQueuedReport?
             do {
@@ -336,17 +494,23 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
                     ? try queue.nextPending()
                     : nil
             } catch {
-                lastError = error.localizedDescription
+                if credentialIsCurrent(credential) {
+                    lastError = error.localizedDescription
+                }
                 return
             }
 
             if let pending {
                 let enriched = await enricher.enrich(pending.report)
-                guard reportingEnabled, !Task.isCancelled else { return }
+                guard reportingEnabled, !Task.isCancelled,
+                      credentialIsCurrent(credential)
+                else { return }
                 do {
                     try queue.replace(id: pending.id, with: enriched)
                 } catch {
-                    lastError = error.localizedDescription
+                    if credentialIsCurrent(credential) {
+                        lastError = error.localizedDescription
+                    }
                     return
                 }
                 continue
@@ -370,7 +534,9 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
             do {
                 let response = try await uploadTask.value
                 activeUploadTask = nil
-                guard reportingEnabled, !Task.isCancelled else { return }
+                guard reportingEnabled, !Task.isCancelled,
+                      credentialIsCurrent(credential)
+                else { return }
                 try queue.remove(ids: batch.map(\.id))
                 queuedReportCount = try queue.count()
                 let uploadedAt = Date()
@@ -382,13 +548,18 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
                 lastError = nil
             } catch let error as BrunnAPIError {
                 activeUploadTask = nil
-                guard reportingEnabled, !Task.isCancelled else { return }
-                handleCredentialFailureIfNeeded(error)
-                lastError = error.localizedDescription
+                guard reportingEnabled, !Task.isCancelled,
+                      credentialIsCurrent(credential)
+                else { return }
+                if !handleCredentialFailureIfNeeded(error, credential: credential) {
+                    lastError = error.localizedDescription
+                }
                 return
             } catch {
                 activeUploadTask = nil
-                guard reportingEnabled, !Task.isCancelled else { return }
+                guard reportingEnabled, !Task.isCancelled,
+                      credentialIsCurrent(credential)
+                else { return }
                 lastError = error.localizedDescription
                 return
             }
@@ -397,25 +568,38 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
 
     private func ensureCredential(ownerAPI: BrunnAPI, expectedUserID: String) async throws {
         if let stored = validStoredCredential() {
-            do {
-                let identity = try await api.deviceCredentialIdentity(bearerToken: stored.token)
-                if identity.user.id == expectedUserID,
-                   identity.credentialID == stored.credentialRef,
-                   LocationCredentialCapabilities.isExactAcceptedSet(identity.capabilities),
-                   Set(identity.capabilities) == Set(stored.capabilities)
-                {
-                    hasCredential = true
-                    return
+            if stored.userID != expectedUserID {
+                try await clearPreviousAccountCredential(stored)
+            } else {
+                do {
+                    let identity = try await api.deviceCredentialIdentity(
+                        bearerToken: stored.token
+                    )
+                    if identity.user.id == expectedUserID,
+                       identity.credentialID == stored.credentialRef,
+                       LocationCredentialCapabilities.isExactAcceptedSet(identity.capabilities),
+                       Set(identity.capabilities) == Set(stored.capabilities)
+                    {
+                        hasCredential = true
+                        validatedCredentialUserID = identity.user.id
+                        return
+                    }
+                    _ = try? await ownerAPI.revokeCredential(reference: stored.credentialRef)
+                    guard invalidateCredential() else {
+                        throw LocationReporterError.credentialCleanupFailed
+                    }
+                } catch let error as BrunnAPIError where error.isUnauthorized {
+                    guard invalidateCredential() else {
+                        throw LocationReporterError.credentialCleanupFailed
+                    }
+                } catch {
+                    throw error
                 }
-                _ = try? await ownerAPI.revokeCredential(reference: stored.credentialRef)
-                try credentialStore.delete()
-                hasCredential = false
-            } catch let error as BrunnAPIError where error.isUnauthorized {
-                try credentialStore.delete()
-                hasCredential = false
-            } catch {
-                throw error
             }
+        }
+
+        guard invalidateCredential() else {
+            throw LocationReporterError.credentialCleanupFailed
         }
 
         let issued = try await ownerAPI.bootstrapDeviceLocationCredential()
@@ -445,6 +629,7 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
                 capabilities: issued.capabilities
             ))
             hasCredential = true
+            validatedCredentialUserID = identity.user.id
             lastError = nil
         } catch {
             _ = try? await ownerAPI.revokeCredential(reference: issued.id)
@@ -453,7 +638,24 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
     }
 
     private func validateStoredCredential(expectedUserID: String?) async {
-        guard let stored = validStoredCredential() else { return }
+        guard let stored = validStoredCredential() else {
+            if reportingEnabled {
+                try? await stopReportingLocally()
+                statusStore.clearForDisconnect()
+                presence = nil
+                lastUploadAt = nil
+                invalidateCredential()
+            }
+            return
+        }
+        if let expectedUserID, stored.userID != expectedUserID {
+            do {
+                try await clearPreviousAccountCredential(stored)
+            } catch {
+                lastError = error.localizedDescription
+            }
+            return
+        }
         do {
             let identity = try await api.deviceCredentialIdentity(bearerToken: stored.token)
             guard expectedUserID == nil || identity.user.id == expectedUserID,
@@ -462,12 +664,19 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
                   LocationCredentialCapabilities.isExactAcceptedSet(identity.capabilities),
                   Set(identity.capabilities) == Set(stored.capabilities)
             else {
+                if let expectedUserID,
+                   identity.user.id != expectedUserID || identity.user.id != stored.userID
+                {
+                    try await clearPreviousAccountCredential(stored)
+                    return
+                }
                 invalidateCredential()
                 return
             }
             hasCredential = true
+            validatedCredentialUserID = identity.user.id
         } catch let error as BrunnAPIError {
-            handleCredentialFailureIfNeeded(error)
+            _ = handleCredentialFailureIfNeeded(error, credential: stored)
         } catch {
             // Transient network failures do not discard a valid local bearer.
         }
@@ -489,26 +698,100 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
         }
     }
 
-    private func handleCredentialFailureIfNeeded(_ error: BrunnAPIError) {
-        if error.isUnauthorized {
-            invalidateCredential()
+    private func credentialIsCurrent(_ credential: LocationDeviceCredential) -> Bool {
+        do {
+            return try credentialStore.load() == credential
+        } catch {
+            return false
         }
     }
 
-    private func invalidateCredential() {
-        try? credentialStore.delete()
-        hasCredential = false
+    @discardableResult
+    private func handleCredentialFailureIfNeeded(
+        _ error: BrunnAPIError,
+        credential: LocationDeviceCredential
+    ) -> Bool {
+        guard error.isUnauthorized else { return false }
+        if let current = try? credentialStore.load(), current != credential {
+            return true
+        }
+        if invalidateCredential() {
+            lastError = error.localizedDescription
+        }
+        return true
+    }
+
+    @discardableResult
+    private func invalidateCredential() -> Bool {
+        validatedCredentialUserID = nil
+        setPendingEnable(false)
         reportingEnabled = false
         statusStore.reportingEnabled = false
         stopMonitoring()
+        deliveryTail?.cancel()
+        deliveryTail = nil
+        activeUploadTask?.cancel()
+        activeUploadTask = nil
+        do {
+            try queue.clear()
+            queuedReportCount = 0
+            try credentialStore.delete()
+        } catch {
+            hasCredential = (try? credentialStore.load()) != nil
+            lastError = "Location access was disabled, but protected queued data could not be cleared. Unlock this iPhone and retry before reconnecting location."
+            return false
+        }
+        hasCredential = false
+        statusStore.clearForDisconnect()
+        presence = nil
+        lastUploadAt = nil
+        return true
+    }
+
+    private func clearPreviousAccountCredential(
+        _ credential: LocationDeviceCredential
+    ) async throws {
+        try await stopReportingLocally()
+        do {
+            try await api.deleteLiveLocation(bearerToken: credential.token)
+        } catch let error as BrunnAPIError where error.isUnauthorized {
+            // Revoked credentials cannot upload; continue clearing local state.
+        }
+        guard try credentialStore.load() == credential else { return }
+        try credentialStore.delete()
+        finishLocationDisconnect()
+    }
+
+    private func acquireCredentialOperation() async {
+        if !credentialOperationHeld {
+            credentialOperationHeld = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            credentialOperationWaiters.append(continuation)
+        }
+    }
+
+    private func releaseCredentialOperation() {
+        guard !credentialOperationWaiters.isEmpty else {
+            credentialOperationHeld = false
+            return
+        }
+        credentialOperationWaiters.removeFirst().resume()
     }
 }
 
 private enum LocationReporterError: Error, LocalizedError {
     case invalidCredential
+    case credentialCleanupFailed
 
     var errorDescription: String? {
-        "Brunn issued a location credential outside the exact approved capability set."
+        switch self {
+        case .invalidCredential:
+            "Brunn issued a location credential outside the exact approved capability set."
+        case .credentialCleanupFailed:
+            "Protected location data could not be cleared before creating replacement access. Unlock this iPhone and retry."
+        }
     }
 }
 

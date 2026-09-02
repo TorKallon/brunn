@@ -1,9 +1,16 @@
 import SwiftUI
 
 struct RootView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var locationReporter: LocationReporter
     @AppStorage(AppAppearance.storageKey) private var appearanceRawValue =
         AppAppearance.defaultValue.rawValue
+    @AppStorage(LocationPermissionPromptPolicy.storageKey)
+    private var locationPermissionPromptRevision = 0
+    @AppStorage(LocationPermissionPromptPolicy.userStorageKey)
+    private var locationPermissionPromptUserID = ""
+    @State private var showingLocationPermissionPrimer = false
 
     var body: some View {
         Group {
@@ -30,10 +37,72 @@ struct RootView: View {
             }
         }
         .preferredColorScheme(appearance.colorScheme)
+        .sheet(
+            isPresented: $showingLocationPermissionPrimer,
+            onDismiss: markLocationPermissionPromptHandled
+        ) {
+            LocationPrimerView(onFinish: markLocationPermissionPromptHandled)
+        }
+        .onAppear(perform: evaluateLocationPermissionPrompt)
+        .onChange(of: model.phase) { _, _ in
+            evaluateLocationPermissionPrompt()
+        }
+        .onChange(of: model.connectionValidated) { _, _ in
+            evaluateLocationPermissionPrompt()
+        }
+        .onChange(of: model.isDemo) { _, _ in
+            evaluateLocationPermissionPrompt()
+        }
+        .onChange(of: model.user?.id) { _, _ in
+            evaluateLocationPermissionPrompt()
+        }
+        .onChange(of: locationReporter.authorizationStatus) { _, _ in
+            evaluateLocationPermissionPrompt()
+        }
+        .onChange(of: locationReporter.reportingEnabled) { _, _ in
+            evaluateLocationPermissionPrompt()
+        }
+        .onChange(of: locationReporter.validatedCredentialUserID) { _, _ in
+            evaluateLocationPermissionPrompt()
+        }
+        .onChange(of: scenePhase) { _, _ in
+            evaluateLocationPermissionPrompt()
+        }
     }
 
     private var appearance: AppAppearance {
         AppAppearance(rawValue: appearanceRawValue) ?? .defaultValue
+    }
+
+    private func evaluateLocationPermissionPrompt() {
+        let decision = LocationPermissionPromptPolicy.decision(
+            isReady: model.phase == .ready,
+            connectionValidated: model.connectionValidated,
+            isDemo: model.isDemo,
+            userID: model.user?.id,
+            sceneIsActive: scenePhase == .active,
+            reportingEnabled: locationReporter.reportingEnabled,
+            credentialBoundToUser: locationReporter.validatedCredentialUserID == model.user?.id,
+            storedRevision: locationPermissionPromptRevision,
+            storedUserID: locationPermissionPromptUserID,
+            permissionState: LocationPermissionState(locationReporter.authorizationStatus)
+        )
+        switch decision {
+        case .present:
+            showingLocationPermissionPrimer = true
+        case .markHandled:
+            markLocationPermissionPromptHandled()
+        case .none:
+            break
+        }
+    }
+
+    private func markLocationPermissionPromptHandled() {
+        guard let userID = model.user?.id, !userID.isEmpty else { return }
+        locationPermissionPromptUserID = userID
+        locationPermissionPromptRevision = LocationPermissionPromptPolicy.handledRevision(
+            storedRevision: locationPermissionPromptRevision
+        )
     }
 }
 

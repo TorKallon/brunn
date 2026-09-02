@@ -119,6 +119,11 @@ final class AppModel: ObservableObject {
         return Self.projectNews(from: edition, uniqueIDs: false)
     }
 
+    var locationReportingUserID: String? {
+        guard connectionValidated, !isDemo else { return nil }
+        return user?.id
+    }
+
     let api: BrunnAPI
     let messagingController: MessagingController?
     private let credentialStore: any CredentialStoring
@@ -243,6 +248,20 @@ final class AppModel: ObservableObject {
         messagingBearerState.token = nil
         if ProcessInfo.processInfo.arguments.contains("--ui-test-reset-task-contexts") {
             UserDefaults.standard.removeObject(forKey: Self.taskContextsDefaultsKey)
+        }
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-reset-location-prompt") {
+            LocationPermissionPromptPolicy.reset()
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-location-permission-prompt") {
+            accept(MeData(
+                user: UserSummary(id: "user:location-ui-test", displayName: "Owner"),
+                credentialID: "credential:location-ui-test",
+                capabilities: ["open", "query", "read", "status"],
+                readOnly: true
+            ))
+            dashboard = SampleData.dashboard
+            return
         }
 
         if ProcessInfo.processInfo.arguments.contains("--demo") {

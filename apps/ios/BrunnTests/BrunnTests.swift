@@ -238,6 +238,631 @@ final class BrunnTests: XCTestCase {
     }
 
     @MainActor
+    func testLocationDisconnectStopsReportingDeletesLiveDataAndRevokesCredential() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let suite = "BrunnTests.location-disconnect.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let credentialStore = LocationKeychainCredentialStore(
+            account: "ios-location-test-\(UUID().uuidString)"
+        )
+        defer {
+            NotificationRequestURLProtocol.handler = nil
+            try? credentialStore.delete()
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let credentialRef = "credential:55555555-5555-4555-8555-555555555555"
+        let capabilities = LocationCredentialCapabilities.canonicalReadOnly
+            + [LocationCredentialCapabilities.locationWrite]
+        try credentialStore.save(LocationDeviceCredential(
+            credentialRef: credentialRef,
+            token: "location-disconnect-token",
+            userID: "user:location-test",
+            capabilities: capabilities
+        ))
+        let queue = LocationDiskQueue(
+            fileURL: directory.appendingPathComponent("location-queue.json")
+        )
+        _ = try queue.append(LocationReport(
+            type: .ping,
+            at: "2026-09-02T10:00:00.000-07:00",
+            lat: 47.6156,
+            lon: -122.2035,
+            accuracyM: 25
+        ))
+        let statusStore = LocationStatusStore(defaults: defaults)
+        statusStore.reportingEnabled = true
+        statusStore.setupPending = true
+        statusStore.lastGeocodedCoordinate = LocationStoredCoordinate(
+            latitude: 47.6156,
+            longitude: -122.2035
+        )
+        statusStore.lastUploadAt = Date(timeIntervalSince1970: 1_788_400_000)
+
+        let recorder = NotificationRequestRecorder()
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            switch (request.httpMethod, request.url?.path) {
+            case ("DELETE", "/api/v1/location/live"):
+                return StubbedHTTPResponse(json: "{}")
+            case ("DELETE", "/api/v1/credentials/\(credentialRef)"):
+                return StubbedHTTPResponse(json: #"{"id":"credential:55555555-5555-4555-8555-555555555555","status":"revoked","revoked_at":"2026-09-02T17:00:00Z"}"#)
+            default:
+                return StubbedHTTPResponse(
+                    statusCode: 503,
+                    json: #"{"error":{"code":"unexpected_request","message":"unexpected"}}"#
+                )
+            }
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        let api = BrunnAPI(
+            configuration: .init(
+                baseURL: try XCTUnwrap(URL(string: "https://location-disconnect.brunn.test/api/v1"))
+            ),
+            session: URLSession(configuration: configuration)
+        )
+        let reporter = LocationReporter(
+            manager: CLLocationManager(),
+            api: api,
+            credentialStore: credentialStore,
+            queue: queue,
+            statusStore: statusStore,
+            enricher: LocationReportEnricher(statusStore: statusStore)
+        )
+
+        let disconnected = await reporter.disconnectFromAccount(ownerAPI: api)
+        XCTAssertTrue(disconnected)
+
+        let deletes = recorder.snapshot().filter { $0.httpMethod == "DELETE" }
+        XCTAssertEqual(deletes.map { $0.url?.path }, [
+            "/api/v1/location/live",
+            "/api/v1/credentials/\(credentialRef)",
+        ])
+        XCTAssertEqual(
+            deletes.first?.value(forHTTPHeaderField: "Authorization"),
+            "Bearer location-disconnect-token"
+        )
+        XCTAssertNil(deletes.last?.value(forHTTPHeaderField: "Authorization"))
+        XCTAssertFalse(reporter.reportingEnabled)
+        XCTAssertFalse(reporter.hasCredential)
+        XCTAssertFalse(reporter.setupPending)
+        XCTAssertEqual(try queue.count(), 0)
+        XCTAssertNil(try credentialStore.load())
+        XCTAssertFalse(statusStore.reportingEnabled)
+        XCTAssertNil(statusStore.lastGeocodedCoordinate)
+        XCTAssertNil(statusStore.lastUploadAt)
+    }
+
+    @MainActor
+    func testUnvalidatedOwnerSessionPreservesIndependentLocationQueue() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let suite = "BrunnTests.location-owner-offline.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let credentialStore = LocationKeychainCredentialStore(
+            account: "ios-location-test-\(UUID().uuidString)"
+        )
+        defer {
+            NotificationRequestURLProtocol.handler = nil
+            try? credentialStore.delete()
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        try credentialStore.save(LocationDeviceCredential(
+            credentialRef: "credential:99999999-9999-4999-8999-999999999999",
+            token: "offline-location-token",
+            userID: "user:location-test",
+            capabilities: LocationCredentialCapabilities.canonicalReadOnly
+                + [LocationCredentialCapabilities.locationWrite]
+        ))
+        let queue = LocationDiskQueue(
+            fileURL: directory.appendingPathComponent("location-queue.json")
+        )
+        _ = try queue.append(LocationReport(
+            type: .ping,
+            at: "2026-09-02T10:00:00.000-07:00",
+            lat: 47.6156,
+            lon: -122.2035,
+            accuracyM: 25
+        ))
+        let statusStore = LocationStatusStore(defaults: defaults)
+        statusStore.reportingEnabled = true
+        NotificationRequestURLProtocol.handler = { _ in
+            StubbedHTTPResponse(
+                statusCode: 503,
+                json: #"{"error":{"code":"temporarily_unavailable","message":"offline"}}"#
+            )
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        let api = BrunnAPI(
+            configuration: .init(
+                baseURL: try XCTUnwrap(URL(string: "https://location-offline.brunn.test/api/v1"))
+            ),
+            session: URLSession(configuration: configuration)
+        )
+        let reporter = LocationReporter(
+            manager: CLLocationManager(),
+            api: api,
+            credentialStore: credentialStore,
+            queue: queue,
+            statusStore: statusStore,
+            enricher: LocationReportEnricher(statusStore: statusStore)
+        )
+
+        await reporter.applicationDidBecomeActive(expectedUserID: nil)
+
+        XCTAssertTrue(reporter.reportingEnabled)
+        XCTAssertEqual(try queue.count(), 1)
+        XCTAssertTrue(statusStore.reportingEnabled)
+        XCTAssertNotNil(try credentialStore.load())
+    }
+
+    @MainActor
+    func testLocationDisconnectRetryRemovesAnAlreadyRevokedCredential() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let suite = "BrunnTests.location-disconnect-retry.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let credentialStore = LocationKeychainCredentialStore(
+            account: "ios-location-test-\(UUID().uuidString)"
+        )
+        defer {
+            NotificationRequestURLProtocol.handler = nil
+            try? credentialStore.delete()
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        try credentialStore.save(LocationDeviceCredential(
+            credentialRef: "credential:77777777-7777-4777-8777-777777777777",
+            token: "already-revoked-location-token",
+            userID: "user:location-test",
+            capabilities: LocationCredentialCapabilities.canonicalReadOnly
+                + [LocationCredentialCapabilities.locationWrite]
+        ))
+
+        let recorder = NotificationRequestRecorder()
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            return StubbedHTTPResponse(
+                statusCode: 401,
+                json: #"{"error":{"code":"credential_revoked","message":"revoked"}}"#
+            )
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        let api = BrunnAPI(
+            configuration: .init(
+                baseURL: try XCTUnwrap(URL(string: "https://location-retry.brunn.test/api/v1"))
+            ),
+            session: URLSession(configuration: configuration)
+        )
+        let statusStore = LocationStatusStore(defaults: defaults)
+        statusStore.reportingEnabled = true
+        let reporter = LocationReporter(
+            manager: CLLocationManager(),
+            api: api,
+            credentialStore: credentialStore,
+            queue: LocationDiskQueue(
+                fileURL: directory.appendingPathComponent("location-queue.json")
+            ),
+            statusStore: statusStore,
+            enricher: LocationReportEnricher(statusStore: statusStore)
+        )
+
+        let disconnected = await reporter.disconnectFromAccount(ownerAPI: api)
+        XCTAssertTrue(disconnected)
+        let requests = recorder.snapshot()
+        XCTAssertEqual(requests.map(\.httpMethod), ["DELETE"])
+        XCTAssertEqual(requests.map { $0.url?.path }, ["/api/v1/location/live"])
+        XCTAssertNil(try credentialStore.load())
+        XCTAssertFalse(reporter.hasCredential)
+        XCTAssertFalse(reporter.reportingEnabled)
+    }
+
+    @MainActor
+    func testAccountSwitchClearsOldQueuedLocationsBeforeNewAccountCanReport() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let suite = "BrunnTests.location-account-switch.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let credentialStore = LocationKeychainCredentialStore(
+            account: "ios-location-test-\(UUID().uuidString)"
+        )
+        defer {
+            NotificationRequestURLProtocol.handler = nil
+            try? credentialStore.delete()
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        try credentialStore.save(LocationDeviceCredential(
+            credentialRef: "credential:88888888-8888-4888-8888-888888888888",
+            token: "old-account-location-token",
+            userID: "user:old-account",
+            capabilities: LocationCredentialCapabilities.canonicalReadOnly
+                + [LocationCredentialCapabilities.locationWrite]
+        ))
+        let queue = LocationDiskQueue(
+            fileURL: directory.appendingPathComponent("location-queue.json")
+        )
+        _ = try queue.append(LocationReport(
+            type: .ping,
+            at: "2026-09-02T10:00:00.000-07:00",
+            lat: 47.6156,
+            lon: -122.2035,
+            accuracyM: 25
+        ))
+        let statusStore = LocationStatusStore(defaults: defaults)
+        statusStore.reportingEnabled = true
+
+        let recorder = NotificationRequestRecorder()
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            guard request.httpMethod == "DELETE",
+                  request.url?.path == "/api/v1/location/live"
+            else {
+                return StubbedHTTPResponse(
+                    statusCode: 503,
+                    json: #"{"error":{"code":"unexpected_request","message":"unexpected"}}"#
+                )
+            }
+            return StubbedHTTPResponse(json: "{}")
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        let api = BrunnAPI(
+            configuration: .init(
+                baseURL: try XCTUnwrap(URL(string: "https://location-switch.brunn.test/api/v1"))
+            ),
+            session: URLSession(configuration: configuration)
+        )
+        let reporter = LocationReporter(
+            manager: CLLocationManager(),
+            api: api,
+            credentialStore: credentialStore,
+            queue: queue,
+            statusStore: statusStore,
+            enricher: LocationReportEnricher(statusStore: statusStore)
+        )
+
+        await reporter.applicationDidBecomeActive(expectedUserID: "user:new-account")
+
+        XCTAssertEqual(try queue.count(), 0)
+        XCTAssertNil(try credentialStore.load())
+        XCTAssertFalse(reporter.reportingEnabled)
+        XCTAssertNil(reporter.validatedCredentialUserID)
+        XCTAssertTrue(recorder.snapshot().allSatisfy {
+            $0.url?.path != "/api/v1/location/reports"
+        })
+    }
+
+    @MainActor
+    func testAccountReconciliationSerializesWithNewCredentialSetup() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let suite = "BrunnTests.location-account-serialization.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let credentialStore = LocationKeychainCredentialStore(
+            account: "ios-location-test-\(UUID().uuidString)"
+        )
+        defer {
+            NotificationRequestURLProtocol.handler = nil
+            try? credentialStore.delete()
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let oldCredential = LocationDeviceCredential(
+            credentialRef: "credential:cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            token: "old-account-serialization-token",
+            userID: "user:old-account",
+            capabilities: LocationCredentialCapabilities.canonicalReadOnly
+                + [LocationCredentialCapabilities.locationWrite]
+        )
+        try credentialStore.save(oldCredential)
+        let statusStore = LocationStatusStore(defaults: defaults)
+        statusStore.reportingEnabled = true
+
+        let recorder = NotificationRequestRecorder()
+        let deleteGate = SynchronousRequestGate()
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            switch (request.httpMethod, request.url?.path) {
+            case ("DELETE", "/api/v1/location/live"):
+                deleteGate.enterAndWait()
+                return StubbedHTTPResponse(json: "{}")
+            case ("POST", "/api/v1/credentials"):
+                return StubbedHTTPResponse(json: #"{"id":"credential:dddddddd-dddd-4ddd-8ddd-dddddddddddd","access":"ios_location","capabilities":["open","query","read","compute","verify","status","task.read","location.write"],"token":"new-account-serialization-token"}"#)
+            case ("GET", "/api/v1/me"):
+                return StubbedHTTPResponse(json: #"{"user":{"id":"user:new-account","display_name":"New owner"},"credential_id":"credential:dddddddd-dddd-4ddd-8ddd-dddddddddddd","capabilities":["open","query","read","compute","verify","status","task.read","location.write"],"read_only":true}"#)
+            default:
+                return StubbedHTTPResponse(
+                    statusCode: 503,
+                    json: #"{"error":{"code":"unexpected_request","message":"unexpected"}}"#
+                )
+            }
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        let api = BrunnAPI(
+            configuration: .init(
+                baseURL: try XCTUnwrap(URL(string: "https://location-serialization.brunn.test/api/v1"))
+            ),
+            session: URLSession(configuration: configuration)
+        )
+        let reporter = LocationReporter(
+            manager: CLLocationManager(),
+            api: api,
+            credentialStore: credentialStore,
+            queue: LocationDiskQueue(
+                fileURL: directory.appendingPathComponent("location-queue.json")
+            ),
+            statusStore: statusStore,
+            enricher: LocationReportEnricher(statusStore: statusStore)
+        )
+
+        let reconciliation = Task {
+            await reporter.applicationDidBecomeActive(expectedUserID: "user:new-account")
+        }
+        await Task.yield()
+        XCTAssertTrue(deleteGate.waitUntilEntered())
+        let setup = Task {
+            await reporter.prepareEnableFromSettings(
+                ownerAPI: api,
+                expectedUserID: "user:new-account"
+            )
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(recorder.snapshot().count, 1)
+
+        deleteGate.release()
+        await reconciliation.value
+        let setupSucceeded = await setup.value
+        XCTAssertTrue(setupSucceeded)
+
+        let requests = recorder.snapshot()
+        XCTAssertEqual(requests.map(\.httpMethod), ["DELETE", "POST", "GET"])
+        XCTAssertEqual(requests.map { $0.url?.path }, [
+            "/api/v1/location/live",
+            "/api/v1/credentials",
+            "/api/v1/me",
+        ])
+        XCTAssertEqual(try credentialStore.load()?.userID, "user:new-account")
+        XCTAssertEqual(try credentialStore.load()?.token, "new-account-serialization-token")
+        XCTAssertEqual(reporter.validatedCredentialUserID, "user:new-account")
+        XCTAssertTrue(reporter.setupPending)
+    }
+
+    @MainActor
+    func testRevokedOldCredentialCannotCarryQueuedLocationsIntoReplacementAccess() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let suite = "BrunnTests.location-revoked-switch.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let credentialStore = LocationKeychainCredentialStore(
+            account: "ios-location-test-\(UUID().uuidString)"
+        )
+        defer {
+            NotificationRequestURLProtocol.handler = nil
+            try? credentialStore.delete()
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        try credentialStore.save(LocationDeviceCredential(
+            credentialRef: "credential:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            token: "revoked-old-account-token",
+            userID: "user:old-account",
+            capabilities: LocationCredentialCapabilities.canonicalReadOnly
+                + [LocationCredentialCapabilities.locationWrite]
+        ))
+        let queue = LocationDiskQueue(
+            fileURL: directory.appendingPathComponent("location-queue.json")
+        )
+        _ = try queue.append(LocationReport(
+            type: .ping,
+            at: "2026-09-02T10:00:00.000-07:00",
+            lat: 47.6156,
+            lon: -122.2035,
+            accuracyM: 25
+        ))
+        let statusStore = LocationStatusStore(defaults: defaults)
+        statusStore.reportingEnabled = true
+
+        NotificationRequestURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/v1/me")
+            XCTAssertEqual(
+                request.value(forHTTPHeaderField: "Authorization"),
+                "Bearer revoked-old-account-token"
+            )
+            return StubbedHTTPResponse(
+                statusCode: 401,
+                json: #"{"error":{"code":"credential_revoked","message":"revoked"}}"#
+            )
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        let api = BrunnAPI(
+            configuration: .init(
+                baseURL: try XCTUnwrap(URL(string: "https://location-revoked.brunn.test/api/v1"))
+            ),
+            session: URLSession(configuration: configuration)
+        )
+        let reporter = LocationReporter(
+            manager: CLLocationManager(),
+            api: api,
+            credentialStore: credentialStore,
+            queue: queue,
+            statusStore: statusStore,
+            enricher: LocationReportEnricher(statusStore: statusStore)
+        )
+
+        await reporter.applicationDidBecomeActive(expectedUserID: "user:old-account")
+        XCTAssertEqual(try queue.count(), 0)
+        XCTAssertNil(try credentialStore.load())
+        XCTAssertFalse(reporter.reportingEnabled)
+
+        let recorder = NotificationRequestRecorder()
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            switch (request.httpMethod, request.url?.path) {
+            case ("POST", "/api/v1/credentials"):
+                return StubbedHTTPResponse(json: #"{"id":"credential:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","access":"ios_location","capabilities":["open","query","read","compute","verify","status","task.read","location.write"],"token":"new-account-location-token"}"#)
+            case ("GET", "/api/v1/me"):
+                return StubbedHTTPResponse(json: #"{"user":{"id":"user:new-account","display_name":"New owner"},"credential_id":"credential:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","capabilities":["open","query","read","compute","verify","status","task.read","location.write"],"read_only":true}"#)
+            default:
+                return StubbedHTTPResponse(
+                    statusCode: 503,
+                    json: #"{"error":{"code":"unexpected_request","message":"unexpected"}}"#
+                )
+            }
+        }
+
+        let prepared = await reporter.prepareEnableFromSettings(
+            ownerAPI: api,
+            expectedUserID: "user:new-account"
+        )
+
+        XCTAssertTrue(prepared)
+        XCTAssertEqual(try queue.count(), 0)
+        XCTAssertEqual(try credentialStore.load()?.userID, "user:new-account")
+        XCTAssertEqual(reporter.validatedCredentialUserID, "user:new-account")
+        XCTAssertTrue(recorder.snapshot().allSatisfy {
+            $0.url?.path != "/api/v1/location/reports"
+        })
+    }
+
+    @MainActor
+    func testLocationPermissionPrimerStaysOpenWhenCredentialPreparationFails() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let suite = "BrunnTests.location-enable-failure.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let credentialStore = LocationKeychainCredentialStore(
+            account: "ios-location-test-\(UUID().uuidString)"
+        )
+        defer {
+            NotificationRequestURLProtocol.handler = nil
+            try? credentialStore.delete()
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        NotificationRequestURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/v1/credentials")
+            return StubbedHTTPResponse(
+                statusCode: 503,
+                json: #"{"error":{"code":"temporarily_unavailable","message":"retry"}}"#
+            )
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        let api = BrunnAPI(
+            configuration: .init(
+                baseURL: try XCTUnwrap(URL(string: "https://location-enable.brunn.test/api/v1"))
+            ),
+            session: URLSession(configuration: configuration)
+        )
+        let statusStore = LocationStatusStore(defaults: defaults)
+        let reporter = LocationReporter(
+            manager: CLLocationManager(),
+            api: api,
+            credentialStore: credentialStore,
+            queue: LocationDiskQueue(
+                fileURL: directory.appendingPathComponent("location-queue.json")
+            ),
+            statusStore: statusStore,
+            enricher: LocationReportEnricher(statusStore: statusStore)
+        )
+        var readyCallbackCount = 0
+
+        let started = await reporter.beginEnable(
+            ownerAPI: api,
+            expectedUserID: "user:location-test"
+        ) {
+            readyCallbackCount += 1
+        }
+
+        XCTAssertFalse(started)
+        XCTAssertEqual(readyCallbackCount, 0)
+        XCTAssertFalse(reporter.setupPending)
+        XCTAssertFalse(statusStore.setupPending)
+        XCTAssertNotNil(reporter.lastError)
+        XCTAssertNil(try credentialStore.load())
+    }
+
+    @MainActor
+    func testDeniedPermissionSetupPersistsAcrossSettingsRoundTrip() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let suite = "BrunnTests.location-settings-resume.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let credentialStore = LocationKeychainCredentialStore(
+            account: "ios-location-test-\(UUID().uuidString)"
+        )
+        defer {
+            NotificationRequestURLProtocol.handler = nil
+            try? credentialStore.delete()
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let credentialRef = "credential:66666666-6666-4666-8666-666666666666"
+        let capabilities = LocationCredentialCapabilities.canonicalReadOnly
+            + [LocationCredentialCapabilities.locationWrite]
+        try credentialStore.save(LocationDeviceCredential(
+            credentialRef: credentialRef,
+            token: "location-settings-token",
+            userID: "user:location-test",
+            capabilities: capabilities
+        ))
+        NotificationRequestURLProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/v1/me")
+            XCTAssertEqual(
+                request.value(forHTTPHeaderField: "Authorization"),
+                "Bearer location-settings-token"
+            )
+            XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
+            return StubbedHTTPResponse(json: #"{"user":{"id":"user:location-test","display_name":"Owner"},"credential_id":"credential:66666666-6666-4666-8666-666666666666","capabilities":["open","query","read","compute","verify","status","task.read","location.write"],"read_only":true}"#)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        let api = BrunnAPI(
+            configuration: .init(
+                baseURL: try XCTUnwrap(URL(string: "https://location-settings.brunn.test/api/v1"))
+            ),
+            session: URLSession(configuration: configuration)
+        )
+        let statusStore = LocationStatusStore(defaults: defaults)
+        let reporter = LocationReporter(
+            manager: CLLocationManager(),
+            api: api,
+            credentialStore: credentialStore,
+            queue: LocationDiskQueue(
+                fileURL: directory.appendingPathComponent("location-queue.json")
+            ),
+            statusStore: statusStore,
+            enricher: LocationReportEnricher(statusStore: statusStore)
+        )
+
+        let prepared = await reporter.prepareEnableFromSettings(
+            ownerAPI: api,
+            expectedUserID: "user:location-test"
+        )
+
+        XCTAssertTrue(prepared)
+        XCTAssertTrue(reporter.setupPending)
+        XCTAssertTrue(statusStore.setupPending)
+        XCTAssertTrue(LocationStatusStore(defaults: defaults).setupPending)
+        XCTAssertNil(reporter.lastError)
+    }
+
+    @MainActor
     func testFirstRunShowsConnectionWithoutCallingTheAPI() async {
         let credentialStore = TestCredentialStore(token: nil)
         let calls = CallCounter()
@@ -253,6 +878,7 @@ final class BrunnTests: XCTestCase {
         let callCount = await calls.value
 
         XCTAssertEqual(model.phase, .connectionRequired)
+        XCTAssertNil(model.locationReportingUserID)
         XCTAssertEqual(callCount, 0)
     }
 
@@ -283,6 +909,7 @@ final class BrunnTests: XCTestCase {
 
         XCTAssertEqual(model.phase, .ready)
         XCTAssertTrue(model.isDemo)
+        XCTAssertNil(model.locationReportingUserID)
         XCTAssertEqual(model.selectedTab, .dashboard)
         XCTAssertEqual(model.currentCredentialID, "credential:demo-iphone")
         XCTAssertEqual(model.dashboard?.storage.text.count, 4_926)
@@ -714,6 +1341,7 @@ final class BrunnTests: XCTestCase {
 
         XCTAssertEqual(model.phase, .ready)
         XCTAssertEqual(model.user, owner.user)
+        XCTAssertEqual(model.locationReportingUserID, "user:one")
         XCTAssertEqual(model.currentCredentialID, owner.credentialID)
         XCTAssertTrue(model.connectionValidated)
         XCTAssertFalse(model.canManageNotifications)
@@ -2197,6 +2825,24 @@ private final class NotificationRequestRecorder: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return requests
+    }
+}
+
+private final class SynchronousRequestGate: @unchecked Sendable {
+    private let entered = DispatchSemaphore(value: 0)
+    private let releaseRequest = DispatchSemaphore(value: 0)
+
+    func enterAndWait() {
+        entered.signal()
+        _ = releaseRequest.wait(timeout: .now() + 5)
+    }
+
+    func waitUntilEntered() -> Bool {
+        entered.wait(timeout: .now() + 5) == .success
+    }
+
+    func release() {
+        releaseRequest.signal()
     }
 }
 

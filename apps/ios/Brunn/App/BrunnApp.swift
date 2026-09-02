@@ -6,6 +6,7 @@ struct BrunnApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel()
     @StateObject private var notifications = NotificationCoordinator()
+    @State private var completedInitialLocationAccountSync = false
 
     var body: some Scene {
         WindowGroup {
@@ -24,9 +25,16 @@ struct BrunnApp: App {
                     if model.phase == .launching {
                         await model.bootstrap()
                     }
-                    await appDelegate.locationReporter.applicationDidBecomeActive(
-                        expectedUserID: model.user?.id
-                    )
+                    var locationUserID = model.locationReportingUserID
+                    while true {
+                        await appDelegate.locationReporter.applicationDidBecomeActive(
+                            expectedUserID: locationUserID
+                        )
+                        let currentLocationUserID = model.locationReportingUserID
+                        guard currentLocationUserID != locationUserID else { break }
+                        locationUserID = currentLocationUserID
+                    }
+                    completedInitialLocationAccountSync = true
                     await notifications.synchronizeInstallation(
                         using: model.api,
                         canManageNotifications: model.canManageNotifications,
@@ -36,6 +44,16 @@ struct BrunnApp: App {
                 .onOpenURL { url in
                     guard let route = AppRoute(url: url) else { return }
                     Task { await model.handle(route) }
+                }
+                .onChange(of: model.locationReportingUserID) { _, userID in
+                    guard completedInitialLocationAccountSync, scenePhase == .active else {
+                        return
+                    }
+                    Task {
+                        await appDelegate.locationReporter.applicationDidBecomeActive(
+                            expectedUserID: userID
+                        )
+                    }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .brunnPushRoute)) { _ in
                     guard scenePhase == .active else { return }
@@ -79,7 +97,7 @@ struct BrunnApp: App {
                         await model.refreshNotifications()
                         await model.refreshMessaging(.foreground)
                         await appDelegate.locationReporter.applicationDidBecomeActive(
-                            expectedUserID: model.user?.id
+                            expectedUserID: model.locationReportingUserID
                         )
                     }
                 }
