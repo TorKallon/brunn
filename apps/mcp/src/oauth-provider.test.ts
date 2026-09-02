@@ -395,6 +395,29 @@ test("access expiry and refresh rotation enforce resource, client, and scope nar
   );
 });
 
+test("refresh defaults to the resource bound into the refresh token", async () => {
+  const provider = createProvider();
+  const client = await registerPublicClient(provider.clientsStore, REDIRECT_URI);
+  const code = await issueAuthorizationCode(provider, client, "refresh-upstream");
+  const original = await provider.exchangeAuthorizationCode(
+    client,
+    code,
+    VERIFIER,
+    REDIRECT_URI,
+    RESOURCE,
+  );
+
+  const refreshed = await provider.exchangeRefreshToken(
+    client,
+    required(original.refresh_token),
+  );
+
+  assert.equal(
+    (await provider.verifyAccessToken(refreshed.access_token)).resource?.href,
+    RESOURCE.href,
+  );
+});
+
 test("expired authorization codes and malformed access tokens use SDK OAuth errors", async () => {
   let now = Date.UTC(2026, 6, 31);
   const provider = createProvider({

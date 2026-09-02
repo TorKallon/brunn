@@ -34,6 +34,12 @@ with `admin` or `credential:manage`. It verifies a pasted credential through
 and refresh tokens to the connector. Revoking the dedicated Brunn
 credential revokes its actual data access without affecting another client.
 
+Each POST to the hosted `/mcp` resource receives an `X-Request-ID` and emits a
+content-free outcome log. For mutation correlation the log contains only a
+SHA-256 of a valid idempotency key, never the raw key, path, content, arguments,
+credential, or token. This distinguishes a client-side approval drop (no
+ingress record) from bearer, parser, dispatch, or upstream failures.
+
 The persistent `BRUNN_MCP_SEALING_KEY` is a 32-byte random Railway secret.
 Rotating it invalidates all remote registrations and sessions. Preserve it
 across ordinary deployments.

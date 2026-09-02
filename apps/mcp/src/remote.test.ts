@@ -11,6 +11,7 @@ import {
   createRemoteMcpApp,
   decodeSealingKey,
   parseAllowedOrigins,
+  type RemoteMcpAuditRecord,
   verifyRemoteCredential,
 } from "./remote.js";
 
@@ -81,6 +82,7 @@ test("remote browser origins require explicit credential-free HTTPS origins", ()
 
 test("remote gateway completes OAuth and serves the hosted-safe MCP profile", async () => {
   const upstreamAuthorizations: string[] = [];
+  const auditRecords: RemoteMcpAuditRecord[] = [];
   const upstreamFetch: typeof fetch = async (_input, init) => {
     const authorization = new Headers(init?.headers).get("authorization");
     if (authorization) {
@@ -102,6 +104,7 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
     provider,
     allowedOrigins: ["https://chatgpt.com", "https://brunn.ai"],
     fetchImpl: upstreamFetch,
+    auditLog: (record) => auditRecords.push(record),
   });
   const server = await listen(app);
   const address = server.address();
@@ -296,9 +299,22 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
         resource: resourceUrl.href,
       }),
     }));
-    const accessToken = requiredString(tokenResponse.access_token);
+    const refreshToken = requiredString(tokenResponse.refresh_token);
     assert.equal(tokenResponse.token_type, "Bearer");
     assert.equal(tokenResponse.scope, "mcp:tools");
+
+    const refreshResponse = await fetch(`${baseUrl}/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: clientId,
+        refresh_token: refreshToken,
+      }),
+    });
+    assert.equal(refreshResponse.status, 200, "refresh may omit its already-bound resource");
+    const refreshedTokens = await json(refreshResponse);
+    const accessToken = requiredString(refreshedTokens.access_token);
 
     const transport = new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`), {
       requestInit: {
@@ -364,6 +380,25 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
       "Bearer dedicated-upstream-token",
       "Bearer dedicated-upstream-token",
     ]);
+
+    const checkpointAudit = auditRecords.find(
+      (record) => record.tool_name === "memory.checkpoint",
+    );
+    assert.ok(checkpointAudit);
+    assert.equal(checkpointAudit.http_status, 200);
+    assert.equal(checkpointAudit.outcome, "finished");
+    assert.equal(
+      checkpointAudit.idempotency_key_sha256,
+      `sha256:${createHash("sha256").update("remote-large-checkpoint").digest("hex")}`,
+    );
+    assert.ok((checkpointAudit.request_bytes ?? 0) > 128 * 1024);
+    const unauthorizedAudit = auditRecords.find(
+      (record) => record.rpc_method === "initialize" && record.http_status === 401,
+    );
+    assert.ok(unauthorizedAudit);
+    const serializedAudit = JSON.stringify(auditRecords);
+    assert.equal(serializedAudit.includes("remote-large-checkpoint"), false);
+    assert.equal(serializedAudit.includes("dedicated-upstream-token"), false);
 
     const replay = await fetch(`${baseUrl}/token`, {
       method: "POST",

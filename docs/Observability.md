@@ -39,6 +39,13 @@ query or task text, model prompts or outputs, uploaded payloads, or raw
 third-party response bodies. Log delivery is observational and fail-open; a
 Datadog outage cannot change a memory operation.
 
+The hosted MCP gateway emits one content-free outcome record for each POST to
+`/mcp`, including a correlation ID, JSON-RPC method, bounded tool name, response
+status, elapsed time, request size, and only the SHA-256 of a valid
+`idempotency_key`. It never logs tool arguments, paths, content, raw keys, OAuth
+tokens, or response bodies. A missing record during a client-reported tool
+failure therefore means the call did not reach Brunn's `/mcp` ingress.
+
 ## Metric Families
 
 | Prefix | Operational question |

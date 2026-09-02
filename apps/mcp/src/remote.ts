@@ -8,6 +8,7 @@ import {
   type StreamableHTTPServerTransportOptions,
 } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
+import { createHash, randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
 import { BrunnApiClient } from "./api-client.js";
@@ -19,7 +20,7 @@ import {
 
 const REMOTE_SCOPE = "mcp:tools";
 const MCP_ALLOWED_METHODS = "GET, POST, DELETE, OPTIONS";
-const MCP_EXPOSED_HEADERS = "WWW-Authenticate, MCP-Session-Id, MCP-Protocol-Version";
+const MCP_EXPOSED_HEADERS = "WWW-Authenticate, MCP-Session-Id, MCP-Protocol-Version, X-Request-ID";
 // Tool schemas permit a 4 MiB checkpoint/write field. Leave bounded room for
 // the JSON-RPC envelope while matching the public proxy and API body limits.
 const REMOTE_JSON_BODY_LIMIT_BYTES = 5 * 1024 * 1024;
@@ -38,6 +39,21 @@ export interface RemoteMcpAppOptions {
   provider: OAuthServerProvider;
   allowedOrigins: readonly string[];
   fetchImpl?: typeof fetch;
+  auditLog?: (record: RemoteMcpAuditRecord) => void;
+}
+
+export interface RemoteMcpAuditRecord {
+  at: string;
+  event: "mcp_request";
+  request_id: string;
+  rpc_method: string;
+  tool_name: string | null;
+  idempotency_key_sha256: string | null;
+  http_status: number;
+  elapsed_ms: number;
+  request_bytes: number | null;
+  outcome: "finished" | "closed";
+  origin_present: boolean;
 }
 
 export function createRemoteMcpApp(options: RemoteMcpAppOptions): Express {
@@ -45,9 +61,11 @@ export function createRemoteMcpApp(options: RemoteMcpAppOptions): Express {
   const resourceUrl = new URL("/mcp", publicUrl);
   const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(resourceUrl);
   const fetchImpl = options.fetchImpl ?? fetch;
+  const auditLog = options.auditLog ?? writeRemoteMcpAuditLog;
   const allowedOrigins = new Set(normalizeAllowedOrigins(options.allowedOrigins));
   const app = express();
   app.use("/mcp", mcpCors(allowedOrigins));
+  app.use("/mcp", auditRemoteMcpRequest(auditLog));
   app.use(express.json({ limit: REMOTE_JSON_BODY_LIMIT_BYTES, strict: true }));
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
@@ -283,6 +301,117 @@ function publicMetadataCors(request: Request, response: Response, next: NextFunc
     return;
   }
   next();
+}
+
+function auditRemoteMcpRequest(
+  auditLog: (record: RemoteMcpAuditRecord) => void,
+) {
+  return (request: Request, response: Response, next: NextFunction): void => {
+    if (request.method !== "POST") {
+      next();
+      return;
+    }
+    const started = performance.now();
+    const requestId = safeRequestId(request.get("x-request-id")) ?? randomUUID();
+    response.setHeader("X-Request-ID", requestId);
+    let recorded = false;
+    const record = (outcome: RemoteMcpAuditRecord["outcome"]): void => {
+      if (recorded) {
+        return;
+      }
+      recorded = true;
+      const identity = remoteMcpIdentity(request.body);
+      try {
+        auditLog({
+          at: new Date().toISOString(),
+          event: "mcp_request",
+          request_id: requestId,
+          rpc_method: identity.rpcMethod,
+          tool_name: identity.toolName,
+          idempotency_key_sha256: identity.idempotencyKeySha256,
+          http_status: response.statusCode,
+          elapsed_ms: Math.round((performance.now() - started) * 1_000) / 1_000,
+          request_bytes: requestByteLength(request),
+          outcome,
+          origin_present: request.get("origin") !== undefined,
+        });
+      } catch {
+        // Operational logging is observational and must never alter MCP behavior.
+      }
+    };
+    response.once("finish", () => record("finished"));
+    response.once("close", () => {
+      if (!response.writableEnded) {
+        record("closed");
+      }
+    });
+    next();
+  };
+}
+
+function remoteMcpIdentity(body: unknown): {
+  rpcMethod: string;
+  toolName: string | null;
+  idempotencyKeySha256: string | null;
+} {
+  if (typeof body !== "object" || body === null) {
+    return { rpcMethod: "unknown", toolName: null, idempotencyKeySha256: null };
+  }
+  const request = body as Record<string, unknown>;
+  const rpcMethod = safeProtocolName(request.method) ?? "other";
+  if (rpcMethod !== "tools/call" || typeof request.params !== "object" || request.params === null) {
+    return { rpcMethod, toolName: null, idempotencyKeySha256: null };
+  }
+  const params = request.params as Record<string, unknown>;
+  const toolName = safeProtocolName(params.name);
+  const args = typeof params.arguments === "object" && params.arguments !== null
+    ? params.arguments as Record<string, unknown>
+    : {};
+  const idempotencyKey = args.idempotency_key;
+  const idempotencyKeySha256 = typeof idempotencyKey === "string"
+    && idempotencyKey.length > 0
+    && Buffer.byteLength(idempotencyKey, "utf8") <= 256
+    && !/[\u0000-\u001f\u007f-\u009f]/u.test(idempotencyKey)
+    ? `sha256:${createHash("sha256").update(idempotencyKey, "utf8").digest("hex")}`
+    : null;
+  return { rpcMethod, toolName, idempotencyKeySha256 };
+}
+
+function requestByteLength(request: Request): number | null {
+  const declared = request.get("content-length");
+  if (declared !== undefined && /^\d{1,16}$/u.test(declared)) {
+    const parsed = Number(declared);
+    if (Number.isSafeInteger(parsed)) {
+      return parsed;
+    }
+  }
+  try {
+    return request.body === undefined
+      ? null
+      : Buffer.byteLength(JSON.stringify(request.body), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+function safeProtocolName(value: unknown): string | null {
+  return typeof value === "string" && /^[a-z0-9][a-z0-9._/-]{0,127}$/iu.test(value)
+    ? value
+    : null;
+}
+
+function safeRequestId(value: unknown): string | undefined {
+  return typeof value === "string" && /^[a-z0-9][a-z0-9._:-]{0,127}$/iu.test(value)
+    ? value
+    : undefined;
+}
+
+function writeRemoteMcpAuditLog(record: RemoteMcpAuditRecord): void {
+  try {
+    process.stderr.write(`${JSON.stringify(record)}\n`);
+  } catch {
+    // Log delivery is fail-open.
+  }
 }
 
 export function parseAllowedOrigins(value: string): string[] {

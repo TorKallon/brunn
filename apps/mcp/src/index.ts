@@ -597,13 +597,19 @@ registerJsonTool(
 
 registerJsonTool(
   "memory.write",
-  "Create or update one Markdown workspace file. Supply expected_version only when preventing a known stale overwrite matters.",
+  "Create or update one Markdown workspace file. Supply expected_version when preventing a stale overwrite matters. " +
+  "If both expected_version and idempotency_key were supplied and a client or transport reports an ambiguous outcome, " +
+  "retry at most once with every argument and the key unchanged; never mint a new key for that retry.",
   {
     path: z.string().min(1).max(1_024),
     content: z.string().max(4 * 1024 * 1024),
     media_type: z.enum(["text/markdown", "text/plain"]).default("text/markdown"),
-    expected_version: z.number().int().nonnegative().optional(),
-    idempotency_key: z.string().min(1).max(240).optional(),
+    expected_version: z.number().int().nonnegative().optional().describe(
+      "Optimistic version guard; zero means create. Pair it with idempotency_key for a replay-safe guarded retry.",
+    ),
+    idempotency_key: z.string().min(1).max(240).optional().describe(
+      "Stable retry identity. Reuse it only with an identical payload; it does not replace expected_version.",
+    ),
     metadata: jsonObject.optional(),
   },
   (input) => client.request("/v1/workspace/write", input),

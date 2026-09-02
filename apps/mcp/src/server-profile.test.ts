@@ -89,6 +89,9 @@ test("remote profile exposes only hosted-safe tools with bounded reads", async (
     const checkpoint = response.tools.find((tool) => tool.name === "memory.checkpoint");
     assert.equal(write?.annotations?.readOnlyHint, false);
     assert.equal(write?.annotations?.destructiveHint, false);
+    assert.equal(write?.annotations?.idempotentHint, false);
+    assert.match(write?.description ?? "", /retry at most once/);
+    assert.match(write?.description ?? "", /every argument and the key unchanged/);
     assert.equal(checkpoint?.annotations?.readOnlyHint, false);
     assert.equal(checkpoint?.annotations?.idempotentHint, true);
     assert.equal(query?.annotations?.readOnlyHint, true);

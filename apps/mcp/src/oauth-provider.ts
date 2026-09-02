@@ -331,8 +331,11 @@ export class BrunnOAuthProvider implements OAuthServerProvider {
     if (envelope.clientId !== client.client_id) {
       throw new InvalidGrantError("Refresh token was not issued to this client");
     }
-    this.requireExactResource(resource);
-    if (envelope.resource !== resource.href) {
+    // RFC 8707 permits clients to omit `resource` on refresh. The sealed
+    // refresh token already carries its audience, so only reject an explicit
+    // attempt to change it.
+    const effectiveResource = resource?.href ?? envelope.resource;
+    if (envelope.resource !== effectiveResource) {
       throw new InvalidTargetError("Refresh token resource does not match");
     }
     const narrowedScopes = scopes === undefined
@@ -345,7 +348,7 @@ export class BrunnOAuthProvider implements OAuthServerProvider {
         consumed.tokens
         && consumed.replayUntil >= this.nowSeconds()
         && consumed.clientId === client.client_id
-        && consumed.resource === resource.href
+        && consumed.resource === effectiveResource
         && sameScopes(consumed.scopes, narrowedScopes)
       ) {
         return cloneOAuthTokens(consumed.tokens);
