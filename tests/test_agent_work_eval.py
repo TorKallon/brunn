@@ -570,7 +570,7 @@ class AgentWorkEvalTests(unittest.TestCase):
         self.assertGreater(len(self.chunks), 1500)
         self.assertEqual(
             corpus_hash(self.documents),
-            "c6ead8b64fd859d6fcf187e15593d8829d3c82efead51488c4eb98533ec6096c",
+            "b2133a0239c50b32c788a4265fb1f1c7afa7e879504fb95d686f1e3a2ab81694",
         )
 
     def test_codex_path_resolution_skips_a_broken_or_missing_install(self):

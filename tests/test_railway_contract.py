@@ -307,7 +307,7 @@ class RailwayContractTests(unittest.TestCase):
             mcp_block,
         )
         self.assertIn(
-            '"https://chatgpt.com,https://claude.ai,https://brunn.ai"',
+            '"https://chatgpt.com,https://brunn.ai"',
             mcp_block,
         )
         self.assertIn("BRUNN_MCP_SEALING_KEY: preserve()", mcp_block)

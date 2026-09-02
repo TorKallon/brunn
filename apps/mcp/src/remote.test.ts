@@ -64,8 +64,8 @@ test("sealing key parser accepts exactly 32 base64 bytes", () => {
 
 test("remote browser origins require explicit credential-free HTTPS origins", () => {
   assert.deepEqual(
-    parseAllowedOrigins("https://chatgpt.com, https://claude.ai/,https://chatgpt.com"),
-    ["https://chatgpt.com", "https://claude.ai"],
+    parseAllowedOrigins("https://chatgpt.com, https://brunn.ai/,https://chatgpt.com"),
+    ["https://chatgpt.com", "https://brunn.ai"],
   );
   for (const value of [
     "",
@@ -100,7 +100,7 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
     publicUrl,
     apiUrl: "https://api.example",
     provider,
-    allowedOrigins: ["https://chatgpt.com", "https://claude.ai"],
+    allowedOrigins: ["https://chatgpt.com", "https://brunn.ai"],
     fetchImpl: upstreamFetch,
   });
   const server = await listen(app);

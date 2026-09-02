@@ -1,8 +1,7 @@
-# Brunn hosted ChatGPT and Claude access
+# Brunn hosted ChatGPT access
 
 Status: production gateway live; ChatGPT Chat/Work account setup and mobile use
-supported when the plugin is available to the account; Claude account install
-pending its required interactive approval, 2026-08-27
+supported when the plugin is available to the account, 2026-08-27
 
 Brunn exposes one authenticated Streamable HTTP MCP resource at:
 
@@ -10,9 +9,9 @@ Brunn exposes one authenticated Streamable HTTP MCP resource at:
 https://brunn.ai/mcp
 ```
 
-The same endpoint is used for ChatGPT Chat, Work, and Claude custom connectors.
-The existing local Codex, Aether/OpenClaw, and Claude Code integrations remain
-stdio clients and are not routed through this gateway.
+The same endpoint is used for ChatGPT Chat and Work. The existing local Codex
+and Aether/OpenClaw integrations remain stdio clients and are not routed
+through this gateway.
 
 ## Trust and token model
 
@@ -80,7 +79,7 @@ The service requires:
 PORT=8080
 BRUNN_API_URL=http://api.railway.internal:8080
 BRUNN_MCP_PUBLIC_URL=https://brunn.ai
-BRUNN_MCP_ALLOWED_ORIGINS=https://chatgpt.com,https://claude.ai,https://brunn.ai
+BRUNN_MCP_ALLOWED_ORIGINS=https://chatgpt.com,https://brunn.ai
 BRUNN_MCP_SEALING_KEY=<base64 for exactly 32 random bytes>
 ```
 
@@ -116,33 +115,9 @@ from Plugins or `@` autocomplete. A local Codex stdio configuration or a local
 plugin-creator personal-marketplace entry does not create this account-level
 connection and is not a mobile provisioning path.
 
-For Claude, add the URL under custom connectors on web or desktop and complete
-OAuth with the dedicated Claude credential. Claude remote connectors sync to
-the same account's web, desktop, iOS, and Android surfaces. Set the connector's
-tool access to always available when the client offers that setting.
-
-Anthropic's supported prefilled installer is:
-
-```text
-https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Brunn&connectorUrl=https%3A%2F%2Fbrunn.ai%2Fmcp
-```
-
-It may be opened on any device with the intended Claude account. Anthropic
-requires an interactive account sign-in, connector review, and OAuth approval;
-Claude Code's local `mcp add` command does not install an account connector and
-does not provision Claude mobile.
-
-The production qualification record, including credential identifiers,
-canaries, product-side results, and the remaining Claude client-state blocker,
-is in
-[`results/2026-07-31-chatgpt-claude-remote-cutover.md`](../results/2026-07-31-chatgpt-claude-remote-cutover.md).
-
 Current product references:
 
 - [OpenAI plugin availability](https://learn.chatgpt.com/docs/plugins)
 - [OpenAI ChatGPT connection setup](https://developers.openai.com/plugins/deploy/connect-chatgpt)
 - [OpenAI MCP connections](https://learn.chatgpt.com/docs/extend/mcp)
 - [OpenAI MCP authentication](https://developers.openai.com/plugins/build/auth)
-- [Claude custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)
-- [Claude connector authentication](https://claude.com/docs/connectors/building/authentication)
-- [Claude custom-connector install links](https://claude.com/docs/connectors/building/directory-vs-custom)

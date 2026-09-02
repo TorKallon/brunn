@@ -5,7 +5,7 @@ Status: Active
 Related: [[Projects/Metis/Metis|Metis]], [[Projects/Aether/Aether|Aether]], [[Active projects]]
 
 ## Purpose
-Brunn is a user-owned, portable context and durable-work layer for agents. It is intended to let Codex, Claude Code, personal laptop agents, OpenClaw/Hermes-style systems, and future agent runtimes learn, continue, and iteratively advance complex work without turning every transcript into permanent memory or collapsing every trust domain into one database.
+Brunn is a user-owned, portable context and durable-work layer for agents. It is intended to let Codex and other agents—including personal laptop agents, OpenClaw/Hermes-style systems, and future runtimes—learn, continue, and iteratively advance complex work without turning every transcript into permanent memory or collapsing every trust domain into one database.
 
 ## Working name
 **Brunn** is the project name.

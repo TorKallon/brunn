@@ -18,7 +18,7 @@ A clean, usable Obsidian system that:
 This is not just a migration project.
 It is a knowledge-base design project with a migration component.
 
-The current working model uses the root [[INDEX|INDEX.md]] note as the canonical shared routing map for coding agents and harnesses. Repo-level `AGENTS.md` and `CLAUDE.md` files should point to that vault index instead of duplicating the project map, then verify implementation details against the repo docs, tests, and source code.
+The current working model uses the root [[INDEX|INDEX.md]] note as the canonical shared routing map for coding agents and harnesses. Repo-level instruction files for Codex and other agents should point to that vault index instead of duplicating the project map, then verify implementation details against the repo docs, tests, and source code.
 
 ## Success criteria
 - Obsidian has a clear top-level structure
@@ -60,7 +60,7 @@ The current working model uses the root [[INDEX|INDEX.md]] note as the canonical
 
 ## Next actions
 - keep [[INDEX]] compact and current as project/repo routing changes
-- keep Metis repo instructions (`AGENTS.md` / `CLAUDE.md`) pointed at the vault-root index
+- keep Metis repo instructions for Codex and other agents pointed at the vault-root index
 - continue lightweight vault maintenance and weekly structure sweeps
 - keep improving scanned-document and UpNote migration workflows as real cases surface
 - promote recurring imported material into evergreen wiki pages when the pattern is real

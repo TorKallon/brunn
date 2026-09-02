@@ -32,7 +32,7 @@ source material.
 ```mermaid
 flowchart LR
     A["Codex, OpenClaw, or another agent"] --> B["Thin CLI, MCP, or HTTP"]
-    H["Hosted ChatGPT or Claude"] --> G["OAuth remote MCP gateway"]
+    H["Hosted ChatGPT"] --> G["OAuth remote MCP gateway"]
     G --> R
     B --> R["Rust API"]
     S["TypeScript SPA"] --> R

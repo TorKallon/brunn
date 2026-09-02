@@ -278,8 +278,7 @@ const mcp = service("mcp", {
     PORT: "8080",
     BRUNN_API_URL: "http://api.railway.internal:8080",
     BRUNN_MCP_PUBLIC_URL: "https://brunn.ai",
-    BRUNN_MCP_ALLOWED_ORIGINS:
-      "https://chatgpt.com,https://claude.ai,https://brunn.ai",
+    BRUNN_MCP_ALLOWED_ORIGINS: "https://chatgpt.com,https://brunn.ai",
     BRUNN_MESSAGING_ENABLED: api.env.BRUNN_MESSAGING_ENABLED,
     BRUNN_MCP_SEALING_KEY: preserve(),
     BRUNN_BUILD_REVISION: preserve(),

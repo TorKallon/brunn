@@ -129,10 +129,6 @@ post-archive run passes through its healthy normal gateway: cross-read,
 byte-identical replay without a new write, checkpoint/resume, no delivery,
 no API-key reasoning, and an unchanged source re-audit all pass.
 
-Claude Code was part of the original three-client pilot but is outside the
-owner's current cutover scope. Its future registration does not block these two
-clients.
-
 ### 5. Production normalization and recovery — passed
 
 - **Passed:** restore the ordinary request budget and turn off the evaluation

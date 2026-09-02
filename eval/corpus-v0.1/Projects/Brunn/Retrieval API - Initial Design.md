@@ -484,7 +484,7 @@ retrievable from derived indexes
 ## Adapter Model
 The reasoning contract is independent of the client surface.
 ### File-native agents
-Codex, Claude Code, and similar agents should be able to expose a session as a
+Codex and other file-native agents should be able to expose a session as a
 lazy, read-only virtual workspace:
 ```text
 memory-session/

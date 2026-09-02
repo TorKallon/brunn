@@ -16,7 +16,7 @@ Source: converted from [[Records/Retained PDFs/Brunn/Portable Personal Context L
 ## One-Sentence Thesis
 A user-owned, portable memory substrate that lets agents across Codex cloud
 and local environments, personal laptop agents, OpenClaw/Hermes-style
-systems, and Claude Code resume work with durable context while allowing each
+systems, and other agents resume work with durable context while allowing each
 person to choose between a unified vault and physically separate trust
 domains.
 ## The Problem
@@ -58,7 +58,7 @@ model inspection
 dreaming that consolidates memory across sessions
 - preserve provenance, freshness, conflicts, corrections, and deletion
 - expose the same protocol and memory model through a Codex plugin, an MCP/CLI
-or API surface, a Claude Code integration, and adapters for personal-agent
+or API surface, integrations for other agents, and adapters for personal-agent
 systems such as OpenClaw or Hermes
 The important distinction is that this is not primarily a notes app, a wiki
 for humans, or necessarily one central database. It is an agent memory and
@@ -203,7 +203,7 @@ aggregation, and claim verification. Context packs are optional derived views
 rather than the primary retrieval boundary.
 8. **Cloud service, replication, and adapter layer:** authoritative personal
 API and search, disposable client caches, signed snapshot/delta export feeds,
-Codex plugin, local CLI/MCP/API, Claude Code integration, and personal-agent
+Codex plugin, local CLI/MCP/API, integrations for other agents, and personal-agent
 connectors.
 9. **Human control layer:** review, search, edit, pin, correct, forget,
 export, share-to-consumer policy, and audit views.

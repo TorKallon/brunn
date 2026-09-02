@@ -88,10 +88,6 @@ version/idempotency checks mandatory before the cutover can be called complete.
    from a fresh process, and prove no durable write reaches local memory or the
    vault.
 
-Claude Code was included in the original pilot design. It is not part of the
-owner's current two-client request and does not block this cutover. If added
-later, it receives its own wrapper, credential, roots, and complete canary run.
-
 ## Canary checklists
 
 The direct-cutover evidence executed the checks marked **passed** below. The

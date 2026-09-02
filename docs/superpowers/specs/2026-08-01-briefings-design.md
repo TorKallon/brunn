@@ -252,7 +252,7 @@ and rides the existing API service (no `railway.ts` / contract-test change).
 
 Three thin tools in `createBrunnMcpServer`, dot-named, zod-bounded,
 filesystem-free, exposed on **both** local stdio and the hosted gateway (so a
-claude.ai scheduled agent can run the briefing):
+hosted scheduled agent can run the briefing):
 
 - `briefing.publish` → publish endpoint (added to the write-tool set)
 - `briefing.dedupe` → dedupe-check (read-only; compact via reasoning-view)

@@ -38,8 +38,7 @@ Warmind is the legacy multi-service Go backend behind Charlemagne-era Destiny 2 
 - [[Projects/Warmind/Pantheon materializer backlog investigation - 2026-06-18|Pantheon materializer backlog investigation]] — production Datadog/code-shape note for `pantheon_pgcr_materialize` queue stacking versus row backlog.
 - [[Projects/Warmind/D2 error reparse lock-wait storm - 2026-06-18|D2 error reparse lock-wait storm]] — Datadog-backed decision note for waiting out scaled D2 `error_reparse`, returning to `opportunistic`, and then reassessing residual `UpdateWeaponMetaTX weekly` lock waits.
 - [[Projects/Warmind/Bungie auth nginx route follow-up - 2026-06-23|Bungie auth nginx route follow-up]] — current evidence and exact production nginx route needed for authenticated extra Bungie account linking.
-- [[Projects/Warmind/Repo docs/AGENTS|Warmind AGENTS]]
-- [[Projects/Warmind/Repo docs/CLAUDE|Warmind CLAUDE]]
+- [[Projects/Warmind/Repo docs/AGENTS|Warmind agent instructions]] — shared repository guidance for Codex and other agents.
 - [[Projects/Warmind/Repo docs/discord/ddata/README|Warmind Discord data README]]
 - [[Projects/Warmind/Repo docs/donator/README|Warmind donator README]]
 

@@ -67,7 +67,7 @@ tailnet-accessible human surface.
   owner-alpha compatibility code
 - `apps/web`: TypeScript/React audit and control SPA
 - `apps/mcp`: typed local stdio adapter plus the OAuth-protected hosted MCP
-  gateway used by account-level ChatGPT and Claude connectors
+  gateway used by the account-level ChatGPT connector
 - `apps/ios`: native SwiftUI client, shared Brunn types, and XcodeGen project
 - `infra`: Postgres role initialization and pinned MinIO build/policy
 - `deploy`: hosted-service configuration, including Railway and Datadog Agent
@@ -396,14 +396,14 @@ The retrieval lane is not the product evaluation. Its tuned workspace, direct, a
 ## Frozen data
 
 - Agent-work manifest SHA-256: `1479abf13d157d843bdfbba9a7ccb80c7821935f1747f6bf5e1af6f92f26273d`
-- Agent-work indexed-corpus SHA-256: `c6ead8b64fd859d6fcf187e15593d8829d3c82efead51488c4eb98533ec6096c`
-- Agent-work artifact-tree SHA-256: `c14ed7d0800e47088c6282d87e315738a92e228a9a669420dd4a49a77410cbfa`
+- Agent-work indexed-corpus SHA-256: `b2133a0239c50b32c788a4265fb1f1c7afa7e879504fb95d686f1e3a2ab81694`
+- Agent-work artifact-tree SHA-256: `803e32f4afea9ed2c50b088a7e82e451be468c4b3028d0665d02a3d96c746505`
 - Rupture Ops manifest SHA-256: `5a55ce52ba88d5fd286b22fe92a2013762789c09ee98a9ac24cdc858a08371a2`
 - Rupture Ops indexed-corpus SHA-256: `f58627c8c1c1a4d50044ca946ab7a909722914a287a3e040dde3867417a725fe`
 - Rupture Ops full artifact-tree SHA-256: `ec693c7f31481a70d07754b2eaa2b6a1ca09114954f653db151fa4fe10fc6a37`
 - Personal coordination manifest SHA-256: `b6482bfc873a967f470985019afff5ef3b23df00de106cc0f38de3438ee60ece`
 - Personal coordination indexed-corpus SHA-256: `b481b734c73e73242553cd16df6f698dffb311258ab643a2741c40ff229352ea`
 - Personal coordination artifact-tree SHA-256: `b481b734c73e73242553cd16df6f698dffb311258ab643a2741c40ff229352ea`
-- Retrieval corpus SHA-256: `86d5865077cec0b98f418b93b87ca847b04ee06cc492aad3b46f12fd0a52d822`
+- Retrieval corpus SHA-256: `a24161bcd3e321826a6f9d0e351ef7089bfca98fdc5ce8623d4e2880d6adbc32`
 
 These fixtures contain local personal and project context selected for evaluation. Review them before publishing or moving this directory to a remote repository.

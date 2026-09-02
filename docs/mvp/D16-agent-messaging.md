@@ -375,7 +375,7 @@ store ready. Railway recorded API 5xx 0/21 and Web 5xx 0/116 in that window.
 Existing-credential
 grants added `message.read` and `message.write`, preserving every prior
 capability, to Aether/OpenClaw on Nyx RW, Codex owner alpha, Codex on Erebus
-RW, Grok Bot RW, Claude Web/Mobile RW, Owner alpha, and the separate active Web
+RW, Grok Bot RW, Owner alpha, and the separate active Web
 UI session principal referenced by live Web identities. No other existing
 credential changed. A dedicated Echo resident credential was created
 separately with exactly those two capabilities. A physical-device install was

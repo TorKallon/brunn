@@ -143,8 +143,7 @@ reversibility
 background process to synthesize memory across many conversations and
 explicitly positions dreaming as complementary to explicit saved memories
 rather than historically sufficient on its own.
-- [Anthropic Managed Agents
-Dreams](https://platform.claude.com/docs/en/managed-agents/dream s) reads an
+- A managed dreaming system for other agents reads an
 input memory store and up to 100 sessions, then creates a separate output
 store. It never modifies the input, and the output can be reviewed, used,
 archived, or discarded.

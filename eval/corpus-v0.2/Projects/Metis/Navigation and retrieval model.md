@@ -58,7 +58,7 @@ Coding agents and less sophisticated harnesses need a predictable compact front 
 Implication:
 - keep [[INDEX]] at the vault root as the canonical routing map
 - keep it short and source-oriented, not narrative
-- point repo-level `AGENTS.md` and `CLAUDE.md` files to it
+- point repo-level instruction files for Codex and other agents to it
 - after using it to find context, verify implementation details against repo docs, tests, and source code
 
 ### 5. Small bookmark layer

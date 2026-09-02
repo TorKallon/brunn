@@ -181,7 +181,7 @@ Readiness — clients, migration, authority:
 
 | ID | Title | Status | Notes |
 |---|---|---|---|
-| [D13](mvp/D13-client-integration-and-canaries.md) | Client integration + canaries | Direct-cutover subset passed for Codex and Aether/OpenClaw | Both are configured Brunn-only; broader reusable qualification and Claude Code are deferred |
+| [D13](mvp/D13-client-integration-and-canaries.md) | Client integration + canaries | Direct-cutover subset passed for Codex and Aether/OpenClaw | Both are configured Brunn-only; broader reusable qualification is deferred |
 | [D14](mvp/D14-migration-and-authority-tiers.md) | Lossless migration and authority cutover | Operational cutover and locally verified repository publication passed | Records the environment-blocked restore exception and hosted-CI billing constraint |
 
 Conditional — do not start until stated preconditions hold:
@@ -281,7 +281,7 @@ then superseded the staged rollout with the direct-cutover Track 1 on
   Existing-credential
   grants added `message.read` and `message.write`, preserving every prior
   capability, to Aether/OpenClaw on Nyx RW, Codex owner alpha, Codex on Erebus
-  RW, Grok Bot RW, Claude Web/Mobile RW, Owner alpha, and the separate active
+  RW, Grok Bot RW, Owner alpha, and the separate active
   Web UI session principal referenced by live Web identities. No other
   existing credential changed. A dedicated Echo resident credential was
   created separately with exactly those two capabilities. A physical-device
