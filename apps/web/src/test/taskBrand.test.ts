@@ -6,7 +6,7 @@ const taskCss = (css.split("/* Agent-first task surfaces */")[1] ?? "").split(
   "@media (max-width: 1100px)",
 )[0];
 
-describe("Night Signal task contracts", () => {
+describe("Still Water task contracts", () => {
   it("uses design tokens rather than new color literals", () => {
     expect(taskCss).not.toBe("");
     expect(taskCss).not.toMatch(/#[0-9a-f]{3,8}\b/iu);

@@ -25,7 +25,7 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 }
 
 enum BrunnTheme {
-    /// Cobalt beam accent — the single brand hue (docs/Brand.md).
+    /// Cobalt signal accent — the single brand hue (docs/Brand.md).
     static let signal = dynamic(light: 0x3158D9, dark: 0x8FA9FF)
     /// Secondary data/info accent.
     static let pulse = dynamic(light: 0x0F7583, dark: 0x5FB9D0)
@@ -34,8 +34,10 @@ enum BrunnTheme {
     static let red = dynamic(light: 0xAC3B47, dark: 0xE08894)
     /// Completion/status ramp. Brand blue must never communicate success.
     static let success = dynamic(light: 0x177A4F, dark: 0x66C695)
-    /// Night chrome for brand surfaces (matches LaunchBackground).
+    /// Night chrome for brand surfaces; launch uses the darker endpoint.
     static let night = dynamic(light: 0x06152C, dark: 0x030B18)
+    /// The dark centre of the Still Water mark.
+    static let well = Color(uiColor: UIColor(rgb: 0x02060F))
     static let canvas = Color(uiColor: .secondarySystemBackground)
     static let line = Color(uiColor: .separator).opacity(0.55)
 
@@ -68,46 +70,96 @@ struct BrandMark: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
+            RadialGradient(
                 colors: [
-                    Color(red: 0.012, green: 0.043, blue: 0.094),
-                    Color(red: 0.043, green: 0.129, blue: 0.267),
+                    BrunnTheme.signal.opacity(0.24),
+                    BrunnTheme.night,
                 ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
+                center: UnitPoint(x: 0.24, y: 0.20),
+                startRadius: 0,
+                endRadius: size * 0.92
             )
-            BeamShape()
+
+            Circle()
                 .fill(
+                    RadialGradient(
+                        colors: [
+                            BrunnTheme.well,
+                            BrunnTheme.night,
+                        ],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: size * 0.31
+                    )
+                )
+                .frame(width: size * 0.62, height: size * 0.62)
+
+            ripple(radius: 0.064, opacity: 0.34)
+            ripple(radius: 0.112, opacity: 0.21)
+            ripple(radius: 0.196, opacity: 0.12)
+
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            .white.opacity(0.82),
+                            BrunnTheme.signal.opacity(0.22),
+                            .clear,
+                        ],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: size * 0.13
+                    )
+                )
+                .frame(width: size * 0.26, height: size * 0.26)
+                .position(x: size * 0.455, y: size * 0.467)
+
+            Circle()
+                .fill(.white)
+                .frame(width: size * 0.036, height: size * 0.036)
+                .position(x: size * 0.455, y: size * 0.467)
+
+            WellRimShape()
+                .stroke(
                     LinearGradient(
                         colors: [
                             .white,
-                            Color(red: 0.78, green: 0.85, blue: 1.0),
-                            Color(red: 0.19, green: 0.35, blue: 0.85),
+                            BrunnTheme.signal.opacity(0.80),
+                            .clear,
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
+                    ),
+                    style: StrokeStyle(
+                        lineWidth: max(0.75, size * 0.022),
+                        lineCap: .round
                     )
                 )
-            Circle()
-                .fill(.white)
-                .frame(width: size * 0.14, height: size * 0.14)
-                .shadow(color: Color(red: 0.56, green: 0.66, blue: 1.0), radius: size * 0.10)
-                .position(x: size * 0.32, y: size * 0.30)
+                .padding(size * 0.19)
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
         .accessibilityLabel("Brunn")
     }
+
+    private func ripple(radius: CGFloat, opacity: Double) -> some View {
+        Circle()
+            .stroke(BrunnTheme.signal.opacity(opacity), lineWidth: max(0.4, size * 0.012))
+            .frame(width: size * radius * 2, height: size * radius * 2)
+            .position(x: size * 0.455, y: size * 0.467)
+    }
 }
 
-private struct BeamShape: Shape {
+private struct WellRimShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        let origin = CGPoint(x: rect.width * 0.32, y: rect.height * 0.30)
-        path.move(to: origin)
-        path.addLine(to: CGPoint(x: rect.width * 1.05, y: rect.height * 0.78))
-        path.addLine(to: CGPoint(x: rect.width * 0.86, y: rect.height * 1.05))
-        path.closeSubpath()
+        path.addArc(
+            center: CGPoint(x: rect.midX, y: rect.midY),
+            radius: min(rect.width, rect.height) / 2,
+            startAngle: .degrees(195),
+            endAngle: .degrees(315),
+            clockwise: false
+        )
         return path
     }
 }

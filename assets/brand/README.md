@@ -1,38 +1,35 @@
-# Brunn brand assets
+# brunn brand assets — Still Water
 
-`brunn-night-signal-1024.png` is the canonical production master for the
-selected **Night Signal** identity. It is an opaque, full-bleed 1024 × 1024 RGB
-PNG with no baked corner mask, so iOS and web surfaces can apply their own
-shape.
+Still Water is the production identity adopted on 2026-09-02. Superseded
+artwork is removed from the tree; Git history remains its recovery path.
 
-`reference/brunn-night-signal-selected-board.png` preserves the exact
-concept board approved by the user. Its SHA-256 digest is
-`eab0ad6d1cbe2136628a19cea62ed592b8950613a5170c3790df75f784e5cc0e`.
+## Raster masters
 
-The mark uses a midnight field, one off-center blue-white source, and a single
-ice-blue-to-cobalt beam. The production palette is emphatically blue, with
-subtle sapphire/indigo depth and no pink, hot magenta, or fuchsia.
+These are the owner-approved, opaque RGB masters. Keep their bytes unchanged;
+platform-specific files are derived from them without adding type or a corner
+mask.
 
-The concept board remains the historical selection reference. The user later
-clarified that restrained cool violet is welcome when it improves the design;
-the objection was to the all-pink/purple chroma-key screen, not nuanced shading
-inside a primarily blue identity.
+| Asset | Dimensions | SHA-256 |
+| --- | --- | --- |
+| `brunn-well-2048.png` | 2048 × 2048 | `16ceb7c14e4f2293b4bd17dfe4016be7be55f11fb25cb7a42c9edb701e9aa535` |
+| `brunn-well-1024.png` | 1024 × 1024 | `d3b1673bc7cec6ab56f5181d788764e9a3ef0b4f282e466200812ccca9d4f0fc` |
+| `brunn-waterline-1024.png` | 1024 × 1024 | `376ba024b6a89862d2d45ae41d447df271938e3e57b9037a931167842c232a49` |
+| `brunn-hero-wide.png` | 3840 × 2160 | `77c283768ef4651fbdd95d8299d583f1f791750719621a4d340ae281bbe72384` |
 
-Derived assets:
+`brunn-well-1024.png` is the canonical app-icon master. It is full bleed and
+has no baked platform mask. `brunn-waterline-1024.png` is launch artwork on
+`#030B18`. `brunn-hero-wide.png` is artwork only; web copy remains locally
+typeset by `apps/ios/Tools/generate_app_icon.swift`. Full derivative
+regeneration requires the WebP tools (`brew install webp` on macOS).
 
-- `apps/ios/Brunn/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png`
-- `apps/ios/Brunn/Resources/Assets.xcassets/LaunchSignal.imageset/`
-- `apps/ios/Brunn/Resources/Assets.xcassets/LaunchBackground.colorset/`
-- `apps/web/public/brunn-mark.png`
-- `apps/web/public/favicon.png`
-- `apps/web/public/apple-touch-icon.png`
+## Vector masters
 
-`brunn-launch-signal-1024.png` is a transparent, launch-only beam master.
-The iOS image set derives 1×, 2×, and 3× centered assets from it. The matching
-launch background is `#06152C` in the default appearance and `#030B18` in dark
-appearance. The transparent master's SHA-256 digest is
-`cd20c011293c16e0d6bf3704ec4786c60127133fd6c28bbd56abd59cfd2eb189`.
+- `brunn-well.svg` is the owner-approved A+ composition reference: an open
+  upper-left crescent, one off-centre point, and three hairline ripples.
+- `brunn-well-glyph.svg` is the dedicated full-colour glyph for sizes at or
+  below 48 px.
+- `brunn-well-mono.svg` is the single-colour transparent mask for tinted and
+  pinned-tab uses; the host supplies its colour.
 
-The master was generated from the user-approved concept board on 2026-08-02.
-Its SHA-256 digest is
-`d050cd7fbd092b620763930a3487d693be97b55b45a722bd05d6dc7f0af43f2e`.
+The vector glyph, mono mask, and code-set lowercase `brunn` wordmark are never
+rasterized by the image model. Exploration files stay outside the repository.

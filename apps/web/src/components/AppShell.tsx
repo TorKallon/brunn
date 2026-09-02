@@ -81,7 +81,7 @@ export function AppShell({ children }: PropsWithChildren) {
       {navOpen ? <button className="nav-backdrop" onClick={() => setNavOpen(false)} aria-label="Close navigation" /> : null}
       <aside className={`sidebar ${navOpen ? "open" : ""}`}>
         <Link to="/dashboard" className="brand" onClick={() => setNavOpen(false)}>
-          <img className="brand-mark" src="/brunn-mark.png" alt="" aria-hidden="true" />
+          <img className="brand-mark" src="/brunn-well-128.webp" alt="" aria-hidden="true" />
           <div>
             <strong>brunn</strong>
             <span>Memory &amp; briefings</span>

@@ -39,28 +39,17 @@ struct RootView: View {
 
 private struct StartupView: View {
     var body: some View {
-        ZStack {
-            Color("LaunchBackground")
+        GeometryReader { geometry in
+            Image("LaunchWaterline")
+                .resizable()
+                .scaledToFill()
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .clipped()
                 .ignoresSafeArea()
-
-            VStack(spacing: 18) {
-                Image("LaunchSignal")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 132, height: 132)
-                    .accessibilityHidden(true)
-
-                Text("brunn")
-                    .font(.title2.weight(.medium))
-                    .fontDesign(.serif)
-                    .tracking(-0.66)
-                    .foregroundStyle(.white)
-
-                ProgressView()
-                    .tint(.white.opacity(0.9))
-                    .accessibilityLabel("Opening Brunn")
-            }
         }
+        .ignoresSafeArea()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Opening Brunn")
         .accessibilityIdentifier("brunn-startup")
     }
 }

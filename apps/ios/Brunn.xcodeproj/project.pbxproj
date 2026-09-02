@@ -21,6 +21,7 @@
 		5B3DB106A675056EE219CCE8 /* KeychainCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4787DC4C6EC323525D87BDF4 /* KeychainCredentialStore.swift */; };
 		66B5918BD21C6A065ECBA078 /* ConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40044C0EDD79C13DE10F0841 /* ConversationView.swift */; };
 		69D208878AF1643D76642348 /* ConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F14DE1ED8732CDA6CD45778B /* ConnectionView.swift */; };
+		759DE95F9637FF67CD4BA6D9 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 12EEAAE25E15EF13DF60239A /* LaunchScreen.storyboard */; };
 		8436C3269CF24E38D5BB83AD /* NotificationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12B52FF662149DF1CE674E40 /* NotificationCoordinator.swift */; };
 		86952D5F27A53C5E118F48D8 /* AppRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAACA51C6545E7A689AAD8E8 /* AppRoute.swift */; };
 		87242DC79676918273353F51 /* ArchiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6676D69ED64C7EB91117D0F4 /* ArchiveView.swift */; };
@@ -66,6 +67,7 @@
 		0B1E2DF582760E2B5BCEBF3D /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
 		11DABAA0523E9DFAFB57A777 /* BrunnApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrunnApp.swift; sourceTree = "<group>"; };
 		12B52FF662149DF1CE674E40 /* NotificationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationCoordinator.swift; sourceTree = "<group>"; };
+		12EEAAE25E15EF13DF60239A /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		1B9D3F02C3DB7B91CF5BDA52 /* BrunnTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrunnTheme.swift; sourceTree = "<group>"; };
 		24BC8100496C9079F87F704E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		26C7BF89573C5C303C7A71A2 /* TopicsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopicsView.swift; sourceTree = "<group>"; };
@@ -268,6 +270,7 @@
 				E956402262612D72E366D793 /* Assets.xcassets */,
 				27F8AC7F78EA8741BB5603F0 /* Brunn.entitlements */,
 				24BC8100496C9079F87F704E /* Info.plist */,
+				12EEAAE25E15EF13DF60239A /* LaunchScreen.storyboard */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -428,6 +431,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E4DCF70150FA5E39007E5DBB /* Assets.xcassets in Resources */,
+				759DE95F9637FF67CD4BA6D9 /* LaunchScreen.storyboard in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

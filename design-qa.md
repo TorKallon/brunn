@@ -1,43 +1,47 @@
-# Design QA — Night Signal brand integration
+# Design QA — Still Water brand integration
 
-Date: 2026-08-02
+Date: 2026-09-02
 Result: **Passed**
 
 ## Visual target
 
-The implementation was compared directly with the user-approved concept board
-at `assets/brand/reference/brunn-night-signal-selected-board.png`.
+The implementation was compared directly with the owner-approved A+ Still
+Water composition and the selected Images 2.0 family: `r3-3` for the app icon,
+`launch-corrected-1` for launch, and `hero-4` for the wide field. The mark keeps
+one crescent-open rim, one off-centre point, and exactly three hairline ripples.
 
 ## Web
 
-- The real raster mark replaces the placeholder `S` on both the authenticated
-  shell and authentication screens.
-- The visible identity uses a midnight sidebar, blue interaction accents, and
-  a readable serif system stack for `Brunn`; green is no longer used as a
-  core web brand color.
-- The production assets stay blue-dominant while using layered sapphire/cobalt
-  shading and internal beam gradations; no visible pink or hot magenta remains.
-- The 64 px favicon remains recognizable when reduced to 32 px and 16 px.
-- The login implementation was captured at
-  `/Users/aether/.codex/visualizations/2026/08/02/019fc465-35c6-7671-ae30-6cc291b72b59/brunn-web-brand-login.png`.
-- Source and implementation were inspected together: the off-center source,
-  single lower-right beam, midnight field, and serif wordmark all remain
-  faithful at product scale, with no clipping or layout regression.
+- The authenticated shell, authentication screens, and settings use the
+  approved raster well at product scale; the wordmark remains live lowercase
+  serif type.
+- The favicon is the dedicated vector glyph, while the Apple touch icon uses
+  the approved raster master. No image-model output contains type.
+- The social card uses the approved wide field with a locally typeset lowercase
+  wordmark and tagline at 1200 × 630.
+- Light and night themes retain readable contrast and blue-only brand accents.
+  The sidebar contains one still waterline; nothing animates.
+- Desktop login, desktop workspace, and 390 px mobile navigation were inspected
+  in a real Chromium render with no console or page errors. Mobile spacing was
+  corrected so the close control cannot cover the mark.
 
 ## iOS
 
-- `AppIcon.png` is an opaque, full-bleed, 1024 × 1024 RGB PNG with no baked
-  corner mask or transparency.
-- The source and beam remain inside the system-mask safe region and read at
-  small icon sizes.
-- `LaunchSignal` provides transparent 1×, 2×, and 3× artwork with generous
-  padding; `LaunchBackground` provides explicit default and dark navy colors.
-- The asset catalog compiles without icon or image-set warnings in an unsigned
-  generic-device build.
+- `AppIcon.png` is the approved opaque, full-bleed 1024 × 1024 RGB master with
+  no baked mask or transparency; the tinted appearance comes from the separate
+  vector-derived monochrome asset.
+- The static launch storyboard and in-app startup view both use
+  `LaunchWaterline` as a full-bleed crop over `#030B18`, avoiding a visible
+  square tile while keeping the composition inside the central vertical field.
+- The miniature in-app mark is drawn in SwiftUI with the crescent, point, and
+  three ripples rather than rasterized type.
+- The icon and startup treatment were installed and inspected on an iPhone
+  simulator after asset-catalog compilation.
 
 ## Engineering gates
 
-- Web production build passed and emitted the logo, favicon, and Apple touch
-  icon into `dist`.
-- Web test suite passed: 13 files, 66 tests.
-- Unsigned generic iOS device build passed after the app-icon replacement.
+- The deterministic generator reproduced every iOS and web derivative.
+- Web production build passed; Vitest passed 25 files and 136 tests.
+- Swift package tests passed 26 tests; the full simulator app build succeeded.
+- Asset hashes, dimensions, opacity, SVG parsing, metadata, and retired-brand
+  residue checks passed.

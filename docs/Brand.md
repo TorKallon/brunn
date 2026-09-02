@@ -1,6 +1,6 @@
-# Brunn brand — Night Signal
+# Brunn brand — Still Water
 
-Status: adopted 2026-08-02; renamed and extended 2026-08-31. This is the
+Status: adopted 2026-09-02; succeeds Night Signal. This is the
 authoritative design system for every Brunn surface (web SPA, iOS app,
 launch/app icons, future marketing).
 
@@ -20,14 +20,21 @@ launch/app icons, future marketing).
 
 ### Mark
 
-The mark is a **night signal**: one incandescent point source in a midnight
-field, casting a single ice-to-cobalt beam. It is the product metaphor made
-literal — Brunn is durable memory in the dark; the point is the record,
-the beam draws it up. Over a well, the point source is what you dropped in,
-still shining when you come back for it. The canonical master is
-`assets/brand/brunn-night-signal-1024.png` (opaque, full-bleed 1024 px,
-no baked corner mask; platforms apply their own shape). The mark is not a
-lettermark, so the rename changes no pixels.
+The mark is **Still Water**: the mouth of a well seen directly from above at
+night. A dark circular opening sits in a layered midnight field. Moonlight
+catches only the upper-left lip as a short ice-to-cobalt crescent; the rim
+never closes. In the water, one small point of light sits above-left of centre
+inside exactly three still hairline ripples, each fainter than the last. The
+point is what an agent dropped in, still shining when it comes back. Nothing
+leaves the well; stillness is the promise.
+
+The generated canonical masters are `assets/brand/brunn-well-2048.png` and
+`assets/brand/brunn-well-1024.png` (opaque, full-bleed RGB, no baked corner
+mask; platforms apply their own shape). `assets/brand/brunn-well.svg` is the
+A+ composition reference, not the shipping raster artwork. At 180 and 120 px,
+the mark reads as a well with a star in it. At 60 px, the ripples may vanish,
+but the opening and point must remain. It must never read as a lens, eye,
+speaker, portal, target, black hole, or disc.
 
 Identity rules, from the approved concept board:
 
@@ -37,8 +44,8 @@ Identity rules, from the approved concept board:
   cool-tinted neutral. Functional status colors (green/amber/red) exist for
   meaning, never for decoration.
 - Dark surfaces are **chrome, not content**: navigation, hero, launch — the
-  archive/void. Content lives in a light, airy workroom. Luminous gradients
-  belong only on night chrome.
+  archive/void. Content lives in a light, airy workroom. Depth gradients and
+  the full waterline composition belong only on night chrome.
 
 ### Wordmark
 
@@ -47,9 +54,8 @@ Set the single lowercase word **brunn** in
 `-0.03em`, using the appropriate `on-night` or `ink` token. Never apply a
 gradient fill, outline, shadow, or rotation.
 
-A marketing-only variant may place one point source above the final *n* — the
-light over the well. Use it only in hero or marketing lockups on night chrome,
-never in running text or app chrome.
+There is no ornamental wordmark variant. The light lives in the well, not over
+the letters. The image model never renders the wordmark.
 
 ### Lockups, clearspace, and minimums
 
@@ -61,8 +67,21 @@ never in running text or app chrome.
 - **Clearspace:** at least the wordmark's *b*-ascender height on every side.
 - **Minimums:** mark alone 16 px; lockup mark height 24 px; wordmark alone
   20 px cap height. Below those floors, show the mark alone.
-- Do not put the beam gradient behind a lockup on the light workroom, and do
+- Do not put the depth treatment behind a lockup on the light workroom, and do
   not recolor the mark outside the night and signal ramps.
+
+### Favicon and app-icon appearances
+
+- At 48 px and below, use `assets/brand/brunn-well-glyph.svg`: a dedicated
+  32-grid glyph with a centred point and complete ring. At 16 px it resolves to
+  a 1 px stroke around a 2 px point. It deliberately omits the crescent,
+  ripples, and bloom; a partial ring at that size looks like a spinner.
+- `assets/brand/brunn-well-mono.svg` is the single-colour transparent mask for
+  the iOS tinted appearance and hosts that supply their own tint. It contains
+  only the ring and point.
+- The standard iOS icon uses the generated night artwork. Ship the standard
+  and tinted appearances; do not add a separate dark appearance because the
+  mark is already night.
 
 ## 2. Color system
 
@@ -96,7 +115,7 @@ Text on night: `on-night #F5F8FF` (primary), `on-night-muted #BDC9E2`
 | `signal-400` | `#607DFF` | Focus ring (only) |
 | `signal-300` | `#8FA9FF` | Luminous accent on night: active-nav inset, kickers, hero primary button fill |
 | `signal-200` | `#A9BCFF` | Hover of signal-300 fills; links on night |
-| `signal-100` | `#C7D9FF` | Ice — beam tint, decorative borders on light accent |
+| `signal-100` | `#C7D9FF` | Ice — crescent and waterline tint, decorative borders on light accent |
 | `signal-soft` | `#E9EDFF` | Soft fills on light (notices, active chips) |
 | `signal-wash` | `#F4F6FF` | Row hover, faintest wash |
 | `signal-ink` | `#263F9E` | Text on `signal-soft` |
@@ -228,18 +247,16 @@ than weight 700. Every numeric table uses tabular figures.
 2. **Signal edge** — a 3 px left accent bar means "surfaced for you"
    (briefing summary, today metrics). `signal-600` default, `pulse` for
    write-flavored data, neutral `#8A96AC` otherwise.
-3. **Beam gradient** — 135° luminous gradient (`night-900 → night-800 →
-   night-700` plus a `signal-500` radial glow) is reserved for night chrome:
-   hero, launch, marketing. Never on the light workroom.
+3. **Depth** — on night chrome, a vertical darkening toward the bottom
+   (`#0A1322 → #030B18`) plus one soft sapphire glow at the upper left. Never
+   use the retired diagonal luminous treatment. Never animate it.
 4. **Night chrome** — exactly one dark orientation surface per screen
-   (sidebar or hero), so the beam always has a dark sky to cross.
-5. **Waterline** — a 1 px luminous horizontal hairline marking the well's
-   surface, with the point source's reflection below at about 55% opacity and
-   2 px blur. Add at most three static ripple hairlines beneath it, with widths
-   about 1.7× apart and opacity decaying 1 → 0.6 → 0.35. Use it on night chrome
-   only, at most once per screen, and only for hero or marketing surfaces —
-   never in the workroom and never animated. The well is still; stillness is
-   the promise.
+   (sidebar or hero), giving the depth treatment one quiet place to live.
+5. **Waterline** — on hero and launch, one ice-white horizontal hairline with
+   the point above, its reflection beneath at about 55% brightness, and at most
+   three static ripple hairlines that widen about 1.7× and fade outward. In the
+   workroom, use only the bare 1 px hairline, at most once per screen, beneath
+   the sidebar brand block. No reflection or ripples there. Still, always.
 
 ## 6. Component recipes (web)
 
@@ -288,10 +305,14 @@ must reference `--link`, solid fills `--accent-fill`; neither may hard-code
 | `red` | `#AC3B47` | `#E08894` |
 | `night` (chrome) | `#06152C` | `#030B18` |
 
-`AccentColor` mirrors `signal`. The launch screen keeps the derived
-`LaunchSignal` beam on `LaunchBackground` (`#06152C` / `#030B18`). The in-app
-`BrandMark` is a SwiftUI-drawn miniature of the icon (night field, point
-source, beam), not a lettermark. `forest` is retired.
+`AccentColor` mirrors `signal`. The static launch storyboard and in-app startup
+view both fill the screen with generated `LaunchWaterline` artwork over
+`LaunchBackground` (`#030B18`), using an aspect-fill crop so the square source
+never becomes a visible tile. Neither layer animates or rasterizes type. The
+in-app `BrandMark` is a SwiftUI-drawn miniature of the well geometry (depth,
+opening, upper-left crescent, point, and three quiet ripples), not a lettermark.
+`BrunnTheme.well` is `#02060F` and is used only for the mark interior and hero
+depth floor. `forest` is retired.
 
 ## 8. Accessibility contract
 
@@ -301,13 +322,17 @@ source, beam), not a lettermark. `forest` is retired.
 - Focus is always visible (`signal-400` ring on light and night).
 - Charts: two named series max without re-validation, direct labels or legend
   always present, series identity survives deutan/tritan simulation.
-- Honor `prefers-reduced-motion`; the beam never animates.
+- Honor `prefers-reduced-motion`; Still Water never animates.
 
 ## 9. Voice
 
 Brand copy uses **drops in** for capture, **draws up** for retrieval,
-**the well** for the corpus, and **holds** for durability. Avoid database
-vocabulary such as “stored” and “retrieved” in brand copy.
+**the well** for the corpus, **holds** for durability, and **still** for the
+promise that nothing moves on its own. Avoid database vocabulary such as
+“stored” and “retrieved” in brand copy.
+
+Product examples: “Nothing in the well yet.” · “Drawn up from 3 sources.” ·
+“Held.” · “The well is out of reach.”
 
 Approved one-line directions include:
 
@@ -315,10 +340,21 @@ Approved one-line directions include:
 - “Memory that holds.”
 - “Everything you've kept, still there when you come back.”
 
-## 10. Asset inventory
+## 10. Asset inventory and regeneration
 
-- Master: `assets/brand/brunn-night-signal-1024.png` (SHA-256
-  `d050cd7f…`). Concept board preserved in `assets/brand/reference/`.
-- Derived: iOS `AppIcon.png`, `LaunchSignal.imageset`,
-  `LaunchBackground.colorset`; web `favicon.png`, `apple-touch-icon.png`,
-  `brunn-mark.png`. Regenerate via `apps/ios/Tools/generate_app_icon.swift`.
+- Generated masters: `assets/brand/brunn-well-2048.png`,
+  `assets/brand/brunn-well-1024.png`, `assets/brand/brunn-waterline-1024.png`,
+  and `assets/brand/brunn-hero-wide.png`.
+- Vector masters: `assets/brand/brunn-well.svg` (A+ composition reference),
+  `assets/brand/brunn-well-glyph.svg` (≤ 48 px), and
+  `assets/brand/brunn-well-mono.svg` (host-tinted mask).
+- Derived iOS assets: `AppIcon.png`, `AppIcon-tinted.png`,
+  `LaunchWaterline.imageset`, and `LaunchBackground.colorset`.
+- Derived web assets: `favicon.svg`, `favicon-32.png`, `favicon-16.png`,
+  `apple-touch-icon.png`, `og.png`, and the in-app raster mark.
+
+Regenerate derivatives with the single script
+`apps/ios/Tools/generate_app_icon.swift`; it accepts the canonical raster and
+vector masters and emits the iOS and web sizes. WebP output requires `cwebp`
+from the WebP tools (`brew install webp` on macOS). The image model is never
+used for the favicon glyph, mono mask, wordmark, or any other type.

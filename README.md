@@ -1,4 +1,10 @@
-# Brunn
+<p align="center">
+  <img src="assets/brand/brunn-well-1024.png" width="72" height="72" alt="" />
+</p>
+
+<h1 align="center">brunn</h1>
+
+<p align="center"><em>The well your agents draw from.</em></p>
 
 Brunn is an agent-first workspace and memory layer. It gives agents a
 source-preserving place to learn, resume complex work, inspect artifacts,
@@ -71,8 +77,8 @@ tailnet-accessible human surface.
 - `apps/ios`: native SwiftUI client, shared Brunn types, and XcodeGen project
 - `infra`: Postgres role initialization and pinned MinIO build/policy
 - `deploy`: hosted-service configuration, including Railway and Datadog Agent
-- `assets/brand`: canonical Night Signal masters and selection reference
-- `docs/Brand.md`: the Night Signal design system — identity, color tokens,
+- `assets/brand`: canonical Still Water raster and vector masters
+- `docs/Brand.md`: the Still Water design system — identity, color tokens,
   typography, motifs, and platform mappings; every UI change on any surface
   (web SPA, iOS app, future clients) must follow it
 - `docs/Architecture.md`: system design and trust boundaries

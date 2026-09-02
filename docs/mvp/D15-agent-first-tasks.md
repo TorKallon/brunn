@@ -204,7 +204,7 @@ configuration generation; `pull` retains the prior cursor and changes nothing
 on failure. Mapping, precedence, deletion/completion, triage, and recurrence
 are exactly product-spec §9.
 
-## iOS and Web under Night Signal
+## iOS and Web under Still Water
 
 iOS reads through its owner cookie session. A separate opaque Keychain bearer
 is attached only to task mutations and notification registration. When that
@@ -260,7 +260,7 @@ Gates 1–10 are engine tables; bounded React/Swift tests; 2,000-task p95 and
 EXPLAIN; context/merge audits; precedence/corrections; two-user RLS plus every
 mutation denial and secret canary; byte-exact history export/import plus
 `memory.changes`; guard ledger/typed route; recorded Todoist v1 fixture; and
-Night Signal token/contrast audits. Gate 11 runs all Rust/API/database, MCP,
+Still Water token/contrast audits. Gate 11 runs all Rust/API/database, MCP,
 production contract, retrieval fingerprint, Web, iOS, diff, and added-line
 credential checks at every green milestone.
 
@@ -290,7 +290,7 @@ Todoist.
 ## References
 
 - `sources/Projects/Brunn/Agent-first tasks - spec and Codex handoff - 2026-08-26.md`
-- [Night Signal](../Brand.md)
+- [Still Water](../Brand.md)
 - [D12](D12-operational-simplification.md)
 - [D13](D13-client-integration-and-canaries.md)
 - <https://developer.todoist.com/api/v1/>
