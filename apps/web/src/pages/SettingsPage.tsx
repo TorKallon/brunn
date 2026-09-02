@@ -20,7 +20,7 @@ const appearanceOptions: Array<{
   {
     value: "dark",
     label: "Dark",
-    description: "Low-glare Night Signal workroom",
+    description: "Low-glare Still Water workroom",
     icon: Moon,
   },
   {

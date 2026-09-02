@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <radialGradient id="field" cx="0.28" cy="0.24" r="1.05">
+      <stop offset="0"    stop-color="#1B4384"/>
+      <stop offset="0.38" stop-color="#0E2A5A"/>
+      <stop offset="1"    stop-color="#04112A"/>
+    </radialGradient>
+    <radialGradient id="sapphire" cx="0.78" cy="0.80" r="0.55">
+      <stop offset="0" stop-color="#0F327A" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#0F327A" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="well" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0"    stop-color="#02060F"/>
+      <stop offset="0.75" stop-color="#030A1A"/>
+      <stop offset="1"    stop-color="#071736"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="0.12" y1="0.08" x2="0.90" y2="0.92">
+      <stop offset="0"    stop-color="#F6F8FF" stop-opacity="1"/>
+      <stop offset="0.30" stop-color="#8FA9FF" stop-opacity="0.9"/>
+      <stop offset="0.62" stop-color="#3158D9" stop-opacity="0.28"/>
+      <stop offset="0.85" stop-color="#2444B7" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="bloom" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0"    stop-color="#FFFFFF" stop-opacity="0.96"/>
+      <stop offset="0.10" stop-color="#DDE6FF" stop-opacity="0.74"/>
+      <stop offset="0.30" stop-color="#5C7BEA" stop-opacity="0.28"/>
+      <stop offset="0.62" stop-color="#3158D9" stop-opacity="0.07"/>
+      <stop offset="1"    stop-color="#3158D9" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="mouth"><circle cx="512" cy="512" r="318"/></clipPath>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#field)"/>
+  <rect width="1024" height="1024" fill="url(#sapphire)"/>
+  <circle cx="512" cy="512" r="318" fill="url(#well)"/>
+  <g clip-path="url(#mouth)" fill="none" stroke="#8FA9FF" stroke-width="2.4">
+    <circle cx="466" cy="478" r="64"  opacity="0.42"/>
+    <circle cx="466" cy="478" r="112" opacity="0.26"/>
+    <circle cx="466" cy="478" r="196" opacity="0.15"/>
+  </g>
+  <circle cx="466" cy="478" r="130" fill="url(#bloom)"/>
+  <circle cx="466" cy="478" r="13.5" fill="#FFFFFF"/>
+  <path d="M 205 430 A 318 318 0 0 1 737 287" fill="none" stroke="url(#rim)" stroke-width="7" stroke-linecap="round"/>
+</svg>

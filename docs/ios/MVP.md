@@ -13,7 +13,7 @@ database.
 
 The primary design rule is simple: use the phone for prose. The native reader
 follows the deployed mobile web view with 12-point phone gutters, no decorative
-timeline rail, a full-width summary with a three-point Night Signal accent
+timeline rail, a full-width summary with a three-point Still Water accent
 (signal blue), compact section rows, and full-width expanded detail. Dynamic
 Type, VoiceOver, selection, Reduce Motion, and safe web links are preserved.
 

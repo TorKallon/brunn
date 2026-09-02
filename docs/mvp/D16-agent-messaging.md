@@ -246,7 +246,7 @@ Web adds one authenticated Agents page: conversation list, selected thread,
 composer, picker, and a registry/settings panel. It uses the current session
 and CSRF middleware and the sync API; there is no browser offline store. The
 navigation item is derived from the server feature flag and send affordances
-require the exact `message.write` capability. Night Signal tokens and existing
+require the exact `message.write` capability. Still Water tokens and existing
 accessible controls are reused.
 
 iOS uses built-in SwiftData, avoiding a new package. Four local models hold
@@ -320,7 +320,7 @@ conversation ids, client keys, or credentials.
 | 7 — iOS | Store-first launch metric, durable offline outbox/relaunch/exactly-once reconnect, silent-push prefetch, cold deep link, view-only, 1,000-row scroll profile |
 | 8 — Web | Browser sign-in/list/open/send/echo and credential-binding sender change |
 | 9 — regressions | Gate-off HTTP 404/tool absence, unchanged old-tool snapshot, previous release against 0076, all old and landed-task suites/scenarios with flag off/on |
-| 10 — brand | Night Signal token, both-appearance contrast, keyboard, focus, reduced-motion, and status-ramp audits |
+| 10 — brand | Still Water token, both-appearance contrast, keyboard, focus, reduced-motion, and status-ramp audits |
 | 11 — standard | Locked Cargo all-target check and API suites, isolated DB suites, MCP, production contracts, retrieval fingerprint, Web build/tests, iOS package/app tests, diff check, added-line secret scan |
 | 12 — real interfaces | One disposable API/worker/Postgres/object-store/MCP/Web/iOS stack, plus production smoke only after gates 1–11 |
 

@@ -8,7 +8,7 @@ truth.
 ## Design system
 
 All user-facing visual work — the web SPA, the iOS app, and any future
-surface — must follow `docs/Brand.md` (the **Night Signal** design system).
+surface — must follow `docs/Brand.md` (the **Still Water** design system).
 In practice:
 
 - Use the defined tokens (CSS custom properties in `apps/web/src/styles.css`,

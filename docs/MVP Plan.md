@@ -295,7 +295,7 @@ then superseded the staged rollout with the direct-cutover Track 1 on
   projection after a 2,000-task spike measured 0.295 ms p95 projection reads
   and an index scan without a sequential scan. Recorded schema, deterministic
   engine, provenance, contexts/projects, HTTP/MCP, guard, Todoist v1 pull,
-  narrow iOS credentials, Night Signal surfaces, threat model, and all twelve
+  narrow iOS credentials, Still Water surfaces, threat model, and all twelve
   acceptance gates. Release remains closed until every gate, including
   scenarios 12a–g, has recorded passing output.
 - 2026-07-31 (cutover execution): Completed the zero-diff layered migration,
