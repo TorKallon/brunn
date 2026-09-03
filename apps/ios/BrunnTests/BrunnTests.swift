@@ -110,7 +110,7 @@ final class BrunnTests: XCTestCase {
             horizontalAccuracy: 65,
             verticalAccuracy: -1,
             timestamp: timestamp
-        ))
+        ), now: timestamp)
 
         let persisted = try XCTUnwrap(queue.nextPending())
         XCTAssertFalse(persisted.isEnriched)
@@ -120,6 +120,64 @@ final class BrunnTests: XCTestCase {
         XCTAssertEqual(persisted.report.lon, -120.5478)
         XCTAssertNil(persisted.report.geocode)
         XCTAssertTrue(persisted.report.poi.isEmpty)
+        withExtendedLifetime(reporter) {}
+    }
+
+    @MainActor
+    func testSignificantLocationHandlerDropsFixesOlderThanFifteenMinutes() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let suite = "BrunnTests.location-ping-age.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let credentialStore = LocationKeychainCredentialStore(
+            account: "ios-location-test-\(UUID().uuidString)"
+        )
+        defer {
+            try? credentialStore.delete()
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let queue = LocationDiskQueue(
+            fileURL: directory.appendingPathComponent("location-queue.json")
+        )
+        let statusStore = LocationStatusStore(defaults: defaults)
+        statusStore.reportingEnabled = true
+        let reporter = LocationReporter(
+            manager: CLLocationManager(),
+            api: BrunnAPI(),
+            credentialStore: credentialStore,
+            queue: queue,
+            statusStore: statusStore,
+            enricher: LocationReportEnricher(statusStore: statusStore)
+        )
+        XCTAssertEqual(LocationReporter.maximumSignificantChangeAge, 15 * 60)
+        let now = Date(timeIntervalSince1970: 1_788_400_000)
+        func fix(ageSeconds: TimeInterval) -> CLLocation {
+            CLLocation(
+                coordinate: CLLocationCoordinate2D(latitude: 47.6205, longitude: -122.2070),
+                altitude: 0,
+                horizontalAccuracy: 20,
+                verticalAccuracy: -1,
+                timestamp: now.addingTimeInterval(-ageSeconds)
+            )
+        }
+
+        // A cached fix older than the cutoff is dropped before persistence.
+        reporter.handle(location: fix(ageSeconds: 15 * 60 + 1), now: now)
+        XCTAssertNil(try queue.nextPending())
+        XCTAssertEqual(try queue.count(), 0)
+
+        // Exactly the cutoff, and anything fresher, is kept.
+        reporter.handle(location: fix(ageSeconds: 15 * 60), now: now)
+        XCTAssertEqual(try queue.count(), 1)
+        reporter.handle(location: fix(ageSeconds: 30), now: now)
+        XCTAssertEqual(try queue.count(), 2)
+        let persisted = try XCTUnwrap(queue.nextPending())
+        XCTAssertEqual(persisted.report.type, .ping)
+        XCTAssertEqual(
+            persisted.report.at,
+            LocationTimestamp.string(from: now.addingTimeInterval(-(15 * 60)))
+        )
         withExtendedLifetime(reporter) {}
     }
 

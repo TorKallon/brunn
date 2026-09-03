@@ -6,6 +6,7 @@
 //! state lives in workspace files (`dreams/`, `derived/`) and the secrets
 //! vault — never in this process and never in new database tables.
 
+pub mod change_set;
 pub mod client;
 pub mod codex;
 pub mod connect;

@@ -97,7 +97,7 @@ fn parse_place_row(cells: &[&str], columns: RequiredColumns) -> Option<KnownPlac
         || !lon.is_finite()
         || !(-90.0..=90.0).contains(&lat)
         || !(-180.0..=180.0).contains(&lon)
-        || !(50..=5_000).contains(&radius_m)
+        || !(50..=15_000).contains(&radius_m)
     {
         return None;
     }
@@ -164,11 +164,32 @@ mod tests {
              |  | work | 37.7 | -122.4 | 200 |\n\
              | Bad latitude | other | 91 | 0 | 100 |\n\
              | Fractional radius | other | 0 | 0 | 50.5 |\n\
-             | Too small | other | 0 | 0 | 49 |",
+             | Too small | other | 0 | 0 | 49 |\n\
+             | Too wide | other | 0 | 0 | 15001 |",
         ));
 
         assert_eq!(parsed.places.len(), 1);
         assert_eq!(parsed.warning, Some(PlacesWarning::InvalidRows));
+    }
+
+    #[test]
+    fn radius_cap_is_fifteen_kilometres() {
+        let parsed = parse_places(Some(
+            "| Label | Kind | Lat | Lon | Radius m |\n\
+             | --- | --- | --- | --- | --- |\n\
+             | Whistler | resort | 50.1 | -122.9 | 15000 |\n\
+             | Crystal Mountain | resort | 46.9 | -121.4 | 4000 |",
+        ));
+
+        assert_eq!(parsed.warning, None);
+        assert_eq!(
+            parsed
+                .places
+                .iter()
+                .map(|place| place.radius_m)
+                .collect::<Vec<_>>(),
+            vec![15_000, 4_000]
+        );
     }
 
     #[test]

@@ -9460,6 +9460,7 @@ mod tests {
                 label: Some("Home".to_owned()),
                 kind: "home".to_owned(),
                 confidence: LocationConfidence::High,
+                opened_by_ping: false,
             }),
         }
     }

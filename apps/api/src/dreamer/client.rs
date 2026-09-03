@@ -216,6 +216,38 @@ impl ApiClient {
         }
     }
 
+    /// The frontmatter `kind` of each path, read from its first lines in
+    /// batches. A missing file or one without frontmatter maps to `None`.
+    pub async fn frontmatter_kinds(
+        &self,
+        paths: &[String],
+    ) -> ClientResult<std::collections::BTreeMap<String, Option<String>>> {
+        let mut kinds = std::collections::BTreeMap::new();
+        for chunk in paths.chunks(32) {
+            let requests = chunk
+                .iter()
+                .map(|path| json!({"path": path, "view": "range", "start": 1, "end": 20}))
+                .collect::<Vec<_>>();
+            let body = self
+                .post("/v1/workspace/read", json!({"requests": requests}))
+                .await?;
+            let items = body
+                .pointer("/data/items")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            for (path, item) in chunk.iter().zip(items) {
+                let kind = item
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .and_then(super::change_set::frontmatter_kind)
+                    .map(str::to_owned);
+                kinds.insert(path.clone(), kind);
+            }
+        }
+        Ok(kinds)
+    }
+
     pub async fn changes_since(&self, since: i64, limit: usize) -> ClientResult<ChangesPage> {
         let body = self
             .get(&format!(

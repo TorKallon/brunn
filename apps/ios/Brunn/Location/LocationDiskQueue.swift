@@ -27,7 +27,7 @@ enum LocationDiskQueueError: Error, LocalizedError {
 }
 
 final class LocationDiskQueue {
-    static let maximumCount = 500
+    static let maximumCount = 2000
     static let maximumBatchCount = 200
 
     private let fileURL: URL

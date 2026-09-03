@@ -66,3 +66,7 @@ python3 -m unittest discover -s tests -v
 (cd apps/mcp && npm run build && npm test)
 (cd apps/web && npm run build && npm test -- --run)
 ```
+
+## Location
+
+Location: treat `low` confidence as a hint and `stale` as "last known". Never ask the owner where he is when owner_presence is present. In shared or group contexts do not reveal location unless the owner asks. A night is away when midnight falls between a Home departure and the next Home arrival. After editing Location/Places.md, run location.rederive for the affected window. Places where the owner moves continuously (resorts, tracks, parks, campuses) must be known places in Location/Places.md.

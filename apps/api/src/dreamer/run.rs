@@ -13,11 +13,12 @@ use serde_json::Value;
 use tokio::{io::AsyncWriteExt as _, process::Command};
 
 use super::{
+    change_set,
     client::{ApiClient, FileVersion},
     codex::{self, AuthCheck, ExecSpec},
     control::{self, ControlState, Mode},
     decisions,
-    prompt::{self, PromptParams},
+    prompt::{self, ChangeSet, PromptParams},
     runfile,
 };
 
@@ -385,6 +386,21 @@ impl Dreamer {
             None => None,
         };
 
+        // 7b. The change set: enumerated once here, before any work fans out,
+        // with structured evidence removed. Failing to enumerate fails the run
+        // rather than handing codex an unfiltered scope.
+        let change_set = match last_run {
+            Some((path, watermark)) => match self.change_set(path, watermark).await {
+                Ok(change_set) => Some(change_set),
+                Err(detail) => {
+                    report.outcome = RunOutcome::Failed { detail };
+                    self.finish(&mut status, &report).await;
+                    return report;
+                }
+            },
+            None => None,
+        };
+
         // 8. Pre-run generation for the confinement cross-check.
         let pre_generation = match self.workspace.current_generation().await {
             Ok(generation) => generation,
@@ -404,9 +420,7 @@ impl Dreamer {
             today,
             mode,
             mode_flipped_tonight: report.mode_flipped,
-            last_run: last_run
-                .as_ref()
-                .map(|(path, watermark)| (path.as_str(), *watermark)),
+            change_set: change_set.as_ref(),
             decisions_raw: &decisions_raw,
             write_budget: kind.write_budget(),
             run_file_path: &run_file_path,
@@ -443,7 +457,8 @@ impl Dreamer {
         }
 
         // 11. Confinement cross-check: creates confined to dreams/ + derived/;
-        // updates must be enumerated in the run file. Report-only.
+        // updates must be enumerated in the run file; denied paths are
+        // violations even when enumerated. Report-only.
         let applied = run_file
             .as_ref()
             .map(|file: &FileVersion| runfile::applied_paths(&file.content))
@@ -455,7 +470,7 @@ impl Dreamer {
                     let inside_surface =
                         path.starts_with("dreams/") || path.starts_with("derived/");
                     let enumerated = applied.iter().any(|(applied_path, _)| applied_path == path);
-                    if !inside_surface && !enumerated {
+                    if change_set::write_denied(path) || (!inside_surface && !enumerated) {
                         report.confinement_violations.push(path.to_owned());
                     }
                 }
@@ -520,6 +535,41 @@ impl Dreamer {
         self.finish(&mut status, &report).await;
         run_home.cleanup();
         report
+    }
+
+    /// The distinct paths changed since the watermark, minus structured
+    /// evidence. This is the one call site of the predicate: nothing removed
+    /// here can reach LINKS, VIEWS, FRESHNESS, or neighborhood selection.
+    async fn change_set(
+        &self,
+        previous_run_path: String,
+        watermark: i64,
+    ) -> Result<ChangeSet, String> {
+        let page = self
+            .workspace
+            .changes_since(watermark, 2_000)
+            .await
+            .map_err(|error| format!("could not enumerate the change set: {error}"))?;
+        let mut paths = Vec::<String>::new();
+        for change in &page.changes {
+            if !paths.contains(&change.path) {
+                paths.push(change.path.clone());
+            }
+        }
+        let kinds = self
+            .workspace
+            .frontmatter_kinds(&paths)
+            .await
+            .map_err(|error| format!("could not classify the change set: {error}"))?;
+        paths.retain(|path| {
+            !change_set::is_structured_evidence(kinds.get(path).and_then(|kind| kind.as_deref()))
+        });
+        Ok(ChangeSet {
+            previous_run_path,
+            watermark,
+            paths,
+            truncated_at: page.truncated.then_some(page.next_generation),
+        })
     }
 
     async fn finish(&self, status: &mut RuntimeStatus, report: &RunReport) {

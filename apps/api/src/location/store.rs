@@ -58,6 +58,8 @@ struct WorkspaceDocument {
 struct FoldResult {
     presence: Option<PresenceState>,
     rows: Vec<HistoryRow>,
+    /// Existing month-file rows superseded by an R4 merge.
+    replaced: Vec<HistoryRow>,
     events: Vec<ReportEvent>,
 }
 
@@ -111,6 +113,10 @@ pub(crate) async fn ingest_once(
         as_of,
     );
     let mut rows_by_month = group_rows_by_month(folded.rows);
+    let replaced_by_month = group_rows_by_month(folded.replaced);
+    for month in replaced_by_month.keys() {
+        rows_by_month.entry(month.clone()).or_default();
+    }
     let mut workspace_changed = false;
     for (month, rows) in &mut rows_by_month {
         let document = match month_documents.remove(month) {
@@ -121,7 +127,11 @@ pub(crate) async fn ingest_once(
                 read_workspace_document(&mut tx, auth.user_id.0, &path).await?
             }
         };
-        let content = rules::insert_rows(document.content.as_deref(), rows);
+        let replaced = replaced_by_month
+            .get(month)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let content = rules::insert_rows(document.content.as_deref(), rows, replaced);
         workspace_changed |=
             write_month_document(&mut tx, state, auth, month, content, document.version).await?;
     }
@@ -355,6 +365,7 @@ fn fold_reports(
     let mut presence = initial_presence;
     let mut duplicate_scope = existing_rows.to_vec();
     let mut rows = Vec::new();
+    let mut replaced = Vec::new();
     let mut events = Vec::with_capacity(ordered.len());
     for report in ordered {
         if report.at > as_of + FUTURE_CLOCK_TOLERANCE {
@@ -372,6 +383,12 @@ fn fold_reports(
             &duplicate_scope,
             pings_enabled,
         );
+        rules::supersede_rows(
+            &mut duplicate_scope,
+            &mut rows,
+            &mut replaced,
+            outcome.replaced,
+        );
         duplicate_scope.extend(outcome.rows.iter().cloned());
         rows.extend(outcome.rows);
         presence = outcome.presence;
@@ -384,6 +401,7 @@ fn fold_reports(
     FoldResult {
         presence,
         rows,
+        replaced,
         events,
     }
 }
@@ -427,6 +445,7 @@ fn presence_from_row(row: &sqlx::postgres::PgRow) -> ApiResult<PresenceState> {
                 row,
                 "visit_confidence",
             )?)?,
+            opened_by_ping: false,
         }),
         None => None,
     };

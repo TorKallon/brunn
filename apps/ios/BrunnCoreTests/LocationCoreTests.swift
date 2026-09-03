@@ -214,6 +214,7 @@ final class LocationCoreTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let fileURL = directory.appendingPathComponent("location-queue.json")
         let queue = LocationDiskQueue(fileURL: fileURL)
+        XCTAssertEqual(LocationDiskQueue.maximumCount, 2000)
         for index in 0 ... LocationDiskQueue.maximumCount {
             _ = try queue.append(ping(index))
         }

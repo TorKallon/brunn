@@ -9,12 +9,25 @@ use chrono::NaiveDate;
 
 use super::control::Mode;
 
+/// The change set the wrapper enumerated since the previous run's watermark,
+/// with structured evidence already removed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangeSet {
+    pub previous_run_path: String,
+    pub watermark: i64,
+    /// Distinct changed paths, in generation order.
+    pub paths: Vec<String>,
+    /// When the enumeration hit its page limit: the generation to record as
+    /// tonight's watermark so the remainder is picked up tomorrow.
+    pub truncated_at: Option<i64>,
+}
+
 pub struct PromptParams<'a> {
     pub today: NaiveDate,
     pub mode: Mode,
     pub mode_flipped_tonight: bool,
-    /// Path and parsed watermark of the previous run file, if any.
-    pub last_run: Option<(&'a str, i64)>,
+    /// The enumerated change set, or `None` on a first run or backfill.
+    pub change_set: Option<&'a ChangeSet>,
     /// `dreams/decisions.md` verbatim (empty string when absent).
     pub decisions_raw: &'a str,
     pub write_budget: usize,
@@ -35,12 +48,34 @@ pub fn run_prompt(params: &PromptParams<'_>) -> String {
             "Mode: full. Apply last run's unvetoed Proposed items first.".to_owned()
         }
     };
-    let watermark_line = match params.last_run {
-        Some((path, watermark)) => format!(
-            "The previous run file is {path}. Its watermark is generation {watermark}: \
-             call memory.changes with since_generation={watermark} and work only on those \
-             changed neighborhoods."
-        ),
+    let watermark_line = match params.change_set {
+        Some(change_set) => {
+            let mut text = format!(
+                "The previous run file is {}. Its watermark is generation {}. The change set \
+                 since then is exactly the {} paths listed below, enumerated by the runner \
+                 with structured evidence already removed; do not call memory.changes, and \
+                 work only on these paths and their neighborhoods.",
+                change_set.previous_run_path,
+                change_set.watermark,
+                change_set.paths.len(),
+            );
+            if change_set.paths.is_empty() {
+                text.push_str(
+                    "\nNothing narrative changed: there are no neighborhoods to work tonight.",
+                );
+            }
+            for path in &change_set.paths {
+                text.push_str("\n- ");
+                text.push_str(path);
+            }
+            if let Some(generation) = change_set.truncated_at {
+                text.push_str(&format!(
+                    "\nThe list was cut at generation {generation}: record that generation as \
+                     tonight's watermark so the remainder is picked up tomorrow."
+                ));
+            }
+            text
+        }
         None => "This is the first run: there is no previous run file or watermark. Treat \
                  the supervised backfill scope you were given as the change set."
             .to_owned(),
@@ -90,10 +125,18 @@ Never delete or archive anything. Never edit note body prose — the managed
 Related surface, frontmatter, and applying unvetoed proposed diffs are the only
 in-note writes. Never write outside dreams/, derived/, and those in-note
 surfaces. Never touch secrets, AGENTS/SOUL/preference files, captures,
-checkpoints, or Decisions.md. Make no new claims: links, views, and annotations
+checkpoints, Decisions.md, Location/Places.md, or anything under
+Location/Visits/. Make no new claims: links, views, and annotations
 only index and point at existing text. Use expected_version on every write; on
 a version conflict re-read once and retry once, else record the change under
 Findings as deferred.
+
+# STRUCTURED EVIDENCE — location
+Location/Places.md is never written by the dreamer, in any mode.
+The owner_presence block that memory.open returns is transient context: it is
+never evidence and never lineage, and it never lands in any file you write.
+A place entity view points at Location/Visits/ for its visit history
+("Visit history: Location/Visits/") and never summarizes or counts its rows.
 
 # BUDGET
 Stop after {write_budget} workspace writes. If you hit the cap, finish by
@@ -135,12 +178,24 @@ pub const PROBE_PROMPT: &str =
 mod tests {
     use super::*;
 
-    fn params(mode: Mode) -> PromptParams<'static> {
+    fn change_set() -> ChangeSet {
+        ChangeSet {
+            previous_run_path: "dreams/runs/2026-08-29.md".to_owned(),
+            watermark: 29644,
+            paths: vec![
+                "sources/Projects/Crystal.md".to_owned(),
+                "People/Radley.md".to_owned(),
+            ],
+            truncated_at: None,
+        }
+    }
+
+    fn params(mode: Mode, change_set: Option<&ChangeSet>) -> PromptParams<'_> {
         PromptParams {
             today: NaiveDate::from_ymd_opt(2026, 8, 30).expect("date"),
             mode,
             mode_flipped_tonight: false,
-            last_run: Some(("dreams/runs/2026-08-29.md", 29644)),
+            change_set,
             decisions_raw: "- 2026-08-29 veto 2026-08-28/2 — wrong person\n",
             write_budget: 40,
             run_file_path: "dreams/runs/2026-08-30.md",
@@ -149,7 +204,8 @@ mod tests {
 
     #[test]
     fn pins_the_safety_and_discipline_rules() {
-        let prompt = run_prompt(&params(Mode::ReportOnly));
+        let changes = change_set();
+        let prompt = run_prompt(&params(Mode::ReportOnly, Some(&changes)));
         for phrase in [
             "VERBATIM",
             "Needs your call",
@@ -164,27 +220,56 @@ mod tests {
             "no new claims",
             "path#Lx-Ly",
             "Unverified (imported-only)",
+            // Location × dreaming coherence contract (2026-09-03).
+            "Location/Places.md, or anything under\nLocation/Visits/",
+            "Location/Places.md is never written by the dreamer, in any mode.",
+            "never evidence and never lineage",
+            "never summarizes or counts its rows",
         ] {
             assert!(prompt.contains(phrase), "prompt lost the phrase {phrase:?}");
         }
     }
 
     #[test]
+    fn change_set_is_listed_verbatim_and_replaces_the_changes_call() {
+        let changes = change_set();
+        let prompt = run_prompt(&params(Mode::ReportOnly, Some(&changes)));
+        assert!(prompt.contains("exactly the 2 paths listed below"));
+        assert!(prompt.contains("\n- sources/Projects/Crystal.md\n- People/Radley.md\n"));
+        assert!(prompt.contains("do not call memory.changes"));
+        assert!(!prompt.contains("since_generation="));
+        assert!(!prompt.contains("cut at generation"));
+
+        let truncated = ChangeSet {
+            paths: Vec::new(),
+            truncated_at: Some(30_000),
+            ..changes
+        };
+        let prompt = run_prompt(&params(Mode::ReportOnly, Some(&truncated)));
+        assert!(prompt.contains("exactly the 0 paths listed below"));
+        assert!(prompt.contains("Nothing narrative changed"));
+        assert!(prompt.contains("cut at generation 30000"));
+    }
+
+    #[test]
     fn report_only_forbids_applying() {
-        let prompt = run_prompt(&params(Mode::ReportOnly));
+        let changes = change_set();
+        let prompt = run_prompt(&params(Mode::ReportOnly, Some(&changes)));
         assert!(prompt.contains("Apply NOTHING outside dreams/"));
         assert!(!prompt.contains("Apply last run's unvetoed"));
     }
 
     #[test]
     fn full_mode_applies_last_runs_proposals() {
-        let prompt = run_prompt(&params(Mode::Full));
+        let changes = change_set();
+        let prompt = run_prompt(&params(Mode::Full, Some(&changes)));
         assert!(prompt.contains("Apply last run's unvetoed Proposed items first."));
     }
 
     #[test]
     fn decisions_are_embedded_verbatim() {
-        let prompt = run_prompt(&params(Mode::ReportOnly));
+        let changes = change_set();
+        let prompt = run_prompt(&params(Mode::ReportOnly, Some(&changes)));
         assert!(prompt.contains("- 2026-08-29 veto 2026-08-28/2 — wrong person"));
         assert!(prompt.contains("Never re-raise"));
         assert!(prompt.contains("anything recorded there"));
@@ -192,18 +277,17 @@ mod tests {
 
     #[test]
     fn watermark_and_budget_are_rendered() {
-        let prompt = run_prompt(&params(Mode::ReportOnly));
-        assert!(prompt.contains("since_generation=29644"));
+        let changes = change_set();
+        let prompt = run_prompt(&params(Mode::ReportOnly, Some(&changes)));
+        assert!(prompt.contains("watermark is generation 29644"));
         assert!(prompt.contains("Stop after 40 workspace writes"));
         assert!(prompt.contains("dreams/runs/2026-08-30.md"));
     }
 
     #[test]
     fn first_run_has_no_watermark() {
-        let mut p = params(Mode::ReportOnly);
-        p.last_run = None;
-        let prompt = run_prompt(&p);
+        let prompt = run_prompt(&params(Mode::ReportOnly, None));
         assert!(prompt.contains("first run"));
-        assert!(!prompt.contains("since_generation="));
+        assert!(!prompt.contains("watermark is generation"));
     }
 }

@@ -21,7 +21,8 @@ use axum::{
     routing::{get, post},
 };
 use brunn::dreamer::run::{
-    AUTH_SECRET, CONTROL_PATH, DECISIONS_PATH, Dreamer, DreamerConfig, RunKind, RunOutcome,
+    AUTH_SECRET, CONTROL_PATH, DECISIONS_PATH, Dreamer, DreamerConfig, RUNTIME_SECRET, RunKind,
+    RunOutcome,
 };
 use chrono::NaiveDate;
 use serde_json::{Value, json};
@@ -250,7 +251,7 @@ esac
 /// file through the API with curl, exactly like real codex through MCP.
 const HAPPY_BEHAVIOR: &str = r#"
 if [ "$N" = "0" ]; then echo READY; exit 0; fi
-RUN_PATH=$(grep -o 'dreams/runs/[0-9-]*\.md' "$DIR/exec-$N.stdin" | head -1)
+RUN_PATH=$(grep -o 'dreams/runs/[0-9-]*\.md' "$DIR/exec-$N.stdin" | tail -1)
 BODY=$(cat <<'EOF'
 Linked 2 notes.
 Recompiled 1 entity view.
@@ -586,7 +587,7 @@ write() {
     --data "{\"path\":\"$1\",\"content\":\"$2\"}" > /dev/null
 }
 write "sources/Projects/Sneaky.md" "should not happen"
-RUN_PATH=$(grep -o 'dreams/runs/[0-9-]*\.md' "$DIR/exec-$N.stdin" | head -1)
+RUN_PATH=$(grep -o 'dreams/runs/[0-9-]*\.md' "$DIR/exec-$N.stdin" | tail -1)
 write "$RUN_PATH" "A run happened.\nLine two.\nLine three.\nLine four.\nLine five.\n\n## Watermark\n\ngeneration: 5\n"
 exit 0
 "#;
@@ -611,7 +612,7 @@ async fn refreshed_tokens_are_persisted_back_to_the_vault() {
     let behavior = r#"
 if [ "$N" = "0" ]; then echo READY; exit 0; fi
 echo '{"tokens":{"account_id":"acct_test","access_token":"refreshed"}}' > "$CODEX_HOME/auth.json"
-RUN_PATH=$(grep -o 'dreams/runs/[0-9-]*\.md' "$DIR/exec-$N.stdin" | head -1)
+RUN_PATH=$(grep -o 'dreams/runs/[0-9-]*\.md' "$DIR/exec-$N.stdin" | tail -1)
 curl -sf -X POST "$BRUNN_API_URL/v1/workspace/write" \
   -H "Authorization: Bearer $BRUNN_API_TOKEN" \
   -H 'Content-Type: application/json' \
@@ -630,5 +631,111 @@ exit 0
             .get(AUTH_SECRET)
             .expect("auth secret")
             .contains("refreshed")
+    );
+}
+
+/// Location × dreaming coherence contract (2026-09-03): structured evidence
+/// never enters the change set, so it never reaches LINKS, VIEWS, FRESHNESS,
+/// or neighborhood selection.
+#[tokio::test]
+async fn structured_evidence_never_reaches_the_change_set() {
+    let (shared, dreamer, dir) = build(HAPPY_BEHAVIOR, true).await;
+    seed_control(&shared, "report-only", "2026-12-01");
+    seed_auth(&shared);
+    {
+        let mut state = shared.lock().expect("mock state");
+        // Previous run file whose watermark is its own generation (2, after
+        // CONTROL at 1): everything written below is newer than it.
+        record_write(
+            &mut state,
+            "dreams/runs/2026-08-29.md",
+            "Done.\n\n## Watermark\n\ngeneration: 2\n",
+        );
+        record_write(
+            &mut state,
+            "Location/Visits/2026-09.md",
+            "---\nkind: location-visits\nmonth: 2026-09\n---\n\
+             | Arrived | Departed | Dwell | Place | Kind | City | Conf | Coord |\n\
+             | --- | --- | --- | --- | --- | --- | --- | --- |\n\
+             | 2026-09-02T08:30-07:00 | 2026-09-02T13:30-07:00 | 5h00m | Crystal Mountain | resort | Enumclaw, WA, US | high | 46.9350,-121.4740 |\n",
+        );
+        record_write(
+            &mut state,
+            "Location/Places.md",
+            "---\nkind: location-places\n---\n| Label | Kind | Lat | Lon | Radius m |\n| --- | --- | --- | --- | --- |\n",
+        );
+        record_write(
+            &mut state,
+            "sources/Projects/Crystal Mountain season.md",
+            "# Crystal Mountain season\n\nSki notes mentioning Crystal Mountain and Home.\n",
+        );
+        // A second month-file version, as every ping-driven transition produces.
+        record_write(
+            &mut state,
+            "Location/Visits/2026-09.md",
+            "---\nkind: location-visits\nmonth: 2026-09\n---\n\
+             | Arrived | Departed | Dwell | Place | Kind | City | Conf | Coord |\n\
+             | --- | --- | --- | --- | --- | --- | --- | --- |\n",
+        );
+        state.secrets.insert(
+            RUNTIME_SECRET.to_owned(),
+            r#"{"last_run_date":"2026-08-29"}"#.to_owned(),
+        );
+    }
+    let report = dreamer.run_once(today(), RunKind::Nightly).await;
+    assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
+
+    let main_prompt =
+        std::fs::read_to_string(dir.path().join("exec-1.stdin")).expect("main exec prompt");
+    let change_set_section = main_prompt
+        .split("# CHANGE SET")
+        .nth(1)
+        .and_then(|rest| rest.split("# WORK").next())
+        .expect("prompt has a change set section");
+    assert!(
+        change_set_section.contains("- sources/Projects/Crystal Mountain season.md"),
+        "{change_set_section}"
+    );
+    assert!(change_set_section.contains("exactly the 1 paths listed below"));
+    assert!(!change_set_section.contains("Location/Visits/2026-09.md"));
+    assert!(!change_set_section.contains("Location/Places.md"));
+    assert!(!change_set_section.contains("dreams/runs/2026-08-29.md\n- "));
+    assert!(!main_prompt.contains("since_generation="));
+}
+
+/// The write gate: the dreamer's location paths are confinement violations
+/// even when the run file enumerates them as applied.
+#[tokio::test]
+async fn write_gate_rejects_location_paths_even_when_enumerated() {
+    let behavior = r#"
+if [ "$N" = "0" ]; then echo READY; exit 0; fi
+write() {
+  curl -sf -X POST "$BRUNN_API_URL/v1/workspace/write" \
+    -H "Authorization: Bearer $BRUNN_API_TOKEN" \
+    -H 'Content-Type: application/json' \
+    --data "{\"path\":\"$1\",\"content\":\"$2\"}" > /dev/null
+}
+write "Location/Visits/2026-09.md" "rewritten history"
+write "Location/Places.md" "rewritten places"
+write "derived/entities/crystal-mountain.md" "Visit history: Location/Visits/"
+RUN_PATH=$(grep -o 'dreams/runs/[0-9-]*\.md' "$DIR/exec-$N.stdin" | tail -1)
+write "$RUN_PATH" "A run happened.\nLine two.\nLine three.\nLine four.\nLine five.\n\n## Applied\n- Location/Visits/2026-09.md@2 — tidied\n- Location/Places.md@2 — radius\n\n## Watermark\n\ngeneration: 5\n"
+exit 0
+"#;
+    let (shared, dreamer, _dir) = build(behavior, true).await;
+    seed_control(&shared, "full", "2026-08-01");
+    seed_auth(&shared);
+    let report = dreamer.run_once(today(), RunKind::Nightly).await;
+    assert_eq!(
+        report.confinement_violations,
+        vec![
+            "Location/Visits/2026-09.md".to_owned(),
+            "Location/Places.md".to_owned(),
+        ]
+    );
+    assert!(
+        notification_titles(&shared)
+            .iter()
+            .any(|title| title.contains("outside its surfaces"))
     );
 }

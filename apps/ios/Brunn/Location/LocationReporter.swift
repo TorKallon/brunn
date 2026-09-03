@@ -333,10 +333,15 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
         enqueue(report)
     }
 
-    func handle(location: CLLocation) {
+    /// A significant-change location older than this at capture is a cached
+    /// fix, not a movement, and is dropped. Visit reports are unaffected.
+    static let maximumSignificantChangeAge: TimeInterval = 15 * 60
+
+    func handle(location: CLLocation, now: Date = Date()) {
         guard reportingEnabled,
               CLLocationCoordinate2DIsValid(location.coordinate),
-              location.horizontalAccuracy >= 0
+              location.horizontalAccuracy >= 0,
+              now.timeIntervalSince(location.timestamp) <= Self.maximumSignificantChangeAge
         else { return }
         enqueue(LocationReport(
             type: .ping,
