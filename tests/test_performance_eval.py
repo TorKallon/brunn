@@ -972,14 +972,11 @@ class PerformanceEvalTests(unittest.TestCase):
         self.assertTrue(result["pass"])
         self.assertEqual(explain.call_count, 2)
         self.assertTrue(
-            all(
-                "ARRAY['needle']::text[]" in call.args[2]
-                for call in explain.call_args_list
-            ),
+            all("'needle'" in call.args[2] for call in explain.call_args_list),
             explain.call_args_list,
         )
         self.assertTrue(
-            all("p_queries" not in call.args[2] for call in explain.call_args_list),
+            all("ARRAY[" not in call.args[2] for call in explain.call_args_list),
             explain.call_args_list,
         )
         self.assertEqual(

@@ -3338,7 +3338,7 @@ LIMIT 1;
         ):
             raise ValueError(f"unsafe retrieval function name for {lane}")
         if not re.fullmatch(
-            r"[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*\([a-z0-9_(), \[\]]+\)",
+            r"[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*\([a-z0-9_(), ]+\)",
             regprocedure,
         ):
             raise ValueError(f"unsafe retrieval regprocedure for {lane}")
@@ -3382,9 +3382,9 @@ LIMIT 1;
             continue
 
         if lane == "lexical":
-            argument = f"ARRAY[{sql_literal(query)}]::text[]"
+            argument = sql_literal(query)
             body_statement = re.sub(
-                r"\bp_queries\b",
+                r"\bp_query\b",
                 argument,
                 source_body,
             )

@@ -38,4 +38,6 @@ COPY infra/postgres/init/ /docker-entrypoint-initdb.d/
 
 USER postgres:postgres
 
-CMD ["postgres", "-c", "shared_buffers=2GB", "-c", "effective_cache_size=6GB", "-c", "shared_preload_libraries=pg_prewarm"]
+# The production lexical heap plus GIN/HNSW working set is about 1.95 GiB.
+# Reserve enough cache for it without consuming the 8 GiB container's OS headroom.
+CMD ["postgres", "-c", "shared_buffers=3GB", "-c", "effective_cache_size=6GB", "-c", "shared_preload_libraries=pg_prewarm"]

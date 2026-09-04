@@ -59,7 +59,7 @@ class RailwayContractTests(unittest.TestCase):
 
     def test_database_runtime_reserves_shared_cache_and_autoprewarm(self):
         self.assertIn(
-            'CMD ["postgres", "-c", "shared_buffers=2GB", "-c", '
+            'CMD ["postgres", "-c", "shared_buffers=3GB", "-c", '
             '"effective_cache_size=6GB", "-c", '
             '"shared_preload_libraries=pg_prewarm"]',
             DATABASE_DOCKERFILE,

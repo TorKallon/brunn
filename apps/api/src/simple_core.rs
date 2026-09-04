@@ -38,9 +38,8 @@ use crate::{
     },
     models::{Capability, CheckpointRequest, CredentialId, ResponseStatus, UserId, canonical_json},
     retrieval_sql::{
-        SIMPLE_BATCHED_LEXICAL_CANDIDATES_SQL,
-        SIMPLE_BATCHED_LEXICAL_CANDIDATES_WITH_GENERATION_SQL, SIMPLE_ENTRY_LINK_CANDIDATES_SQL,
-        SIMPLE_SEMANTIC_CANDIDATES_SQL,
+        SIMPLE_ENTRY_LINK_CANDIDATES_SQL, SIMPLE_LEXICAL_CANDIDATES_SQL,
+        SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL, SIMPLE_SEMANTIC_CANDIDATES_SQL,
     },
     semantic_policy::{PreparedQueryEmbedding, SemanticRuntime},
     usage::{ProductActivityOperation, UsageOperation},
@@ -4462,7 +4461,7 @@ async fn lexical_candidates(
             .join(" OR ");
         let (found, generation) = fetch_lexical_candidates(
             &mut tx,
-            std::slice::from_ref(&consolidated),
+            &consolidated,
             query,
             sort,
             features,
@@ -4479,7 +4478,7 @@ async fn lexical_candidates(
         for anchor in &anchors {
             let (anchor_candidates, generation) = fetch_lexical_candidates(
                 &mut tx,
-                std::slice::from_ref(anchor),
+                anchor,
                 query,
                 sort,
                 features,
@@ -4495,8 +4494,10 @@ async fn lexical_candidates(
         }
     }
     if !anchor_hit {
-        let focused = bounded_lexical_fallback_queries(query);
-        if !focused.is_empty() {
+        // Preserve a full bounded result set for every selective pair. Folding
+        // these into one globally sampled candidate set changes large-corpus
+        // recall before the full-query bonus and final merge can run.
+        for focused in bounded_lexical_fallback_queries(query) {
             let (focused_candidates, generation) = fetch_lexical_candidates(
                 &mut tx,
                 &focused,
@@ -4523,7 +4524,7 @@ async fn lexical_candidates(
 
 async fn fetch_lexical_candidates(
     tx: &mut Transaction<'_, Postgres>,
-    retrieval_queries: &[String],
+    retrieval_query: &str,
     scoring_query: &str,
     sort: SearchSort,
     features: Option<&WorkspaceFeatureSnapshot>,
@@ -4533,15 +4534,15 @@ async fn fetch_lexical_candidates(
     user_id: Uuid,
 ) -> ApiResult<(Vec<Candidate>, Option<i64>)> {
     let rows = if include_generation {
-        sqlx::query(SIMPLE_BATCHED_LEXICAL_CANDIDATES_WITH_GENERATION_SQL)
+        sqlx::query(SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL)
             .bind(user_id)
-            .bind(retrieval_queries)
+            .bind(retrieval_query)
             .bind(sort.as_str())
             .fetch_all(&mut **tx)
             .await?
     } else {
-        sqlx::query(SIMPLE_BATCHED_LEXICAL_CANDIDATES_SQL)
-            .bind(retrieval_queries)
+        sqlx::query(SIMPLE_LEXICAL_CANDIDATES_SQL)
+            .bind(retrieval_query)
             .bind(sort.as_str())
             .fetch_all(&mut **tx)
             .await?
