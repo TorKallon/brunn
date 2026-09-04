@@ -1,11 +1,9 @@
-use std::time::{Duration, Instant};
-
 use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
 use uuid::Uuid;
 
 #[tokio::test]
-async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
+async fn recovery_remap_is_narrow_idempotent_and_identity_bound() {
     let Some(database_url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
@@ -35,7 +33,7 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     assert!(!app_role_is_admin);
     let app_role_authorized = sqlx::query_scalar::<_, bool>(
         "SELECT brunn.asset_internal_operation_authorized(
-           'stage_reclaim',$1,$2,1
+           'restore_locator_remap',$1,$2,1
          )",
     )
     .bind(Uuid::now_v7())
@@ -46,15 +44,17 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     assert!(!app_role_authorized);
     role_check.rollback().await.expect("rollback role check");
 
+    let retired_legacy_objects = sqlx::query_as::<_, (bool, bool)>(
+        "SELECT to_regclass('brunn.corpus_revisions') IS NULL,
+                to_regprocedure('brunn.expire_unpromoted_stage(uuid)') IS NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("inspect retired legacy recovery objects");
+    assert_eq!(retired_legacy_objects, (true, true));
+
     let user_id = Uuid::now_v7();
     let scope_id = Uuid::now_v7();
-    let credential_id = Uuid::now_v7();
-    let corpus_revision_id = Uuid::now_v7();
-    let expiring_stage_id = Uuid::now_v7();
-    let competing_stage_id = Uuid::now_v7();
-    let staged_asset_id = Uuid::now_v7();
-    let content_hash = "1".repeat(64);
-    let staged_object_key = format!("{user_id}/blobs/{}", "1".repeat(64));
 
     let mut setup = pool.begin().await.expect("begin fixture transaction");
     sqlx::query(
@@ -87,110 +87,6 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
     .execute(&mut *setup)
     .await
     .expect("insert test scope");
-    sqlx::query(
-        "INSERT INTO brunn.api_credentials (
-           id,user_id,label,token_hash,capabilities
-         ) VALUES ($1,$2,$3,$4,ARRAY['stage'])",
-    )
-    .bind(credential_id)
-    .bind(user_id)
-    .bind("Recovery safety test")
-    .bind(format!("recovery-safety-token:{credential_id}"))
-    .execute(&mut *setup)
-    .await
-    .expect("insert test credential");
-    sqlx::query(
-        "INSERT INTO brunn.credential_scope_grants (
-           credential_id,user_id,scope_id
-         ) VALUES ($1,$2,$3)",
-    )
-    .bind(credential_id)
-    .bind(user_id)
-    .bind(scope_id)
-    .execute(&mut *setup)
-    .await
-    .expect("grant test scope");
-    sqlx::query(
-        "INSERT INTO brunn.corpus_revisions (
-           id,user_id,scope_id,parent_revision_id,revision_number,manifest_hash
-         ) VALUES ($1,$2,$3,NULL,1,$4)",
-    )
-    .bind(corpus_revision_id)
-    .bind(user_id)
-    .bind(scope_id)
-    .bind("2".repeat(64))
-    .execute(&mut *setup)
-    .await
-    .expect("insert test corpus revision");
-    for (stage_id, status, created_offset, expires_offset) in [
-        (expiring_stage_id, "ready", "-2 hours", "-1 hour"),
-        (competing_stage_id, "uploading", "-1 minute", "1 hour"),
-    ] {
-        sqlx::query(
-            "INSERT INTO brunn.stages (
-               id,user_id,scope_id,credential_id,base_corpus_revision_id,
-               input_hash,status,policy_id,policy_version,created_at,expires_at
-             ) VALUES (
-               $1,$2,$3,$4,$5,$6,$7,$8,1,
-               clock_timestamp() + $9::interval,
-               clock_timestamp() + $10::interval
-             )",
-        )
-        .bind(stage_id)
-        .bind(user_id)
-        .bind(scope_id)
-        .bind(credential_id)
-        .bind(corpus_revision_id)
-        .bind("3".repeat(64))
-        .bind(status)
-        .bind(policy_id)
-        .bind(created_offset)
-        .bind(expires_offset)
-        .execute(&mut *setup)
-        .await
-        .expect("insert test stage");
-    }
-    sqlx::query(
-        "INSERT INTO brunn.assets (
-           id,user_id,scope_id,current_version,policy_id,policy_version
-         ) VALUES ($1,$2,$3,1,$4,1)",
-    )
-    .bind(staged_asset_id)
-    .bind(user_id)
-    .bind(scope_id)
-    .bind(policy_id)
-    .execute(&mut *setup)
-    .await
-    .expect("insert staged asset");
-    sqlx::query(
-        "INSERT INTO brunn.asset_versions (
-           user_id,asset_id,version,previous_version,bucket,object_key,
-           content_hash,size_bytes,media_type,object_version_id
-         ) VALUES ($1,$2,1,NULL,'recovery-test',$3,$4,3,'text/plain',$5)",
-    )
-    .bind(user_id)
-    .bind(staged_asset_id)
-    .bind(&staged_object_key)
-    .bind(&content_hash)
-    .bind("source-stage-version")
-    .execute(&mut *setup)
-    .await
-    .expect("insert staged asset version");
-    sqlx::query(
-        "INSERT INTO brunn.staged_entries (
-           id,user_id,scope_id,stage_id,path,entry_kind,media_type,size_bytes,
-           content_hash,asset_id,asset_version,readability
-         ) VALUES ($1,$2,$3,$4,'staged.txt','file','text/plain',3,$5,$6,1,'readable')",
-    )
-    .bind(Uuid::now_v7())
-    .bind(user_id)
-    .bind(scope_id)
-    .bind(expiring_stage_id)
-    .bind(&content_hash)
-    .bind(staged_asset_id)
-    .execute(&mut *setup)
-    .await
-    .expect("insert staged entry");
     setup.commit().await.expect("commit fixture");
 
     let invalid_asset_id = Uuid::now_v7();
@@ -232,72 +128,6 @@ async fn recovery_remap_is_narrow_and_stage_reclamation_fences_child_inserts() {
         .rollback()
         .await
         .expect("rollback invalid asset test");
-
-    let mut reclaim = pool.begin().await.expect("begin reclamation");
-    let reclaimed = sqlx::query_scalar::<_, String>(
-        "SELECT reclaimed_object_key
-         FROM brunn.expire_unpromoted_stage($1)",
-    )
-    .bind(expiring_stage_id)
-    .fetch_all(&mut *reclaim)
-    .await
-    .expect("reclaim expired stage");
-    assert_eq!(reclaimed, vec![staged_object_key.clone()]);
-
-    let mut competing = pool.begin().await.expect("begin competing insert");
-    sqlx::query("SET LOCAL lock_timeout='750ms'")
-        .execute(&mut *competing)
-        .await
-        .expect("set competing lock timeout");
-    let blocked_at = Instant::now();
-    let blocked_insert = sqlx::query(
-        "INSERT INTO brunn.staged_entries (
-           id,user_id,scope_id,stage_id,path,entry_kind,media_type,size_bytes,
-           content_hash,asset_id,asset_version,readability
-         ) VALUES ($1,$2,$3,$4,'competing.txt','file','text/plain',3,$5,$6,1,'readable')",
-    )
-    .bind(Uuid::now_v7())
-    .bind(user_id)
-    .bind(scope_id)
-    .bind(competing_stage_id)
-    .bind(&content_hash)
-    .bind(staged_asset_id)
-    .execute(&mut *competing)
-    .await;
-    assert!(
-        blocked_insert.is_err(),
-        "a concurrent child insert must not pass an uncommitted parent deletion"
-    );
-    assert!(
-        blocked_at.elapsed() >= Duration::from_millis(500),
-        "the child insert did not wait on the locked parent row"
-    );
-    competing.rollback().await.expect("rollback blocked insert");
-    reclaim.commit().await.expect("commit reclamation");
-
-    let post_commit_insert = sqlx::query(
-        "INSERT INTO brunn.staged_entries (
-           id,user_id,scope_id,stage_id,path,entry_kind,media_type,size_bytes,
-           content_hash,asset_id,asset_version,readability
-         ) VALUES ($1,$2,$3,$4,'after.txt','file','text/plain',3,$5,$6,1,'readable')",
-    )
-    .bind(Uuid::now_v7())
-    .bind(user_id)
-    .bind(scope_id)
-    .bind(competing_stage_id)
-    .bind(&content_hash)
-    .bind(staged_asset_id)
-    .execute(&pool)
-    .await;
-    assert!(
-        post_commit_insert
-            .as_ref()
-            .err()
-            .and_then(sqlx::Error::as_database_error)
-            .and_then(|error| error.code())
-            .is_some_and(|code| code == "23503"),
-        "the child insert must fail its foreign key after reclamation commits"
-    );
 
     let persistent_asset_id = Uuid::now_v7();
     let persistent_key = format!("{user_id}/blobs/{}", "4".repeat(64));
