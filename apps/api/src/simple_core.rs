@@ -4448,8 +4448,14 @@ async fn lexical_candidates(
     let mut tx = state.begin_read(auth).await?;
     let mut candidates = Vec::new();
     let mut workspace_generation = None;
-    if state.config.lexical_single_scan {
-        let consolidated = consolidated_lexical_query(query);
+    let anchors = search_anchors(query);
+    let mut anchor_hit = false;
+    if state.config.lexical_single_scan && !anchors.is_empty() {
+        let consolidated = anchors
+            .iter()
+            .map(|anchor| format!("\"{}\"", anchor.replace('"', " ")))
+            .collect::<Vec<_>>()
+            .join(" OR ");
         let (found, generation) = fetch_lexical_candidates(
             &mut tx,
             &consolidated,
@@ -4462,11 +4468,10 @@ async fn lexical_candidates(
             auth.user_id.0,
         )
         .await?;
+        anchor_hit = !found.is_empty();
         candidates.extend(found);
         workspace_generation = generation;
     } else {
-        let anchors = search_anchors(query);
-        let mut anchor_hit = false;
         for anchor in &anchors {
             let (anchor_candidates, generation) = fetch_lexical_candidates(
                 &mut tx,
@@ -4484,8 +4489,9 @@ async fn lexical_candidates(
             candidates.extend(anchor_candidates);
             workspace_generation = workspace_generation.into_iter().chain(generation).max();
         }
-        if !anchor_hit {
-            let focused = focused_lexical_query(query).unwrap_or_else(|| query.trim().to_owned());
+    }
+    if !anchor_hit {
+        for focused in bounded_lexical_fallback_queries(query) {
             let (focused_candidates, generation) = fetch_lexical_candidates(
                 &mut tx,
                 &focused,
@@ -8315,6 +8321,7 @@ fn looks_like_unquoted_search_anchor(value: &str) -> bool {
                 .any(|character| matches!(character, '-' | '/')))
 }
 
+#[cfg(test)]
 fn lexical_fallback_queries(query: &str) -> Vec<String> {
     lexical_terms(query, 16)
         .windows(2)
@@ -8323,57 +8330,79 @@ fn lexical_fallback_queries(query: &str) -> Vec<String> {
         .collect()
 }
 
-fn consolidated_lexical_query(query: &str) -> String {
-    let anchors = search_anchors(query);
-    if anchors.is_empty() {
-        return focused_lexical_query(query).unwrap_or_else(|| query.trim().to_owned());
-    }
-    let mut alternatives = anchors
-        .into_iter()
-        .map(|anchor| format!("\"{}\"", anchor.replace('"', " ")))
-        .collect::<Vec<_>>();
-    if let Some(focused) = focused_lexical_query(query)
-        && !focused.trim().is_empty()
-    {
-        alternatives.push(focused);
-    }
-    alternatives.join(" OR ")
-}
-
-fn focused_lexical_query(query: &str) -> Option<String> {
-    let mut pairs = lexical_fallback_queries(query)
-        .into_iter()
+fn ranked_lexical_fallback_queries(query: &str) -> Vec<String> {
+    let terms = lexical_term_candidates(query, 16);
+    let mut pairs = terms
+        .windows(2)
+        .take(8)
         .enumerate()
-        .map(|(index, pair)| {
-            let score = pair
+        .map(|(index, terms)| {
+            let pair = format!("{} {}", terms[0].text, terms[1].text);
+            let length = pair
                 .chars()
                 .filter(|character| character.is_alphanumeric())
-                .count()
-                + if pair.chars().any(|character| character.is_ascii_digit()) {
-                    40
-                } else {
-                    0
-                };
-            (score, index, pair)
+                .count();
+            let distinctive = terms.iter().filter(|term| term.distinctive).count();
+            (distinctive, length, index, pair)
         })
         .collect::<Vec<_>>();
-    pairs.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
-    let selected = pairs
-        .into_iter()
-        .take(4)
-        .map(|(_, _, pair)| pair)
-        .collect::<Vec<_>>();
-    (!selected.is_empty()).then(|| selected.join(" OR "))
+    pairs.sort_by(|left, right| {
+        right.0.cmp(&left.0).then_with(|| {
+            if left.0 > 0 {
+                left.2.cmp(&right.2)
+            } else {
+                right.1.cmp(&left.1).then_with(|| left.2.cmp(&right.2))
+            }
+        })
+    });
+    pairs.into_iter().map(|(_, _, _, pair)| pair).collect()
+}
+
+fn bounded_lexical_fallback_queries(query: &str) -> Vec<String> {
+    let mut fallbacks = ranked_lexical_fallback_queries(query);
+    if fallbacks.is_empty()
+        && let Some(term) = lexical_terms(query, 1).into_iter().next()
+    {
+        fallbacks.push(term);
+    }
+    fallbacks.truncate(4);
+    fallbacks
+}
+
+#[cfg(test)]
+fn focused_lexical_query(query: &str) -> Option<String> {
+    bounded_lexical_fallback_queries(query).into_iter().next()
 }
 
 fn lexical_terms(query: &str, limit: usize) -> Vec<String> {
+    lexical_term_candidates(query, limit)
+        .into_iter()
+        .map(|term| term.text)
+        .collect()
+}
+
+struct LexicalTerm {
+    text: String,
+    distinctive: bool,
+}
+
+fn lexical_term_candidates(query: &str, limit: usize) -> Vec<LexicalTerm> {
     let mut distinctive = Vec::new();
     let mut ordinary = Vec::new();
     let mut seen = HashSet::new();
-    for raw in query.split(|character: char| !character.is_alphanumeric()) {
+    for raw in query
+        .split(|character: char| {
+            !character.is_alphanumeric() && !matches!(character, '-' | '_' | '/' | '.')
+        })
+        .map(|raw| raw.trim_matches(|character: char| !character.is_alphanumeric()))
+        .filter(|raw| !raw.is_empty())
+    {
         let term = raw.to_lowercase();
         let has_digit = term.chars().any(|character| character.is_ascii_digit());
-        if (!has_digit && term.chars().count() < 3)
+        let is_single_digit =
+            term.chars().count() == 1 && term.chars().all(|character| character.is_ascii_digit());
+        if is_single_digit
+            || (!has_digit && term.chars().count() < 3)
             || is_lexical_noise(&term)
             || !seen.insert(term.clone())
         {
@@ -8383,12 +8412,24 @@ fn lexical_terms(query: &str, limit: usize) -> Vec<String> {
             .chars()
             .filter(|character| character.is_alphabetic())
             .collect::<Vec<_>>();
+        let uppercase_letters = letters
+            .iter()
+            .filter(|character| character.is_uppercase())
+            .count();
         let is_acronym =
-            letters.len() >= 2 && letters.iter().all(|character| character.is_uppercase());
-        if has_digit || is_acronym {
-            distinctive.push(term);
+            letters.len() >= 2 && uppercase_letters >= 2 && uppercase_letters * 2 >= letters.len();
+        let has_identifier_separator = raw
+            .chars()
+            .any(|character| matches!(character, '-' | '_' | '/' | '.'));
+        let is_distinctive = has_digit || is_acronym || has_identifier_separator;
+        let candidate = LexicalTerm {
+            text: term,
+            distinctive: is_distinctive,
+        };
+        if is_distinctive {
+            distinctive.push(candidate);
         } else {
-            ordinary.push(term);
+            ordinary.push(candidate);
         }
     }
     distinctive
@@ -8467,7 +8508,10 @@ fn collapsed_search_text(value: &str) -> String {
 }
 
 fn search_text_contains(words: &str, collapsed: &str, term: &str) -> bool {
-    words.contains(&format!(" {term} ")) || (term.chars().count() >= 5 && collapsed.contains(term))
+    let normalized_term = normalized_search_words(term);
+    let collapsed_term = collapsed_search_text(term);
+    words.contains(&normalized_term)
+        || (collapsed_term.chars().count() >= 5 && collapsed.contains(&collapsed_term))
 }
 
 fn is_lexical_noise(term: &str) -> bool {
@@ -10047,8 +10091,7 @@ mod tests {
              State what the bounded search found, whether any write is needed, and report it.",
         )
         .expect("natural task should produce a focused query");
-        assert!(focused.contains("confirmed europe"));
-        assert!(focused.contains("family calendar"));
+        assert_eq!(focused, "confirmed europe");
     }
 
     #[test]
@@ -10080,8 +10123,158 @@ mod tests {
              result established and leave a checkpoint.",
         )
         .expect("identifier task should produce a focused query");
-        assert!(focused.contains("pve34 parser"));
-        assert!(focused.contains("performance autonomy"));
+        assert_eq!(focused, "d1 10m");
+        let ranked = ranked_lexical_fallback_queries(
+            "Resume the D1 parser performance and autonomy work. Reconcile the older 10M Nyx \
+             tuning checkpoint with the later durable autonomy summary. Explain what the PVE34 \
+             result established and leave a checkpoint.",
+        );
+        assert!(ranked.contains(&"pve34 parser".to_owned()), "{ranked:?}");
+        assert!(
+            ranked.contains(&"performance autonomy".to_owned()),
+            "{ranked:?}"
+        );
+    }
+
+    #[test]
+    fn lexical_focus_preserves_release_identifiers_without_broad_or_terms() {
+        let task = "Location v1.1 SQLx slow statement warnings";
+        let terms = lexical_terms(task, 16);
+        assert_eq!(
+            &terms[..2],
+            ["v1.1".to_owned(), "sqlx".to_owned()],
+            "{terms:?}"
+        );
+        assert!(!terms.iter().any(|term| term == "1"), "{terms:?}");
+
+        let focused = focused_lexical_query(task).expect("release task should be searchable");
+        assert_eq!(focused, "v1.1 sqlx");
+        assert!(!focused.contains(" OR "));
+        assert!(
+            bounded_lexical_fallback_queries(task)
+                .iter()
+                .all(|fallback| !fallback.contains(" OR "))
+        );
+    }
+
+    #[test]
+    fn lexical_terms_keep_semver_acronyms_and_structured_identifiers_intact() {
+        let terms = lexical_terms(
+            "Compare Brunn v1.1 with v1.0 using SQLx RLS workspace_lexical_candidates_v2 \
+             and apps/api/src/simple_core.rs",
+            16,
+        );
+        for expected in [
+            "v1.1",
+            "v1.0",
+            "sqlx",
+            "rls",
+            "workspace_lexical_candidates_v2",
+            "apps/api/src/simple_core.rs",
+        ] {
+            assert!(
+                terms.iter().any(|term| term == expected),
+                "missing {expected} in {terms:?}"
+            );
+        }
+        assert!(
+            !terms.iter().any(|term| matches!(term.as_str(), "0" | "1")),
+            "{terms:?}"
+        );
+    }
+
+    #[test]
+    fn lexical_focus_keeps_ordinary_natural_language_recall() {
+        let task = "Handle the request to add every confirmed Europe flight to the family calendar. \
+                    State what the bounded search found, whether any write is needed, and report it.";
+        let focused =
+            focused_lexical_query(task).expect("natural task should produce a focused query");
+        assert_eq!(focused, "confirmed europe");
+
+        let fallbacks = bounded_lexical_fallback_queries(task);
+        assert_eq!(fallbacks.len(), 4, "{fallbacks:?}");
+        assert_eq!(
+            fallbacks.first().map(String::as_str),
+            Some("confirmed europe")
+        );
+        assert!(
+            fallbacks.iter().any(|query| query == "family calendar"),
+            "an incidental first-pair hit must not exclude the authoritative pair: {fallbacks:?}"
+        );
+        let fixture_hits = fallbacks
+            .iter()
+            .flat_map(|query| match query.as_str() {
+                "confirmed europe" => [Some("incidental"), None],
+                "family calendar" => [None, Some("authoritative")],
+                _ => [None, None],
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+        assert_eq!(fixture_hits, ["incidental", "authoritative"]);
+    }
+
+    #[test]
+    fn bounded_lexical_union_keeps_an_authoritative_fourth_pair_after_a_first_pair_hit() {
+        let fallbacks =
+            bounded_lexical_fallback_queries("confirmed Europe itinerary family calendar");
+        assert_eq!(
+            fallbacks,
+            [
+                "confirmed europe",
+                "europe itinerary",
+                "itinerary family",
+                "family calendar",
+            ]
+        );
+
+        let mut merged = HashMap::new();
+        for fallback in &fallbacks {
+            let hits = match fallback.as_str() {
+                "confirmed europe" => {
+                    let mut incidental = candidate_with_sections(1, &[16]);
+                    incidental.score = 3.0;
+                    let mut shared = candidate_with_sections(2, &[16]);
+                    shared.score = 4.0;
+                    vec![incidental, shared]
+                }
+                "family calendar" => {
+                    let mut authoritative = candidate_with_sections(3, &[16]);
+                    authoritative.score = 20.0;
+                    let mut shared = candidate_with_sections(2, &[16]);
+                    shared.score = 7.0;
+                    vec![authoritative, shared]
+                }
+                _ => vec![],
+            };
+            for hit in hits {
+                merge_candidate(&mut merged, hit);
+            }
+        }
+        assert_eq!(merged.len(), 3, "all four queries must run and dedupe");
+        let mut ranked = merged.into_values().collect::<Vec<_>>();
+        sort_candidates(&mut ranked, SearchSort::BestMatch);
+        assert_eq!(ranked[0].entry_id, Uuid::from_u128(3));
+        assert_eq!(ranked[1].entry_id, Uuid::from_u128(2));
+        assert_eq!(ranked[1].score, 7.0);
+    }
+
+    #[test]
+    fn lexical_bonus_matches_preserved_structured_identifiers() {
+        let relevant = lexical_candidate_bonus(
+            "Location v1.1 SQLx workspace_lexical_candidates_v2",
+            "sources/Projects/Brunn/Location-v1.1-SQLx.md",
+            "workspace_lexical_candidates_v2",
+            "SQLx slow statements",
+            "Location v1.1 release evidence.",
+        );
+        let generic = lexical_candidate_bonus(
+            "Location v1.1 SQLx workspace_lexical_candidates_v2",
+            "sources/Projects/Brunn/Location notes.md",
+            "Location notes",
+            "Database work",
+            "General release evidence.",
+        );
+        assert!(relevant > generic + 2.0, "{relevant} should beat {generic}");
     }
 
     #[test]
@@ -11400,6 +11593,43 @@ mod tests {
             .execute(&pool)
             .await
             .expect("insert checkpoint test user");
+        let checkpoint_credential_id = Uuid::now_v7();
+        sqlx::query(
+            r#"
+            INSERT INTO brunn.api_credentials (
+              id,user_id,label,token_hash,capabilities
+            ) VALUES ($1,$2,'Checkpoint receipt writer',$3,ARRAY['checkpoint'])
+            "#,
+        )
+        .bind(checkpoint_credential_id)
+        .bind(user_id)
+        .bind(hex::encode(Sha256::digest(
+            format!("checkpoint-receipt:{checkpoint_credential_id}").as_bytes(),
+        )))
+        .execute(&pool)
+        .await
+        .expect("insert checkpoint receipt credential");
+        sqlx::query(
+            r#"
+            INSERT INTO brunn.credential_scope_grants (
+              credential_id,user_id,scope_id
+            )
+            SELECT $1,$2,id FROM brunn.scopes
+            WHERE user_id=$2 AND scope_ref='scope:root'
+            "#,
+        )
+        .bind(checkpoint_credential_id)
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .expect("grant checkpoint receipt root scope");
+        let checkpoint_auth = AuthContext {
+            credential_id: CredentialId(checkpoint_credential_id),
+            user_id: UserId(user_id),
+            capabilities: ["checkpoint".to_owned()].into_iter().collect(),
+            scope_refs: vec!["scope:root".to_owned()],
+            read_only: false,
+        };
 
         let request = CheckpointRequest {
             session_id: "session:correlation-only".to_owned(),
@@ -11581,6 +11811,9 @@ mod tests {
         let (_, legacy_conflicting_hash) =
             validate_checkpoint_request(&legacy_conflicting_request).unwrap();
         let mut legacy_conflict_tx = pool.begin().await.unwrap();
+        set_context(&mut legacy_conflict_tx, &checkpoint_auth)
+            .await
+            .unwrap();
         lock_checkpoint_idempotency(&mut legacy_conflict_tx, user_id, &legacy_key)
             .await
             .unwrap();
@@ -11594,14 +11827,17 @@ mod tests {
         )
         .await
         .unwrap_err();
-        assert!(matches!(
-            legacy_conflict,
-            ApiError::Public {
-                status: StatusCode::CONFLICT,
-                code: "idempotency_conflict",
-                ..
-            }
-        ));
+        assert!(
+            matches!(
+                legacy_conflict,
+                ApiError::Public {
+                    status: StatusCode::CONFLICT,
+                    code: "idempotency_conflict",
+                    ..
+                }
+            ),
+            "unexpected legacy checkpoint conflict: {legacy_conflict:?}"
+        );
         legacy_conflict_tx.rollback().await.unwrap();
 
         let legacy_replay_request = CheckpointRequest {
@@ -11611,6 +11847,9 @@ mod tests {
         let (_, legacy_replay_hash) = validate_checkpoint_request(&legacy_replay_request).unwrap();
         assert_eq!(legacy_hash, legacy_replay_hash);
         let mut adoption_tx = pool.begin().await.unwrap();
+        set_context(&mut adoption_tx, &checkpoint_auth)
+            .await
+            .unwrap();
         lock_checkpoint_idempotency(&mut adoption_tx, user_id, &legacy_key)
             .await
             .unwrap();
@@ -11757,6 +11996,9 @@ mod tests {
         let (implicit_legacy_other_key, implicit_legacy_other_hash) =
             validate_checkpoint_request(&implicit_legacy_other_session).unwrap();
         let mut implicit_other_adoption_tx = pool.begin().await.unwrap();
+        set_context(&mut implicit_other_adoption_tx, &checkpoint_auth)
+            .await
+            .unwrap();
         lock_checkpoint_idempotency(
             &mut implicit_other_adoption_tx,
             user_id,
@@ -11778,6 +12020,9 @@ mod tests {
         assert!(implicit_other_adoption.is_none());
 
         let mut implicit_adoption_tx = pool.begin().await.unwrap();
+        set_context(&mut implicit_adoption_tx, &checkpoint_auth)
+            .await
+            .unwrap();
         lock_checkpoint_idempotency(&mut implicit_adoption_tx, user_id, &implicit_legacy_key)
             .await
             .unwrap();
