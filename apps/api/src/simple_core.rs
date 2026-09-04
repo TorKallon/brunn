@@ -38,8 +38,9 @@ use crate::{
     },
     models::{Capability, CheckpointRequest, CredentialId, ResponseStatus, UserId, canonical_json},
     retrieval_sql::{
-        SIMPLE_ENTRY_LINK_CANDIDATES_SQL, SIMPLE_LEXICAL_CANDIDATES_SQL,
-        SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL, SIMPLE_SEMANTIC_CANDIDATES_SQL,
+        SIMPLE_BATCHED_LEXICAL_CANDIDATES_SQL,
+        SIMPLE_BATCHED_LEXICAL_CANDIDATES_WITH_GENERATION_SQL, SIMPLE_ENTRY_LINK_CANDIDATES_SQL,
+        SIMPLE_SEMANTIC_CANDIDATES_SQL,
     },
     semantic_policy::{PreparedQueryEmbedding, SemanticRuntime},
     usage::{ProductActivityOperation, UsageOperation},
@@ -213,6 +214,9 @@ const TIER_A_HISTORY_STAGE_FORMAT: &str = "brunn-tier-a-history-stage@v1";
 const TIER_A_ORDINARY_HISTORY_SEMANTICS: &str = "ordinary_content_transition";
 const TIER_A_EXACT_HISTORY_SEMANTICS: &str = "preserve_intentional_exact_bytes_version";
 const RETRIEVAL_LANE_TIMEOUT: Duration = Duration::from_millis(2_500);
+// Each search item already fans out into lexical and semantic database lanes.
+// Bound request-level fan-out so a four-item batch cannot start eight reads at once.
+const SEARCH_QUERY_CONCURRENCY: usize = 2;
 const CHUNK_INSERT_BATCH_SIZE: usize = 256;
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -1050,7 +1054,7 @@ pub async fn search(
                 Ok::<_, ApiError>((index, query, result))
             }
         }))
-        .buffer_unordered(4)
+        .buffer_unordered(SEARCH_QUERY_CONCURRENCY)
         .collect::<Vec<_>>()
         .await
         .into_iter()
@@ -4458,7 +4462,7 @@ async fn lexical_candidates(
             .join(" OR ");
         let (found, generation) = fetch_lexical_candidates(
             &mut tx,
-            &consolidated,
+            std::slice::from_ref(&consolidated),
             query,
             sort,
             features,
@@ -4475,7 +4479,7 @@ async fn lexical_candidates(
         for anchor in &anchors {
             let (anchor_candidates, generation) = fetch_lexical_candidates(
                 &mut tx,
-                anchor,
+                std::slice::from_ref(anchor),
                 query,
                 sort,
                 features,
@@ -4491,7 +4495,8 @@ async fn lexical_candidates(
         }
     }
     if !anchor_hit {
-        for focused in bounded_lexical_fallback_queries(query) {
+        let focused = bounded_lexical_fallback_queries(query);
+        if !focused.is_empty() {
             let (focused_candidates, generation) = fetch_lexical_candidates(
                 &mut tx,
                 &focused,
@@ -4518,7 +4523,7 @@ async fn lexical_candidates(
 
 async fn fetch_lexical_candidates(
     tx: &mut Transaction<'_, Postgres>,
-    retrieval_query: &str,
+    retrieval_queries: &[String],
     scoring_query: &str,
     sort: SearchSort,
     features: Option<&WorkspaceFeatureSnapshot>,
@@ -4528,15 +4533,15 @@ async fn fetch_lexical_candidates(
     user_id: Uuid,
 ) -> ApiResult<(Vec<Candidate>, Option<i64>)> {
     let rows = if include_generation {
-        sqlx::query(SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL)
+        sqlx::query(SIMPLE_BATCHED_LEXICAL_CANDIDATES_WITH_GENERATION_SQL)
             .bind(user_id)
-            .bind(retrieval_query)
+            .bind(retrieval_queries)
             .bind(sort.as_str())
             .fetch_all(&mut **tx)
             .await?
     } else {
-        sqlx::query(SIMPLE_LEXICAL_CANDIDATES_SQL)
-            .bind(retrieval_query)
+        sqlx::query(SIMPLE_BATCHED_LEXICAL_CANDIDATES_SQL)
+            .bind(retrieval_queries)
             .bind(sort.as_str())
             .fetch_all(&mut **tx)
             .await?

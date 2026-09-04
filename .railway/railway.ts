@@ -248,6 +248,9 @@ const worker = service("worker", {
     BRUNN_S3_ACCESS_KEY: api.env.BRUNN_S3_ACCESS_KEY,
     BRUNN_S3_SECRET_KEY: api.env.BRUNN_S3_SECRET_KEY,
     BRUNN_SYSLOG_ADDR: "datadog-agent.railway.internal:515",
+    // Keep each HNSW publication bounded so backfill yields predictably to
+    // foreground reads while lexical chunks remain immediately available.
+    BRUNN_EMBEDDING_BACKFILL_BATCH_CHUNKS: "16",
     BRUNN_EMBEDDING_BACKFILL_FOREGROUND_STATUS_URL:
       "http://api.railway.internal:8080/health/foreground-latency",
     OPENAI_API_KEY: api.env.OPENAI_API_KEY,

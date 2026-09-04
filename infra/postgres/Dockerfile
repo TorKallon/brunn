@@ -37,3 +37,5 @@ COPY infra/postgres/healthcheck.sh /usr/local/bin/brunn-postgres-healthcheck
 COPY infra/postgres/init/ /docker-entrypoint-initdb.d/
 
 USER postgres:postgres
+
+CMD ["postgres", "-c", "shared_buffers=2GB", "-c", "effective_cache_size=6GB", "-c", "shared_preload_libraries=pg_prewarm"]

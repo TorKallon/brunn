@@ -5,6 +5,9 @@
 pub const SIMPLE_LEXICAL_CANDIDATES_SQL: &str =
     "SELECT * FROM brunn.workspace_lexical_candidates_v2($1,$2)";
 
+pub const SIMPLE_BATCHED_LEXICAL_CANDIDATES_SQL: &str =
+    "SELECT * FROM brunn.workspace_lexical_candidates_v3($1,$2)";
+
 pub const SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL: &str = r#"
 WITH generation AS (
   SELECT brunn_auth.workspace_generation($1) AS workspace_generation
@@ -12,6 +15,16 @@ WITH generation AS (
 SELECT generation.workspace_generation,candidate.*
 FROM generation
 LEFT JOIN LATERAL brunn.workspace_lexical_candidates_v2($2,$3) AS candidate
+  ON true
+"#;
+
+pub const SIMPLE_BATCHED_LEXICAL_CANDIDATES_WITH_GENERATION_SQL: &str = r#"
+WITH generation AS (
+  SELECT brunn_auth.workspace_generation($1) AS workspace_generation
+)
+SELECT generation.workspace_generation,candidate.*
+FROM generation
+LEFT JOIN LATERAL brunn.workspace_lexical_candidates_v3($2,$3) AS candidate
   ON true
 "#;
 
@@ -53,6 +66,10 @@ mod tests {
                 "brunn.workspace_lexical_candidates_v2",
             ),
             (
+                SIMPLE_BATCHED_LEXICAL_CANDIDATES_SQL,
+                "brunn.workspace_lexical_candidates_v3",
+            ),
+            (
                 SIMPLE_SEMANTIC_CANDIDATES_SQL,
                 "brunn.workspace_semantic_candidates_v2",
             ),
@@ -72,6 +89,15 @@ mod tests {
                 .contains("brunn_auth.workspace_generation($1)")
         );
         assert!(!SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL.contains(';'));
+        assert!(
+            SIMPLE_BATCHED_LEXICAL_CANDIDATES_WITH_GENERATION_SQL
+                .contains("LEFT JOIN LATERAL brunn.workspace_lexical_candidates_v3($2,$3)")
+        );
+        assert!(
+            SIMPLE_BATCHED_LEXICAL_CANDIDATES_WITH_GENERATION_SQL
+                .contains("brunn_auth.workspace_generation($1)")
+        );
+        assert!(!SIMPLE_BATCHED_LEXICAL_CANDIDATES_WITH_GENERATION_SQL.contains(';'));
         assert!(SIMPLE_ENTRY_LINK_CANDIDATES_SQL.contains("entry.user_id=$1"));
         assert!(SIMPLE_ENTRY_LINK_CANDIDATES_SQL.contains("regexp_replace(entry.path"));
         assert!(SIMPLE_ENTRY_LINK_CANDIDATES_SQL.contains("=ANY($2)"));

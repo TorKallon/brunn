@@ -57,6 +57,14 @@ class RailwayContractTests(unittest.TestCase):
             DATABASE_DOCKERFILE,
         )
 
+    def test_database_runtime_reserves_shared_cache_and_autoprewarm(self):
+        self.assertIn(
+            'CMD ["postgres", "-c", "shared_buffers=2GB", "-c", '
+            '"effective_cache_size=6GB", "-c", '
+            '"shared_preload_libraries=pg_prewarm"]',
+            DATABASE_DOCKERFILE,
+        )
+
     def test_public_web_is_the_only_domain_boundary(self):
         self.assertNotIn("domains:", RAILWAY)
         self.assertIn(
@@ -160,6 +168,18 @@ class RailwayContractTests(unittest.TestCase):
             '      "http://api.railway.internal:8080/health/foreground-latency"',
             worker_block,
         )
+
+    def test_embedding_publication_batch_is_bounded_on_worker_only(self):
+        api_block = RAILWAY.split('const api = service("api"', 1)[1].split(
+            'const worker = service("worker"', 1
+        )[0]
+        worker_block = RAILWAY.split('const worker = service("worker"', 1)[1].split(
+            'const mcp = service("mcp"', 1
+        )[0]
+        setting = 'BRUNN_EMBEDDING_BACKFILL_BATCH_CHUNKS: "16"'
+        self.assertNotIn(setting, api_block)
+        self.assertIn(setting, worker_block)
+        self.assertEqual(1, RAILWAY.count(setting))
 
     def test_password_recovery_mail_secret_is_api_scoped(self):
         api_block = RAILWAY.split('const api = service("api"', 1)[1].split(

@@ -3,11 +3,11 @@
   "app_role": "app_ro",
   "lanes": {
     "lexical": {
-      "function_name": "brunn.workspace_lexical_candidates_v2",
-      "regprocedure": "brunn.workspace_lexical_candidates_v2(text,text)",
-      "migration": "apps/api/migrations/0081_bounded_lexical_rank.sql",
-      "invocation_sql": "SELECT * FROM brunn.workspace_lexical_candidates_v2($1,$2)",
-      "body_sha256": "c3ec270546b300f570e8940c571cf987b2ab790c6db9979253fc827bb5729c69",
+      "function_name": "brunn.workspace_lexical_candidates_v3",
+      "regprocedure": "brunn.workspace_lexical_candidates_v3(text[],text)",
+      "migration": "apps/api/migrations/0086_batched_lexical_candidates.sql",
+      "invocation_sql": "SELECT * FROM brunn.workspace_lexical_candidates_v3($1,$2)",
+      "body_sha256": "c6da7b1a4641bc792686c822c1dbe3bfebffba438cb9fe348782caa7e1c037d6",
       "expected_index": "search_chunks_fts_idx"
     },
     "semantic": {
