@@ -102,9 +102,10 @@ const db = service("db", {
     limitOverride: {
       containers: {
         cpu: 2,
-        // 2026-08-02 owner-authorized memory experiment: the 1.25 GB HNSW
-        // index plus the lexical working set could not stay cached in 2 GiB.
-        memoryBytes: 4 * 1024 * 1024 * 1024,
+        // The 2026-09-03 corpus has a ~4 GB search_chunks relation (including
+        // ~1.5 GB HNSW and ~2 GB TOAST). At 4 GiB, file-cache refaults pushed
+        // lexical reads and vector writes past the one-second warning gate.
+        memoryBytes: 8 * 1024 * 1024 * 1024,
       },
     },
   },
