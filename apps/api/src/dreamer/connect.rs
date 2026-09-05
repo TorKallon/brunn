@@ -121,6 +121,13 @@ impl ConnectFlow {
         };
         match tokio::time::timeout(Duration::from_secs(60), capture).await {
             Ok(Some((url, code))) => {
+                // Codex still writes after authorization. Keep both pipes open
+                // and drain them until exit, without retaining login output.
+                // Dropping the readers here makes its success message panic
+                // with a broken pipe after auth.json has already been saved.
+                tokio::spawn(async move {
+                    tokio::join!(discard_output(stdout), discard_output(stderr));
+                });
                 inner.child = Some(child);
                 inner.codex_home = Some(codex_home);
                 inner.public = ConnectState::Pending { url, code };
@@ -249,6 +256,12 @@ impl ConnectFlow {
     }
 }
 
+async fn discard_output(stream: Option<impl tokio::io::AsyncRead + Unpin>) {
+    if let Some(mut stream) = stream {
+        let _ = tokio::io::copy(&mut stream, &mut tokio::io::sink()).await;
+    }
+}
+
 async fn read_some(
     stream: &mut Option<impl tokio::io::AsyncRead + Unpin>,
     chunk: &mut [u8],
@@ -319,6 +332,66 @@ fn extract_device_prompt(buffer: &str) -> Option<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn login_can_finish_writing_after_the_device_prompt_is_returned() {
+        use std::{collections::BTreeMap, os::unix::fs::PermissionsExt as _};
+
+        use super::super::run::DreamerConfig;
+
+        let temp = tempfile::tempdir().unwrap();
+        let codex_path = temp.path().join("codex");
+        std::fs::write(
+            &codex_path,
+            r#"#!/bin/sh
+set -e
+printf 'Visit https://auth.openai.com/activate and enter code ABCD-EFGH\n'
+while [ ! -f "$CODEX_HOME/continue-login" ]; do sleep 0.01; done
+printf '{}' > "$CODEX_HOME/auth.json"
+# Write more than either pipe can buffer, as well as a final success line.
+dd if=/dev/zero bs=4096 count=64 2>/dev/null
+dd if=/dev/zero bs=4096 count=64 >&2 2>/dev/null
+printf 'Successfully logged in\n'
+printf 'Successfully logged in\n' >&2
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&codex_path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let dreamer = Dreamer::new(DreamerConfig {
+            api_url: "http://127.0.0.1:1".into(),
+            workspace_token: "test-workspace".into(),
+            runner_token: "test-runner".into(),
+            codex_path,
+            codex_model: "test-model".into(),
+            mcp_server_entry: temp.path().join("unused-mcp.js"),
+            work_root: temp.path().join("work"),
+            host_env: BTreeMap::new(),
+            time_budget_override: None,
+        });
+        let flow = ConnectFlow::new();
+        assert!(matches!(
+            flow.start(&dreamer).await,
+            ConnectState::Pending { .. }
+        ));
+        let (mut child, codex_home) = {
+            let mut inner = flow.state.lock().await;
+            (
+                inner.child.take().unwrap(),
+                inner.codex_home.clone().unwrap(),
+            )
+        };
+        std::fs::write(codex_home.join("continue-login"), "").unwrap();
+        let status = tokio::time::timeout(Duration::from_secs(5), child.wait())
+            .await
+            .expect("login output must keep draining after the device prompt")
+            .unwrap();
+        assert!(codex_home.join("auth.json").is_file());
+        assert!(
+            status.success(),
+            "login crashed after saving auth: {status}"
+        );
+    }
 
     #[test]
     fn extracts_url_and_code_from_login_output() {
