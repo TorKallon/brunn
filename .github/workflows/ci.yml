@@ -63,6 +63,7 @@ jobs:
           docker build --file infra/minio/Dockerfile --tag brunn-minio:rust-ci infra/minio
           docker run --detach --name brunn-rust-ci-minio \
             --publish 127.0.0.1:9000:9000 \
+            --tmpfs /data:uid=10001,gid=10001,mode=0700 \
             --env MINIO_ROOT_USER=brunn_ci_test \
             --env MINIO_ROOT_PASSWORD=ci_only_not_a_secret \
             brunn-minio:rust-ci server /data
