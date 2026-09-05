@@ -5,6 +5,9 @@ use serde_json::{Value, json};
 use sqlx::{PgPool, Row, Transaction, postgres::PgPoolOptions};
 use uuid::Uuid;
 
+// These two fixtures run the scheduler across every user in the test database.
+static SCHEDULER_FIXTURE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 use brunn::{
     auth::{AuthContext, hash_token},
     db::set_context,
@@ -276,6 +279,7 @@ async fn insert_task(
 
 #[tokio::test]
 async fn task_guard_time_travel_dedupes_routes_and_delays_inferred_quiet_delivery() {
+    let _scheduler = SCHEDULER_FIXTURE.lock().await;
     let Some(pool) = connect_test_pool().await else {
         return;
     };
@@ -606,6 +610,7 @@ async fn task_guard_time_travel_dedupes_routes_and_delays_inferred_quiet_deliver
 
 #[tokio::test]
 async fn task_guard_state_is_seeded_content_free_and_rls_isolated() {
+    let _scheduler = SCHEDULER_FIXTURE.lock().await;
     let Some(pool) = connect_test_pool().await else {
         return;
     };

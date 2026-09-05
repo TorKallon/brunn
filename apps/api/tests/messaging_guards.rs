@@ -857,8 +857,12 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
         text_send(901, "the other concurrent rollover send"),
     );
     let (first_rollover, second_rollover) = tokio::join!(first_rollover, second_rollover);
-    assert_eq!(first_rollover.status, StatusCode::OK);
-    assert_eq!(second_rollover.status, StatusCode::OK);
+    assert_eq!(first_rollover.status, StatusCode::OK, "{first_rollover:?}");
+    assert_eq!(
+        second_rollover.status,
+        StatusCode::OK,
+        "{second_rollover:?}"
+    );
     let responses = [&first_rollover, &second_rollover];
     let rollover_response = responses
         .iter()

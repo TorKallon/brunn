@@ -68,6 +68,14 @@ jobs:
             brunn-minio:rust-ci server /data
           curl --fail --retry 10 --retry-delay 2 --retry-all-errors \
             http://127.0.0.1:9000/minio/health/live
+          docker build --file infra/minio-client/Dockerfile \
+            --tag brunn-minio-client:rust-ci infra/minio-client
+          docker run --rm --network host \
+            --env MC_HOST_local=http://brunn_ci_test:ci_only_not_a_secret@127.0.0.1:9000 \
+            --entrypoint /bin/sh brunn-minio-client:rust-ci -ec '
+              mc mb --ignore-existing local/brunn-ci-test
+              mc version enable local/brunn-ci-test
+            '
       - name: Format
         run: cargo fmt --all -- --check
       - name: Strict Clippy
