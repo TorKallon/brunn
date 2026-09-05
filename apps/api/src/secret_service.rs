@@ -35,8 +35,6 @@ use crate::{
 
 const MAX_SECRET_VALUE_BYTES: usize = 64 * 1024;
 const MAX_DESCRIPTION_CHARS: usize = 1_000;
-const CURRENT_SECRET_AAD_PREFIX: &str = "brunn.secret.v1";
-const LEGACY_SECRET_AAD_PREFIX: &str = "straylight.secret.v1";
 
 /// The authenticated envelope identity that successfully opened a stored
 /// secret. This deliberately has no `Debug` implementation because it carries
@@ -44,23 +42,6 @@ const LEGACY_SECRET_AAD_PREFIX: &str = "straylight.secret.v1";
 enum DecryptedSecretValue {
     Current(String),
     Legacy(String),
-}
-
-/// A freshly encrypted current-AAD envelope. This deliberately has no `Debug`
-/// implementation because callers must not accidentally log vault material.
-struct RewrappedSecretValue {
-    ciphertext: Vec<u8>,
-    nonce: Vec<u8>,
-    version: i32,
-}
-
-struct StoredSecretRow {
-    id: Uuid,
-    description: Option<String>,
-    ciphertext: Vec<u8>,
-    nonce: Vec<u8>,
-    version: i32,
-    updated_at: DateTime<Utc>,
 }
 
 /// The token and non-bearer producer identity used by one worker pull. This
@@ -337,121 +318,75 @@ async fn get_in_tx(
     key: &[u8; 32],
     environment: &str,
 ) -> ApiResult<GetResponse> {
-    let mut stored = select_secret_for_get(tx, auth.user_id.0, &name, false)
+    let may_rewrap = auth.can(Capability::SecretWrite) || auth.can(Capability::Admin);
+    let mut query = sqlx::QueryBuilder::new(
+        "SELECT id,description,value_ciphertext,value_nonce,version,updated_at \
+         FROM brunn.secrets WHERE user_id=",
+    );
+    query
+        .push_bind(auth.user_id.0)
+        .push(" AND name=")
+        .push_bind(&name);
+    // Writers lock once before reading so a put and a legacy rewrap serialize.
+    // Read-only credentials retain their ordinary RLS read path.
+    if may_rewrap {
+        query.push(" FOR UPDATE");
+    }
+    let row = query
+        .build()
+        .fetch_optional(&mut **tx)
         .await?
         .ok_or_else(|| ApiError::not_found("secret", &name))?;
+    let secret_id = row.try_get("id")?;
+    let mut version: i32 = row.try_get("version")?;
+    let mut updated_at = row.try_get("updated_at")?;
     let decrypted = decrypt_stored_secret_value(
         key,
         environment,
         auth.user_id.0,
-        stored.id,
-        stored.version,
-        &stored.ciphertext,
-        &stored.nonce,
+        secret_id,
+        version,
+        row.try_get("value_ciphertext")?,
+        row.try_get("value_nonce")?,
     )?;
-
-    let may_rewrap = auth.can(Capability::SecretWrite) || auth.can(Capability::Admin);
-    let value = if matches!(&decrypted, DecryptedSecretValue::Legacy(_)) && may_rewrap {
-        // Re-read under a row lock before rewriting. A concurrent put or
-        // rewrap may have replaced the envelope after the optimistic read;
-        // only the locked row is authoritative for the returned value.
-        stored = select_secret_for_get(tx, auth.user_id.0, &name, true)
-            .await?
-            .ok_or_else(|| ApiError::not_found("secret", &name))?;
-        match decrypt_stored_secret_value(
-            key,
-            environment,
-            auth.user_id.0,
-            stored.id,
-            stored.version,
-            &stored.ciphertext,
-            &stored.nonce,
-        )? {
-            DecryptedSecretValue::Current(value) => value,
-            DecryptedSecretValue::Legacy(value) => {
-                let rewrapped = rewrap_legacy_secret_value(
-                    key,
-                    environment,
-                    auth.user_id.0,
-                    stored.id,
-                    stored.version,
-                    &value,
-                )?;
-                stored.updated_at = sqlx::query_scalar::<_, DateTime<Utc>>(
-                    r#"
-                    UPDATE brunn.secrets
-                    SET value_ciphertext=$3,value_nonce=$4,version=$5,
-                        updated_by_credential_id=$7,updated_at=clock_timestamp()
-                    WHERE user_id=$1 AND id=$2 AND version=$6
-                    RETURNING updated_at
-                    "#,
-                )
-                .bind(auth.user_id.0)
-                .bind(stored.id)
-                .bind(&rewrapped.ciphertext)
-                .bind(&rewrapped.nonce)
-                .bind(rewrapped.version)
-                .bind(stored.version)
-                .bind(auth.credential_id.0)
-                .fetch_one(&mut **tx)
-                .await?;
-                stored.version = rewrapped.version;
-                record_access(tx, auth, stored.id, "rewrap").await?;
-                value
-            }
+    let value = match decrypted {
+        DecryptedSecretValue::Legacy(value) if may_rewrap => {
+            version = version
+                .checked_add(1)
+                .ok_or_else(|| ApiError::Internal("secret version overflow".to_owned()))?;
+            let aad = secret_value_aad(environment, auth.user_id.0, secret_id, version);
+            let (ciphertext, nonce) = encrypt_secret_value(key, &aad, &value)?;
+            updated_at = sqlx::query_scalar::<_, DateTime<Utc>>(
+                r#"
+                UPDATE brunn.secrets
+                SET value_ciphertext=$3,value_nonce=$4,version=$5,
+                    updated_by_credential_id=$6,updated_at=clock_timestamp()
+                WHERE user_id=$1 AND id=$2
+                RETURNING updated_at
+                "#,
+            )
+            .bind(auth.user_id.0)
+            .bind(secret_id)
+            .bind(ciphertext)
+            .bind(nonce)
+            .bind(version)
+            .bind(auth.credential_id.0)
+            .fetch_one(&mut **tx)
+            .await?;
+            record_access(tx, auth, secret_id, "rewrap").await?;
+            value
         }
-    } else {
-        match decrypted {
-            DecryptedSecretValue::Current(value) | DecryptedSecretValue::Legacy(value) => value,
-        }
+        DecryptedSecretValue::Current(value) | DecryptedSecretValue::Legacy(value) => value,
     };
-    record_access(tx, auth, stored.id, "get").await?;
+    record_access(tx, auth, secret_id, "get").await?;
     Ok(GetResponse {
-        secret_ref: format_ref(stored.id),
+        secret_ref: format_ref(secret_id),
         name,
         value,
-        version: stored.version,
-        description: stored.description,
-        updated_at: stored.updated_at,
+        version,
+        description: row.try_get("description")?,
+        updated_at,
     })
-}
-
-async fn select_secret_for_get(
-    tx: &mut Transaction<'_, Postgres>,
-    user_id: Uuid,
-    name: &str,
-    for_update: bool,
-) -> ApiResult<Option<StoredSecretRow>> {
-    let statement = if for_update {
-        r#"
-        SELECT id,description,value_ciphertext,value_nonce,version,updated_at
-        FROM brunn.secrets
-        WHERE user_id=$1 AND name=$2
-        FOR UPDATE
-        "#
-    } else {
-        r#"
-        SELECT id,description,value_ciphertext,value_nonce,version,updated_at
-        FROM brunn.secrets
-        WHERE user_id=$1 AND name=$2
-        "#
-    };
-    let row = sqlx::query(statement)
-        .bind(user_id)
-        .bind(name)
-        .fetch_optional(&mut **tx)
-        .await?;
-    row.map(|row| {
-        Ok(StoredSecretRow {
-            id: row.try_get("id")?,
-            description: row.try_get("description")?,
-            ciphertext: row.try_get("value_ciphertext")?,
-            nonce: row.try_get("value_nonce")?,
-            version: row.try_get("version")?,
-            updated_at: row.try_get("updated_at")?,
-        })
-    })
-    .transpose()
 }
 
 pub async fn list(
@@ -647,13 +582,7 @@ pub fn secret_value_aad(
     secret_id: Uuid,
     version: i32,
 ) -> Vec<u8> {
-    secret_value_aad_with_prefix(
-        CURRENT_SECRET_AAD_PREFIX,
-        environment,
-        user_id,
-        secret_id,
-        version,
-    )
+    format!("brunn.secret.v1|{environment}|{user_id}|{secret_id}|{version}").into_bytes()
 }
 
 fn legacy_secret_value_aad(
@@ -662,23 +591,7 @@ fn legacy_secret_value_aad(
     secret_id: Uuid,
     version: i32,
 ) -> Vec<u8> {
-    secret_value_aad_with_prefix(
-        LEGACY_SECRET_AAD_PREFIX,
-        environment,
-        user_id,
-        secret_id,
-        version,
-    )
-}
-
-fn secret_value_aad_with_prefix(
-    prefix: &str,
-    environment: &str,
-    user_id: Uuid,
-    secret_id: Uuid,
-    version: i32,
-) -> Vec<u8> {
-    format!("{prefix}|{environment}|{user_id}|{secret_id}|{version}").into_bytes()
+    format!("straylight.secret.v1|{environment}|{user_id}|{secret_id}|{version}").into_bytes()
 }
 
 pub fn encrypt_secret_value(
@@ -736,62 +649,15 @@ fn decrypt_stored_secret_value(
     ciphertext: &[u8],
     nonce: &[u8],
 ) -> ApiResult<DecryptedSecretValue> {
-    if nonce.len() != 12 {
-        return Err(ApiError::Internal(
-            "stored secret nonce is invalid".to_owned(),
-        ));
-    }
-    let cipher = Aes256Gcm::new_from_slice(key)
-        .map_err(|_| ApiError::Internal("could not initialize secret decryption".to_owned()))?;
     let current_aad = secret_value_aad(environment, user_id, secret_id, version);
-    if let Ok(plaintext) = cipher.decrypt(
-        Nonce::from_slice(nonce),
-        Payload {
-            msg: ciphertext,
-            aad: &current_aad,
-        },
-    ) {
-        return String::from_utf8(plaintext)
-            .map(DecryptedSecretValue::Current)
-            .map_err(|_| ApiError::Internal("stored secret is not UTF-8".to_owned()));
-    }
-
-    // Compatibility is deliberately limited to the exact pre-rename AAD.
-    // Invalid nonces and authenticated non-UTF-8 current values never enter
-    // this fallback path, and no arbitrary caller-provided AAD is accepted.
-    let legacy_aad = legacy_secret_value_aad(environment, user_id, secret_id, version);
-    let plaintext = cipher
-        .decrypt(
-            Nonce::from_slice(nonce),
-            Payload {
-                msg: ciphertext,
-                aad: &legacy_aad,
-            },
-        )
-        .map_err(|_| ApiError::Internal("stored secret could not be decrypted".to_owned()))?;
-    String::from_utf8(plaintext)
-        .map(DecryptedSecretValue::Legacy)
-        .map_err(|_| ApiError::Internal("stored secret is not UTF-8".to_owned()))
-}
-
-fn rewrap_legacy_secret_value(
-    key: &[u8; 32],
-    environment: &str,
-    user_id: Uuid,
-    secret_id: Uuid,
-    previous_version: i32,
-    value: &str,
-) -> ApiResult<RewrappedSecretValue> {
-    let version = previous_version
-        .checked_add(1)
-        .ok_or_else(|| ApiError::Internal("secret version overflow".to_owned()))?;
-    let aad = secret_value_aad(environment, user_id, secret_id, version);
-    let (ciphertext, nonce) = encrypt_secret_value(key, &aad, value)?;
-    Ok(RewrappedSecretValue {
-        ciphertext,
-        nonce,
-        version,
-    })
+    decrypt_secret_value(key, &current_aad, ciphertext, nonce)
+        .map(DecryptedSecretValue::Current)
+        .or_else(|_| {
+            // Only the exact pre-rename AAD is a compatibility alternative.
+            let legacy_aad = legacy_secret_value_aad(environment, user_id, secret_id, version);
+            decrypt_secret_value(key, &legacy_aad, ciphertext, nonce)
+                .map(DecryptedSecretValue::Legacy)
+        })
 }
 
 fn format_ref(id: Uuid) -> String {
@@ -1125,59 +991,6 @@ mod tests {
             )
             .is_err()
         );
-    }
-
-    #[test]
-    fn legacy_rewrap_increments_version_and_only_uses_current_aad() {
-        let key = [42_u8; 32];
-        let (user_id, secret_id) = fixture_ids();
-        let nonce = fixture_bytes(FIXTURE_NONCE_HEX);
-        let legacy_ciphertext = fixture_bytes(LEGACY_FIXTURE_CIPHERTEXT_HEX);
-        let value = match decrypt_stored_secret_value(
-            &key,
-            FIXTURE_ENVIRONMENT,
-            user_id,
-            secret_id,
-            7,
-            &legacy_ciphertext,
-            &nonce,
-        )
-        .unwrap()
-        {
-            DecryptedSecretValue::Legacy(value) => value,
-            DecryptedSecretValue::Current(_) => panic!("fixture must use the legacy lane"),
-        };
-        let rewrapped =
-            rewrap_legacy_secret_value(&key, FIXTURE_ENVIRONMENT, user_id, secret_id, 7, &value)
-                .unwrap();
-
-        assert_eq!(rewrapped.version, 8);
-        assert_eq!(rewrapped.nonce.len(), 12);
-        assert!(rewrapped.ciphertext != legacy_ciphertext);
-        let current_aad =
-            secret_value_aad(FIXTURE_ENVIRONMENT, user_id, secret_id, rewrapped.version);
-        assert!(
-            decrypt_secret_value(&key, &current_aad, &rewrapped.ciphertext, &rewrapped.nonce,)
-                .is_ok_and(|opened| opened == FIXTURE_VALUE)
-        );
-        let legacy_aad =
-            legacy_secret_value_aad(FIXTURE_ENVIRONMENT, user_id, secret_id, rewrapped.version);
-        assert!(
-            decrypt_secret_value(&key, &legacy_aad, &rewrapped.ciphertext, &rewrapped.nonce,)
-                .is_err()
-        );
-        assert!(matches!(
-            decrypt_stored_secret_value(
-                &key,
-                FIXTURE_ENVIRONMENT,
-                user_id,
-                secret_id,
-                rewrapped.version,
-                &rewrapped.ciphertext,
-                &rewrapped.nonce,
-            ),
-            Ok(DecryptedSecretValue::Current(_))
-        ));
     }
 
     #[tokio::test]

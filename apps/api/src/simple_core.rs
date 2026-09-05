@@ -8331,15 +8331,6 @@ fn looks_like_unquoted_search_anchor(value: &str) -> bool {
                 .any(|character| matches!(character, '-' | '/')))
 }
 
-#[cfg(test)]
-fn lexical_fallback_queries(query: &str) -> Vec<String> {
-    lexical_terms(query, 16)
-        .windows(2)
-        .take(8)
-        .map(|terms| terms.join(" "))
-        .collect()
-}
-
 fn ranked_lexical_fallback_queries(query: &str) -> Vec<String> {
     let terms = lexical_term_candidates(query, 16);
     let mut pairs = terms
@@ -8377,11 +8368,6 @@ fn bounded_lexical_fallback_queries(query: &str) -> Vec<String> {
     }
     fallbacks.truncate(4);
     fallbacks
-}
-
-#[cfg(test)]
-fn focused_lexical_query(query: &str) -> Option<String> {
-    bounded_lexical_fallback_queries(query).into_iter().next()
 }
 
 fn lexical_terms(query: &str, limit: usize) -> Vec<String> {
@@ -10080,7 +10066,7 @@ mod tests {
 
     #[test]
     fn lexical_fallback_turns_natural_tasks_into_focused_term_pairs() {
-        let fallbacks = lexical_fallback_queries(
+        let fallbacks = bounded_lexical_fallback_queries(
             "Handle the request to add every confirmed Europe flight to the family calendar. \
              State what the bounded search found, whether any write is needed, and report it.",
         );
@@ -10096,17 +10082,19 @@ mod tests {
                 .iter()
                 .all(|fallback| !fallback.contains("request"))
         );
-        let focused = focused_lexical_query(
+        let focused = bounded_lexical_fallback_queries(
             "Handle the request to add every confirmed Europe flight to the family calendar. \
              State what the bounded search found, whether any write is needed, and report it.",
         )
+        .into_iter()
+        .next()
         .expect("natural task should produce a focused query");
         assert_eq!(focused, "confirmed europe");
     }
 
     #[test]
     fn lexical_fallback_keeps_distinctive_terms_from_long_tasks() {
-        let fallbacks = lexical_fallback_queries(
+        let fallbacks = bounded_lexical_fallback_queries(
             "Resume the D1 parser performance and autonomy work. Reconcile the older 10M Nyx \
              tuning checkpoint with the later durable autonomy summary. Explain what the PVE34 \
              result established and leave a checkpoint.",
@@ -10127,11 +10115,13 @@ mod tests {
                 .iter()
                 .all(|fallback| !fallback.contains("reconcile"))
         );
-        let focused = focused_lexical_query(
+        let focused = bounded_lexical_fallback_queries(
             "Resume the D1 parser performance and autonomy work. Reconcile the older 10M Nyx \
              tuning checkpoint with the later durable autonomy summary. Explain what the PVE34 \
              result established and leave a checkpoint.",
         )
+        .into_iter()
+        .next()
         .expect("identifier task should produce a focused query");
         assert_eq!(focused, "d1 10m");
         let ranked = ranked_lexical_fallback_queries(
@@ -10157,7 +10147,10 @@ mod tests {
         );
         assert!(!terms.iter().any(|term| term == "1"), "{terms:?}");
 
-        let focused = focused_lexical_query(task).expect("release task should be searchable");
+        let focused = bounded_lexical_fallback_queries(task)
+            .into_iter()
+            .next()
+            .expect("release task should be searchable");
         assert_eq!(focused, "v1.1 sqlx");
         assert!(!focused.contains(" OR "));
         assert!(
@@ -10197,8 +10190,10 @@ mod tests {
     fn lexical_focus_keeps_ordinary_natural_language_recall() {
         let task = "Handle the request to add every confirmed Europe flight to the family calendar. \
                     State what the bounded search found, whether any write is needed, and report it.";
-        let focused =
-            focused_lexical_query(task).expect("natural task should produce a focused query");
+        let focused = bounded_lexical_fallback_queries(task)
+            .into_iter()
+            .next()
+            .expect("natural task should produce a focused query");
         assert_eq!(focused, "confirmed europe");
 
         let fallbacks = bounded_lexical_fallback_queries(task);
@@ -10211,16 +10206,6 @@ mod tests {
             fallbacks.iter().any(|query| query == "family calendar"),
             "an incidental first-pair hit must not exclude the authoritative pair: {fallbacks:?}"
         );
-        let fixture_hits = fallbacks
-            .iter()
-            .flat_map(|query| match query.as_str() {
-                "confirmed europe" => [Some("incidental"), None],
-                "family calendar" => [None, Some("authoritative")],
-                _ => [None, None],
-            })
-            .flatten()
-            .collect::<Vec<_>>();
-        assert_eq!(fixture_hits, ["incidental", "authoritative"]);
     }
 
     #[test]

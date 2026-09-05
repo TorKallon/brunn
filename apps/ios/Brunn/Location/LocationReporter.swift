@@ -23,7 +23,6 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
     private let queue: LocationDiskQueue
     private let statusStore: LocationStatusStore
     private let enricher: LocationReportEnricher
-    private var pendingEnable: Bool
     private var deliveryTail: Task<Void, Never>?
     private var heartbeat: NotificationBackgroundFetch?
     private var activeUploadTask: Task<LocationReportUploadResponse, Error>?
@@ -60,7 +59,6 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
         authorizationStatus = manager.authorizationStatus
         reportingEnabled = statusStore.reportingEnabled
         lastUploadAt = statusStore.lastUploadAt
-        pendingEnable = statusStore.setupPending
         setupPending = statusStore.setupPending
         validatedCredentialUserID = nil
         super.init()
@@ -82,7 +80,7 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
         await acquireCredentialOperation()
         await validateStoredCredential(expectedUserID: expectedUserID)
         releaseCredentialOperation()
-        if pendingEnable {
+        if setupPending {
             requestNextAuthorizationStep()
         }
         if reportingEnabled {
@@ -383,7 +381,7 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         authorizationStatus = manager.authorizationStatus
-        guard pendingEnable else { return }
+        guard setupPending else { return }
         switch manager.authorizationStatus {
         case .authorizedWhenInUse:
             manager.requestAlwaysAuthorization()
@@ -466,7 +464,6 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
     }
 
     private func setPendingEnable(_ pending: Bool) {
-        pendingEnable = pending
         setupPending = pending
         statusStore.setupPending = pending
     }

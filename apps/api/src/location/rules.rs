@@ -325,12 +325,12 @@ pub fn apply(
         };
     }
 
-    let resolved = resolve(report, places);
     let mut rows = Vec::new();
     let mut replaced = Vec::new();
     let mut transitions = Vec::new();
     match &report.kind {
         ReportKind::VisitArrival { arrived_at } => {
+            let resolved = resolve(report, places);
             let arrival = arrived_at.unwrap_or(report.at);
             let same_open_visit =
                 open_before.is_some_and(|visit| same_place_as_resolution(visit, &resolved, report));
@@ -367,6 +367,7 @@ pub fn apply(
                 // R2: a completed visit inside the open known place corroborates it.
                 transitions.push(TransitionKind::Duplicate);
             } else {
+                let resolved = resolve(report, places);
                 let completed =
                     completed_row(*arrived_at, *departed_at, report, &resolved, &presence);
                 let same_open_visit = open_before
@@ -428,6 +429,7 @@ pub fn apply(
         }
         ReportKind::Ping => {
             if ping_tier == Some(AccuracyTier::Precise) {
+                let resolved = resolve(report, places);
                 let inside_known_place = resolved.known_place_index.is_some();
                 match open_before {
                     Some(visit) if inside_known_place => {
@@ -607,18 +609,20 @@ pub fn insert_rows(
     if rows.is_empty() && replaced.is_empty() {
         return month_file_text.unwrap_or_default().to_owned();
     }
-    if let Some(text) = month_file_text
-        && let Some(inserted) =
+    if let Some(text) = month_file_text {
+        let inserted = if replaced.is_empty() {
+            splice_table_rows_preserving(text, rows, |_| true)
+        } else {
             splice_table_rows_preserving(text, rows, |row| !replaced.contains(row))
-    {
-        return inserted;
+        };
+        if let Some(inserted) = inserted {
+            return inserted;
+        }
     }
-    let mut combined = month_file_text
-        .map(parse_history_rows)
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|row| !replaced.contains(row))
-        .collect::<Vec<_>>();
+    let mut combined = month_file_text.map(parse_history_rows).unwrap_or_default();
+    if !replaced.is_empty() {
+        combined.retain(|row| !replaced.contains(row));
+    }
     combined.extend_from_slice(rows);
     combined.sort_by(compare_history_rows);
     render_month(
@@ -1180,7 +1184,7 @@ mod tests {
         lat: 47.6156,
         lon: -122.2035,
     };
-    const HOME: Coordinate = Coordinate {
+    pub(super) const HOME: Coordinate = Coordinate {
         lat: 47.6205,
         lon: -122.2070,
     };
@@ -1195,7 +1199,7 @@ mod tests {
             .unwrap()
     }
 
-    fn geocode(city: &str, name: Option<&str>) -> Geocode {
+    pub(super) fn geocode(city: &str, name: Option<&str>) -> Geocode {
         Geocode {
             city: Some(city.to_owned()),
             region: Some("WA".to_owned()),
@@ -1204,7 +1208,11 @@ mod tests {
         }
     }
 
-    fn report(kind: ReportKind, at: DateTime<Utc>, coordinate: Coordinate) -> LocationReport {
+    pub(super) fn report(
+        kind: ReportKind,
+        at: DateTime<Utc>,
+        coordinate: Coordinate,
+    ) -> LocationReport {
         LocationReport {
             kind,
             at,
@@ -1745,12 +1753,8 @@ mod tests {
 mod field_day_tests {
     use chrono::TimeZone as _;
 
+    use super::tests::{HOME, geocode, report};
     use super::*;
-
-    const HOME: Coordinate = Coordinate {
-        lat: 47.6205,
-        lon: -122.2070,
-    };
     const ENUMCLAW: Coordinate = Coordinate {
         lat: 47.2043,
         lon: -121.9915,
@@ -1835,15 +1839,6 @@ mod field_day_tests {
             .with_timezone(&Utc)
     }
 
-    fn geocode(city: &str, name: Option<&str>) -> Geocode {
-        Geocode {
-            city: Some(city.to_owned()),
-            region: Some("WA".to_owned()),
-            country: Some("US".to_owned()),
-            name: name.map(str::to_owned),
-        }
-    }
-
     fn ping(
         at: DateTime<Utc>,
         coordinate: Coordinate,
@@ -1851,14 +1846,9 @@ mod field_day_tests {
         city: &str,
     ) -> LocationReport {
         LocationReport {
-            kind: ReportKind::Ping,
-            at,
-            offset_min: -7 * 60,
-            timezone: chrono_tz::America::Los_Angeles,
-            coordinate,
             accuracy_m,
             geocode: Some(geocode(city, None)),
-            poi: Vec::new(),
+            ..report(ReportKind::Ping, at, coordinate)
         }
     }
 
@@ -1879,14 +1869,10 @@ mod field_day_tests {
         category: &str,
     ) -> LocationReport {
         LocationReport {
-            kind,
-            at,
-            offset_min: -7 * 60,
-            timezone: chrono_tz::America::Los_Angeles,
-            coordinate,
             accuracy_m: 20.0,
             geocode: Some(geocode(city, Some(name))),
             poi: vec![poi(name, category, 12.0)],
+            ..report(kind, at, coordinate)
         }
     }
 
