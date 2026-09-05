@@ -95,7 +95,7 @@ final class AgentMessagingTransportTests: XCTestCase {
             queue: .main
         ) { event in
             posted.fulfill()
-            let request = event.object as? MessagingBackgroundPrefetch
+            let request = event.object as? NotificationBackgroundFetch
             request?.finish(.newData)
         }
         defer { NotificationCenter.default.removeObserver(token) }

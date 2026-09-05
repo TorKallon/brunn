@@ -44,6 +44,7 @@ const LIST_NOTIFICATIONS_SQL: &str = r#"
       ON state.user_id=notification.user_id
      AND state.notification_id=notification.id
     WHERE notification.user_id=$1
+      AND notification.kind <> 'location_heartbeat'
       AND (
         $2::boolean IS DISTINCT FROM true
         OR (
@@ -73,6 +74,7 @@ pub struct NotificationSource {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum NotificationTarget {
+    Push,
     Notification,
     Today,
     Briefing {
@@ -109,6 +111,60 @@ pub struct PublishRequest {
     pub occurred_at: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<DateTime<Utc>>,
+}
+
+/// The fixed four-hour event key is the only heartbeat scheduling state.
+/// Reuse the worker's existing non-bearer producer credential and outbox.
+pub async fn enqueue_location_heartbeats(
+    pool: &PgPool,
+    now: DateTime<Utc>,
+    delivery_enabled: bool,
+) -> ApiResult<u64> {
+    let result = sqlx::query(
+        r#"
+        WITH due AS (
+          SELECT presence.user_id,producer.credential_id,
+                 'location-heartbeat:' || presence.user_id::text || ':' || $2::text AS event_key
+          FROM brunn.location_presence AS presence
+          JOIN brunn.task_guard_producers AS producer USING (user_id)
+          WHERE presence.reported_at < $1::timestamptz - interval '4 hours'
+            AND EXISTS (
+              SELECT 1 FROM brunn.notification_installations AS installation
+              WHERE installation.user_id=presence.user_id
+                AND installation.platform='ios'
+                AND installation.enabled AND installation.revoked_at IS NULL
+            )
+        ), inserted AS (
+          INSERT INTO brunn.notifications (
+            user_id,producer_credential_id,event_key,request_hash,correlation_id,
+            kind,importance,title,body,target,occurred_at,expires_at
+          )
+          SELECT user_id,credential_id,event_key,
+                 encode(public.digest(event_key,'sha256'),'hex'),event_key,
+                 'location_heartbeat','normal','Location heartbeat','Location heartbeat',
+                 '{"type":"push"}'::jsonb,$1,$1::timestamptz + interval '4 hours'
+          FROM due
+          ON CONFLICT (user_id,event_key) DO NOTHING
+          RETURNING user_id,id
+        )
+        INSERT INTO brunn.notification_deliveries (
+          user_id,notification_id,installation_id,state,available_at,last_error_code
+        )
+        SELECT notification.user_id,notification.id,installation.id,
+               CASE WHEN $3 THEN 'queued' ELSE 'suppressed' END,$1,
+               CASE WHEN $3 THEN NULL ELSE 'transport_disabled' END
+        FROM inserted AS notification
+        JOIN brunn.notification_installations AS installation USING (user_id)
+        WHERE installation.platform='ios'
+          AND installation.enabled AND installation.revoked_at IS NULL
+        "#,
+    )
+    .bind(now)
+    .bind(now.timestamp().div_euclid(4 * 60 * 60).to_string())
+    .bind(delivery_enabled)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -429,6 +485,7 @@ pub async fn list(
           ON state.user_id=notification.user_id
          AND state.notification_id=notification.id
         WHERE notification.user_id=$1
+          AND notification.kind <> 'location_heartbeat'
           AND state.opened_at IS NULL
           AND (notification.expires_at IS NULL OR notification.expires_at > clock_timestamp())
         "#,
@@ -787,9 +844,10 @@ fn validate_publish_for_access(request: &PublishRequest, access: PublishAccess) 
     validate_text(&request.event_key, 200, "event_key")?;
     if request.event_key.starts_with("task-deadline:")
         || request.event_key.starts_with("task-cost:")
+        || request.event_key.starts_with("location-heartbeat:")
     {
         return Err(ApiError::invalid(
-            "task guard event-key namespaces are reserved for the internal scheduler",
+            "worker event-key namespaces are reserved for the internal scheduler",
         ));
     }
     if access == PublishAccess::Public
@@ -832,9 +890,9 @@ fn validate_publish_for_access(request: &PublishRequest, access: PublishAccess) 
         NotificationTarget::Entry { entry_ref } => {
             validate_text(entry_ref, 500, "target.entry_ref")?;
         }
-        NotificationTarget::Task { .. } => {
+        NotificationTarget::Task { .. } | NotificationTarget::Push => {
             return Err(ApiError::invalid(
-                "task notification targets are reserved for the internal scheduler",
+                "task and push targets are reserved for the internal scheduler",
             ));
         }
         NotificationTarget::Conversation {
@@ -908,6 +966,7 @@ fn normalize_publish(mut request: PublishRequest) -> PublishRequest {
             *entry_ref = entry_ref.trim().to_owned();
         }
         NotificationTarget::Task { .. }
+        | NotificationTarget::Push
         | NotificationTarget::Conversation { .. }
         | NotificationTarget::Notification
         | NotificationTarget::Today => {}
@@ -1154,6 +1213,8 @@ pub struct ApnsRequest {
     pub apns_id: Uuid,
     pub collapse_id: String,
     pub expiration: Option<DateTime<Utc>>,
+    pub push_type: &'static str,
+    pub priority: u16,
 }
 
 #[derive(Clone, Debug)]
@@ -1411,8 +1472,8 @@ impl ApnsProvider for HttpApnsProvider {
             .post(format!("{host}/3/device/{}", request.device_token))
             .header("authorization", format!("bearer {bearer}"))
             .header("apns-topic", request.app_id)
-            .header("apns-push-type", "alert")
-            .header("apns-priority", "10")
+            .header("apns-push-type", request.push_type)
+            .header("apns-priority", request.priority)
             .header("apns-id", apns_id_header(request.apns_id))
             .header("apns-collapse-id", request.collapse_id)
             .header(
@@ -1566,6 +1627,7 @@ pub async fn process_next_on_pool(
         }
     };
     let push_target = resolve_push_target(&delivery.target);
+    let heartbeat = delivery.kind == "location_heartbeat";
     let request = ApnsRequest {
         device_token,
         environment: delivery.environment.clone(),
@@ -1574,6 +1636,8 @@ pub async fn process_next_on_pool(
         apns_id: delivery.id,
         collapse_id: push_collapse_id(&delivery, &push_target),
         expiration: delivery.expires_at,
+        push_type: if heartbeat { "background" } else { "alert" },
+        priority: if heartbeat { 5 } else { 10 },
     };
     match provider.send(request).await {
         Ok(accepted) => record_acceptance(pool, &delivery, accepted).await?,
@@ -1746,6 +1810,7 @@ fn resolve_push_target(target: &Value) -> ResolvedPushTarget {
         },
         Ok(
             NotificationTarget::Notification
+            | NotificationTarget::Push
             | NotificationTarget::Today
             | NotificationTarget::Briefing { .. }
             | NotificationTarget::Entry { .. },
@@ -1755,6 +1820,13 @@ fn resolve_push_target(target: &Value) -> ResolvedPushTarget {
 }
 
 fn push_payload(delivery: &ClaimedDelivery, target: &ResolvedPushTarget) -> Value {
+    if delivery.kind == "location_heartbeat" {
+        return json!({
+            "aps": {"content-available": 1},
+            "schema": "brunn-push@v1",
+            "kind": "location_heartbeat"
+        });
+    }
     let notification_ref = format_ref("notification", delivery.notification_id);
     let delivery_ref = format_ref("delivery", delivery.id);
     let mut aps = json!({
@@ -1791,6 +1863,9 @@ fn push_route(delivery: &ClaimedDelivery, target: &ResolvedPushTarget) -> String
 }
 
 fn push_collapse_id(delivery: &ClaimedDelivery, target: &ResolvedPushTarget) -> String {
+    if delivery.kind == "location_heartbeat" {
+        return "location-heartbeat".to_owned();
+    }
     match target {
         ResolvedPushTarget::Conversation {
             conversation_id, ..
@@ -1803,9 +1878,7 @@ fn push_body(delivery: &ClaimedDelivery, target: &ResolvedPushTarget) -> String 
     match target {
         ResolvedPushTarget::Conversation { .. } => "A new agent message is available.".to_owned(),
         ResolvedPushTarget::Task { .. } => generic_push_body(&delivery.kind).to_owned(),
-        ResolvedPushTarget::Ordinary | ResolvedPushTarget::Malformed
-            if delivery.kind == "operational" =>
-        {
+        ResolvedPushTarget::Ordinary if delivery.kind == "operational" => {
             alert_text_preview(&delivery.body)
         }
         ResolvedPushTarget::Ordinary | ResolvedPushTarget::Malformed => {
@@ -1818,6 +1891,7 @@ fn generic_push_body(kind: &str) -> &'static str {
     match kind {
         "briefing_ready" => "Your briefing is ready.",
         "correction" => "A Brunn update needs your attention.",
+        "operational" => "Brunn has an operational alert.",
         _ => "A new Brunn alert is available.",
     }
 }
@@ -2057,6 +2131,7 @@ mod tests {
         for event_key in [
             format!("task-deadline:{}:7d", Uuid::now_v7()),
             format!("task-cost:{}:set", Uuid::now_v7()),
+            format!("location-heartbeat:{}:1", Uuid::now_v7()),
         ] {
             let mut request = fixture();
             request.event_key = event_key;
@@ -2080,6 +2155,8 @@ mod tests {
         request.target = NotificationTarget::Task {
             task_ref: Uuid::now_v7().to_string(),
         };
+        assert!(validate_publish(&request).is_err());
+        request.target = NotificationTarget::Push;
         assert!(validate_publish(&request).is_err());
     }
 
@@ -2149,7 +2226,7 @@ mod tests {
 
     #[test]
     fn news_push_payload_contains_only_generic_copy_and_opaque_refs() {
-        let delivery = ClaimedDelivery {
+        let mut delivery = ClaimedDelivery {
             id: Uuid::now_v7(),
             user_id: Uuid::now_v7(),
             notification_id: Uuid::now_v7(),
@@ -2200,6 +2277,15 @@ mod tests {
                 "brunn_route",
             ])
         );
+        delivery.kind = "location_heartbeat".to_owned();
+        delivery.target = json!({"type":"push"});
+        let target = resolve_push_target(&delivery.target);
+        assert_eq!(target, ResolvedPushTarget::Ordinary);
+        let payload = push_payload(&delivery, &target);
+        assert_eq!(payload["aps"], json!({"content-available": 1}));
+        assert_eq!(payload["kind"], "location_heartbeat");
+        assert!(payload.get("brunn_route").is_none());
+        assert_eq!(push_collapse_id(&delivery, &target), "location-heartbeat");
     }
 
     #[test]

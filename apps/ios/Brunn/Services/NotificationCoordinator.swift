@@ -218,6 +218,11 @@ enum NotificationRouteParser {
         }
         return false
     }
+
+    static func isLocationHeartbeat(_ userInfo: [AnyHashable: Any]) -> Bool {
+        userInfo["schema"] as? String == "brunn-push@v1"
+            && userInfo["kind"] as? String == "location_heartbeat"
+    }
 }
 
 extension Notification.Name {
@@ -227,7 +232,7 @@ extension Notification.Name {
     static let brunnMessagingPrefetch = Notification.Name("brunn.messaging-prefetch")
 }
 
-final class MessagingBackgroundPrefetch: @unchecked Sendable {
+final class NotificationBackgroundFetch: @unchecked Sendable {
     private let lock = NSLock()
     private var completionHandler: ((UIBackgroundFetchResult) -> Void)?
 
@@ -327,7 +332,7 @@ enum NotificationDelegateHandoff {
         shouldPrefetch: Bool,
         completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
-        let request = MessagingBackgroundPrefetch(completionHandler: completionHandler)
+        let request = NotificationBackgroundFetch(completionHandler: completionHandler)
         guard shouldPrefetch else {
             DispatchQueue.main.async {
                 request.finish(.noData)
@@ -362,7 +367,16 @@ private enum NotificationInstallationIdentity {
 
 @MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    let locationReporter = LocationReporter()
+    let locationReporter: LocationReporter
+
+    override convenience init() {
+        self.init(locationReporter: LocationReporter())
+    }
+
+    init(locationReporter: LocationReporter) {
+        self.locationReporter = locationReporter
+        super.init()
+    }
 
     nonisolated static func handlesBackgroundURLSession(identifier: String) -> Bool {
         MessagingBackgroundTransport.handlesBackgroundSession(identifier: identifier)
@@ -417,6 +431,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
+        if NotificationRouteParser.isLocationHeartbeat(userInfo) {
+            locationReporter.handleHeartbeat(completionHandler: completionHandler)
+            return
+        }
         NotificationDelegateHandoff.finishBackgroundFetch(
             shouldPrefetch: NotificationRouteParser.isMessagingPrefetch(userInfo),
             completionHandler: completionHandler

@@ -25,6 +25,7 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
     private let enricher: LocationReportEnricher
     private var pendingEnable: Bool
     private var deliveryTail: Task<Void, Never>?
+    private var heartbeat: NotificationBackgroundFetch?
     private var activeUploadTask: Task<LocationReportUploadResponse, Error>?
     private var isFlushing = false
     private var credentialOperationHeld = false
@@ -337,6 +338,34 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
     /// fix, not a movement, and is dropped. Visit reports are unaffected.
     static let maximumSignificantChangeAge: TimeInterval = 15 * 60
 
+    func handleHeartbeat(completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        guard reportingEnabled,
+              manager.authorizationStatus == .authorizedAlways,
+              validStoredCredential() != nil,
+              heartbeat == nil
+        else {
+            completionHandler(.noData)
+            return
+        }
+        let request = NotificationBackgroundFetch(completionHandler: completionHandler)
+        heartbeat = request
+        DispatchQueue.main.asyncAfter(deadline: .now() + 25) { [weak self] in
+            request.finish(.failed)
+            if self?.heartbeat === request {
+                self?.heartbeat = nil
+            }
+        }
+        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        manager.requestLocation()
+    }
+
+    private func finishHeartbeat(_ request: NotificationBackgroundFetch, result: UIBackgroundFetchResult) {
+        if heartbeat === request {
+            heartbeat = nil
+        }
+        request.finish(result)
+    }
+
     func handle(location: CLLocation, now: Date = Date()) {
         guard reportingEnabled,
               CLLocationCoordinate2DIsValid(location.coordinate),
@@ -375,12 +404,24 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
     }
 
     func locationManager(_: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let location = locations.last else { return }
+        guard let location = locations.last else {
+            if let heartbeat { finishHeartbeat(heartbeat, result: .noData) }
+            return
+        }
+        let previousUpload = lastUploadAt
         handle(location: location)
+        if let heartbeat {
+            let pendingDelivery = deliveryTail
+            Task {
+                _ = await pendingDelivery?.value
+                finishHeartbeat(heartbeat, result: lastUploadAt != previousUpload ? .newData : .noData)
+            }
+        }
     }
 
     func locationManager(_: CLLocationManager, didFailWithError error: Error) {
         lastError = error.localizedDescription
+        if let heartbeat { finishHeartbeat(heartbeat, result: .failed) }
     }
 
     private func requestNextAuthorizationStep() {
@@ -435,6 +476,7 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
         reportingEnabled = false
         statusStore.reportingEnabled = false
         stopMonitoring()
+        if let heartbeat { finishHeartbeat(heartbeat, result: .noData) }
         let pendingDelivery = deliveryTail
         deliveryTail = nil
         pendingDelivery?.cancel()

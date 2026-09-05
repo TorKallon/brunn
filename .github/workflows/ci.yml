@@ -19,15 +19,55 @@ env:
 jobs:
   rust:
     runs-on: ubuntu-24.04
-    container:
-      image: rust:1.96.1-bookworm@sha256:a339861ae23e9abb272cea45dfafde21760d2ce6577a70f8a926153677902663
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.5-pg17@sha256:d2ef61f42ef767baa5a1475393303cc235bcd92febd9d7014eddb48b41f3bad0
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: ci_only_not_a_secret
+          POSTGRES_DB: brunn_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U admin -d brunn_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      BRUNN_TEST_DATABASE_URL: postgres://admin:ci_only_not_a_secret@127.0.0.1:5432/brunn_test
+      DATABASE_URL_RW: postgres://admin:ci_only_not_a_secret@127.0.0.1:5432/brunn_test
+      DATABASE_URL_RO: postgres://admin:ci_only_not_a_secret@127.0.0.1:5432/brunn_test
+      DATABASE_URL_ADMIN: postgres://admin:ci_only_not_a_secret@127.0.0.1:5432/brunn_test
+      BRUNN_EMBEDDING_PROVIDER: hashing
+      BRUNN_ALLOW_DEGRADED_EMBEDDINGS: "true"
+      BRUNN_S3_ENDPOINT: http://127.0.0.1:9000
+      BRUNN_S3_REGION: us-east-1
+      BRUNN_S3_BUCKET: brunn-ci-test
+      BRUNN_S3_ACCESS_KEY: brunn_ci_test
+      BRUNN_S3_SECRET_KEY: ci_only_not_a_secret
+      BRUNN_S3_CREATE_BUCKET: "true"
+      BRUNN_METRICS_ENABLED: "false"
     defaults:
       run:
         working-directory: apps/api
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Install pinned Rust components
-        run: rustup component add clippy rustfmt
+        run: |
+          rustup toolchain install 1.96.1 --profile minimal --component clippy,rustfmt
+          rustup default 1.96.1
+      - name: Prepare database roles and disposable object store
+        working-directory: .
+        run: |
+          docker exec ${{ job.services.postgres.id }} psql -U admin -d brunn_test \
+            -c 'CREATE ROLE app_rw LOGIN NOINHERIT' \
+            -c 'CREATE ROLE app_ro LOGIN NOINHERIT'
+          docker build --file infra/minio/Dockerfile --tag brunn-minio:rust-ci infra/minio
+          docker run --detach --name brunn-rust-ci-minio \
+            --publish 127.0.0.1:9000:9000 \
+            --env MINIO_ROOT_USER=brunn_ci_test \
+            --env MINIO_ROOT_PASSWORD=ci_only_not_a_secret \
+            brunn-minio:rust-ci server /data
+          curl --fail --retry 10 --retry-delay 2 --retry-all-errors \
+            http://127.0.0.1:9000/minio/health/live
       - name: Format
         run: cargo fmt --all -- --check
       - name: Strict Clippy
@@ -38,6 +78,9 @@ jobs:
         run: cargo install cargo-audit --version 0.22.2 --locked
       - name: RustSec audit
         run: cargo audit
+      - name: Remove disposable object store
+        if: always()
+        run: docker rm --force brunn-rust-ci-minio || true
 
   web:
     runs-on: ubuntu-24.04

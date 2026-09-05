@@ -202,21 +202,20 @@ async fn non_relevance_sorts_select_before_the_bounded_candidate_cutoff() {
     .expect("v2 function remains callable for rolling deployments and briefing dedupe");
     assert!(v2_count > 0);
 
-    let needle_queries = vec!["needle".to_owned()];
     let modified =
-        sqlx::query("SELECT path FROM brunn.workspace_lexical_candidates_v3($1,'last_modified')")
-            .bind(&needle_queries)
+        sqlx::query("SELECT path FROM brunn.workspace_lexical_candidates_v2($1,'last_modified')")
+            .bind("needle")
             .fetch_all(&mut *tx)
             .await
-            .expect("fetch modified-date candidates from the batched lexical function");
+            .expect("fetch modified-date candidates from the active lexical function");
     assert_eq!(modified.len(), 64);
     assert_eq!(modified[0].get::<String, _>("path"), "Notes/300.md");
 
-    let title = sqlx::query("SELECT path FROM brunn.workspace_lexical_candidates_v3($1,'title')")
-        .bind(&needle_queries)
+    let title = sqlx::query("SELECT path FROM brunn.workspace_lexical_candidates_v2($1,'title')")
+        .bind("needle")
         .fetch_all(&mut *tx)
         .await
-        .expect("fetch title candidates from the batched lexical function");
+        .expect("fetch title candidates from the active lexical function");
     assert_eq!(title.len(), 64);
     assert_eq!(title[0].get::<String, _>("path"), "Notes/001.md");
 
@@ -240,14 +239,19 @@ async fn non_relevance_sorts_select_before_the_bounded_candidate_cutoff() {
         "itinerary family".to_owned(),
         "family calendar".to_owned(),
     ];
-    let mut fallback_paths = sqlx::query_scalar::<_, String>(
-        "SELECT DISTINCT path \
-         FROM brunn.workspace_lexical_candidates_v3($1,'best_match')",
-    )
-    .bind(&fallback_queries)
-    .fetch_all(&mut *tx)
-    .await
-    .expect("fetch the independently evaluated lexical fallback union");
+    let mut fallback_paths = Vec::new();
+    for fallback in &fallback_queries {
+        fallback_paths.extend(
+            sqlx::query_scalar::<_, String>(
+                "SELECT DISTINCT path \
+                 FROM brunn.workspace_lexical_candidates_v2($1,'best_match')",
+            )
+            .bind(fallback)
+            .fetch_all(&mut *tx)
+            .await
+            .expect("fetch one lexical fallback branch"),
+        );
+    }
     assert!(
         fallback_paths.iter().any(|path| path == "Notes/001.md"),
         "the first fallback pair must remain represented: {fallback_paths:?}"
@@ -256,44 +260,6 @@ async fn non_relevance_sorts_select_before_the_bounded_candidate_cutoff() {
         fallback_paths.iter().any(|path| path == "Notes/300.md"),
         "a first-pair hit must not suppress the authoritative fourth pair: {fallback_paths:?}"
     );
-    fallback_paths.sort();
-    fallback_paths.dedup();
-    let mut v2_union = Vec::new();
-    for fallback in &fallback_queries {
-        v2_union.extend(
-            sqlx::query_scalar::<_, String>(
-                "SELECT DISTINCT path \
-                 FROM brunn.workspace_lexical_candidates_v2($1,'best_match')",
-            )
-            .bind(fallback)
-            .fetch_all(&mut *tx)
-            .await
-            .expect("fetch one legacy lexical fallback branch"),
-        );
-    }
-    v2_union.sort();
-    v2_union.dedup();
-    assert_eq!(
-        fallback_paths, v2_union,
-        "the single v3 call must preserve the deduplicated v2 fallback union"
-    );
-
-    let over_limit_queries = vec![
-        "missing alpha".to_owned(),
-        "missing beta".to_owned(),
-        "missing gamma".to_owned(),
-        "missing delta".to_owned(),
-        "family calendar".to_owned(),
-    ];
-    let over_limit_count = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) \
-         FROM brunn.workspace_lexical_candidates_v3($1,'best_match')",
-    )
-    .bind(&over_limit_queries)
-    .fetch_one(&mut *tx)
-    .await
-    .expect("evaluate the database-side lexical query-count bound");
-    assert_eq!(over_limit_count, 0, "the fifth query must not be evaluated");
 
     insert_link_entry(
         &mut tx,

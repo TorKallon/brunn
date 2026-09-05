@@ -6,6 +6,96 @@ import XCTest
 
 final class BrunnTests: XCTestCase {
     @MainActor
+    func testLocationHeartbeatRoutesOneFreshFixThroughPersistentQueueAndCompletes() async throws {
+        let fixture = try LocationHeartbeatFixture()
+        defer { fixture.cleanUp() }
+        let completed = expectation(description: "heartbeat upload completed")
+        let appDelegate = AppDelegate(locationReporter: fixture.reporter)
+        appDelegate.application(
+            UIApplication.shared,
+            didReceiveRemoteNotification: [
+                "schema": "brunn-push@v1", "kind": "location_heartbeat",
+                "aps": ["content-available": 1],
+            ]
+        ) { result in
+            XCTAssertEqual(result, .newData)
+            completed.fulfill()
+        }
+        XCTAssertEqual(fixture.manager.requests, 1)
+        XCTAssertEqual(fixture.manager.desiredAccuracy, kCLLocationAccuracyHundredMeters)
+        fixture.reporter.locationManager(fixture.manager, didUpdateLocations: [fixture.fix()])
+        let pending = try XCTUnwrap(fixture.queue.nextPending())
+        XCTAssertEqual(pending.report.type, .ping)
+        XCTAssertFalse(pending.isEnriched)
+        await fulfillment(of: [completed], timeout: 5)
+        XCTAssertEqual(try fixture.queue.count(), 0)
+        XCTAssertNotNil(fixture.reporter.lastUploadAt)
+    }
+
+    @MainActor
+    func testLocationHeartbeatDoesNothingWithoutReportingAlwaysAccessAndCredential() throws {
+        for (enabled, authorization, credential) in [
+            (false, CLAuthorizationStatus.authorizedAlways, true),
+            (true, .authorizedWhenInUse, true),
+            (true, .authorizedAlways, false),
+        ] {
+            let fixture = try LocationHeartbeatFixture(
+                enabled: enabled, authorization: authorization, credential: credential
+            )
+            defer { fixture.cleanUp() }
+            var completed = false
+            fixture.reporter.handleHeartbeat { result in
+                XCTAssertEqual(result, .noData)
+                completed = true
+            }
+            XCTAssertTrue(completed)
+            XCTAssertEqual(fixture.manager.requests, 0)
+            XCTAssertEqual(try fixture.queue.count(), 0)
+        }
+    }
+
+    @MainActor
+    func testLocationHeartbeatDropsCachedFixAndCompletesOnceOnLocationFailure() async throws {
+        let fixture = try LocationHeartbeatFixture()
+        defer { fixture.cleanUp() }
+        let completed = expectation(description: "cached fix completed")
+        fixture.reporter.handleHeartbeat { result in
+            XCTAssertEqual(result, .noData)
+            completed.fulfill()
+        }
+        fixture.reporter.locationManager(fixture.manager, didUpdateLocations: [fixture.fix(age: 901)])
+        await fulfillment(of: [completed], timeout: 5)
+        XCTAssertEqual(try fixture.queue.count(), 0)
+
+        var completions = 0
+        fixture.reporter.handleHeartbeat { result in
+            XCTAssertEqual(result, .failed)
+            completions += 1
+        }
+        fixture.reporter.locationManager(fixture.manager, didFailWithError: CLError(.locationUnknown))
+        fixture.reporter.locationManager(fixture.manager, didFailWithError: CLError(.locationUnknown))
+        XCTAssertEqual(completions, 1)
+    }
+
+    @MainActor
+    func testLocationHeartbeatLeaseExpiresAndFinishesOnlyOnce() async throws {
+        let fixture = try LocationHeartbeatFixture()
+        defer { fixture.cleanUp() }
+        let completed = expectation(description: "heartbeat lease expired")
+        var completions = 0
+        let start = Date()
+        fixture.reporter.handleHeartbeat { result in
+            XCTAssertEqual(result, .failed)
+            completions += 1
+            completed.fulfill()
+        }
+        await fulfillment(of: [completed], timeout: 28)
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 25)
+        fixture.reporter.locationManager(fixture.manager, didFailWithError: CLError(.locationUnknown))
+        XCTAssertEqual(completions, 1)
+    }
+
+    @MainActor
     func testLegacyKeychainMigrationReconstructsExactServiceIdentifier() {
         let retiredProductSegment = ["stray", "light"].joined()
         let expectedService = ["com", "rourkem", retiredProductSegment, "api"]
@@ -2730,6 +2820,69 @@ final class BrunnTests: XCTestCase {
         XCTAssertTrue(model.isNewsItemRead("ios-direction"))
         XCTAssertEqual(model.newsItems, before)
         XCTAssertEqual(model.latestBriefing, SampleData.briefing)
+    }
+}
+
+private final class TestHeartbeatLocationManager: CLLocationManager {
+    var testAuthorization: CLAuthorizationStatus = .authorizedAlways
+    var requests = 0
+    override var authorizationStatus: CLAuthorizationStatus { testAuthorization }
+    override func requestLocation() { requests += 1 }
+}
+
+@MainActor
+private final class LocationHeartbeatFixture {
+    let manager = TestHeartbeatLocationManager()
+    let reporter: LocationReporter
+    let queue: LocationDiskQueue
+    private let suite = "BrunnTests.location-heartbeat.\(UUID().uuidString)"
+    private let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    private let credentialStore = LocationKeychainCredentialStore(account: "heartbeat-\(UUID().uuidString)")
+    private let defaults: UserDefaults
+
+    init(enabled: Bool = true, authorization: CLAuthorizationStatus = .authorizedAlways, credential: Bool = true) throws {
+        defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        queue = LocationDiskQueue(fileURL: directory.appendingPathComponent("queue.json"))
+        manager.testAuthorization = authorization
+        if credential {
+            try credentialStore.save(LocationDeviceCredential(
+                credentialRef: "credential:33333333-3333-4333-8333-333333333333",
+                token: "heartbeat-test-token", userID: "user:heartbeat-test",
+                capabilities: LocationCredentialCapabilities.canonicalReadOnly
+                    + [LocationCredentialCapabilities.locationWrite]
+            ))
+        }
+        let status = LocationStatusStore(defaults: defaults)
+        status.reportingEnabled = enabled
+        status.lastGeocodedCoordinate = LocationStoredCoordinate(latitude: 0, longitude: 0)
+        NotificationRequestURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/api/v1/location/reports")
+            XCTAssertEqual(request.httpMethod, "POST")
+            return StubbedHTTPResponse(json: #"{"accepted":1,"ignored":{},"presence":null}"#)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        reporter = LocationReporter(
+            manager: manager,
+            api: BrunnAPI(
+                configuration: .init(baseURL: URL(string: "https://heartbeat.brunn.test/api/v1")!),
+                session: URLSession(configuration: configuration)
+            ),
+            credentialStore: credentialStore, queue: queue, statusStore: status,
+            enricher: LocationReportEnricher(statusStore: status)
+        )
+    }
+
+    func fix(age: TimeInterval = 0) -> CLLocation {
+        CLLocation(coordinate: CLLocationCoordinate2D(latitude: 0, longitude: 0), altitude: 0,
+                   horizontalAccuracy: 100, verticalAccuracy: -1, timestamp: Date().addingTimeInterval(-age))
+    }
+
+    func cleanUp() {
+        NotificationRequestURLProtocol.handler = nil
+        try? credentialStore.delete()
+        defaults.removePersistentDomain(forName: suite)
+        try? FileManager.default.removeItem(at: directory)
     }
 }
 

@@ -21,6 +21,50 @@ async fn recovery_remap_is_narrow_idempotent_and_identity_bound() {
         .await
         .expect("apply Brunn migrations");
 
+    let guards: Vec<(String, String, i16)> = sqlx::query_as(
+        "SELECT trigger.tgname,procedure.proname,trigger.tgtype \
+         FROM pg_trigger AS trigger \
+         JOIN pg_class AS relation ON relation.oid=trigger.tgrelid \
+         JOIN pg_namespace AS namespace ON namespace.oid=relation.relnamespace \
+         JOIN pg_proc AS procedure ON procedure.oid=trigger.tgfoid \
+         WHERE namespace.nspname='brunn' AND trigger.tgenabled='O' \
+           AND trigger.tgname=ANY($1) ORDER BY trigger.tgname",
+    )
+    .bind(vec![
+        "asset_versions_immutable",
+        "source_episodes_immutable",
+        "evidence_items_immutable",
+        "audit_events_deletion_redaction",
+    ])
+    .fetch_all(&pool)
+    .await
+    .expect("inspect immutable guards on current schema");
+    assert_eq!(
+        guards,
+        vec![
+            (
+                "asset_versions_immutable".into(),
+                "guard_asset_versions_immutable".into(),
+                27
+            ),
+            (
+                "audit_events_deletion_redaction".into(),
+                "guard_audit_events_deletion_redaction".into(),
+                27
+            ),
+            (
+                "evidence_items_immutable".into(),
+                "guard_evidence_items_immutable".into(),
+                27
+            ),
+            (
+                "source_episodes_immutable".into(),
+                "guard_source_episodes_immutable".into(),
+                27
+            ),
+        ]
+    );
+
     let mut role_check = pool.begin().await.expect("begin role check");
     sqlx::query("SET LOCAL ROLE app_rw")
         .execute(&mut *role_check)
@@ -233,4 +277,109 @@ async fn recovery_remap_is_narrow_idempotent_and_identity_bound() {
             "restored-persistent-version".to_owned()
         )
     );
+
+    let source_id = Uuid::now_v7();
+    sqlx::query("INSERT INTO brunn.source_episodes \
+        (id,user_id,scope_id,source_ref,source_kind,source_version,title,captured_at,policy_id,policy_version) \
+        VALUES ($1,$2,$3,'recovery-guard-source','test','1','Original',now(),$4,1)")
+        .bind(source_id).bind(user_id).bind(scope_id).bind(policy_id)
+        .execute(&pool).await.expect("insert immutable source");
+    sqlx::query("INSERT INTO brunn.evidence_items \
+        (user_id,scope_id,source_episode_id,evidence_kind,locator,text_content,content_hash,policy_id,policy_version) \
+        VALUES ($1,$2,$3,'test','{}','Original',$4,$5,1)")
+        .bind(user_id).bind(scope_id).bind(source_id).bind("a".repeat(64)).bind(policy_id)
+        .execute(&pool).await.expect("insert immutable evidence");
+    sqlx::query(
+        "INSERT INTO brunn.audit_events(user_id,action,details) \
+        VALUES ($1,'recovery.guard.test','{\"private\":true}')",
+    )
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .expect("insert audit fixture");
+    for statement in [
+        "UPDATE brunn.source_episodes SET title='changed' WHERE user_id=$1",
+        "DELETE FROM brunn.source_episodes WHERE user_id=$1",
+        "UPDATE brunn.evidence_items SET text_content='changed' WHERE user_id=$1",
+        "DELETE FROM brunn.evidence_items WHERE user_id=$1",
+        "DELETE FROM brunn.asset_versions WHERE user_id=$1",
+        "UPDATE brunn.audit_events SET details='{}' WHERE user_id=$1",
+        "DELETE FROM brunn.audit_events WHERE user_id=$1",
+    ] {
+        let error = sqlx::query(statement)
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.as_database_error().unwrap().code().as_deref(),
+            Some("55000"),
+            "{statement}"
+        );
+    }
+    // Correction remains an insert; existing evidence cannot be rewritten.
+    sqlx::query("INSERT INTO brunn.source_episodes \
+        (user_id,scope_id,source_ref,source_kind,source_version,title,captured_at,policy_id,policy_version) \
+        VALUES ($1,$2,'recovery-guard-source','test','2','Corrected',now(),$3,1)")
+        .bind(user_id).bind(scope_id).bind(policy_id)
+        .execute(&pool).await.expect("insert a corrected source revision");
+
+    let deletion_id = Uuid::now_v7();
+    sqlx::query("INSERT INTO brunn.account_deletion_requests \
+        (id,user_id,requested_by_credential_id,status,confirmation_hash,reason,backup_expiry_due_at) \
+        SELECT $1,user_id,credential_id,'running',$3,'test',now() \
+        FROM brunn.task_guard_producers WHERE user_id=$2")
+        .bind(deletion_id).bind(user_id).bind("b".repeat(64))
+        .execute(&pool).await.expect("insert active deletion request");
+    let other_user = Uuid::now_v7();
+    sqlx::query("INSERT INTO brunn.users(id,external_ref,display_name) VALUES($1,$2,'Other user')")
+        .bind(other_user)
+        .bind(format!("recovery-other:{other_user}"))
+        .execute(&pool)
+        .await
+        .expect("insert unrelated user");
+    sqlx::query("INSERT INTO brunn.audit_events(user_id,action) VALUES($1,'test')")
+        .bind(other_user)
+        .execute(&pool)
+        .await
+        .expect("insert unrelated audit event");
+    for target_user in [other_user, user_id] {
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query("SELECT set_config('brunn.account_deletion_request_id',$1,true)")
+            .bind(deletion_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let statement = if target_user == other_user {
+            "UPDATE brunn.audit_events SET details='{}' WHERE user_id=$1"
+        } else {
+            "UPDATE brunn.audit_events SET action='forbidden' WHERE user_id=$1"
+        };
+        let error = sqlx::query(statement)
+            .bind(target_user)
+            .execute(&mut *tx)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.as_database_error().unwrap().code().as_deref(),
+            Some("55000")
+        );
+        tx.rollback().await.unwrap();
+    }
+    let mut redaction = pool.begin().await.unwrap();
+    sqlx::query("SELECT set_config('brunn.account_deletion_request_id',$1,true)")
+        .bind(deletion_id.to_string())
+        .execute(&mut *redaction)
+        .await
+        .unwrap();
+    let changed = sqlx::query(
+        "UPDATE brunn.audit_events \
+        SET actor_ref=NULL,request_id=NULL,details='{}',content_free=true WHERE user_id=$1",
+    )
+    .bind(user_id)
+    .execute(&mut *redaction)
+    .await
+    .expect("allow same-user audit redaction");
+    assert!(changed.rows_affected() > 0);
+    redaction.commit().await.unwrap();
 }

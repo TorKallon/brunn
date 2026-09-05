@@ -3874,7 +3874,10 @@ async fn semantic_search_allowed(state: &AppState, auth: &AuthContext) -> ApiRes
     .bind(auth.user_id.0)
     .fetch_one(&mut *tx)
     .await?;
-    tx.commit().await?;
+    // This read runs under the semantic lane deadline. A cancelled COMMIT can
+    // leave SQLx queuing a second ROLLBACK after Postgres has already committed.
+    // Drop queues one rollback on pool return without a cancellable close await.
+    drop(tx);
     Ok(has_semantic_coverage)
 }
 
@@ -4621,7 +4624,8 @@ async fn semantic_candidates(
         .bind(sort.as_str())
         .fetch_all(&mut *tx)
         .await?;
-    tx.commit().await?;
+    // The semantic deadline also covers this read-only transaction.
+    drop(tx);
     let database_ms = elapsed_ms(database_started);
     let candidates = rows
         .into_iter()

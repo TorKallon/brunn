@@ -16,6 +16,7 @@ use crate::{
 const ACCOUNT_MAINTENANCE_INTERVAL: Duration = Duration::from_secs(5);
 const TODOIST_QUEUE_SCAN_INTERVAL: Duration = Duration::from_secs(5);
 const LOCATION_RETENTION_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+const LOCATION_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(60 * 60);
 const BACKGROUND_WORK_PAUSE: Duration = Duration::from_millis(250);
 
 pub async fn run(state: AppState) -> ApiResult<()> {
@@ -44,6 +45,7 @@ pub async fn run(state: AppState) -> ApiResult<()> {
     let worker_id = boot_unique_worker_id();
     let mut next_account_maintenance = Instant::now();
     let mut next_location_retention = Instant::now();
+    let mut next_location_heartbeat = Instant::now();
     let mut next_task_guard = Instant::now();
     let mut next_todoist_sync = Instant::now();
 
@@ -55,6 +57,24 @@ pub async fn run(state: AppState) -> ApiResult<()> {
         if next_location_retention <= now {
             next_location_retention = now + LOCATION_RETENTION_INTERVAL;
             did_work |= run_location_retention(&state, &mut cycle_failed).await;
+        }
+        if next_location_heartbeat <= now {
+            next_location_heartbeat = now + LOCATION_HEARTBEAT_INTERVAL;
+            match notification_service::enqueue_location_heartbeats(
+                state.admin_pool.as_ref().expect("worker admin pool"),
+                Utc::now(),
+                state.config.apns_delivery_enabled,
+            )
+            .await
+            {
+                Ok(count) => did_work |= count > 0,
+                Err(_) => {
+                    metrics::counter!("worker.cycle.errors", "stage" => "location_heartbeat")
+                        .increment(1);
+                    tracing::warn!("location heartbeat enqueue failed");
+                    cycle_failed = true;
+                }
+            }
         }
         if next_task_guard <= now {
             next_task_guard = now + task_guard::TASK_GUARD_SCHEDULER_INTERVAL;

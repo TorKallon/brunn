@@ -14,8 +14,8 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use brunn::notification_service::{
-    ApnsAccepted, ApnsFailure, ApnsProvider, ApnsRequest, process_next_on_pool,
-    suppress_queued_deliveries_on_pool,
+    ApnsAccepted, ApnsFailure, ApnsProvider, ApnsRequest, enqueue_location_heartbeats,
+    process_next_on_pool, suppress_queued_deliveries_on_pool,
 };
 
 const APP_ID: &str = "com.rourkem.brunn";
@@ -265,6 +265,7 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_previ
     .execute(&pool)
     .await
     .expect("retire earlier disposable-database fixtures");
+    location_heartbeats_are_silent_and_deduplicated(&pool).await;
     let key = [23_u8; 32];
     let encoded_key = STANDARD.encode(key);
     let (user_id, credential_id) = insert_principal(&pool).await;
@@ -562,4 +563,88 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_previ
     .await
     .expect("read suppressed transport rows");
     assert_eq!(suppressed_rows, 2);
+}
+
+async fn location_heartbeats_are_silent_and_deduplicated(pool: &PgPool) {
+    let key = [71_u8; 32];
+    let start = DateTime::from_timestamp(Utc::now().timestamp().div_euclid(14400) * 14400, 0)
+        .expect("four-hour bucket");
+    let mut users = Vec::new();
+    for (index, (has_presence, has_device, age_hours)) in [
+        (true, true, 5),
+        (true, true, 0),
+        (true, false, 5),
+        (false, true, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (user, credential) = insert_principal(pool).await;
+        users.push(user);
+        if has_presence {
+            sqlx::query(
+                "INSERT INTO brunn.location_presence \
+                 (user_id,timezone,reported_at,last_lat,last_lon,last_accuracy_m) \
+                 VALUES ($1,'UTC',$2,0,0,100)",
+            )
+            .bind(user)
+            .bind(start - chrono::Duration::hours(age_hours))
+            .execute(pool)
+            .await
+            .expect("seed heartbeat presence");
+        }
+        if has_device {
+            insert_installation(pool, &key, user, credential, 71 + index as u8).await;
+        }
+    }
+    for hour in 0..3 {
+        let count = enqueue_location_heartbeats(pool, start + chrono::Duration::hours(hour), true)
+            .await
+            .expect("enqueue heartbeat tick");
+        assert_eq!(count, u64::from(hour == 0));
+    }
+    assert_eq!(
+        enqueue_location_heartbeats(pool, start + chrono::Duration::hours(4), true)
+            .await
+            .expect("enqueue next bucket"),
+        1
+    );
+    let counts: Vec<(Uuid, i64)> = sqlx::query_as(
+        "SELECT user_id,count(*) FROM brunn.notifications \
+         WHERE user_id=ANY($1) GROUP BY user_id",
+    )
+    .bind(&users)
+    .fetch_all(pool)
+    .await
+    .expect("heartbeat notification counts");
+    assert_eq!(counts, vec![(users[0], 2)]);
+    let provider = Arc::new(FakeProvider::new(vec![accepted()]));
+    assert!(
+        process_next_on_pool(pool, &STANDARD.encode(key), provider.clone())
+            .await
+            .expect("deliver heartbeat")
+    );
+    let requests = provider.requests.lock().await;
+    let request = &requests[0];
+    assert_eq!(request.push_type, "background");
+    assert_eq!(request.priority, 5);
+    assert_eq!(request.collapse_id, "location-heartbeat");
+    assert_eq!(
+        request.payload,
+        json!({
+            "aps": {"content-available": 1},
+            "schema": "brunn-push@v1",
+            "kind": "location_heartbeat"
+        })
+    );
+    for statement in [
+        "DELETE FROM brunn.location_presence WHERE user_id=ANY($1)",
+        "DELETE FROM brunn.notifications WHERE user_id=ANY($1)",
+    ] {
+        sqlx::query(statement)
+            .bind(&users)
+            .execute(pool)
+            .await
+            .expect("remove heartbeat fixtures");
+    }
 }

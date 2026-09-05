@@ -72,6 +72,7 @@ async fn insert_owner(pool: &PgPool) -> Owner {
         "secret:write",
         "task.read",
         "task.write",
+        "location.write",
         "integration.manage",
         "admin",
     ]

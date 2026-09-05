@@ -63,7 +63,7 @@ struct BrunnApp: App {
                 .onReceive(NotificationCenter.default.publisher(
                     for: .brunnMessagingPrefetch
                 )) { event in
-                    guard let prefetch = event.object as? MessagingBackgroundPrefetch else {
+                    guard let prefetch = event.object as? NotificationBackgroundFetch else {
                         return
                     }
                     Task {

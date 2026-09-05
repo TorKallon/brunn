@@ -349,7 +349,8 @@ async fn secret_capabilities_are_constrained_and_owner_credentials_carry_them() 
         VALUES ($1,$2,'partial owner',$3,ARRAY[
           'open','query','read','compute','verify','status',
           'checkpoint','save','stage','correct','delete','dream',
-          'credential:manage','notification:publish','notification:manage','admin'
+          'credential:manage','notification:publish','notification:manage',
+          'task.read','task.write','location.write','integration.manage','admin'
         ])
         "#,
     )
@@ -369,7 +370,7 @@ async fn secret_capabilities_are_constrained_and_owner_credentials_carry_them() 
           'checkpoint','save','stage','correct','delete','dream',
           'credential:manage','notification:publish','notification:manage',
           'secret:read','secret:write',
-          'task.read','task.write','integration.manage','admin'
+          'task.read','task.write','location.write','integration.manage','admin'
         ])
         "#,
     )

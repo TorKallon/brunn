@@ -773,7 +773,14 @@ async fn embed_entries(state: &AppState, jobs: &[Job]) -> ApiResult<()> {
               AND chunk.embedding IS NULL
             "#,
         );
-        statement.build().execute(pool).await?;
+        // Vectors are rebuildable. Relax durability only for this publication;
+        // source writes and job completion keep their normal commit durability.
+        let mut tx = pool.begin().await?;
+        sqlx::query("SET LOCAL synchronous_commit = off")
+            .execute(&mut *tx)
+            .await?;
+        statement.build().execute(&mut *tx).await?;
+        tx.commit().await?;
         if rows.len() == batch_chunks {
             tokio::time::sleep(state.config.embedding_backfill_inter_batch_delay).await;
         } else {
@@ -1062,29 +1069,48 @@ mod tests {
             eprintln!("BRUNN_TEST_DATABASE_URL is unset; skipping worker priority test");
             return;
         };
-        let pool = PgPoolOptions::new()
-            .max_connections(2)
+        // Claiming is global by design. Other database tests publish real jobs,
+        // so this ordering fixture needs its own disposable database.
+        use futures::FutureExt;
+        let admin = PgPoolOptions::new()
+            .max_connections(1)
             .connect(&database_url)
             .await
             .unwrap();
-        let user_id = Uuid::now_v7();
-        let dream_id = Uuid::now_v7();
-        let description_id = Uuid::now_v7();
-        let embedding_ids = (0..130).map(|_| Uuid::now_v7()).collect::<Vec<_>>();
-        let mut tx = pool.begin().await.unwrap();
-        sqlx::query("SET LOCAL session_replication_role='replica'")
-            .execute(&mut *tx)
+        let database_name = format!("brunn_worker_priority_{}", Uuid::new_v4().simple());
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "CREATE DATABASE {database_name}"
+        )))
+        .execute(&admin)
+        .await
+        .unwrap();
+        let mut isolated_url = url::Url::parse(&database_url).unwrap();
+        isolated_url.set_path(&database_name);
+        let pool = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(isolated_url.as_str())
             .await
             .unwrap();
-        sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
-            .bind(user_id)
-            .bind(format!("worker-priority-test:{user_id}"))
-            .bind("Worker priority test")
-            .execute(&mut *tx)
-            .await
-            .unwrap();
-        sqlx::query(
-            r#"
+        let result = std::panic::AssertUnwindSafe(async {
+            sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+            let user_id = Uuid::now_v7();
+            let dream_id = Uuid::now_v7();
+            let description_id = Uuid::now_v7();
+            let embedding_ids = (0..130).map(|_| Uuid::now_v7()).collect::<Vec<_>>();
+            let mut tx = pool.begin().await.unwrap();
+            sqlx::query("SET LOCAL session_replication_role='replica'")
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            sqlx::query("INSERT INTO brunn.users (id,external_ref,display_name) VALUES ($1,$2,$3)")
+                .bind(user_id)
+                .bind(format!("worker-priority-test:{user_id}"))
+                .bind("Worker priority test")
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            sqlx::query(
+                r#"
             INSERT INTO brunn.jobs (
               id,user_id,kind,status,payload,available_at,created_at
             )
@@ -1094,14 +1120,14 @@ mod tests {
                      + (ordinality * interval '1 second')
             FROM unnest($1::uuid[]) WITH ORDINALITY AS queued(id,ordinality)
             "#,
-        )
-        .bind(&embedding_ids)
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await
-        .unwrap();
-        sqlx::query(
-            r#"
+            )
+            .bind(&embedding_ids)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            sqlx::query(
+                r#"
             INSERT INTO brunn.jobs (
               id,user_id,kind,status,payload,available_at,created_at
             ) VALUES
@@ -1116,55 +1142,69 @@ mod tests {
                 '2020-01-02 00:00:00+00'::timestamptz
               )
             "#,
-        )
-        .bind(dream_id)
-        .bind(description_id)
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await
-        .unwrap();
-        tx.commit().await.unwrap();
+            )
+            .bind(dream_id)
+            .bind(description_id)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            tx.commit().await.unwrap();
 
-        let first = claim_priority(&pool).await.unwrap().unwrap();
-        let second = claim_priority(&pool).await.unwrap().unwrap();
-        assert_eq!(first.id, dream_id); // earliest-created priority job
-        assert_eq!(second.id, description_id);
+            let first = claim_priority(&pool).await.unwrap().unwrap();
+            let second = claim_priority(&pool).await.unwrap().unwrap();
+            assert_eq!(first.id, dream_id); // earliest-created priority job
+            assert_eq!(second.id, description_id);
 
-        tokio::time::sleep(std::time::Duration::from_millis(125)).await;
-        let first_embedding = claim_embedding(&pool).await.unwrap().unwrap();
-        assert_eq!(first_embedding.id, *embedding_ids.last().unwrap());
-        let mut embedding_batch = vec![first_embedding];
-        embedding_batch.extend(
-            claim_more_embeddings(&pool, MAX_EMBED_BATCH_JOBS - 1)
-                .await
-                .unwrap(),
-        );
-        assert_eq!(embedding_batch.len(), MAX_EMBED_BATCH_JOBS as usize);
-        assert!(embedding_batch.iter().all(|job| job.kind == "embed_entry"));
-        let remaining = sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM brunn.jobs \
+            tokio::time::sleep(std::time::Duration::from_millis(125)).await;
+            let first_embedding = claim_embedding(&pool).await.unwrap().unwrap();
+            assert_eq!(first_embedding.id, *embedding_ids.last().unwrap());
+            let mut embedding_batch = vec![first_embedding];
+            embedding_batch.extend(
+                claim_more_embeddings(&pool, MAX_EMBED_BATCH_JOBS - 1)
+                    .await
+                    .unwrap(),
+            );
+            assert_eq!(embedding_batch.len(), MAX_EMBED_BATCH_JOBS as usize);
+            assert!(embedding_batch.iter().all(|job| job.kind == "embed_entry"));
+            let remaining = sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM brunn.jobs \
              WHERE user_id=$1 AND kind='embed_entry' AND status='queued'",
-        )
-        .bind(user_id)
-        .fetch_one(&pool)
+            )
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(
+                remaining,
+                i64::try_from(embedding_ids.len()).unwrap() - MAX_EMBED_BATCH_JOBS
+            );
+
+            let mut cleanup = pool.begin().await.unwrap();
+            sqlx::query("DELETE FROM brunn.jobs WHERE user_id=$1")
+                .bind(user_id)
+                .execute(&mut *cleanup)
+                .await
+                .unwrap();
+            sqlx::query("DELETE FROM brunn.users WHERE id=$1")
+                .bind(user_id)
+                .execute(&mut *cleanup)
+                .await
+                .unwrap();
+            cleanup.commit().await.unwrap();
+        })
+        .catch_unwind()
+        .await;
+        pool.close().await;
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DROP DATABASE {database_name} WITH (FORCE)"
+        )))
+        .execute(&admin)
         .await
         .unwrap();
-        assert_eq!(
-            remaining,
-            i64::try_from(embedding_ids.len()).unwrap() - MAX_EMBED_BATCH_JOBS
-        );
-
-        let mut cleanup = pool.begin().await.unwrap();
-        sqlx::query("DELETE FROM brunn.jobs WHERE user_id=$1")
-            .bind(user_id)
-            .execute(&mut *cleanup)
-            .await
-            .unwrap();
-        sqlx::query("DELETE FROM brunn.users WHERE id=$1")
-            .bind(user_id)
-            .execute(&mut *cleanup)
-            .await
-            .unwrap();
-        cleanup.commit().await.unwrap();
+        admin.close().await;
+        if let Err(panic) = result {
+            std::panic::resume_unwind(panic);
+        }
     }
 }

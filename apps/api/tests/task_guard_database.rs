@@ -63,6 +63,7 @@ async fn insert_owner(pool: &PgPool, label: &str) -> Principal {
         "secret:write".to_owned(),
         "task.read".to_owned(),
         "task.write".to_owned(),
+        "location.write".to_owned(),
         "integration.manage".to_owned(),
         "admin".to_owned(),
     ];
@@ -377,6 +378,52 @@ async fn task_guard_time_travel_dedupes_routes_and_delays_inferred_quiet_deliver
     .await
     .expect("count once-only cost-set notification");
     assert_eq!(cost_set_count, 1);
+
+    let snapshot_query = "SELECT body,request_hash,occurred_at,expires_at \
+        FROM brunn.notifications WHERE user_id=$1 AND event_key=$2";
+    let original: (String, String, DateTime<Utc>, DateTime<Utc>) = sqlx::query_as(snapshot_query)
+        .bind(owner.user_id)
+        .bind(format!("task-deadline:{task_id}:7d"))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE brunn.task_index SET title='Renamed after first notification', \
+        hard_due=hard_due - interval '1 day' \
+        WHERE user_id=$1 AND task_id=$2",
+    )
+    .bind(owner.user_id)
+    .bind(task_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let renamed = task_guard::run_on_pool(&pool, seven_day + chrono::Duration::minutes(1), true)
+        .await
+        .expect("an edited task replays its existing guard snapshot");
+    assert!(
+        renamed
+            .events
+            .iter()
+            .filter(|event| event.task_id == task_id)
+            .all(|event| !event.inserted)
+    );
+    let replayed: (String, String, DateTime<Utc>, DateTime<Utc>) = sqlx::query_as(snapshot_query)
+        .bind(owner.user_id)
+        .bind(format!("task-deadline:{task_id}:7d"))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        replayed, original,
+        "the first publication stays stable for the event key"
+    );
+    sqlx::query("UPDATE brunn.task_index SET hard_due=$3 WHERE user_id=$1 AND task_id=$2")
+        .bind(owner.user_id)
+        .bind(task_id)
+        .bind(due)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let at_48h = due - chrono::Duration::hours(48);
     task_guard::run_on_pool(&pool, at_48h, true)

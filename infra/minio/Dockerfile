@@ -1,4 +1,4 @@
-FROM golang:1.25.13-bookworm@sha256:e401dae1bf814e29204a8cb7915682e1780951e609ca0dd8865ee1937f510c48 AS build
+FROM golang:1.26.7-bookworm@sha256:e8c859f5632dcfde7b32d2012b4351728f6437930887c2f6a91ea242459e5514 AS build
 
 ARG MINIO_COMMIT=9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a
 ARG MINIO_RELEASE=RELEASE.2025-10-15T17-29-55Z
@@ -12,10 +12,11 @@ RUN set -eu; \
     dependencies_ready=false; \
     for attempt in 1 2 3; do \
       if go get \
-          github.com/apache/thrift@v0.23.0 \
+          github.com/apache/thrift@v0.24.0 \
           github.com/buger/jsonparser@v1.1.2 \
           github.com/go-jose/go-jose/v4@v4.1.4 \
           github.com/prometheus/prometheus@v0.311.3 \
+          github.com/rabbitmq/amqp091-go@v1.13.0 \
           go.opentelemetry.io/otel/sdk@v1.44.0 \
           golang.org/x/crypto@v0.55.0 \
           golang.org/x/net@v0.57.0 \
@@ -31,7 +32,7 @@ RUN set -eu; \
     go mod tidy -e; \
     make build
 
-FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 ARG BRUNN_BUILD_REVISION=unknown
 LABEL org.opencontainers.image.title="Brunn MinIO" \
       org.opencontainers.image.revision="${BRUNN_BUILD_REVISION}"

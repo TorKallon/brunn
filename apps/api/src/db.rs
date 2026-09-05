@@ -5,10 +5,11 @@ use std::{
 };
 
 use sqlx::{
-    PgPool, Postgres, Row, Transaction,
+    Connection, PgPool, Postgres, Row, Transaction,
     postgres::{PgConnectOptions, PgPoolOptions},
 };
 use tokio::sync::Semaphore;
+use tracing::Instrument;
 use uuid::Uuid;
 
 use crate::{
@@ -201,10 +202,28 @@ async fn pool(url: &str, max: u32, application_name: &str) -> ApiResult<PgPool> 
     let options = PgConnectOptions::from_str(url)
         .map_err(|error| ApiError::configuration(format!("invalid database URL: {error}")))?
         .application_name(application_name);
+    let pool_name = application_name.to_owned();
     let result = PgPoolOptions::new()
         .max_connections(max)
         .acquire_timeout(std::time::Duration::from_secs(15))
+        .after_release(move |connection, _| {
+            // SQLx returns dropped transactions on a detached task. Flush their
+            // pending rollback inside a pool span so notices remain attributable.
+            let span = tracing::info_span!("db_pool", pool = %pool_name, operation = "release");
+            Box::pin(
+                async move {
+                    connection.flush().await?;
+                    Ok(true)
+                }
+                .instrument(span),
+            )
+        })
         .connect_with(options)
+        .instrument(tracing::info_span!(
+            "db_pool",
+            pool = application_name,
+            operation = "connect"
+        ))
         .await;
     metrics::histogram!(
         "db.pool.connect.duration_ms",
