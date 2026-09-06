@@ -36,7 +36,7 @@ final class BrunnUITests: XCTestCase {
 
         let primer = element("location-permission-primer", in: app)
         XCTAssertTrue(primer.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Let Brunn remember where you have been"].exists)
+        XCTAssertTrue(app.staticTexts["Let Brunn know where you are"].exists)
         let notNow = app.buttons["location-permission-not-now"]
         XCTAssertTrue(notNow.exists)
         notNow.tap()
