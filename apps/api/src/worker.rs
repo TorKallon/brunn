@@ -16,7 +16,7 @@ use crate::{
 const ACCOUNT_MAINTENANCE_INTERVAL: Duration = Duration::from_secs(5);
 const TODOIST_QUEUE_SCAN_INTERVAL: Duration = Duration::from_secs(5);
 const LOCATION_RETENTION_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
-const LOCATION_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(60 * 60);
+const LOCATION_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15 * 60);
 const BACKGROUND_WORK_PAUSE: Duration = Duration::from_millis(250);
 
 pub async fn run(state: AppState) -> ApiResult<()> {

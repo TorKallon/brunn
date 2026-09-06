@@ -943,7 +943,13 @@ fn render_owner_presence(
             return None;
         }
     };
-    if now - presence.reported_at >= chrono::Duration::days(7) {
+    if now
+        - presence
+            .current_position
+            .as_ref()
+            .map_or(presence.reported_at, |position| position.observed_at)
+        >= chrono::Duration::days(7)
+    {
         record_location_presence_block("false:stale");
         return None;
     }
@@ -9573,6 +9579,25 @@ mod tests {
             city: Some("Bellevue".to_owned()),
             region: Some("WA".to_owned()),
             country: Some("US".to_owned()),
+            current_position: Some(crate::location::rules::CurrentPosition {
+                observed_at: reported_at,
+                source_type: "ping".to_owned(),
+                source_reported_at: reported_at,
+                coordinate: LocationCoordinate {
+                    lat: 47.6205,
+                    lon: -122.2070,
+                },
+                accuracy_m: 20.0,
+                timezone: chrono_tz::America::Los_Angeles,
+                city: Some("Bellevue".to_owned()),
+                region: Some("WA".to_owned()),
+                country: Some("US".to_owned()),
+                place: Some(crate::location::rules::CurrentPlace {
+                    label: Some("Home".to_owned()),
+                    kind: "home".to_owned(),
+                    confidence: LocationConfidence::High,
+                }),
+            }),
             visit: Some(LocationOpenVisit {
                 arrived_at: reported_at - chrono::Duration::hours(2),
                 coordinate: LocationCoordinate {
@@ -9593,7 +9618,7 @@ mod tests {
         let now = Utc.with_ymd_and_hms(2026, 9, 2, 20, 0, 0).single().unwrap();
         let value = render_owner_presence(
             Ok(Some(test_location_presence(
-                now - chrono::Duration::hours(6),
+                now - chrono::Duration::minutes(6),
             ))),
             now,
         )
@@ -9603,6 +9628,19 @@ mod tests {
         assert_eq!(value["at_home"], true);
         assert_eq!(value["city"], "Bellevue");
         assert_eq!(value["timezone"], "America/Los_Angeles");
+
+        let mut coarse_contact = test_location_presence(now - chrono::Duration::hours(1));
+        coarse_contact.reported_at = now;
+        coarse_contact.last_accuracy_m = 5_485.0;
+        let stale = render_owner_presence(Ok(Some(coarse_contact)), now).unwrap();
+        assert_eq!(stale["status"], "stale");
+        assert_eq!(stale["at_home"], false);
+        assert_eq!(stale["position"]["age_seconds"], 3_600);
+        assert_ne!(stale["last_seen"], stale["last_contact"]);
+
+        let mut expired = test_location_presence(now - chrono::Duration::days(7));
+        expired.reported_at = now;
+        assert!(render_owner_presence(Ok(Some(expired)), now).is_none());
 
         assert!(
             render_owner_presence(

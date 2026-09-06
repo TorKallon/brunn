@@ -137,7 +137,9 @@ async fn insert_installation(
 ) -> (Uuid, Uuid, String) {
     let installation_id = Uuid::now_v7();
     let client_installation_id = Uuid::now_v7();
-    let token = hex::encode([token_seed; 32]);
+    let token = hex::encode(Sha256::digest(
+        [user_id.as_bytes().as_slice(), &[token_seed]].concat(),
+    ));
     let (ciphertext, nonce) = encrypt_token(key, user_id, client_installation_id, &token);
     let token_hash = hex::encode(Sha256::digest(token.as_bytes()));
     sqlx::query(
@@ -251,6 +253,15 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_previ
     let Some(pool) = connect_test_pool().await else {
         return;
     };
+    // A failed earlier run may leave due presence behind. Only remove this
+    // test's old presence, without touching other suites' principals/scopes.
+    sqlx::query(
+        "DELETE FROM brunn.location_presence WHERE user_id IN \
+         (SELECT id FROM brunn.users WHERE external_ref LIKE 'notification-delivery-test:%')",
+    )
+    .execute(&pool)
+    .await
+    .expect("remove earlier delivery-test presence");
     // This binary may be run after the schema/RLS fixture against the same
     // disposable database. Retire any rows that fixture intentionally leaves
     // queued so this worker-state test owns the due queue deterministically.
@@ -567,14 +578,18 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_previ
 
 async fn location_heartbeats_are_silent_and_deduplicated(pool: &PgPool) {
     let key = [71_u8; 32];
-    let start = DateTime::from_timestamp(Utc::now().timestamp().div_euclid(14400) * 14400, 0)
-        .expect("four-hour bucket");
+    let start = DateTime::from_timestamp(Utc::now().timestamp().div_euclid(3600) * 3600, 0)
+        .expect("one-hour bucket");
     let mut users = Vec::new();
-    for (index, (has_presence, has_device, age_hours)) in [
-        (true, true, 5),
-        (true, true, 0),
-        (true, false, 5),
-        (false, true, 0),
+    // Recent radio contact must not postpone recovery of a missing/old usable
+    // position. Legacy rows with an accurate fix retain compatible behavior.
+    for (index, (has_presence, has_device, contact_age_minutes, accuracy_m, fix_age_minutes)) in [
+        (true, true, 90, 100.0, None),
+        (true, true, 0, 100.0, None),
+        (true, false, 90, 100.0, None),
+        (false, true, 0, 100.0, None),
+        (true, true, 0, 5485.0, Some(90)),
+        (true, true, 0, 5485.0, None),
     ]
     .into_iter()
     .enumerate()
@@ -582,13 +597,23 @@ async fn location_heartbeats_are_silent_and_deduplicated(pool: &PgPool) {
         let (user, credential) = insert_principal(pool).await;
         users.push(user);
         if has_presence {
+            let current_position = fix_age_minutes.map(|age| {
+                json!({
+                    "observed_at": start - chrono::Duration::minutes(age),
+                    "coordinate": {"lat": 0, "lon": 0},
+                    "accuracy_m": 100,
+                    "timezone": "UTC"
+                })
+            });
             sqlx::query(
                 "INSERT INTO brunn.location_presence \
-                 (user_id,timezone,reported_at,last_lat,last_lon,last_accuracy_m) \
-                 VALUES ($1,'UTC',$2,0,0,100)",
+                 (user_id,timezone,reported_at,last_lat,last_lon,last_accuracy_m,current_position) \
+                 VALUES ($1,'UTC',$2,0,0,$3,$4)",
             )
             .bind(user)
-            .bind(start - chrono::Duration::hours(age_hours))
+            .bind(start - chrono::Duration::minutes(contact_age_minutes))
+            .bind(accuracy_m)
+            .bind(current_position)
             .execute(pool)
             .await
             .expect("seed heartbeat presence");
@@ -597,17 +622,42 @@ async fn location_heartbeats_are_silent_and_deduplicated(pool: &PgPool) {
             insert_installation(pool, &key, user, credential, 71 + index as u8).await;
         }
     }
-    for hour in 0..3 {
-        let count = enqueue_location_heartbeats(pool, start + chrono::Duration::hours(hour), true)
-            .await
-            .expect("enqueue heartbeat tick");
-        assert_eq!(count, u64::from(hour == 0));
-    }
     assert_eq!(
-        enqueue_location_heartbeats(pool, start + chrono::Duration::hours(4), true)
+        enqueue_location_heartbeats(pool, start, true)
             .await
-            .expect("enqueue next bucket"),
+            .expect("first hourly tick"),
+        3
+    );
+    assert_eq!(
+        enqueue_location_heartbeats(pool, start + chrono::Duration::minutes(5), true)
+            .await
+            .expect("same bucket replay"),
+        0
+    );
+    let (late_user, late_credential) = insert_principal(pool).await;
+    users.push(late_user);
+    sqlx::query(
+        "INSERT INTO brunn.location_presence \
+         (user_id,timezone,reported_at,last_lat,last_lon,last_accuracy_m) \
+         VALUES ($1,'UTC',$2,0,0,100)",
+    )
+    .bind(late_user)
+    .bind(start - chrono::Duration::hours(2))
+    .execute(pool)
+    .await
+    .expect("seed late-hour first recovery");
+    insert_installation(pool, &key, late_user, late_credential, 77).await;
+    assert_eq!(
+        enqueue_location_heartbeats(pool, start + chrono::Duration::minutes(50), true)
+            .await
+            .expect("late-hour first recovery"),
         1
+    );
+    assert_eq!(
+        enqueue_location_heartbeats(pool, start + chrono::Duration::hours(1), true)
+            .await
+            .expect("next hourly bucket"),
+        4
     );
     let counts: Vec<(Uuid, i64)> = sqlx::query_as(
         "SELECT user_id,count(*) FROM brunn.notifications \
@@ -617,7 +667,17 @@ async fn location_heartbeats_are_silent_and_deduplicated(pool: &PgPool) {
     .fetch_all(pool)
     .await
     .expect("heartbeat notification counts");
-    assert_eq!(counts, vec![(users[0], 2)]);
+    let counts: std::collections::HashMap<_, _> = counts.into_iter().collect();
+    assert_eq!(counts.len(), 5);
+    assert_eq!(counts.get(&users[0]), Some(&2));
+    assert_eq!(counts.get(&users[1]), Some(&1));
+    assert_eq!(counts.get(&users[4]), Some(&2));
+    assert_eq!(counts.get(&users[5]), Some(&2));
+    assert_eq!(
+        counts.get(&late_user),
+        Some(&1),
+        "Clock-hour rollover must not cause a second wakeup after ten minutes"
+    );
     let provider = Arc::new(FakeProvider::new(vec![accepted()]));
     assert!(
         process_next_on_pool(pool, &STANDARD.encode(key), provider.clone())

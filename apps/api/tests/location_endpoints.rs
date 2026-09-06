@@ -630,7 +630,7 @@ async fn exercise_replay_day_gate(
                 accepted: 1,
                 ignored: None,
                 presence_status: Some("stale"),
-                place_label: None,
+                place_label: Some("Din Tai Fung"),
                 city: Some("Bellevue"),
             },
             ReplayStepExpectation {
@@ -675,28 +675,28 @@ async fn exercise_replay_day_gate(
                 accepted: 1,
                 ignored: None,
                 presence_status: Some("stale"),
-                place_label: None,
+                place_label: Some("Din Tai Fung"),
                 city: Some("Bellevue"),
             },
             ReplayStepExpectation {
                 accepted: 0,
                 ignored: Some("pings_off"),
                 presence_status: Some("stale"),
-                place_label: None,
+                place_label: Some("Din Tai Fung"),
                 city: Some("Bellevue"),
             },
             ReplayStepExpectation {
                 accepted: 1,
                 ignored: None,
                 presence_status: Some("stale"),
-                place_label: None,
+                place_label: Some("Din Tai Fung"),
                 city: Some("Bellevue"),
             },
             ReplayStepExpectation {
                 accepted: 0,
                 ignored: Some("late"),
                 presence_status: Some("stale"),
-                place_label: None,
+                place_label: Some("Home"),
                 city: Some("Bellevue"),
             },
         ]
@@ -925,6 +925,114 @@ async fn exercise_replay_day_gate(
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn general_current_position_survives_storage_coarse_contact_and_delayed_visits() {
+    let Some((pool, state)) = connect_test_state().await else {
+        return;
+    };
+    let fixture = seed_fixture(&pool).await;
+    let app = router(state);
+    write_places(&app, &fixture.saver.token, replay_places_document(), 0).await;
+    let base = Utc::now() - Duration::minutes(30);
+    let home =
+        json!({"type":"ping","at":base.to_rfc3339(),"lat":47.6205,"lon":-122.2070,"accuracy_m":20});
+    let arrived = request_json(
+        &app,
+        Method::POST,
+        "/v1/location/reports",
+        &fixture.device.token,
+        batch(home),
+    )
+    .await;
+    assert_eq!(arrived.status, StatusCode::OK);
+    let moved_at = Utc::now() - Duration::minutes(2);
+    let moved = json!({"type":"ping","at":moved_at.to_rfc3339(),"lat":47.6220,"lon":-122.2070,"accuracy_m":25,
+        "geocode":{"name":"123 Example Street","city":"Bellevue","region":"WA","country":"US"}});
+    let moved_response = request_json(
+        &app,
+        Method::POST,
+        "/v1/location/reports",
+        &fixture.device.token,
+        batch(moved),
+    )
+    .await;
+    assert_eq!(moved_response.status, StatusCode::OK);
+    assert_eq!(
+        moved_response.body["presence"]["place"]["label"],
+        "123 Example Street"
+    );
+    assert_eq!(moved_response.body["presence"]["visit"]["label"], "Home");
+    assert_eq!(moved_response.body["presence"]["at_home"], false);
+
+    let delayed = json!({"type":"visit_arrival","at":(Utc::now()-Duration::minutes(1)).to_rfc3339(),
+        "arrived_at":base.to_rfc3339(),"lat":47.6205,"lon":-122.2070,"accuracy_m":15});
+    assert_eq!(
+        request_json(
+            &app,
+            Method::POST,
+            "/v1/location/reports",
+            &fixture.device.token,
+            batch(delayed)
+        )
+        .await
+        .status,
+        StatusCode::OK
+    );
+    let coarse = json!({"type":"ping","at":Utc::now().to_rfc3339(),"lat":47.6000,"lon":-122.2000,"accuracy_m":5485});
+    assert_eq!(
+        request_json(
+            &app,
+            Method::POST,
+            "/v1/location/reports",
+            &fixture.device.token,
+            batch(coarse)
+        )
+        .await
+        .status,
+        StatusCode::OK
+    );
+    let presence = request_bytes(
+        &app,
+        Method::GET,
+        "/v1/location/presence",
+        &fixture.reader.token,
+        None,
+    )
+    .await;
+    assert_eq!(presence.status, StatusCode::OK);
+    assert_eq!(presence.body["position"]["lat"], 47.6220);
+    assert_eq!(presence.body["position"]["accuracy_m"], 25.0);
+    assert_eq!(presence.body["place"]["label"], "123 Example Street");
+    assert_eq!(presence.body["visit"]["label"], "Home");
+    assert_ne!(presence.body["last_seen"], presence.body["last_contact"]);
+    assert_eq!(presence.body["at_home"], false);
+    assert!(presence.body["position"]["age_seconds"].as_i64().unwrap() >= 120);
+
+    let rederived = request_json(
+        &app,
+        Method::POST,
+        "/v1/location/rederive",
+        &fixture.saver.token,
+        json!({"from":(base-Duration::minutes(1)).to_rfc3339(),"to":Utc::now().to_rfc3339()}),
+    )
+    .await;
+    assert_eq!(rederived.status, StatusCode::OK);
+    let after = request_bytes(
+        &app,
+        Method::GET,
+        "/v1/location/presence",
+        &fixture.reader.token,
+        None,
+    )
+    .await;
+    assert_eq!(
+        after.body["position"]["observed_at"],
+        presence.body["position"]["observed_at"]
+    );
+    assert_eq!(after.body["place"], presence.body["place"]);
+    assert_eq!(after.body["visit"], presence.body["visit"]);
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn replay_day_gate_is_exact_on_real_router_with_pings_on_and_off() {
     let Some((pool, state)) = connect_test_state().await else {
         return;
@@ -1028,7 +1136,7 @@ async fn location_routes_enforce_privacy_idempotence_and_live_places_edits() {
     .await;
     assert_eq!(first_response.status, StatusCode::OK);
     assert_eq!(first_response.body["accepted"], 1);
-    assert_eq!(first_response.body["presence"]["status"], "between_places");
+    assert_eq!(first_response.body["presence"]["status"], "stale");
     let first_month = current_month_text(&pool, fixture.user_id).await;
     assert!(first_month.contains("First POI"));
     assert!(first_month.contains("medium"));
@@ -1625,7 +1733,11 @@ async fn exercise_field_day_gate(
             .body
             .pointer("/place/label")
             .and_then(Value::as_str),
-        pings_enabled.then_some("Home")
+        Some(if pings_enabled {
+            "Home"
+        } else {
+            "Bellevue Gym"
+        })
     );
 }
 

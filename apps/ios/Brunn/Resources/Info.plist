@@ -34,9 +34,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Brunn records the places you visit so your assistants know where you are and can answer questions about where you have been. Location is used only for your own Brunn workspace.</string>
+	<string>Brunn updates your position while you move and records your visits, including while this app is in the background, so your assistants can answer where you are and where you have been. Location is used only for your own Brunn workspace.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Brunn records the places you visit so your assistants know where you are and can answer questions about where you have been. Location is used only for your own Brunn workspace.</string>
+	<string>Brunn uses your position to answer where you are and records your visits for your own Brunn workspace.</string>
 	<key>BrunnAPNSEnvironment</key>
 	<string>$(BRUNN_APNS_ENVIRONMENT)</string>
 	<key>UIApplicationSceneManifest</key>
@@ -47,6 +47,7 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
+		<string>location</string>
 	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>

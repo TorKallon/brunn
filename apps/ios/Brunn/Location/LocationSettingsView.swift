@@ -7,6 +7,7 @@ struct LocationSettingsView: View {
     @Environment(\.openURL) private var openURL
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var reporter: LocationReporter
+    @EnvironmentObject private var notifications: NotificationCoordinator
     @State private var showingPrimer = false
 
     var body: some View {
@@ -34,7 +35,7 @@ struct LocationSettingsView: View {
             }
 
             Section {
-                Toggle("Report visits", isOn: reportingBinding)
+                Toggle("Report location", isOn: reportingBinding)
                     .disabled(
                         reporter.isWorking
                             || model.isDemo
@@ -42,23 +43,37 @@ struct LocationSettingsView: View {
                     )
                     .accessibilityIdentifier("location-reporting-toggle")
                 LabeledContent("Queued", value: "\(reporter.queuedReportCount)")
+                LabeledContent("Capture", value: captureLabel)
                 if reporter.reportingEnabled {
-                    Label("Visit reporting is active", systemImage: "checkmark.circle")
+                    Label("Location reporting is enabled", systemImage: "location")
                         .font(.footnote)
-                        .foregroundStyle(BrunnTheme.success)
+                        .foregroundStyle(.secondary)
                 }
             } header: {
                 Text("Reporting")
             } footer: {
-                Text("Uses iOS visit monitoring and significant location changes only. Brunn does not run continuous GPS updates or a background timer.")
+                Text("Updates your location while you move and lets iOS pause when you stop. Background location uses more battery while moving. Visits are recorded separately for your history.")
             }
 
             Section {
-                LabeledContent("Presence", value: presenceLabel)
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    LabeledContent(
+                        "Location",
+                        value: reporter.presence?.displayLabel(at: context.date) ?? "No usable location"
+                    )
+                }
                 if let presence = reporter.presence {
-                    LabeledContent("Last seen", value: formattedTimestamp(presence.lastSeen))
-                    if let city = presence.city {
-                        LabeledContent("City", value: city)
+                    if let position = presence.position {
+                        LabeledContent("Fix recorded", value: formattedTimestamp(position.observedAt))
+                        LabeledContent("Accuracy", value: "±\(position.accuracyM.formatted(.number.precision(.fractionLength(0)))) m")
+                        if let mapURL = position.mapURL {
+                            Link(destination: mapURL) {
+                                Label("Show reported position in Maps", systemImage: "map")
+                            }
+                        }
+                    }
+                    if let lastContact = presence.lastContact {
+                        LabeledContent("Latest report", value: formattedTimestamp(lastContact))
                     }
                 }
                 if let lastUploadAt = reporter.lastUploadAt {
@@ -68,13 +83,42 @@ struct LocationSettingsView: View {
                     )
                 }
                 Button {
-                    Task { await reporter.refreshPresence() }
+                    Task { await reporter.refreshLocation() }
                 } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+                    if reporter.isRefreshingLocation {
+                        ProgressView("Getting location…")
+                    } else {
+                        Label("Refresh location", systemImage: "arrow.clockwise")
+                    }
                 }
-                .disabled(!reporter.hasCredential || reporter.isWorking)
+                .disabled(!reporter.reportingEnabled || !reporter.hasCredential || reporter.isWorking || reporter.isRefreshingLocation)
+                if let result = refreshResultLabel {
+                    Text(result)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             } header: {
                 Text("Status")
+            } footer: {
+                Text("A last-known location keeps its original time. Approximate fixes may identify an area without identifying the place you are visiting.")
+            }
+
+            if reporter.reportingEnabled {
+                Section {
+                    LabeledContent("Connection", value: notifications.registrationState.label)
+                    if let registeredAt = notifications.lastRegisteredAt {
+                        LabeledContent("Registered", value: registeredAt.formatted(date: .abbreviated, time: .shortened))
+                    }
+                    if let error = notifications.lastError {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .font(.footnote)
+                            .foregroundStyle(BrunnTheme.amber)
+                    }
+                } header: {
+                    Text("Background refresh recovery")
+                } footer: {
+                    Text("Brunn can ask this iPhone for an update if reports stop. iOS controls delivery, so a connected status does not confirm a fresh location.")
+                }
             }
 
             Section {
@@ -116,7 +160,7 @@ struct LocationSettingsView: View {
     private var permissionStatus: some View {
         switch reporter.authorizationStatus {
         case .authorizedAlways:
-            Label("Ready for background visits", systemImage: "checkmark.shield")
+            Label("Background location allowed", systemImage: "checkmark.shield")
                 .font(.footnote)
                 .foregroundStyle(BrunnTheme.success)
         case .authorizedWhenInUse:
@@ -151,6 +195,34 @@ struct LocationSettingsView: View {
         )
     }
 
+    private var captureLabel: String {
+        switch reporter.health.captureState {
+        case "starting": "Starting location updates"
+        case "tracking": "Receiving location updates"
+        case "stationary": "Paused while stationary"
+        case "awaiting_foreground": "Open Brunn to start updates"
+        case "recovering": "Recovering location updates"
+        default: "Stopped"
+        }
+    }
+
+    private var refreshResultLabel: String? {
+        switch reporter.health.lastRefreshResult {
+        case "pending": "Waiting for a fresh fix and upload."
+        case "timed_out": "The location refresh timed out. The last-known position is shown above."
+        case "unavailable": "Location refresh is unavailable. Check location access and your Brunn connection."
+        case "updated": "A fresh location was uploaded."
+        case "approximate": "An approximate location was uploaded."
+        case "upload_failed": "The fix could not be uploaded. It remains queued for retry."
+        case "permission_required": "Always location access is required for reporting."
+        case "cached_or_invalid_fix": "iOS returned an old or unusable fix. The last-known position is shown above."
+        case "location_error": "iOS could not obtain a location. Try again."
+        case "access_revoked": "Reconnect to Brunn to restore location access."
+        case "stopped": "Location reporting is stopped."
+        default: nil
+        }
+    }
+
     private var permissionNeedsSettings: Bool {
         reporter.authorizationStatus == .denied || reporter.authorizationStatus == .restricted
     }
@@ -163,17 +235,6 @@ struct LocationSettingsView: View {
         case .authorizedWhenInUse: "Limited"
         case .authorizedAlways: "Always"
         @unknown default: "Unknown"
-        }
-    }
-
-    private var presenceLabel: String {
-        guard let presence = reporter.presence else { return "No live location" }
-        if let label = presence.place?.label, !label.isEmpty { return label }
-        switch presence.status {
-        case "at_place": return "At a place"
-        case "between_places": return "Between places"
-        case "stale": return "Stale"
-        default: return presence.status.replacingOccurrences(of: "_", with: " ").capitalized
         }
     }
 
@@ -203,14 +264,14 @@ struct LocationPrimerView: View {
                 Image(systemName: "location.north.circle")
                     .font(.system(size: 42, weight: .medium))
                     .foregroundStyle(BrunnTheme.signal)
-                Text("Let Brunn remember where you have been")
+                Text("Let Brunn know where you are")
                     .font(.largeTitle.bold())
                 Text("Brunn records the places you visit so your assistants know where you are and can answer questions about where you have been. Location is used only for your own Brunn workspace.")
                     .font(.body)
                 VStack(alignment: .leading, spacing: 12) {
                     Label("Ask for When In Use access first", systemImage: "1.circle")
                     Label("Then ask for Always access", systemImage: "2.circle")
-                    Label("Record visits and significant changes only", systemImage: "figure.walk")
+                    Label("Update while moving and pause when stationary", systemImage: "figure.walk")
                     Label("Keep reports queued when the network is unavailable", systemImage: "tray.full")
                 }
                 .font(.subheadline)

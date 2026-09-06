@@ -71,3 +71,7 @@ The checked-in Xcode project mirrors `project.yml`. The app itself has no
 third-party runtime dependencies. Build 4's email/password account-session
 login remains the authentication baseline for notification registration,
 detail, and receipts.
+
+Build 6 adds adaptive background location, current position independent of
+visits, explicit fresh-location refresh and account-session push recovery.
+See `docs/ios/Location.md` for the location contract and physical-device checks.

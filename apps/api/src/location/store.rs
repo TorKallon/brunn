@@ -172,7 +172,7 @@ pub(crate) async fn read_presence(
         r#"
         SELECT timezone,reported_at,last_lat,last_lon,last_accuracy_m,
                city,region,country,visit_arrived_at,visit_lat,visit_lon,
-               visit_label,visit_kind,visit_confidence
+               visit_label,visit_kind,visit_confidence,current_position
         FROM brunn.location_presence
         WHERE user_id=$1
         "#,
@@ -414,7 +414,7 @@ async fn read_presence_for_update(
         r#"
         SELECT timezone,reported_at,last_lat,last_lon,last_accuracy_m,
                city,region,country,visit_arrived_at,visit_lat,visit_lon,
-               visit_label,visit_kind,visit_confidence
+               visit_label,visit_kind,visit_confidence,current_position
         FROM brunn.location_presence
         WHERE user_id=$1
         FOR UPDATE
@@ -460,6 +460,9 @@ fn presence_from_row(row: &sqlx::postgres::PgRow) -> ApiResult<PresenceState> {
         city: row.try_get("city")?,
         region: row.try_get("region")?,
         country: row.try_get("country")?,
+        current_position: row
+            .try_get::<Option<sqlx::types::Json<rules::CurrentPosition>>, _>("current_position")?
+            .map(|value| value.0),
         visit,
     })
 }
@@ -677,8 +680,8 @@ async fn upsert_presence(
         INSERT INTO brunn.location_presence (
           user_id,timezone,reported_at,last_lat,last_lon,last_accuracy_m,
           city,region,country,visit_arrived_at,visit_lat,visit_lon,
-          visit_label,visit_kind,visit_confidence
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+          visit_label,visit_kind,visit_confidence,current_position
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
         ON CONFLICT (user_id) DO UPDATE SET
           timezone=EXCLUDED.timezone,
           reported_at=EXCLUDED.reported_at,
@@ -693,7 +696,8 @@ async fn upsert_presence(
           visit_lon=EXCLUDED.visit_lon,
           visit_label=EXCLUDED.visit_label,
           visit_kind=EXCLUDED.visit_kind,
-          visit_confidence=EXCLUDED.visit_confidence
+          visit_confidence=EXCLUDED.visit_confidence,
+          current_position=EXCLUDED.current_position
         "#,
     )
     .bind(user_id)
@@ -711,6 +715,7 @@ async fn upsert_presence(
     .bind(visit.and_then(|value| value.label.as_deref()))
     .bind(visit.map(|value| value.kind.as_str()))
     .bind(visit.map(|value| confidence_as_str(value.confidence)))
+    .bind(presence.current_position.as_ref().map(sqlx::types::Json))
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -1354,6 +1359,63 @@ mod database_tests {
             .fetch_one(pool)
             .await
             .expect("count user-owned test rows")
+    }
+
+    #[tokio::test]
+    async fn current_position_upgrade_backfills_usable_observation_not_coarse_or_delayed_contact() {
+        let Some((pool, _)) = connect_test_state("current position upgrade gate").await else {
+            return;
+        };
+        let mut tx = pool.begin().await.expect("begin isolated upgrade fixture");
+        // Temporary copies exercise the actual migration without changing any
+        // shared fixture or altering the applied schema in this test database.
+        sqlx::raw_sql(
+            "CREATE TEMP TABLE location_presence (LIKE brunn.location_presence) ON COMMIT DROP;\n\
+             ALTER TABLE pg_temp.location_presence DROP COLUMN current_position;\n\
+             CREATE TEMP TABLE location_reports (LIKE brunn.location_reports) ON COMMIT DROP;\n\
+             INSERT INTO pg_temp.location_presence(user_id,timezone,reported_at,last_lat,last_lon,last_accuracy_m)\n\
+             VALUES('00000000-0000-0000-0000-000000000001','UTC','2026-09-06T10:20:00Z',1,2,5485);\n\
+             INSERT INTO pg_temp.location_reports(user_id,at,type,offset_min,lat,lon,accuracy_m,arrived_at,name) VALUES\n\
+             ('00000000-0000-0000-0000-000000000001','2026-09-06T10:00:00Z','ping',0,10,20,25,NULL,'Current Street'),\n\
+             ('00000000-0000-0000-0000-000000000001','2026-09-06T10:19:00Z','ping',0,1,2,5485,NULL,'Coarse'),\n\
+             ('00000000-0000-0000-0000-000000000001','2026-09-06T10:20:00Z','visit_arrival',0,3,4,10,'2026-09-06T09:00:00Z','Old Visit');"
+        ).execute(&mut *tx).await.expect("seed isolated upgrade evidence");
+        let migration = include_str!("../../migrations/0092_location_current_position.sql")
+            .replace("brunn.location_presence", "pg_temp.location_presence")
+            .replace("brunn.location_reports", "pg_temp.location_reports");
+        // Both the source and substitutions are compile-time constants; no
+        // external input enters this migration fixture SQL.
+        sqlx::raw_sql(AssertSqlSafe(migration.as_str()))
+            .execute(&mut *tx)
+            .await
+            .expect("apply actual upgrade to temporary tables");
+        let sqlx::types::Json(position) =
+            sqlx::query_scalar::<_, sqlx::types::Json<rules::CurrentPosition>>(
+                "SELECT current_position FROM pg_temp.location_presence",
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .expect("decode backfilled position");
+        assert_eq!(
+            position.coordinate,
+            Coordinate {
+                lat: 10.0,
+                lon: 20.0
+            }
+        );
+        assert_eq!(position.accuracy_m, 25.0);
+        assert_eq!(
+            position.observed_at.to_rfc3339(),
+            "2026-09-06T10:00:00+00:00"
+        );
+        assert_eq!(position.source_type, "ping");
+        assert_eq!(
+            position.place.unwrap().label.as_deref(),
+            Some("Current Street")
+        );
+        tx.rollback()
+            .await
+            .expect("discard isolated upgrade fixture");
     }
 
     #[tokio::test]

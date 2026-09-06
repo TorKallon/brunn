@@ -6,6 +6,143 @@ import XCTest
 
 final class BrunnTests: XCTestCase {
     @MainActor
+    func testRefreshRequiresItsOwnReportUploadAndRetainsItUntilNetworkRecovery() async throws {
+        let fixture = try LocationHeartbeatFixture()
+        defer { fixture.cleanUp() }
+        let originalHandler = try XCTUnwrap(NotificationRequestURLProtocol.handler)
+        for index in 0 ..< LocationDiskQueue.maximumBatchCount {
+            let report = LocationReport(
+                type: .ping,
+                at: LocationTimestamp.string(from: Date().addingTimeInterval(Double(-300 + index))),
+                lat: 0, lon: 0, accuracyM: 100
+            )
+            let id = try fixture.queue.append(report)
+            try fixture.queue.replace(id: id, with: report)
+        }
+        NotificationRequestURLProtocol.handler = { request in
+            guard let body = request.httpBody,
+                  let batch = try? JSONDecoder().decode(LocationReportBatchRequest.self, from: body) else {
+                XCTFail("Expected a location report upload.")
+                return StubbedHTTPResponse(statusCode: 400, json: "{}")
+            }
+            if batch.reports.contains(where: { $0.accuracyM == 17 }) {
+                return StubbedHTTPResponse(statusCode: 503, json: #"{"error":{"code":"unavailable","message":"Offline"}}"#)
+            }
+            return originalHandler(request)
+        }
+        let completed = expectation(description: "fresh report upload failed after older reports succeeded")
+        fixture.reporter.handleHeartbeat { result in
+            XCTAssertEqual(result, .failed)
+            completed.fulfill()
+        }
+        fixture.reporter.locationManager(fixture.manager, didUpdateLocations: [CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: 0, longitude: 0), altitude: 0,
+            horizontalAccuracy: 17, verticalAccuracy: -1, timestamp: Date()
+        )])
+        await fulfillment(of: [completed], timeout: 5)
+        XCTAssertNotNil(fixture.reporter.lastUploadAt, "The older batch succeeded.")
+        XCTAssertEqual(fixture.reporter.health.lastRefreshResult, "upload_failed")
+        XCTAssertEqual(try fixture.queue.count(), 1, "The actual requested sample must remain durable.")
+        NotificationRequestURLProtocol.handler = originalHandler
+        await fixture.reporter.networkBecameAvailable()
+        XCTAssertEqual(try fixture.queue.count(), 0)
+        XCTAssertNil(fixture.reporter.health.lastUploadFailureAt)
+    }
+
+    @MainActor
+    func testAdaptiveLocationCapturesUnknownStopAndResumesWithoutEndingSession() async throws {
+        let fixture = try LocationHeartbeatFixture()
+        defer { fixture.cleanUp() }
+        fixture.reporter.applicationDidFinishLaunching(relaunchedForLocation: false)
+        XCTAssertEqual(fixture.liveSession.starts, 1)
+        let now = Date()
+        fixture.liveSession.send(fixture.fix(), stationary: false)
+        fixture.liveSession.send(CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: 0.001, longitude: 0.001),
+            altitude: 0, horizontalAccuracy: 10, verticalAccuracy: -1,
+            timestamp: now.addingTimeInterval(1)
+        ), stationary: true)
+        XCTAssertEqual(fixture.reporter.health.captureState, "stationary")
+        XCTAssertEqual(try fixture.queue.count(), 2)
+        XCTAssertTrue(fixture.liveSession.isRunning)
+        fixture.liveSession.send(CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: 0.002, longitude: 0.002),
+            altitude: 0, horizontalAccuracy: 10, verticalAccuracy: -1,
+            timestamp: now.addingTimeInterval(2)
+        ), stationary: false)
+        XCTAssertEqual(fixture.reporter.health.captureState, "tracking")
+        XCTAssertEqual(try fixture.queue.count(), 3)
+        XCTAssertEqual(fixture.liveSession.starts, 1)
+        await fixture.reporter.disableReporting()
+        XCTAssertFalse(fixture.liveSession.isRunning)
+        XCTAssertEqual(try fixture.queue.count(), 0)
+    }
+
+    @MainActor
+    func testAdaptiveLocationStopsWhenPermissionIsRevoked() throws {
+        let fixture = try LocationHeartbeatFixture()
+        defer { fixture.cleanUp() }
+        fixture.reporter.applicationDidFinishLaunching(relaunchedForLocation: true)
+        XCTAssertTrue(fixture.liveSession.isRunning)
+        fixture.manager.testAuthorization = .denied
+        fixture.reporter.locationManagerDidChangeAuthorization(fixture.manager)
+        XCTAssertFalse(fixture.liveSession.isRunning)
+        XCTAssertEqual(fixture.reporter.health.captureState, "stopped")
+    }
+
+    @MainActor
+    func testLocationEnrichmentFollowsNearbyMovementWithoutReusingOldAddress() async throws {
+        let suite = "BrunnTests.location-enrichment.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var requests = 0
+        let enricher = LocationReportEnricher(statusStore: LocationStatusStore(defaults: defaults)) { _ in
+            requests += 1
+            return LocationGeocode(city: "Test locality", region: nil, country: nil, name: "Test street \(requests)")
+        }
+        func report(_ latitude: Double) -> LocationReport {
+            LocationReport(type: .ping, at: "2026-09-06T01:00:00Z", lat: latitude, lon: 0, accuracyM: 20)
+        }
+        let now = Date()
+        let first = await enricher.enrich(report(0), now: now)
+        let nearby = await enricher.enrich(report(0.0001), now: now.addingTimeInterval(10))
+        let moved = await enricher.enrich(report(0.002), now: now.addingTimeInterval(30))
+        let resolved = await enricher.enrich(report(0.002), now: now.addingTimeInterval(60))
+        XCTAssertEqual(first.geocode?.name, "Test street 1")
+        XCTAssertEqual(nearby.geocode, first.geocode)
+        XCTAssertNil(moved.geocode, "A different position must not inherit an old address during throttling.")
+        XCTAssertEqual(resolved.geocode?.name, "Test street 2")
+        XCTAssertEqual(requests, 2, "Movement of hundreds of meters must not wait for 5 km or an Apple visit.")
+        XCTAssertTrue(resolved.poi.isEmpty)
+    }
+
+    @MainActor
+    func testLocationEnrichmentTimeoutCancelsUnderlyingWorkAndIgnoresLateCallback() async {
+        var cancellations = 0
+        var callback: (@MainActor @Sendable (String?) -> Void)?
+        let deadline = LocationEnrichmentDeadline<String> { cancellations += 1 }
+        let start = Date()
+        let value = await deadline.value(timeout: 0.02) { callback = $0 }
+        XCTAssertNil(value)
+        XCTAssertEqual(cancellations, 1)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 1)
+        callback?("late")
+        XCTAssertEqual(cancellations, 1)
+    }
+
+    @MainActor
+    func testLocationEnrichmentTaskCancellationIsBounded() async {
+        var cancellations = 0
+        let deadline = LocationEnrichmentDeadline<String> { cancellations += 1 }
+        let task = Task { await deadline.value(timeout: 60) { _ in } }
+        await Task.yield()
+        task.cancel()
+        let result = await task.value
+        XCTAssertNil(result)
+        XCTAssertEqual(cancellations, 1)
+    }
+
+    @MainActor
     func testLocationHeartbeatRoutesOneFreshFixThroughPersistentQueueAndCompletes() async throws {
         let fixture = try LocationHeartbeatFixture()
         defer { fixture.cleanUp() }
@@ -1547,6 +1684,136 @@ final class BrunnTests: XCTestCase {
         XCTAssertFalse(model.canWriteTasks)
     }
 
+    @MainActor
+    func testLocationRecoveryRegistersAndRevokesUsingOwnerSessionWithAlertsDeniedAndNoTaskCredential() async throws {
+        let host = "location-push-\(UUID().uuidString.lowercased()).brunn.test"
+        let baseURL = try XCTUnwrap(URL(string: "https://\(host)/api/v1"))
+        let cookieStorage = HTTPCookieStorage.shared
+        let sessionCookie = try XCTUnwrap(HTTPCookie(properties: [
+            .domain: host, .path: "/", .name: "brunn_session",
+            .value: "location-session", .secure: "TRUE",
+        ]))
+        let csrfCookie = try XCTUnwrap(HTTPCookie(properties: [
+            .domain: host, .path: "/", .name: "brunn_csrf",
+            .value: "location-csrf", .secure: "TRUE",
+        ]))
+        cookieStorage.setCookie(sessionCookie)
+        cookieStorage.setCookie(csrfCookie)
+        defer {
+            cookieStorage.deleteCookie(sessionCookie)
+            cookieStorage.deleteCookie(csrfCookie)
+            NotificationRequestURLProtocol.handler = nil
+        }
+        let recorder = NotificationRequestRecorder()
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            return StubbedHTTPResponse(json: #"""
+            {"installation_ref":"installation:11111111111111111111111111111111","status":"active","updated_at":"2026-09-06T08:00:00Z"}
+            """#)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        configuration.httpCookieStorage = cookieStorage
+        let api = BrunnAPI(
+            configuration: .init(baseURL: baseURL),
+            session: URLSession(configuration: configuration), cookieStorage: cookieStorage
+        )
+        var registrations = 0
+        let coordinator = NotificationCoordinator(
+            appID: "com.rourkem.brunn", environment: "development",
+            registerWithAPNs: { registrations += 1 }, loadPermissionState: { .denied }
+        )
+        await coordinator.refreshAuthorizationStatus()
+        XCTAssertEqual(registrations, 1, "Silent APNs registration must start without alert permission")
+        XCTAssertEqual(coordinator.permissionState, .denied)
+        coordinator.receiveDeviceToken(Data(repeating: 1, count: 32))
+
+        await coordinator.synchronizeLocationRecovery(
+            using: api, accountUserID: "user:owner", reportingEnabled: false
+        )
+        await coordinator.synchronizeLocationRecovery(
+            using: api, accountUserID: nil, reportingEnabled: true
+        )
+        await coordinator.synchronizeInstallation(
+            using: api, canManageNotifications: false, bearerToken: nil
+        )
+        XCTAssertTrue(recorder.snapshot().isEmpty)
+
+        await coordinator.synchronizeLocationRecovery(
+            using: api, accountUserID: "user:owner", reportingEnabled: true
+        )
+        XCTAssertEqual(coordinator.registrationState, .registered)
+        XCTAssertFalse(coordinator.hasPendingDeviceToken)
+        XCTAssertNil(coordinator.lastError)
+        await coordinator.synchronizeLocationRecovery(
+            using: api, accountUserID: "user:owner", reportingEnabled: true
+        )
+        XCTAssertEqual(recorder.snapshot().count, 1, "An unchanged token/account is already registered")
+
+        let revoked = await coordinator.revokeLocationRecovery(using: api, accountUserID: "user:owner")
+        XCTAssertTrue(revoked)
+        XCTAssertEqual(coordinator.registrationState, .notRegistered)
+        await coordinator.synchronizeLocationRecovery(
+            using: api, accountUserID: "user:owner", reportingEnabled: true
+        )
+        XCTAssertEqual(coordinator.registrationState, .registered, "Re-enable can reuse the in-memory APNs token")
+        let requests = recorder.snapshot()
+        XCTAssertEqual(requests.map(\.httpMethod), ["PUT", "DELETE", "PUT"])
+        for request in requests {
+            XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-CSRF-Token"), "location-csrf")
+            XCTAssertTrue(request.httpShouldHandleCookies)
+            XCTAssertTrue(request.url?.path.contains("/workspace/notification-installations/") == true)
+        }
+        let body = try XCTUnwrap(requests[0].httpBody)
+        let registration = try JSONDecoder().decode(NotificationInstallationRequest.self, from: body)
+        XCTAssertEqual(registration.appID, "com.rourkem.brunn")
+        XCTAssertEqual(registration.deviceToken, String(repeating: "01", count: 32))
+
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            return StubbedHTTPResponse(statusCode: 503, json: #"""
+            {"error":{"code":"temporarily_unavailable","message":"Try again later."}}
+            """#)
+        }
+        coordinator.receiveDeviceToken(Data(repeating: 2, count: 32))
+        await coordinator.synchronizeLocationRecovery(
+            using: api, accountUserID: "user:owner", reportingEnabled: true
+        )
+        XCTAssertEqual(coordinator.registrationState, .notRegistered)
+        XCTAssertTrue(coordinator.hasPendingDeviceToken, "An upload failure must retain the rotated token for retry")
+        XCTAssertNotNil(coordinator.lastError)
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            return StubbedHTTPResponse(json: #"""
+            {"installation_ref":"installation:11111111111111111111111111111111","status":"active","updated_at":"2026-09-06T08:01:00Z"}
+            """#)
+        }
+        await coordinator.synchronizeLocationRecovery(
+            using: api, accountUserID: "user:owner", reportingEnabled: true
+        )
+        XCTAssertEqual(coordinator.registrationState, .registered)
+        XCTAssertFalse(coordinator.hasPendingDeviceToken)
+        XCTAssertNil(coordinator.lastError)
+    }
+
+    @MainActor
+    func testLocationRecoveryWithoutAccountSessionRetainsTokenAndExplainsRecoveryFailure() async throws {
+        let host = "no-location-session-\(UUID().uuidString.lowercased()).brunn.test"
+        let api = BrunnAPI(
+            configuration: .init(baseURL: URL(string: "https://\(host)/api/v1")!),
+            session: URLSession(configuration: .ephemeral)
+        )
+        let coordinator = NotificationCoordinator(registerWithAPNs: {}, loadPermissionState: { .denied })
+        coordinator.receiveDeviceToken(Data(repeating: 1, count: 32))
+        await coordinator.synchronizeLocationRecovery(
+            using: api, accountUserID: "user:owner", reportingEnabled: true
+        )
+        XCTAssertTrue(coordinator.hasPendingDeviceToken)
+        XCTAssertNotEqual(coordinator.registrationState, .registered)
+        XCTAssertEqual(coordinator.lastError, "Reconnect to Brunn to restore background location refresh.")
+    }
+
     func testNotificationInstallationUsesNarrowBearerWhileReceiptsUseCookieSession() async throws {
         let host = "notification-\(UUID().uuidString.lowercased()).brunn.test"
         let baseURL = try XCTUnwrap(URL(string: "https://\(host)/api/v1"))
@@ -2882,8 +3149,23 @@ private final class TestHeartbeatLocationManager: CLLocationManager {
 }
 
 @MainActor
+private final class TestLocationLiveSession: LocationLiveSession {
+    private var update: ((CLLocation?, Bool) -> Void)?
+    var isRunning = false
+    var starts = 0
+    func start(update: @escaping (CLLocation?, Bool) -> Void, failure: @escaping () -> Void) {
+        self.update = update
+        isRunning = true
+        starts += 1
+    }
+    func send(_ location: CLLocation?, stationary: Bool) { update?(location, stationary) }
+    func stop() { isRunning = false; update = nil }
+}
+
+@MainActor
 private final class LocationHeartbeatFixture {
     let manager = TestHeartbeatLocationManager()
+    let liveSession = TestLocationLiveSession()
     let reporter: LocationReporter
     let queue: LocationDiskQueue
     private let suite = "BrunnTests.location-heartbeat.\(UUID().uuidString)"
@@ -2907,6 +3189,9 @@ private final class LocationHeartbeatFixture {
         status.reportingEnabled = enabled
         status.lastGeocodedCoordinate = LocationStoredCoordinate(latitude: 0, longitude: 0)
         NotificationRequestURLProtocol.handler = { request in
+            if request.httpMethod == "DELETE" {
+                return StubbedHTTPResponse(json: "{}")
+            }
             XCTAssertEqual(request.url?.path, "/api/v1/location/reports")
             XCTAssertEqual(request.httpMethod, "POST")
             return StubbedHTTPResponse(json: #"{"accepted":1,"ignored":{},"presence":null}"#)
@@ -2920,7 +3205,8 @@ private final class LocationHeartbeatFixture {
                 session: URLSession(configuration: configuration)
             ),
             credentialStore: credentialStore, queue: queue, statusStore: status,
-            enricher: LocationReportEnricher(statusStore: status)
+            enricher: LocationReportEnricher(statusStore: status, geocode: { _ in nil }),
+            liveSession: liveSession
         )
     }
 
@@ -2930,6 +3216,7 @@ private final class LocationHeartbeatFixture {
     }
 
     func cleanUp() {
+        liveSession.stop()
         NotificationRequestURLProtocol.handler = nil
         try? credentialStore.delete()
         defaults.removePersistentDomain(forName: suite)

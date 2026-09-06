@@ -46,19 +46,36 @@ final class NotificationCoordinator: ObservableObject {
 
     let installationID: UUID
 
-    private var pendingDeviceToken: Data?
+    // Retain only in memory so account/permission transitions can register the
+    // same actual-app token again without depending on another APNs callback.
+    private var deviceToken: Data?
+    private var registeredAccountUserID: String?
     private let appID: String
     private let environment: String
+    private let registerWithAPNs: () -> Void
+    private let loadPermissionState: () async -> PushPermissionState
+    private var registrationOperationHeld = false
+    private var registrationOperationWaiters: [CheckedContinuation<Void, Never>] = []
+    private var registrationGeneration = 0
 
     init(
         installationID: UUID? = nil,
         appID: String? = nil,
-        environment: String? = nil
+        environment: String? = nil,
+        registerWithAPNs: @escaping () -> Void = {
+            UIApplication.shared.registerForRemoteNotifications()
+        },
+        loadPermissionState: @escaping () async -> PushPermissionState = {
+            await NotificationCoordinator.systemPermissionState()
+        }
     ) {
         self.installationID = installationID ?? NotificationInstallationIdentity.loadOrCreate()
         self.appID = appID ?? Bundle.main.bundleIdentifier ?? "com.rourkem.brunn"
         self.environment = environment ?? Self.defaultEnvironment
-        Task { await registerForRemoteNotificationsIfAuthorized() }
+        self.registerWithAPNs = registerWithAPNs
+        self.loadPermissionState = loadPermissionState
+        requestRemoteRegistration()
+        Task { await refreshAuthorizationStatus() }
     }
 
     func requestPermission() async {
@@ -68,7 +85,7 @@ final class NotificationCoordinator: ObservableObject {
             )
             await refreshAuthorizationStatus()
             if granted {
-                UIApplication.shared.registerForRemoteNotifications()
+                requestRemoteRegistration()
             }
         } catch {
             lastError = error.localizedDescription
@@ -79,13 +96,41 @@ final class NotificationCoordinator: ObservableObject {
         guard !token.isEmpty else { return }
         // Apple device tokens are forwarded from memory and are never logged or
         // persisted by the app. APNs may rotate them between registrations.
-        pendingDeviceToken = token
-        hasPendingDeviceToken = true
+        if deviceToken != token || registrationState != .registered {
+            hasPendingDeviceToken = true
+        }
+        deviceToken = token
         lastError = nil
     }
 
     func receiveRegistrationFailure(_ error: Error) {
+        registrationState = .notRegistered
         lastError = error.localizedDescription
+    }
+
+    func requestRemoteRegistration() {
+        // Silent APNs registration does not require alert, sound or badge
+        // permission. The server upload still requires authenticated access.
+        registerWithAPNs()
+    }
+
+    func synchronizeLocationRecovery(
+        using api: BrunnAPI,
+        accountUserID: String?,
+        reportingEnabled: Bool
+    ) async {
+        let generation = registrationGeneration
+        guard reportingEnabled, let accountUserID, !accountUserID.isEmpty else { return }
+        guard await api.hasAuthenticatedSession() else {
+            lastError = "Reconnect to Brunn to restore background location refresh."
+            return
+        }
+        // Use the already authenticated owner session, including CSRF, for this
+        // installation operation. Do not issue a broader device credential.
+        await registerInstallation(
+            using: api, bearerToken: nil, accountUserID: accountUserID,
+            generation: generation
+        )
     }
 
     func synchronizeInstallation(
@@ -93,10 +138,29 @@ final class NotificationCoordinator: ObservableObject {
         canManageNotifications: Bool,
         bearerToken: String?
     ) async {
+        let generation = registrationGeneration
         guard canManageNotifications, let bearerToken else { return }
-        guard registrationState != .registering, let pendingDeviceToken else { return }
         await refreshAuthorizationStatus()
         guard permissionState == .enabled || permissionState == .provisional else { return }
+
+        await registerInstallation(
+            using: api, bearerToken: bearerToken, accountUserID: nil,
+            generation: generation
+        )
+    }
+
+    private func registerInstallation(
+        using api: BrunnAPI,
+        bearerToken: String?,
+        accountUserID: String?,
+        generation: Int
+    ) async {
+        await acquireRegistrationOperation()
+        defer { releaseRegistrationOperation() }
+        guard generation == registrationGeneration, let deviceToken else { return }
+        guard hasPendingDeviceToken || registrationState != .registered
+                || (accountUserID != nil && registeredAccountUserID != accountUserID)
+        else { return }
 
         registrationState = .registering
         defer {
@@ -110,13 +174,13 @@ final class NotificationCoordinator: ObservableObject {
                 request: NotificationInstallationRequest(
                     environment: environment,
                     appID: appID,
-                    deviceToken: pendingDeviceToken.map { String(format: "%02x", $0) }.joined()
+                    deviceToken: deviceToken.map { String(format: "%02x", $0) }.joined()
                 ),
                 bearerToken: bearerToken
             )
-            self.pendingDeviceToken = nil
-            hasPendingDeviceToken = false
+            hasPendingDeviceToken = self.deviceToken != deviceToken
             registrationState = .registered
+            registeredAccountUserID = accountUserID
             lastRegisteredAt = .now
             lastError = nil
         } catch {
@@ -134,6 +198,26 @@ final class NotificationCoordinator: ObservableObject {
               let bearerToken,
               registrationState != .revoking
         else { return false }
+        return await revokeInstallation(using: api, bearerToken: bearerToken)
+    }
+
+    func revokeLocationRecovery(using api: BrunnAPI, accountUserID: String?) async -> Bool {
+        guard let accountUserID, !accountUserID.isEmpty,
+              await api.hasAuthenticatedSession()
+        else {
+            lastError = "Reconnect to Brunn before disconnecting this iPhone's background refresh."
+            return false
+        }
+        guard registrationState != .revoking else { return false }
+        return await revokeInstallation(using: api, bearerToken: nil)
+    }
+
+    private func revokeInstallation(using api: BrunnAPI, bearerToken: String?) async -> Bool {
+        // Invalidate already queued uploads before waiting for an in-flight
+        // registration, then revoke its server result after it completes.
+        registrationGeneration += 1
+        await acquireRegistrationOperation()
+        defer { releaseRegistrationOperation() }
         let previousState = registrationState
         registrationState = .revoking
         do {
@@ -142,6 +226,7 @@ final class NotificationCoordinator: ObservableObject {
                 bearerToken: bearerToken
             )
             registrationState = .notRegistered
+            registeredAccountUserID = nil
             lastRegisteredAt = nil
             lastError = nil
             return true
@@ -152,26 +237,39 @@ final class NotificationCoordinator: ObservableObject {
         }
     }
 
-    func refreshAuthorizationStatus() async {
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
-        switch settings.authorizationStatus {
-        case .authorized, .ephemeral:
-            permissionState = .enabled
-        case .provisional:
-            permissionState = .provisional
-        case .denied:
-            permissionState = .denied
-        case .notDetermined:
-            permissionState = .unknown
-        @unknown default:
-            permissionState = .unknown
+    private func acquireRegistrationOperation() async {
+        if registrationOperationHeld {
+            await withCheckedContinuation { registrationOperationWaiters.append($0) }
+        } else {
+            registrationOperationHeld = true
         }
     }
 
-    private func registerForRemoteNotificationsIfAuthorized() async {
-        await refreshAuthorizationStatus()
-        if permissionState == .enabled || permissionState == .provisional {
-            UIApplication.shared.registerForRemoteNotifications()
+    private func releaseRegistrationOperation() {
+        if registrationOperationWaiters.isEmpty {
+            registrationOperationHeld = false
+        } else {
+            registrationOperationWaiters.removeFirst().resume()
+        }
+    }
+
+    func refreshAuthorizationStatus() async {
+        permissionState = await loadPermissionState()
+    }
+
+    private static func systemPermissionState() async -> PushPermissionState {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        switch settings.authorizationStatus {
+        case .authorized, .ephemeral:
+            return .enabled
+        case .provisional:
+            return .provisional
+        case .denied:
+            return .denied
+        case .notDetermined:
+            return .unknown
+        @unknown default:
+            return .unknown
         }
     }
 

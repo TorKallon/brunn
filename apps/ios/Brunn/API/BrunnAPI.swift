@@ -591,24 +591,24 @@ public actor BrunnAPI {
     public func upsertNotificationInstallation(
         installationID: UUID,
         request: NotificationInstallationRequest,
-        bearerToken: String
+        bearerToken: String? = nil
     ) async throws -> NotificationInstallationResponse {
         try await put(
             path: Self.notificationInstallationPath(installationID: installationID),
             body: request,
             bearerToken: bearerToken,
-            sendCookies: false
+            sendCookies: bearerToken == nil
         )
     }
 
     public func revokeNotificationInstallation(
         installationID: UUID,
-        bearerToken: String
+        bearerToken: String? = nil
     ) async throws -> NotificationInstallationResponse {
         try await delete(
             path: Self.notificationInstallationPath(installationID: installationID),
             bearerToken: bearerToken,
-            sendCookies: false
+            sendCookies: bearerToken == nil
         )
     }
 

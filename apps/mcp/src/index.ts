@@ -716,7 +716,7 @@ registerJsonTool(
 
 registerJsonTool(
   "location.presence",
-  "Read the owner's current formatted location presence. Returns no raw location reports.",
+  "Read the owner's latest usable position with its original observation time, age, accuracy and available place/locality. Stale means last known; approximate means the position cannot confirm a venue. Historical visit is separate from current position. Returns no raw location reports.",
   {},
   async () => {
     try {

@@ -113,8 +113,9 @@ pub struct PublishRequest {
     pub expires_at: Option<DateTime<Utc>>,
 }
 
-/// The fixed four-hour event key is the only heartbeat scheduling state.
 /// Reuse the worker's existing non-bearer producer credential and outbox.
+/// Hourly event keys deduplicate retries; the recent-event check prevents an
+/// extra wakeup at the next clock-hour boundary after a late-hour first attempt.
 pub async fn enqueue_location_heartbeats(
     pool: &PgPool,
     now: DateTime<Utc>,
@@ -127,7 +128,22 @@ pub async fn enqueue_location_heartbeats(
                  'location-heartbeat:' || presence.user_id::text || ':' || $2::text AS event_key
           FROM brunn.location_presence AS presence
           JOIN brunn.task_guard_producers AS producer USING (user_id)
-          WHERE presence.reported_at < $1::timestamptz - interval '4 hours'
+          WHERE (
+              coalesce(
+                (presence.current_position->>'observed_at')::timestamptz,
+                CASE WHEN presence.last_accuracy_m <= 1000 THEN presence.reported_at END
+              ) IS NULL
+              OR coalesce(
+                (presence.current_position->>'observed_at')::timestamptz,
+                CASE WHEN presence.last_accuracy_m <= 1000 THEN presence.reported_at END
+              ) <= $1::timestamptz - interval '1 hour'
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM brunn.notifications AS previous
+              WHERE previous.user_id=presence.user_id
+                AND previous.kind='location_heartbeat'
+                AND previous.occurred_at > $1::timestamptz - interval '1 hour'
+            )
             AND EXISTS (
               SELECT 1 FROM brunn.notification_installations AS installation
               WHERE installation.user_id=presence.user_id
@@ -142,7 +158,7 @@ pub async fn enqueue_location_heartbeats(
           SELECT user_id,credential_id,event_key,
                  encode(public.digest(event_key,'sha256'),'hex'),event_key,
                  'location_heartbeat','normal','Location heartbeat','Location heartbeat',
-                 '{"type":"push"}'::jsonb,$1,$1::timestamptz + interval '4 hours'
+                 '{"type":"push"}'::jsonb,$1,$1::timestamptz + interval '1 hour'
           FROM due
           ON CONFLICT (user_id,event_key) DO NOTHING
           RETURNING user_id,id
@@ -160,7 +176,7 @@ pub async fn enqueue_location_heartbeats(
         "#,
     )
     .bind(now)
-    .bind(now.timestamp().div_euclid(4 * 60 * 60).to_string())
+    .bind(now.timestamp().div_euclid(60 * 60).to_string())
     .bind(delivery_enabled)
     .execute(pool)
     .await?;
@@ -2061,6 +2077,12 @@ async fn record_failure(
         .await?;
     }
     tx.commit().await?;
+    tracing::warn!(
+        kind = delivery.kind.as_str(),
+        code = failure.code.as_str(),
+        retry,
+        "APNs notification delivery failed"
+    );
     metrics::counter!("notifications.delivery", "result" => result).increment(1);
     Ok(())
 }

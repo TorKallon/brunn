@@ -35,6 +35,7 @@ struct BrunnApp: App {
                         locationUserID = currentLocationUserID
                     }
                     completedInitialLocationAccountSync = true
+                    await synchronizeLocationRecovery(requestRegistration: true)
                     await notifications.synchronizeInstallation(
                         using: model.api,
                         canManageNotifications: model.canManageNotifications,
@@ -53,6 +54,12 @@ struct BrunnApp: App {
                         await appDelegate.locationReporter.applicationDidBecomeActive(
                             expectedUserID: userID
                         )
+                        await synchronizeLocationRecovery(requestRegistration: true)
+                    }
+                }
+                .onChange(of: appDelegate.locationReporter.reportingEnabled) { _, enabled in
+                    Task {
+                        await synchronizeLocationRecovery(requestRegistration: enabled)
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .brunnPushRoute)) { _ in
@@ -87,6 +94,10 @@ struct BrunnApp: App {
                         if let route = PushRouteBuffer.shared.take() {
                             await model.handle(route)
                         }
+                        await appDelegate.locationReporter.applicationDidBecomeActive(
+                            expectedUserID: model.locationReportingUserID
+                        )
+                        await synchronizeLocationRecovery(requestRegistration: true)
                         await notifications.synchronizeInstallation(
                             using: model.api,
                             canManageNotifications: model.canManageNotifications,
@@ -96,9 +107,6 @@ struct BrunnApp: App {
                         await model.refreshTaskSurface()
                         await model.refreshNotifications()
                         await model.refreshMessaging(.foreground)
-                        await appDelegate.locationReporter.applicationDidBecomeActive(
-                            expectedUserID: model.locationReportingUserID
-                        )
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .brunnPushToken)) { event in
@@ -106,6 +114,7 @@ struct BrunnApp: App {
                     notifications.receiveDeviceToken(token)
                     _ = PushTokenBuffer.shared.take()
                     Task {
+                        await synchronizeLocationRecovery()
                         await notifications.synchronizeInstallation(
                             using: model.api,
                             canManageNotifications: model.canManageNotifications,
@@ -118,5 +127,17 @@ struct BrunnApp: App {
                     notifications.receiveRegistrationFailure(error)
                 }
         }
+    }
+
+    @MainActor
+    private func synchronizeLocationRecovery(requestRegistration: Bool = false) async {
+        if requestRegistration && appDelegate.locationReporter.reportingEnabled {
+            notifications.requestRemoteRegistration()
+        }
+        await notifications.synchronizeLocationRecovery(
+            using: model.api,
+            accountUserID: model.connectionValidated ? model.locationReportingUserID : nil,
+            reportingEnabled: appDelegate.locationReporter.reportingEnabled
+        )
     }
 }

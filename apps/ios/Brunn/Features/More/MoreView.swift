@@ -55,6 +55,11 @@ struct MoreView: View {
                                 )
                             }
                             _ = await model.revokeDeviceTaskAccess()
+                            await notifications.synchronizeLocationRecovery(
+                                using: model.api,
+                                accountUserID: model.locationReportingUserID,
+                                reportingEnabled: locationReporter.reportingEnabled
+                            )
                         }
                     }
                     .accessibilityIdentifier("device-task-access-revoke")
@@ -189,14 +194,39 @@ struct MoreView: View {
                                 ownerAPI: model.api
                             ) else { return }
                         }
-                        if !model.isDemo, model.canManageNotifications {
-                            let revoked = await notifications.revokeInstallation(
-                                using: model.api,
-                                canManageNotifications: model.canManageNotifications,
-                                bearerToken: model.deviceTaskBearer()
-                            )
+                        if !model.isDemo {
+                            let revoked: Bool
+                            if model.connectionValidated {
+                                // Disable bearer-driven registration before the
+                                // final owner-session revoke so a late APNs
+                                // callback cannot recreate the installation.
+                                if model.canManageNotifications {
+                                    guard await model.revokeDeviceTaskAccess() else { return }
+                                }
+                                revoked = await notifications.revokeLocationRecovery(
+                                    using: model.api,
+                                    accountUserID: model.locationReportingUserID
+                                )
+                            } else if model.canManageNotifications {
+                                revoked = await notifications.revokeInstallation(
+                                    using: model.api,
+                                    canManageNotifications: true,
+                                    bearerToken: model.deviceTaskBearer()
+                                )
+                            } else {
+                                // A prior connected launch may have registered
+                                // this installation even if this launch has no
+                                // token callback yet. Reconnect before logout
+                                // can confirm that server-side access is gone.
+                                revoked = await notifications.revokeLocationRecovery(
+                                    using: model.api,
+                                    accountUserID: model.user?.id
+                                )
+                            }
                             guard revoked else { return }
-                            guard await model.revokeDeviceTaskAccess() else { return }
+                            if model.canManageNotifications {
+                                guard await model.revokeDeviceTaskAccess() else { return }
+                            }
                         }
                         let wasDemo = model.isDemo
                         await model.disconnect()

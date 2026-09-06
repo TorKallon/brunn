@@ -193,11 +193,17 @@ async fn seed_fixture(pool: &PgPool) -> Fixture {
         INSERT INTO brunn.location_presence(
           user_id,timezone,reported_at,last_lat,last_lon,last_accuracy_m,
           city,region,country,visit_arrived_at,visit_lat,visit_lon,
-          visit_label,visit_kind,visit_confidence
+          visit_label,visit_kind,visit_confidence,current_position
         ) VALUES(
           $1,'America/Los_Angeles',$2,47.6205,-122.3493,12.0,
           'Seattle','Washington','United States',$3,47.6205,-122.3493,
-          'Home','home','high'
+          'Home','home','high', jsonb_build_object(
+            'observed_at',$2::timestamptz,
+            'coordinate',jsonb_build_object('lat',47.6205,'lon',-122.3493),
+            'accuracy_m',12.0,'timezone','America/Los_Angeles',
+            'city','Seattle','region','Washington','country','United States',
+            'place',jsonb_build_object('label','Home','kind','home','confidence','high')
+          )
         )
         "#,
     )

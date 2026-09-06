@@ -109,6 +109,27 @@ test("location tools expose only presence and rederive with the approved route c
   }
 });
 
+test("location.presence preserves current position separately from historical visit", async () => {
+  const calls: RecordedCall[] = [];
+  const body = {
+    status: "approximate",
+    at_home: false,
+    place: null,
+    position: { lat: 47.6, lon: -122.2, accuracy_m: 700, observed_at: "2026-09-06T10:00:00Z", age_seconds: 120, approximate: true },
+    last_seen: "2026-09-06T10:00+00:00",
+    last_contact: "2026-09-06T10:01+00:00",
+    visit: { label: "Home", kind: "home", confidence: "high", since: "2026-09-06T08:00+00:00" },
+  };
+  const { client, close } = await connectedPair(calls, { status: 200, body });
+  try {
+    const result = await client.callTool({ name: "location.presence", arguments: {} });
+    assert.deepEqual(parseToolText(result.content), body);
+    assert.equal(calls.length, 1);
+  } finally {
+    await close();
+  }
+});
+
 test("location.presence translates only the API no-row 404 into status none", async () => {
   const calls: RecordedCall[] = [];
   const { client, close } = await connectedPair(calls, {

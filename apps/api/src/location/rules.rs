@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 
 use chrono::{DateTime, Duration, FixedOffset, Utc};
 use chrono_tz::Tz;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::places::KnownPlace;
 
@@ -17,8 +17,12 @@ pub const PING_CITY_ACCURACY_M: f64 = 3_000.0;
 pub const MINIMUM_PING_VISIT_DWELL: Duration = Duration::minutes(10);
 pub const SAME_PLACE_MINIMUM_M: f64 = 150.0;
 pub const UNKNOWN_DEPARTURE_RADIUS_M: f64 = 300.0;
+/// A current map position may be approximate; a venue needs a much tighter fix.
+pub const CURRENT_POSITION_ACCURACY_M: f64 = 1_000.0;
+pub const PRECISE_POSITION_ACCURACY_M: f64 = 200.0;
+pub const CURRENT_POSITION_MAX_AGE: Duration = Duration::minutes(15);
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Coordinate {
     pub lat: f64,
     pub lon: f64,
@@ -77,7 +81,7 @@ pub struct LocationReport {
     pub poi: Vec<PoiCandidate>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Confidence {
     High,
@@ -125,7 +129,33 @@ pub struct PresenceState {
     pub city: Option<String>,
     pub region: Option<String>,
     pub country: Option<String>,
+    /// Latest usable positional evidence, independent of contact and visit history.
+    pub current_position: Option<CurrentPosition>,
     pub visit: Option<OpenVisit>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CurrentPlace {
+    pub label: Option<String>,
+    pub kind: String,
+    pub confidence: Confidence,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CurrentPosition {
+    pub observed_at: DateTime<Utc>,
+    pub coordinate: Coordinate,
+    pub accuracy_m: f64,
+    pub timezone: Tz,
+    pub city: Option<String>,
+    pub region: Option<String>,
+    pub country: Option<String>,
+    pub place: Option<CurrentPlace>,
+    /// Stable tie breaking across separate batches and chronological rederive.
+    #[serde(default)]
+    pub source_type: String,
+    #[serde(default)]
+    pub source_reported_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -208,6 +238,7 @@ fn accuracy_tier(accuracy_m: f64) -> AccuracyTier {
 #[serde(rename_all = "snake_case")]
 pub enum PresenceStatus {
     Stale,
+    Approximate,
     AtPlace,
     BetweenPlaces,
 }
@@ -230,6 +261,21 @@ pub struct PresenceView {
     pub country: Option<String>,
     pub timezone: String,
     pub last_seen: String,
+    /// Latest report's original sample time; this is not a server receipt time.
+    pub last_contact: String,
+    pub position: Option<PresencePositionView>,
+    /// Historical visit state; never used to claim current whereabouts.
+    pub visit: Option<PresencePlaceView>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct PresencePositionView {
+    pub lat: f64,
+    pub lon: f64,
+    pub accuracy_m: f64,
+    pub observed_at: String,
+    pub age_seconds: i64,
+    pub approximate: bool,
 }
 
 pub fn resolve(report: &LocationReport, places: &[KnownPlace]) -> ResolvedPlace {
@@ -301,7 +347,13 @@ pub fn apply(
         return unchanged(previous, ReportDisposition::PingsOff);
     }
     if previous.is_some_and(|presence| report.at < presence.reported_at) {
-        return unchanged(previous, ReportDisposition::Late);
+        // A queued precise fix may arrive after a newer coarse contact. It may
+        // improve current position without rolling contact or visit history back.
+        let mut outcome = unchanged(previous, ReportDisposition::Late);
+        if let Some(presence) = outcome.presence.as_mut() {
+            refresh_current_position(presence, report, places);
+        }
+        return outcome;
     }
 
     let open_before = previous.and_then(|state| state.visit.as_ref());
@@ -315,6 +367,7 @@ pub fn apply(
         Some(AccuracyTier::Coarse) => false,
     };
     let mut presence = refresh_presence(previous, report, geocode_allowed);
+    refresh_current_position(&mut presence, report, places);
     if ping_tier.is_none() && report.accuracy_m > LOW_ACCURACY_M {
         return ApplyOutcome {
             presence: Some(presence),
@@ -576,14 +629,30 @@ pub fn supersede_rows(
 }
 
 pub fn presence_view(presence: &PresenceState, now: DateTime<Utc>) -> PresenceView {
-    let status = if now - presence.reported_at > Duration::hours(6) {
+    let current = presence.current_position.as_ref();
+    let stale =
+        current.is_none_or(|position| now - position.observed_at > CURRENT_POSITION_MAX_AGE);
+    let approximate =
+        current.is_some_and(|position| position.accuracy_m > PRECISE_POSITION_ACCURACY_M);
+    let place = current.and_then(|position| {
+        position.place.as_ref().map(|place| PresencePlaceView {
+            label: place.label.clone(),
+            kind: place.kind.clone(),
+            confidence: place.confidence,
+            // A positional observation is not an inferred dwell or arrival time.
+            since: render_timezone(position.observed_at, position.timezone),
+        })
+    });
+    let status = if stale {
         PresenceStatus::Stale
-    } else if presence.visit.is_some() {
+    } else if approximate {
+        PresenceStatus::Approximate
+    } else if place.as_ref().is_some_and(|place| place.label.is_some()) {
         PresenceStatus::AtPlace
     } else {
         PresenceStatus::BetweenPlaces
     };
-    let place = presence.visit.as_ref().map(|visit| PresencePlaceView {
+    let visit = presence.visit.as_ref().map(|visit| PresencePlaceView {
         label: visit.label.clone(),
         kind: visit.kind.clone(),
         confidence: visit.confidence,
@@ -591,13 +660,35 @@ pub fn presence_view(presence: &PresenceState, now: DateTime<Utc>) -> PresenceVi
     });
     PresenceView {
         status,
-        at_home: place.as_ref().is_some_and(|place| place.kind == "home"),
+        at_home: !stale
+            && !approximate
+            && place
+                .as_ref()
+                .is_some_and(|place| place.kind == "home" && place.confidence == Confidence::High),
         place,
-        city: presence.city.clone(),
-        region: presence.region.clone(),
-        country: presence.country.clone(),
-        timezone: presence.timezone.to_string(),
-        last_seen: render_timezone(presence.reported_at, presence.timezone),
+        city: current.and_then(|position| position.city.clone()),
+        region: current.and_then(|position| position.region.clone()),
+        country: current.and_then(|position| position.country.clone()),
+        timezone: current
+            .map_or(presence.timezone, |position| position.timezone)
+            .to_string(),
+        last_seen: render_timezone(
+            current.map_or(presence.reported_at, |position| position.observed_at),
+            current.map_or(presence.timezone, |position| position.timezone),
+        ),
+        last_contact: render_timezone(presence.reported_at, presence.timezone),
+        position: current.map(|position| PresencePositionView {
+            lat: position.coordinate.lat,
+            lon: position.coordinate.lon,
+            accuracy_m: position.accuracy_m,
+            observed_at: position
+                .observed_at
+                .with_timezone(&position.timezone)
+                .to_rfc3339(),
+            age_seconds: (now - position.observed_at).num_seconds().max(0),
+            approximate: position.accuracy_m > PRECISE_POSITION_ACCURACY_M,
+        }),
+        visit,
     }
 }
 
@@ -781,6 +872,7 @@ fn refresh_presence(
         city: None,
         region: None,
         country: None,
+        current_position: None,
         visit: None,
     });
     presence.timezone = report.timezone;
@@ -799,6 +891,90 @@ fn refresh_presence(
         }
     }
     presence
+}
+
+fn refresh_current_position(
+    presence: &mut PresenceState,
+    report: &LocationReport,
+    places: &[KnownPlace],
+) {
+    if report.accuracy_m > CURRENT_POSITION_ACCURACY_M {
+        return;
+    }
+    // Apple's visit callbacks describe historical events. Their delivery time
+    // cannot make the old visit coordinate newer than a real position sample.
+    let observed_at = match report.kind {
+        ReportKind::Ping => report.at,
+        ReportKind::VisitArrival { arrived_at } => arrived_at.unwrap_or(report.at).min(report.at),
+        ReportKind::VisitDeparture { departed_at, .. } => departed_at.min(report.at),
+    };
+    let candidate_wins = presence.current_position.as_ref().is_none_or(|position| {
+        observed_at
+            .cmp(&position.observed_at)
+            .then_with(|| position.accuracy_m.total_cmp(&report.accuracy_m))
+            .then_with(|| {
+                // An older snapshot may not yet carry source metadata.
+                let previous_type =
+                    if position.source_type.is_empty() || position.source_type == "unknown" {
+                        "~unknown"
+                    } else {
+                        &position.source_type
+                    };
+                previous_type.cmp(report.kind.as_str())
+            })
+            .then_with(|| position.source_reported_at.cmp(&report.at))
+            == Ordering::Greater
+    });
+    if !candidate_wins {
+        return;
+    }
+    let geocode = report.geocode.as_ref();
+    let place = if report.accuracy_m <= PRECISE_POSITION_ACCURACY_M {
+        let resolved = resolve(report, places);
+        // Being inside a known-place radius is insufficient when the error
+        // circle crosses its boundary. Fall back to the report's address hint.
+        let known_is_supported = resolved.known_place_index.is_none_or(|index| {
+            let place = &places[index];
+            distance_m(
+                report.coordinate,
+                Coordinate {
+                    lat: place.lat,
+                    lon: place.lon,
+                },
+            ) + report.accuracy_m
+                <= f64::from(place.radius_m)
+        });
+        if known_is_supported && resolved.label.is_some() {
+            Some(CurrentPlace {
+                label: resolved.label,
+                kind: resolved.kind,
+                confidence: resolved.confidence,
+            })
+        } else {
+            geocode
+                .and_then(|geocode| geocode.name.clone())
+                .map(|label| CurrentPlace {
+                    label: Some(label),
+                    kind: "unknown".to_owned(),
+                    confidence: Confidence::Low,
+                })
+        }
+    } else {
+        None
+    };
+    presence.current_position = Some(CurrentPosition {
+        observed_at,
+        coordinate: report.coordinate,
+        accuracy_m: report.accuracy_m,
+        timezone: report.timezone,
+        // Never carry another position's locality across an unenriched move.
+        city: geocode.and_then(|geocode| geocode.city.clone()),
+        region: geocode.and_then(|geocode| geocode.region.clone()),
+        country: geocode.and_then(|geocode| geocode.country.clone()),
+        place,
+        source_type: report.kind.as_str().to_owned(),
+        source_reported_at: report.at,
+    });
 }
 
 fn open_visit(
@@ -1725,6 +1901,22 @@ mod tests {
             city: Some("Bellevue".to_owned()),
             region: Some("WA".to_owned()),
             country: Some("US".to_owned()),
+            current_position: Some(CurrentPosition {
+                observed_at: at(18, 42),
+                source_type: "ping".to_owned(),
+                source_reported_at: at(18, 42),
+                coordinate: HOME,
+                accuracy_m: 20.0,
+                timezone: chrono_tz::America::Los_Angeles,
+                city: Some("Bellevue".to_owned()),
+                region: Some("WA".to_owned()),
+                country: Some("US".to_owned()),
+                place: Some(CurrentPlace {
+                    label: Some("Home".to_owned()),
+                    kind: "home".to_owned(),
+                    confidence: Confidence::High,
+                }),
+            }),
             visit: Some(OpenVisit {
                 arrived_at: at(16, 10),
                 coordinate: HOME,
@@ -1734,15 +1926,194 @@ mod tests {
                 opened_by_ping: false,
             }),
         };
-        let live = presence_view(&state, at(20, 0));
+        let live = presence_view(&state, at(18, 45));
         assert_eq!(live.status, PresenceStatus::AtPlace);
         assert!(live.at_home);
-        assert_eq!(live.place.as_ref().unwrap().since, "2026-09-01T09:10-07:00");
+        assert_eq!(live.place.as_ref().unwrap().since, "2026-09-01T11:42-07:00");
+        assert_eq!(live.visit.as_ref().unwrap().since, "2026-09-01T09:10-07:00");
 
         let stale = presence_view(&state, at(18, 43) + Duration::hours(6));
         assert_eq!(stale.status, PresenceStatus::Stale);
+        assert!(!stale.at_home);
         assert_eq!(stale.place, live.place);
         assert_eq!(stale.city, live.city);
+    }
+
+    #[test]
+    fn current_position_moves_before_an_open_visit_closes() {
+        let home = report(ReportKind::Ping, at(10, 0), HOME);
+        let state = apply(None, &home, &known_places(150), &[], true)
+            .presence
+            .unwrap();
+        // Outside Home but inside the visit departure hysteresis.
+        let moved = LocationReport {
+            coordinate: Coordinate {
+                lat: HOME.lat + 0.0015,
+                lon: HOME.lon,
+            },
+            geocode: Some(geocode("Bellevue", Some("Example Street"))),
+            ..report(ReportKind::Ping, at(10, 2), HOME)
+        };
+        let state = apply(Some(&state), &moved, &known_places(150), &[], true)
+            .presence
+            .unwrap();
+        assert_eq!(state.visit.as_ref().unwrap().label.as_deref(), Some("Home"));
+        let view = presence_view(&state, at(10, 3));
+        assert!(!view.at_home);
+        assert_eq!(view.place.unwrap().label.as_deref(), Some("Example Street"));
+        assert_eq!(view.position.unwrap().lat, moved.coordinate.lat);
+        assert_eq!(view.visit.unwrap().label.as_deref(), Some("Home"));
+    }
+
+    #[test]
+    fn coarse_contact_preserves_usable_fix_and_its_age() {
+        let precise = report(ReportKind::Ping, at(10, 0), HOME);
+        let first = apply(None, &precise, &known_places(150), &[], true)
+            .presence
+            .unwrap();
+        let coarse = LocationReport {
+            accuracy_m: 5_485.0,
+            ..report(ReportKind::Ping, at(10, 20), BELLEVUE)
+        };
+        let state = apply(Some(&first), &coarse, &known_places(150), &[], true)
+            .presence
+            .unwrap();
+        let view = presence_view(&state, at(10, 21));
+        assert_eq!(state.current_position, first.current_position);
+        assert_eq!(state.reported_at, coarse.at);
+        assert_eq!(view.status, PresenceStatus::Stale);
+        assert!(!view.at_home);
+        assert_eq!(view.position.unwrap().age_seconds, 21 * 60);
+        assert_ne!(view.last_seen, view.last_contact);
+    }
+
+    #[test]
+    fn approximate_position_has_a_map_but_does_not_confirm_a_venue() {
+        let approximate = LocationReport {
+            accuracy_m: 700.0,
+            geocode: Some(geocode("Bellevue", Some("Home"))),
+            ..report(ReportKind::Ping, at(10, 0), HOME)
+        };
+        let state = apply(None, &approximate, &known_places(150), &[], true)
+            .presence
+            .unwrap();
+        let view = presence_view(&state, at(10, 1));
+        assert_eq!(view.status, PresenceStatus::Approximate);
+        assert!(view.position.unwrap().approximate);
+        assert!(view.place.is_none());
+        assert!(!view.at_home);
+        assert_eq!(view.city.as_deref(), Some("Bellevue"));
+    }
+
+    #[test]
+    fn unseeded_ping_answers_where_without_a_visit_or_poi() {
+        let ping = LocationReport {
+            geocode: Some(geocode("Bellevue", Some("123 Example Street"))),
+            ..report(ReportKind::Ping, at(10, 0), BELLEVUE)
+        };
+        let state = apply(None, &ping, &[], &[], true).presence.unwrap();
+        let view = presence_view(&state, at(10, 1));
+        assert!(view.visit.is_none());
+        assert_eq!(
+            view.place.as_ref().unwrap().label.as_deref(),
+            Some("123 Example Street")
+        );
+        assert_eq!(view.place.unwrap().confidence, Confidence::Low);
+        assert_eq!(view.position.unwrap().accuracy_m, 25.0);
+    }
+
+    #[test]
+    fn delayed_visit_event_does_not_replace_newer_position_or_restore_old_locality() {
+        let current = report(ReportKind::Ping, at(10, 10), BELLEVUE);
+        let state = apply(None, &current, &known_places(150), &[], true)
+            .presence
+            .unwrap();
+        let delayed = LocationReport {
+            geocode: Some(geocode("Old City", Some("Old Stop"))),
+            ..report(
+                ReportKind::VisitArrival {
+                    arrived_at: Some(at(9, 0)),
+                },
+                at(10, 20),
+                HOME,
+            )
+        };
+        let state = apply(Some(&state), &delayed, &known_places(150), &[], true)
+            .presence
+            .unwrap();
+        let view = presence_view(&state, at(10, 21));
+        assert_eq!(view.position.unwrap().lat, BELLEVUE.lat);
+        assert!(view.city.is_none());
+        assert!(view.place.is_none());
+        assert!(!view.at_home);
+    }
+
+    #[test]
+    fn queued_precise_fix_can_follow_coarse_contact_without_rolling_history_back() {
+        let coarse = LocationReport {
+            accuracy_m: 5_000.0,
+            ..report(ReportKind::Ping, at(10, 10), HOME)
+        };
+        let state = apply(None, &coarse, &known_places(150), &[], true)
+            .presence
+            .unwrap();
+        assert!(presence_view(&state, at(10, 11)).position.is_none());
+        let precise = report(ReportKind::Ping, at(10, 5), BELLEVUE);
+        let state = apply(Some(&state), &precise, &known_places(150), &[], true)
+            .presence
+            .unwrap();
+        assert_eq!(state.reported_at, coarse.at);
+        assert_eq!(state.current_position.unwrap().observed_at, precise.at);
+        assert!(state.visit.is_none());
+    }
+
+    #[test]
+    fn an_unenriched_move_does_not_keep_an_old_address_or_city() {
+        let enriched = LocationReport {
+            geocode: Some(geocode("Old City", Some("Old Street"))),
+            ..report(ReportKind::Ping, at(10, 0), HOME)
+        };
+        let first = apply(None, &enriched, &[], &[], true).presence.unwrap();
+        let moved = report(ReportKind::Ping, at(10, 2), BELLEVUE);
+        let state = apply(Some(&first), &moved, &[], &[], true)
+            .presence
+            .unwrap();
+        let view = presence_view(&state, at(10, 3));
+        assert!(view.place.is_none());
+        assert!(view.city.is_none());
+        assert_eq!(view.position.unwrap().lat, BELLEVUE.lat);
+    }
+
+    #[test]
+    fn equal_time_fixes_choose_the_same_position_across_delivery_order_and_replay() {
+        let ping = LocationReport {
+            geocode: Some(geocode("Bellevue", Some("Current Street"))),
+            ..report(ReportKind::Ping, at(10, 0), BELLEVUE)
+        };
+        let visit = LocationReport {
+            geocode: Some(geocode("Bellevue", Some("Historical Visit"))),
+            ..report(
+                ReportKind::VisitArrival {
+                    arrived_at: Some(at(10, 0)),
+                },
+                at(10, 1),
+                HOME,
+            )
+        };
+        let visit_first = apply(None, &visit, &[], &[], true).presence.unwrap();
+        let then_ping = apply(Some(&visit_first), &ping, &[], &[], true)
+            .presence
+            .unwrap();
+        let ping_first = apply(None, &ping, &[], &[], true).presence.unwrap();
+        let then_visit = apply(Some(&ping_first), &visit, &[], &[], true)
+            .presence
+            .unwrap();
+        let replayed = replay(None, &[visit, ping], &[], &[], true, at(10, 2))
+            .presence
+            .unwrap();
+        assert_eq!(then_ping.current_position, then_visit.current_position);
+        assert_eq!(then_ping.current_position, replayed.current_position);
+        assert_eq!(then_ping.current_position.unwrap().source_type, "ping");
     }
 }
 
