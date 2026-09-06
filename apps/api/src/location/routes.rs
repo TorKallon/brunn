@@ -318,7 +318,7 @@ fn validated_report(report: ReportRequest, timezone: Tz) -> ApiResult<LocationRe
                 ));
             }
             ReportKind::VisitArrival {
-                arrived_at: report.arrived_at.map(|value| value.to_utc()),
+                arrived_at: report.arrived_at.map(canonical_report_time),
             }
         }
         "visit_departure" => {
@@ -334,8 +334,8 @@ fn validated_report(report: ReportRequest, timezone: Tz) -> ApiResult<LocationRe
                 ));
             }
             ReportKind::VisitDeparture {
-                arrived_at: arrived_at.to_utc(),
-                departed_at: departed_at.to_utc(),
+                arrived_at: canonical_report_time(arrived_at),
+                departed_at: canonical_report_time(departed_at),
             }
         }
         _ => return Err(ApiError::invalid("unknown location report type")),
@@ -346,14 +346,16 @@ fn validated_report(report: ReportRequest, timezone: Tz) -> ApiResult<LocationRe
         .map_err(|_| ApiError::invalid("report timestamp offset is out of range"))?;
     Ok(LocationReport {
         kind,
-        at: report.at.to_utc(),
+        at: canonical_report_time(report.at),
         offset_min,
         timezone,
         coordinate: Coordinate {
             lat: report.lat,
             lon: report.lon,
         },
-        accuracy_m: report.accuracy_m,
+        // The raw evidence uses PostgreSQL real. Fold its exact stored value
+        // so live derivation and rederive also agree on decimal accuracies.
+        accuracy_m: f64::from(report.accuracy_m as f32),
         geocode: report.geocode.map(|geocode| Geocode {
             city: geocode.city,
             region: geocode.region,
@@ -366,10 +368,20 @@ fn validated_report(report: ReportRequest, timezone: Tz) -> ApiResult<LocationRe
             .map(|poi| PoiCandidate {
                 name: poi.name,
                 category: poi.category,
-                distance_m: poi.distance_m,
+                distance_m: f64::from(poi.distance_m as f32),
             })
             .collect(),
     })
+}
+
+fn canonical_report_time(value: DateTime<FixedOffset>) -> DateTime<Utc> {
+    // Match SQLx's timestamptz encoding: whole microseconds since PostgreSQL's
+    // 2000-01-01 epoch. Normalize before both insertion and the live fold.
+    let epoch = DateTime::from_timestamp(946_684_800, 0).expect("valid PostgreSQL epoch");
+    let micros = (value.to_utc() - epoch)
+        .num_microseconds()
+        .expect("Chrono timestamps fit PostgreSQL's microsecond range");
+    epoch + Duration::microseconds(micros)
 }
 
 #[cfg(test)]
@@ -404,6 +416,33 @@ mod tests {
         assert_eq!(parsed[0].offset_min, -420);
         assert_eq!(parsed[0].timezone, chrono_tz::America::Los_Angeles);
         assert!(matches!(parsed[0].kind, ReportKind::Ping));
+    }
+
+    #[test]
+    fn boundary_canonicalizes_nanoseconds_and_real_values_before_the_live_fold() {
+        let mut wire = ping();
+        wire.kind = "visit_departure".to_owned();
+        wire.at = "2026-09-06T01:29:27.907921556-07:00".parse().unwrap();
+        wire.arrived_at = Some("2026-09-06T00:10:00.123456789-07:00".parse().unwrap());
+        wire.departed_at = Some("2026-09-06T01:20:00.987654321-07:00".parse().unwrap());
+        wire.accuracy_m = 33.9;
+        wire.poi.push(PoiRequest {
+            name: "Example Place".to_owned(),
+            category: None,
+            distance_m: 18.1,
+        });
+        let parsed = validated_reports(request(wire)).unwrap().remove(0);
+        assert_eq!(parsed.at.to_rfc3339(), "2026-09-06T08:29:27.907921+00:00");
+        assert_eq!(
+            parsed.kind,
+            ReportKind::VisitDeparture {
+                arrived_at: "2026-09-06T07:10:00.123456Z".parse().unwrap(),
+                departed_at: "2026-09-06T08:20:00.987654Z".parse().unwrap(),
+            }
+        );
+        assert_eq!(parsed.accuracy_m, f64::from(33.9_f32));
+        assert_eq!(parsed.poi[0].distance_m, f64::from(18.1_f32));
+        assert_eq!(parsed.offset_min, -420);
     }
 
     #[test]

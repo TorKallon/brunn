@@ -8,7 +8,7 @@ use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
 };
-use chrono::{DateTime, Duration, FixedOffset, Utc};
+use chrono::{DateTime, Duration, FixedOffset, Timelike, Utc};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use sqlx::{PgPool, postgres::PgPoolOptions};
@@ -944,8 +944,12 @@ async fn general_current_position_survives_storage_coarse_contact_and_delayed_vi
     )
     .await;
     assert_eq!(arrived.status, StatusCode::OK);
-    let moved_at = Utc::now() - Duration::minutes(2);
-    let moved = json!({"type":"ping","at":moved_at.to_rfc3339(),"lat":47.6220,"lon":-122.2070,"accuracy_m":25,
+    // Force sub-microsecond wire precision even on platforms whose clock only
+    // supplies microseconds. This used to change the snapshot during rederive.
+    let moved_at = (Utc::now() - Duration::minutes(3))
+        .with_nanosecond(907_921_556)
+        .unwrap();
+    let moved = json!({"type":"ping","at":moved_at.to_rfc3339(),"lat":47.6220,"lon":-122.2070,"accuracy_m":33.9,
         "geocode":{"name":"123 Example Street","city":"Bellevue","region":"WA","country":"US"}});
     let moved_response = request_json(
         &app,
@@ -1000,12 +1004,25 @@ async fn general_current_position_survives_storage_coarse_contact_and_delayed_vi
     .await;
     assert_eq!(presence.status, StatusCode::OK);
     assert_eq!(presence.body["position"]["lat"], 47.6220);
-    assert_eq!(presence.body["position"]["accuracy_m"], 25.0);
+    assert_eq!(presence.body["position"]["accuracy_m"], f64::from(33.9_f32));
+    assert_eq!(
+        DateTime::parse_from_rfc3339(presence.body["position"]["observed_at"].as_str().unwrap())
+            .unwrap()
+            .nanosecond(),
+        907_921_000
+    );
     assert_eq!(presence.body["place"]["label"], "123 Example Street");
     assert_eq!(presence.body["visit"]["label"], "Home");
     assert_ne!(presence.body["last_seen"], presence.body["last_contact"]);
     assert_eq!(presence.body["at_home"], false);
     assert!(presence.body["position"]["age_seconds"].as_i64().unwrap() >= 120);
+    let stored_position = sqlx::query_scalar::<_, Value>(
+        "SELECT current_position FROM brunn.location_presence WHERE user_id=$1",
+    )
+    .bind(fixture.user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
 
     let rederived = request_json(
         &app,
@@ -1030,6 +1047,17 @@ async fn general_current_position_survives_storage_coarse_contact_and_delayed_vi
     );
     assert_eq!(after.body["place"], presence.body["place"]);
     assert_eq!(after.body["visit"], presence.body["visit"]);
+    let rederived_position = sqlx::query_scalar::<_, Value>(
+        "SELECT current_position FROM brunn.location_presence WHERE user_id=$1",
+    )
+    .bind(fixture.user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        rederived_position, stored_position,
+        "the complete persisted position must replay exactly"
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]

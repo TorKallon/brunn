@@ -30,6 +30,9 @@ Fixes over 1 km accuracy cannot replace the last usable position. Fixes over
 to fit inside the boundary. Reads never enrich. Raw evidence and the single
 derived presence row support re-derivation; migration 0092 initializes position
 from retained evidence without borrowing an old visit's label.
+Before storage and folding, the API canonicalizes report/event timestamps to
+PostgreSQL microsecond precision and accuracy/POI distances to the existing
+`real` column precision, so live derivation and replay use identical evidence.
 
 Silent APNs registration uses the owner's existing authenticated session and
 installation endpoint, independently of alert permission and task credentials.
