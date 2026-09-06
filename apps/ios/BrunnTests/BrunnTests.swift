@@ -33,6 +33,57 @@ final class BrunnTests: XCTestCase {
     }
 
     @MainActor
+    func testLocationCallbackPreservesFreshFixesBeforeCoarseFinalFix() async throws {
+        let fixture = try LocationHeartbeatFixture()
+        defer { fixture.cleanUp() }
+        let recorder = NotificationRequestRecorder()
+        let originalHandler = try XCTUnwrap(NotificationRequestURLProtocol.handler)
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            return originalHandler(request)
+        }
+        let completed = expectation(description: "all fresh callback fixes uploaded")
+        fixture.reporter.handleHeartbeat { result in
+            XCTAssertEqual(result, .newData)
+            XCTAssertEqual(try? fixture.queue.count(), 0)
+            completed.fulfill()
+        }
+        let now = Date()
+        let accurateFix = CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: 0, longitude: 0),
+            altitude: 0, horizontalAccuracy: 6, verticalAccuracy: -1,
+            timestamp: now.addingTimeInterval(-60)
+        )
+        let coarseFix = CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: 0, longitude: 0),
+            altitude: 0, horizontalAccuracy: 5485, verticalAccuracy: -1,
+            timestamp: now
+        )
+
+        fixture.reporter.locationManager(
+            fixture.manager,
+            didUpdateLocations: [fixture.fix(age: 901), accurateFix, coarseFix]
+        )
+
+        XCTAssertEqual(try fixture.queue.count(), 2)
+        let pending = try XCTUnwrap(fixture.queue.nextPending())
+        XCTAssertEqual(pending.report.accuracyM, 6)
+        XCTAssertFalse(pending.isEnriched)
+        await fulfillment(of: [completed], timeout: 5)
+        let reports = try recorder.snapshot().flatMap { request in
+            let body = try XCTUnwrap(request.httpBody)
+            return try JSONDecoder().decode(LocationReportBatchRequest.self, from: body).reports
+        }
+        XCTAssertEqual(reports.map(\.accuracyM), [6, 5485])
+        XCTAssertEqual(reports.map(\.type), [.ping, .ping])
+        XCTAssertEqual(reports.map(\.at), [
+            LocationTimestamp.string(from: accurateFix.timestamp),
+            LocationTimestamp.string(from: coarseFix.timestamp),
+        ])
+        XCTAssertEqual(fixture.manager.requests, 1)
+    }
+
+    @MainActor
     func testLocationHeartbeatDoesNothingWithoutReportingAlwaysAccessAndCredential() throws {
         for (enabled, authorization, credential) in [
             (false, CLAuthorizationStatus.authorizedAlways, true),

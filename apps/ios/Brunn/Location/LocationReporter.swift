@@ -402,12 +402,15 @@ final class LocationReporter: NSObject, ObservableObject, @preconcurrency CLLoca
     }
 
     func locationManager(_: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let location = locations.last else {
+        guard !locations.isEmpty else {
             if let heartbeat { finishHeartbeat(heartbeat, result: .noData) }
             return
         }
         let previousUpload = lastUploadAt
-        handle(location: location)
+        // Core Location delivers fixes oldest first; each is evidence for the visit history.
+        for location in locations {
+            handle(location: location)
+        }
         if let heartbeat {
             let pendingDelivery = deliveryTail
             Task {
