@@ -1205,6 +1205,76 @@ async fn review_state_retry_preserves_owner_approval_and_attempt_fencing() {
 }
 
 #[tokio::test]
+async fn compact_related_intent_is_assembled_reviewed_and_published_without_rewriting_owner_text() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let before = "# Original\n\nOwner text stays exactly as written.\n\n## Related\n\n- [[Previous]]\n\n## Notes\n\nMore owner text.\n";
+    let source = write(&f, "sources/Original.md", before, 0).await;
+    let target = write(
+        &f,
+        "sources/Target.md",
+        "# Target\n\nA related source-backed observation.\n",
+        0,
+    )
+    .await;
+    let admission = admit(&f).await;
+    let related = json!({"kind":"related","title":"Connect the notes","summary":"Add the evidence-backed project link.","reason":"Keep the source relationship easy to find.","path":"sources/Original.md","expected_version":source["version"],"content":"- [[sources/Target.md]]","sources":[
+        {"entry_ref":source["entry_ref"],"version":source["version"],"start_line":1,"end_line":3},
+        {"entry_ref":target["entry_ref"],"version":target["version"],"start_line":1,"end_line":3}
+    ]});
+    let question = json!({"kind":"question","title":"Confirm the relationship","summary":"One owner decision.","question":"Should these notes share a project?","sources":[{"entry_ref":target["entry_ref"],"version":target["version"],"start_line":1,"end_line":3}]});
+    let (request, submitted) = submit(
+        &f,
+        &admission,
+        admission["state_version"].as_i64().unwrap(),
+        vec![related, question],
+    )
+    .await;
+    assert_eq!(
+        submitted["accepted_candidate_ids"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        ok(post(&f, &f.runner, "/v1/workspace/dreamer/candidates", request).await),
+        submitted
+    );
+    let (_, finished) = finish(
+        &f,
+        &admission,
+        submitted["state_version"].as_i64().unwrap(),
+        "completed",
+    )
+    .await;
+    assert_eq!(finished["counts"]["processed"], 2);
+    assert_eq!(current(&f, "sources/Original.md").await.unwrap().1, before);
+    let view = review(&f).await;
+    let item = view["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["candidate"]["target_path"] == "sources/Original.md")
+        .unwrap();
+    let after = before.replace("- [[Previous]]", "- [[sources/Target.md]]");
+    assert_eq!(item["candidate"]["before_md"], before);
+    assert_eq!(item["candidate"]["after_md"], after);
+    control(&f, "full", 1).await;
+    let approved = ok(post(
+        &f,
+        &f.owner,
+        "/v1/dreamer/review/decisions",
+        decision(&view, item, "approve"),
+    )
+    .await);
+    assert_eq!(approved["data"]["application_status"], "applied");
+    let published = current(&f, "sources/Original.md").await.unwrap();
+    assert_eq!(published.0, 2);
+    assert_eq!(published.1, after);
+}
+
+#[tokio::test]
 async fn full_review_publishes_exact_candidate_and_rejects_foreign_or_stale_authority() {
     let Some(f) = fixture().await else {
         return;

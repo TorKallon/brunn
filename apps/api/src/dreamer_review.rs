@@ -544,23 +544,187 @@ async fn source_versions(
     Ok(())
 }
 
-fn related_without_block(text: &str) -> String {
-    let mut out = Vec::new();
-    let mut inside = false;
-    for line in text.lines() {
-        if line.trim() == "## Related" {
-            inside = true;
+fn related_block_range(text: &str) -> ApiResult<Option<std::ops::Range<usize>>> {
+    let mut found = None;
+    let mut start = None;
+    let mut offset = 0;
+    let mut fence = None;
+    let mut frontmatter = None;
+    let mut comment = false;
+    for line in text.split_inclusive('\n') {
+        let raw = line.trim_end_matches(['\r', '\n']);
+        if offset == 0 && matches!(raw, "---" | "+++") {
+            frontmatter = Some(raw);
+            offset += line.len();
             continue;
         }
-        if inside && line.starts_with("## ") {
-            inside = false;
+        if frontmatter.is_some() {
+            if frontmatter == Some(raw) {
+                frontmatter = None;
+            }
+            offset += line.len();
+            continue;
         }
-        if !inside {
-            out.push(line);
+        if fence.is_none() && (comment || raw.contains("<!--")) {
+            comment = raw
+                .rfind("-->")
+                .is_none_or(|end| raw.rfind("<!--").is_some_and(|start| start > end));
+            offset += line.len();
+            continue;
         }
+        let heading = raw.trim_start_matches(' ');
+        let marker = legacy_fence_opening(raw);
+        if let Some((character, length)) = fence {
+            if marker.is_some_and(|(c, n)| c == character && n >= length)
+                && raw.trim().chars().all(|c| c == character)
+            {
+                fence = None;
+            }
+        } else if marker.is_some() {
+            fence = marker;
+        } else if raw.len() - heading.len() <= 3
+            && (heading.starts_with("# ") || heading.starts_with("## "))
+        {
+            if let Some(begin) = start.take() {
+                found = Some(begin..offset);
+            }
+            if heading.trim_end() == "## Related" {
+                if found.is_some() {
+                    return Err(ApiError::invalid(
+                        "multiple managed Related sections are ambiguous",
+                    ));
+                }
+                start = Some(offset);
+            }
+        }
+        offset += line.len();
     }
-    out.join("\n").trim_end().to_owned()
+    if frontmatter.is_some() || comment || fence.is_some() {
+        return Err(ApiError::invalid(
+            "unclosed source markup prevents a managed Related edit",
+        ));
+    }
+    Ok(start.map(|begin| begin..text.len()).or(found))
 }
+
+fn related_without_block(text: &str) -> ApiResult<String> {
+    Ok(match related_block_range(text)? {
+        Some(range) => format!("{}{}", &text[..range.start], &text[range.end..]),
+        None => text.to_owned(),
+    }
+    .trim_end()
+    .to_owned())
+}
+
+/// The model selects links. The server assembles the reviewable source-note
+/// preview from its exact current version, preserving all owner prose.
+fn compile_related_candidate(candidate: &mut Candidate, before: &str) -> ApiResult<()> {
+    if candidate.kind != "related" {
+        return Ok(());
+    }
+    let content = candidate.content.as_deref().unwrap_or("").trim();
+    if content.is_empty()
+        || !content
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .all(|line| line.trim().starts_with("- [[") && line.trim().ends_with("]]"))
+    {
+        // Existing complete-note candidates still pass the same body guard.
+        return Ok(());
+    }
+    if !candidate.sources.iter().any(|source| {
+        Some(source.path.as_str()) == candidate.path.as_deref()
+            && Some(source.version) == candidate.expected_version
+    }) {
+        return Err(ApiError::invalid(
+            "Related changes require the exact destination source in their evidence",
+        ));
+    }
+    let block = format!("## Related\n\n{content}\n\n");
+    candidate.content = Some(match related_block_range(before)? {
+        Some(range) => format!(
+            "{}{}{}",
+            &before[..range.start],
+            block,
+            &before[range.end..]
+        ),
+        None => format!(
+            "{before}{}{block}",
+            if before.ends_with("\n\n") {
+                ""
+            } else if before.ends_with('\n') {
+                "\n"
+            } else {
+                "\n\n"
+            }
+        ),
+    });
+    Ok(())
+}
+
+#[cfg(test)]
+mod related_candidate_tests {
+    use super::*;
+
+    fn links() -> Candidate {
+        serde_json::from_value(json!({
+            "kind":"related","title":"Connect the project notes",
+            "path":"sources/Original.md","expected_version":1,
+            "content":"- [[sources/Target.md]]",
+            "sources":[
+                {"entry_ref":format!("entry:{}",Uuid::now_v7()),"version":1,"start_line":1,"end_line":1,"path":"sources/Original.md"},
+                {"entry_ref":format!("entry:{}",Uuid::now_v7()),"version":1,"start_line":1,"end_line":1,"path":"sources/Target.md"}
+            ]
+        })).unwrap()
+    }
+
+    #[test]
+    fn compact_links_preserve_prose_and_fenced_examples_and_accept_md_paths() {
+        let prefix = "---\nexample: |\n  ## Related\n  Preserve metadata.\n---\n# Original\n\nOwner’s exact text.\n\n<!--\n## Related\nPreserve comment.\n-->\n\n```markdown\n## Related\nExample only.\n```\n\n";
+        let suffix = "# Another section\n\nMore owner text.\n";
+        let before = format!("{prefix}## Related\n\n- [[Old]]\n\n{suffix}");
+        let mut candidate = links();
+        compile_related_candidate(&mut candidate, &before).unwrap();
+        assert_eq!(
+            candidate.content.as_deref(),
+            Some(format!("{prefix}## Related\n\n- [[sources/Target.md]]\n\n{suffix}").as_str())
+        );
+        validate_candidate(&candidate, &before).unwrap();
+        candidate.content = candidate
+            .content
+            .map(|body| body.replace("Owner’s exact text.", "Changed text."));
+        assert!(validate_candidate(&candidate, &before).is_err());
+    }
+
+    #[test]
+    fn adding_a_block_preserves_a_note_without_a_trailing_newline() {
+        let before = "# Original\n\nOriginal text without a final newline.";
+        let mut candidate = links();
+        compile_related_candidate(&mut candidate, before).unwrap();
+        assert!(candidate.content.as_ref().unwrap().starts_with(before));
+        validate_candidate(&candidate, before).unwrap();
+    }
+
+    #[test]
+    fn related_links_cannot_bypass_exact_targets_or_ambiguous_sections() {
+        let mut missing_destination = links();
+        missing_destination.sources.remove(0);
+        assert!(compile_related_candidate(&mut missing_destination, "# Original").is_err());
+        let mut undeclared = links();
+        undeclared.content = Some("- [[sources/Unadmitted.md]]".into());
+        compile_related_candidate(&mut undeclared, "# Original").unwrap();
+        assert!(validate_candidate(&undeclared, "# Original").is_err());
+        let mut ambiguous = links();
+        assert!(
+            compile_related_candidate(
+                &mut ambiguous,
+                "# Original\n## Related\n- [[First]]\n## Related\n- [[Second]]"
+            )
+            .is_err()
+        );
+    }
+}
+
 pub(crate) fn validate_candidate(candidate: &Candidate, before: &str) -> ApiResult<()> {
     if candidate.title.is_empty()
         || candidate.title.len() > 300
@@ -695,20 +859,17 @@ pub(crate) fn validate_candidate(candidate: &Candidate, before: &str) -> ApiResu
                 || lower.ends_with("agents.md")
                 || lower.ends_with("soul.md")
                 || lower.contains("preferences")
-                || content.matches("## Related").count() != 1
-                || related_without_block(before) != related_without_block(content)
+                || related_block_range(content)?.is_none()
+                || related_without_block(before)? != related_without_block(content)?
             {
                 return Err(ApiError::invalid(
                     "Related changes may alter only the managed ## Related block of a source note",
                 ));
             }
-            let block = content
-                .split("## Related")
-                .nth(1)
-                .unwrap_or("")
-                .split("\n## ")
-                .next()
-                .unwrap_or("");
+            let range = related_block_range(content)?.expect("validated Related section");
+            let block = content[range]
+                .split_once('\n')
+                .map_or("", |(_, block)| block);
             if block.matches("[[").count() > 8 {
                 return Err(ApiError::invalid(
                     "Related blocks are limited to eight links",
@@ -723,7 +884,11 @@ pub(crate) fn validate_candidate(candidate: &Candidate, before: &str) -> ApiResu
                             "Related blocks contain only evidence-backed wiki-link bullets",
                         )
                     })?;
-                let target = target.split('|').next().unwrap_or(target);
+                let target = target
+                    .split('|')
+                    .next()
+                    .unwrap_or(target)
+                    .trim_end_matches(".md");
                 if !candidate.sources.iter().any(|s| {
                     s.path.trim_end_matches(".md") == target
                         || s.path
@@ -1976,6 +2141,7 @@ pub async fn candidates(
             ));
         }
         let before_md = before.map(|e| e.content).unwrap_or_default();
+        compile_related_candidate(&mut candidate, &before_md)?;
         validate_candidate(&candidate, &before_md)?;
         let hash = digest(&candidate);
         if data.items.iter().any(|i| i.candidate_hash == hash) {
