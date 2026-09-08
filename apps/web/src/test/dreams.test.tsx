@@ -231,20 +231,69 @@ describe("Dreamer Review inbox", () => {
     expect(screen.getByRole("button", { name: `Review ${question.title}` })).toBeEnabled();
   });
 
-  it("pins the selected candidate across refresh and requires reviewing the changed version", async () => {
+  it("shows the refreshed candidate immediately and requires acknowledgment before deciding on the new version", async () => {
     let state = reviewData();
-    installApiMock({ "GET /api/v1/dreamer/review": () => envelope(state) });
+    const submitted: unknown[] = [];
+    installApiMock({
+      "GET /api/v1/dreamer/review": () => envelope(state),
+      "POST /api/v1/dreamer/review/decisions": async (request: Request) => { submitted.push(await request.json()); return { status: "committed", data: { application_status: "approved_held", message: "New version approved and held." } }; },
+    });
     const user = userEvent.setup();
     renderApp("/dreams");
     await user.click(await screen.findByRole("button", { name: `Review ${candidate.title}` }));
-    state = reviewData({ decision_version: 8, items: [{ ...candidate, candidate_hash: "sha256:updated", run_version: 4, candidate: { after_md: "A different candidate." } }] });
+    await user.type(screen.getByRole("textbox", { name: "Comment (optional)" }), "Keep this note.");
+    state = reviewData({ decision_version: 8, items: [{ ...candidate, title: "Updated proposal title", body_md: "Fresh proposal context.", candidate_hash: "sha256:updated", run_version: 4, candidate: { after_md: "A different candidate." } }] });
     await user.click(screen.getByRole("button", { name: "Refresh" }));
     expect(await screen.findByText("This review has changed.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Updated proposal title" })).toBeInTheDocument();
+    expect(screen.getByText("Fresh proposal context.")).toBeInTheDocument();
+    expect(screen.getByText("A different candidate.")).toBeInTheDocument();
+    expect(screen.queryByText("Reviewed milestone.")).not.toBeInTheDocument();
+    expect(screen.queryByText(candidate.body_md)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
-    expect(screen.getByText("Reviewed milestone.")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Comment (optional)" })).toHaveValue("Keep this note.");
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+    expect(submitted).toHaveLength(0);
     await user.click(screen.getByRole("button", { name: "Review updated item" }));
     expect(screen.getByText("A different candidate.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+    await screen.findByText("New version approved and held.");
+    expect(submitted[0]).toMatchObject({ item_id: candidate.id, candidate_hash: "sha256:updated", run_version: 4, expected_decisions_version: 8, decision: "approve", comment: "Keep this note." });
+  });
+
+  it("refreshes displayed content during an uncertain decision without changing the exact retry or its acknowledgment gate", async () => {
+    let state = reviewData();
+    const submitted: unknown[] = [];
+    installApiMock({
+      "GET /api/v1/dreamer/review": () => envelope(state),
+      "POST /api/v1/dreamer/review/decisions": async (request: Request) => {
+        submitted.push(await request.json());
+        return submitted.length === 1 ? { status: 503, body: { error: { code: "unavailable", message: "Response interrupted." } } } : { status: 409, body: { error: { code: "stale_review", message: "The candidate changed." } } };
+      },
+    });
+    const user = userEvent.setup();
+    renderApp("/dreams");
+    await user.click(await screen.findByRole("button", { name: `Review ${candidate.title}` }));
+    await user.type(screen.getByRole("textbox", { name: "Comment (optional)" }), "My original note.");
+    await user.click(screen.getByRole("button", { name: "Defer" }));
+    await screen.findByRole("button", { name: "Retry" });
+    state = reviewData({ decision_version: 9, items: [{ ...candidate, body_md: "Replacement while the earlier request is unconfirmed.", candidate_hash: "sha256:replacement", run_version: 5, candidate: { after_md: "Latest candidate content." } }] });
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(await screen.findByText("Latest candidate content.")).toBeInTheDocument();
+    expect(screen.queryByText("Reviewed milestone.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Review updated item" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next review item" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByText("Decision needs another review");
+    expect(submitted).toHaveLength(2);
+    expect(submitted[1]).toEqual(submitted[0]);
+    expect(submitted[1]).toMatchObject({ item_id: candidate.id, candidate_hash: candidate.candidate_hash, run_version: 3, expected_decisions_version: 7, comment: "My original note." });
+    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Review updated item" }));
+    expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
+    expect(screen.getByRole("textbox", { name: "Comment (optional)" })).toHaveValue("My original note.");
+    expect(screen.getByText("Latest candidate content.")).toBeInTheDocument();
   });
 
   it("blocks stale approval and preserves the exact request on an uncertain retry", async () => {

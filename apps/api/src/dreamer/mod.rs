@@ -12,6 +12,7 @@ pub mod codex;
 pub mod connect;
 pub mod control;
 pub mod decisions;
+pub mod discovery;
 pub mod http;
 pub mod prompt;
 pub mod receipt;

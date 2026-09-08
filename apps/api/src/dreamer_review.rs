@@ -25,6 +25,7 @@ use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
 const STATE_PATH: &str = "dreams/state.md";
+mod location_discovery;
 const MAX_INPUTS: usize = 128;
 const MAX_ITEMS: usize = 96;
 const MAX_LEGACY_ITEMS: usize = 96;
@@ -179,6 +180,10 @@ pub fn router() -> Router<AppState> {
         .route("/dreamer/review/location-pilot", post(queue_location))
         .route("/workspace/dreamer/admit", post(admit))
         .route("/workspace/dreamer/checkpoint", post(checkpoint))
+        .route(
+            "/workspace/dreamer/location-discover",
+            post(location_discovery::discover),
+        )
         .route("/workspace/dreamer/candidates", post(candidates))
         .route("/workspace/dreamer/finish", post(finish))
 }
@@ -467,16 +472,16 @@ fn next_run(now: DateTime<Utc>) -> DateTime<Utc> {
 async fn source_versions(
     tx: &mut Transaction<'_, Postgres>,
     user: Uuid,
-    candidate: &mut Candidate,
+    sources: &mut [Source],
     frozen: i64,
     require_current: bool,
 ) -> ApiResult<()> {
-    if candidate.sources.len() > 64 {
+    if sources.len() > 64 {
         return Err(ApiError::invalid(
             "a candidate may reference at most 64 source versions",
         ));
     }
-    for source in &mut candidate.sources {
+    for source in sources {
         let id = entry_id(&source.entry_ref)?;
         if source.version < 1 || source.start_line < 1 || source.end_line < source.start_line {
             return Err(ApiError::invalid(
@@ -527,6 +532,7 @@ async fn source_versions(
     }
     Ok(())
 }
+
 fn related_without_block(text: &str) -> String {
     let mut out = Vec::new();
     let mut inside = false;
@@ -806,6 +812,7 @@ fn input_excluded(path: &str, kind: Option<&str>) -> bool {
         || path.starts_with(".brunn/")
         || path == "private/dreamer.md"
         || path.starts_with("agent-memory/")
+        || path.starts_with("Evidence/Location/")
         || path == "Location/Places.md"
         || path.starts_with("Location/Visits/")
         || matches!(kind, Some("location-places" | "location-visits"))
@@ -1004,6 +1011,11 @@ pub async fn queue_location(
     }
     let work = json!({"date":date.to_string(),"timezone":zone.name(),"from":from,"to":to});
     let mut tx = state.begin_write(&auth).await?;
+    if body.get("context_sources").is_some() {
+        return Err(ApiError::invalid(
+            "Location context is discovered automatically; queue the date without source selections",
+        ));
+    }
     let (mut data, version) = load_state(&mut tx, auth.user_id.0).await?;
     if version == 0 {
         import_legacy(&mut tx, auth.user_id.0, &mut data).await?;
@@ -1020,6 +1032,17 @@ pub async fn queue_location(
             };
             return Ok(Json(
                 json!({"status":"complete","data":{"queued":true,"work":work,"state_version":version,"no_op":true}}),
+            ));
+        }
+        if same_location_window(&data.location_work[0], &work)
+            && data.active.is_none()
+            && body["expected_state_version"].as_i64() == Some(version)
+        {
+            data.location_work[0] = work.clone();
+            let version = save_state(&state, &mut tx, &auth, &data, version).await?;
+            tx.commit().await?;
+            return Ok(Json(
+                json!({"status":"complete","data":{"queued":true,"work":work,"state_version":version}}),
             ));
         }
         return Err(conflict(
@@ -1056,6 +1079,7 @@ async fn validate_location_candidate(
             string(scope, "fingerprint")?,
             &candidate.sources,
             &candidate.raw_sources,
+            scope.get("context_sources"),
         )
         .await?;
     let output = json!({"candidates":[candidate]});
@@ -1201,8 +1225,11 @@ pub async fn admit(
                             .as_str(),
                         )
             });
+            let context_current =
+                crate::location::summary::context_sources_current_in_tx(&mut tx, &internal, &known)
+                    .await?;
             if packet["fingerprint_complete"] == true
-                && packet["evidence_fingerprint"] != known["fingerprint"]
+                && (packet["evidence_fingerprint"] != known["fingerprint"] || !context_current)
                 && !deferred
             {
                 let mut work = known.clone();
@@ -1212,40 +1239,69 @@ pub async fn admit(
             }
         }
     }
+    location_discovery::queue_latest(&mut tx, user, &mut data, &date).await?;
+    // A fresh attempt rediscovers context. Old corrected prose and old lookup
+    // sources cannot enter the new discovery prompt via a retained scope.
+    for work in &mut data.location_work {
+        if let Some(fields) = work.as_object_mut() {
+            fields.remove("context_sources");
+            fields.remove("discovery");
+        }
+    }
     if let Some(work) = data.location_work.first().cloned() {
-        let query: crate::location::evidence::EvidenceQuery = serde_json::from_value(
-            json!({"from":work["from"],"to":work["to"],"timezone":work["timezone"]}),
-        )?;
-        let mut internal = auth.clone();
-        internal.capabilities.insert("save".into());
-        crate::location::store::lock_location_user(&mut tx, user).await?;
-        let packet = crate::location::evidence::evidence_in_tx(&mut tx, &internal, &query).await?;
-        // Owner approval was for the exact old evidence. Both automatic
-        // refresh and explicit requeue need a fresh candidate and decision.
-        if packet["fingerprint_complete"] == true {
-            let mut invalidated = Vec::new();
-            for item in &mut data.items {
-                if item.status == "approved_held"
-                    && item.candidate.evidence_scope.as_ref().is_some_and(|scope| {
-                        same_location_window(scope, &work)
-                            && scope["fingerprint"] != packet["evidence_fingerprint"]
-                    })
-                {
-                    let mut original = work.clone();
-                    original["fingerprint"] =
-                        item.candidate.evidence_scope.as_ref().expect("scope")["fingerprint"]
-                            .clone();
-                    item.status = "needs_changes".into();
-                    invalidated.push(json!({"disposition":"held_approval_invalidated","work":original,"new_fingerprint":packet["evidence_fingerprint"],"item_id":item.id,"candidate_hash":item.candidate_hash,"run_entry_ref":item.run_entry_ref,"run_version":item.run_version}));
+        if crate::location::summary::context_sources_current_in_tx(&mut tx, &auth, &work).await? {
+            let query: crate::location::evidence::EvidenceQuery = serde_json::from_value(
+                json!({"from":work["from"],"to":work["to"],"timezone":work["timezone"]}),
+            )?;
+            let mut internal = auth.clone();
+            internal.capabilities.insert("save".into());
+            crate::location::store::lock_location_user(&mut tx, user).await?;
+            let packet =
+                crate::location::evidence::evidence_in_tx(&mut tx, &internal, &query).await?;
+            // Owner approval was for the exact old evidence. Both automatic
+            // refresh and explicit requeue need a fresh candidate and decision.
+            if packet["fingerprint_complete"] == true {
+                let mut invalidated = Vec::new();
+                for item in &mut data.items {
+                    if item.status == "approved_held"
+                        && item.candidate.evidence_scope.as_ref().is_some_and(|scope| {
+                            same_location_window(scope, &work)
+                                && (scope["fingerprint"] != packet["evidence_fingerprint"]
+                                    || scope.get("context_sources") != work.get("context_sources"))
+                        })
+                    {
+                        let mut original = work.clone();
+                        original["fingerprint"] =
+                            item.candidate.evidence_scope.as_ref().expect("scope")["fingerprint"]
+                                .clone();
+                        item.status = "needs_changes".into();
+                        invalidated.push(json!({"disposition":"held_approval_invalidated","work":original,"new_fingerprint":packet["evidence_fingerprint"],"item_id":item.id,"candidate_hash":item.candidate_hash,"run_entry_ref":item.run_entry_ref,"run_version":item.run_version}));
+                    }
+                }
+                for disposition in invalidated {
+                    record_location_disposition(&mut data, disposition);
                 }
             }
-            for disposition in invalidated {
-                record_location_disposition(&mut data, disposition);
+            let mut scope = work.clone();
+            scope["fingerprint"] = packet["evidence_fingerprint"].clone();
+            data.active.as_mut().expect("active").location_work = Some(scope);
+        } else {
+            for item in &mut data.items {
+                if item.status == "approved_held"
+                    && item
+                        .candidate
+                        .evidence_scope
+                        .as_ref()
+                        .is_some_and(|scope| same_location_window(scope, &work))
+                {
+                    item.status = "needs_changes".into();
+                }
             }
+            record_location_disposition(
+                &mut data,
+                json!({"disposition":"context_sources_changed","work":work,"detail":"Explicit location context changed or is inaccessible. The day remains retained until the owner supplies current exact sources."}),
+            );
         }
-        let mut scope = work.clone();
-        scope["fingerprint"] = packet["evidence_fingerprint"].clone();
-        data.active.as_mut().expect("active").location_work = Some(scope);
     }
     if current_mode == "full" {
         let mut changed = false;
@@ -1346,6 +1402,12 @@ async fn admission_response(
     }
     let mut location_evidence = Value::Null;
     if let Some(work) = &a.location_work {
+        if !crate::location::summary::context_sources_current_in_tx(tx, auth, work).await? {
+            return Err(conflict(
+                "Location context changed; retain this day for a fresh admission",
+                version,
+            ));
+        }
         let query = serde_json::from_value(
             json!({"from":work["from"],"to":work["to"],"timezone":work["timezone"]}),
         )?;
@@ -1366,7 +1428,7 @@ async fn admission_response(
         .bind(user).fetch_all(&mut **tx).await?;
     let outputs=rows.iter().map(|r|json!({"path":r.get::<String,_>("path"),"version":r.get::<i64,_>("current_version")})).collect::<Vec<_>>();
     Ok(
-        json!({"admitted":true,"attempt_id":a.attempt_id,"fence":a.fence,"state_version":version,"mode":a.mode,"frozen_generation":a.frozen_generation,"scanned_generation":data.scanned_generation,"processed_generation":data.processed_generation,"inputs":data.inputs,"outputs":outputs,"location_work":a.location_work,"location_evidence":location_evidence,"pending":pending_items,"pending_notifications":data.pending_notifications,"decisions":decisions.as_ref().map(|e|e.content.as_str()).unwrap_or(""),"decisions_version":decisions.map_or(0,|e|e.version)}),
+        json!({"admitted":true,"attempt_id":a.attempt_id,"fence":a.fence,"state_version":version,"mode":a.mode,"frozen_generation":a.frozen_generation,"scanned_generation":data.scanned_generation,"processed_generation":data.processed_generation,"inputs":data.inputs,"outputs":outputs,"location_work":a.location_work,"location_evidence":location_evidence,"location_context":a.location_work.as_ref().and_then(|work|work.get("context_sources")).cloned().unwrap_or_else(||json!([])),"pending":pending_items,"pending_notifications":data.pending_notifications,"decisions":decisions.as_ref().map(|e|e.content.as_str()).unwrap_or(""),"decisions_version":decisions.map_or(0,|e|e.version)}),
     )
 }
 pub async fn checkpoint(
@@ -1843,7 +1905,7 @@ pub async fn candidates(
         source_versions(
             &mut tx,
             user,
-            &mut candidate,
+            &mut candidate.sources,
             a.frozen_generation,
             !location,
         )
@@ -1857,6 +1919,7 @@ pub async fn candidates(
             if ["from", "to", "timezone", "fingerprint"]
                 .iter()
                 .any(|key| scope[*key] != work[*key])
+                || scope.get("context_sources") != work.get("context_sources")
                 || candidate.path.as_deref()
                     != Some(
                         format!(
@@ -2035,7 +2098,18 @@ pub async fn candidates(
     )
     .await?;
     if !ids.is_empty() {
-        data.pending_notifications.push(json!({"status":"pending","event_key":format!("dreaming-review-{}",a.attempt_id),"target_kind":"review","run_entry_ref":run["entry_ref"],"run_version":run["version"],"count":ids.len()}));
+        let key = format!("dreaming-review-{}", a.attempt_id);
+        if let Some(prior) = data
+            .pending_notifications
+            .iter_mut()
+            .find(|n| n["event_key"] == key)
+        {
+            prior["run_entry_ref"] = run["entry_ref"].clone();
+            prior["run_version"] = run["version"].clone();
+            prior["count"] = json!(prior["count"].as_u64().unwrap_or(0) + ids.len() as u64);
+        } else {
+            data.pending_notifications.push(json!({"status":"pending","event_key":key,"target_kind":"review","run_entry_ref":run["entry_ref"],"run_version":run["version"],"count":ids.len()}));
+        }
     }
     let response = json!({"state_version":version+1,"run_entry_ref":run["entry_ref"],"run_version":run["version"],"accepted_candidate_ids":ids,"pending_count":data.items.iter().filter(|i|pending(i)).count()});
     data.candidate_submission = Some(
@@ -2311,6 +2385,7 @@ fn withhold_item(item: &Item) -> Item {
     shown.candidate.question.clear();
     shown.candidate.sources.clear();
     shown.candidate.raw_sources.clear();
+    shown.candidate.evidence_scope = None;
     shown.candidate.path = None;
     shown.before_md.clear();
     shown.reviewable = false;
@@ -2338,6 +2413,8 @@ async fn item_stale(
         let packet = crate::location::evidence::evidence_in_tx(tx, &internal, &query).await?;
         if packet["fingerprint_complete"] != true
             || packet["evidence_fingerprint"] != scope["fingerprint"]
+            || !crate::location::summary::context_sources_current_in_tx(tx, &internal, scope)
+                .await?
         {
             return Ok(true);
         }
@@ -2737,7 +2814,7 @@ async fn publish_item(
     source_versions(
         tx,
         user,
-        &mut item.candidate,
+        &mut item.candidate.sources,
         item.frozen_generation,
         !location,
     )

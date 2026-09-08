@@ -2027,6 +2027,461 @@ fn pilot_candidate(admission: &Value) -> Value {
         "evidence_scope":{"from":work["from"],"to":work["to"],"timezone":work["timezone"],"fingerprint":work["fingerprint"]}})
 }
 
+async fn historical_context(
+    f: &Fixture,
+    from: chrono::DateTime<Utc>,
+    path: &str,
+    text: &str,
+) -> Value {
+    let source = write(f, path, text, 0).await;
+    sqlx::query("UPDATE brunn.entry_versions SET created_at=$3 WHERE user_id=$1 AND entry_id=$2")
+        .bind(f.owner.user)
+        .bind(
+            Uuid::parse_str(
+                source["entry_ref"]
+                    .as_str()
+                    .unwrap()
+                    .trim_start_matches("entry:"),
+            )
+            .unwrap(),
+        )
+        .bind(from - chrono::Duration::days(1))
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    source
+}
+async fn discover_context(f: &Fixture, admission: &Value, query: &str) -> Value {
+    let mut body = attempt(admission, admission["state_version"].as_i64().unwrap());
+    body["context_queries"] = json!([query]);
+    body["web_sources"] = json!([]);
+    ok(post(
+        f,
+        &f.runner,
+        "/v1/workspace/dreamer/location-discover",
+        body,
+    )
+    .await)["data"]
+        .clone()
+}
+
+fn context_pilot_candidate(admission: &Value) -> Value {
+    let mut candidate = pilot_candidate(admission);
+    candidate["evidence_scope"]["context_sources"] =
+        admission["location_work"]["context_sources"].clone();
+    for context in admission["location_context"].as_array().unwrap() {
+        candidate["sources"].as_array_mut().unwrap().push(json!({"entry_ref":context["entry_ref"],"version":context["version"],"start_line":context["start_line"],"end_line":context["end_line"]}));
+    }
+    candidate["content"] = json!(format!(
+        "{}\nThe owner identifies this stop as Example Garden.[^s2]\n",
+        candidate["content"].as_str().unwrap()
+    ));
+    candidate
+}
+
+#[tokio::test]
+async fn latest_closed_day_is_automatically_admitted_and_retained_across_failure() {
+    use chrono::TimeZone;
+    let Some(f) = fixture().await else {
+        return;
+    };
+    control(&f, "report-only", 0).await;
+    let yesterday = Utc::now()
+        .with_timezone(&chrono_tz::America::Los_Angeles)
+        .date_naive()
+        .pred_opt()
+        .unwrap();
+    let at = chrono_tz::America::Los_Angeles
+        .from_local_datetime(&yesterday.and_hms_opt(12, 0, 0).unwrap())
+        .single()
+        .unwrap()
+        .to_utc();
+    sqlx::query("INSERT INTO brunn.location_reports(user_id,at,type,offset_min,lat,lon,accuracy_m) VALUES($1,$2,'ping',-420,47,-122,5)")
+        .bind(f.owner.user).bind(at).execute(&f.pool).await.unwrap();
+    let first = admit(&f).await;
+    assert_eq!(first["location_work"]["date"], yesterday.to_string());
+    assert_eq!(first["location_work"]["timezone"], "America/Los_Angeles");
+    assert_eq!(
+        first["location_evidence"]["reports"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    finish(
+        &f,
+        &first,
+        first["state_version"].as_i64().unwrap(),
+        "failed",
+    )
+    .await;
+    let next = admit(&f).await;
+    assert_eq!(
+        next["location_work"]["date"],
+        first["location_work"]["date"]
+    );
+    assert_eq!(
+        next["location_work"]["fingerprint"],
+        first["location_work"]["fingerprint"]
+    );
+    let state = current(&f, "dreams/state.md").await.unwrap();
+    assert_eq!(
+        state.2["dreamer_state"]["location_work"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    finish(
+        &f,
+        &next,
+        next["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn autonomous_context_uses_historical_versions_before_matching_and_preserves_progress() {
+    let Some(f) = fixture().await else {
+        return;
+    };
+    control(&f, "report-only", 0).await;
+    let (from, _, _) = seed_location_pilot(&f).await;
+    let source = historical_context(
+        &f,
+        from,
+        "sources/Context/Garden.md",
+        "# Garden\n\nExample Garden is a familiar place.\n",
+    )
+    .await;
+    write(
+        &f,
+        "sources/Context/Garden.md",
+        "# Future correction\n\nExample Garden LATER_ITINERARY_CANARY.\n",
+        1,
+    )
+    .await;
+    write(
+        &f,
+        "sources/Context/New.md",
+        "# New answer\n\nExample Garden NEW_ANSWER_CANARY.\n",
+        0,
+    )
+    .await;
+    let generated = historical_context(
+        &f,
+        from,
+        "fixtures/old.md",
+        "# Example Garden\n\nGENERATED_ANSWER_CANARY.\n",
+    )
+    .await;
+    // Deliberately place an old generated answer behind the protected namespace
+    // using fixture authority; the ordinary write API correctly forbids this.
+    sqlx::query(
+        "UPDATE brunn.entries SET path='derived/location/old.md' WHERE user_id=$1 AND id=$2",
+    )
+    .bind(f.owner.user)
+    .bind(
+        Uuid::parse_str(
+            generated["entry_ref"]
+                .as_str()
+                .unwrap()
+                .trim_start_matches("entry:"),
+        )
+        .unwrap(),
+    )
+    .execute(&f.pool)
+    .await
+    .unwrap();
+    queue_pilot(&f, from).await;
+    let admitted = admit(&f).await;
+    let first = discover_context(&f, &admitted, "Example Garden").await;
+    assert_eq!(first["location_context"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        first["location_context"][0]["entry_ref"],
+        source["entry_ref"]
+    );
+    assert_eq!(first["location_context"][0]["version"], 1);
+    assert_eq!(first["location_context"][0]["current_version"], 2);
+    assert_eq!(first["inputs"], admitted["inputs"]);
+    let shown = first["location_context"].to_string();
+    for marker in [
+        "LATER_ITINERARY_CANARY",
+        "NEW_ANSWER_CANARY",
+        "GENERATED_ANSWER_CANARY",
+    ] {
+        assert!(!shown.contains(marker));
+    }
+    let replay = discover_context(&f, &admitted, "Example Garden").await;
+    assert_eq!(replay["state_version"], first["state_version"]);
+    let valid = context_pilot_candidate(&first);
+    for invalid in [
+        {
+            let mut c = valid.clone();
+            c["evidence_scope"]["context_sources"][0]["excerpt"] = json!("Invented");
+            c
+        },
+        {
+            let mut c = valid.clone();
+            c["sources"][1]["version"] = json!(2);
+            c
+        },
+    ] {
+        let mut body = attempt(&first, first["state_version"].as_i64().unwrap());
+        body["candidates"] = json!([invalid]);
+        body["processed_inputs"] = json!([]);
+        let r = post(&f, &f.runner, "/v1/workspace/dreamer/candidates", body).await;
+        assert!(r.status.is_client_error(), "{}", r.body);
+    }
+    let mut body = attempt(&first, first["state_version"].as_i64().unwrap());
+    body["candidates"] = json!([valid]);
+    body["processed_inputs"] = json!([]);
+    body["findings"] = json!([]);
+    let accepted = ok(post(&f, &f.runner, "/v1/workspace/dreamer/candidates", body).await);
+    let state = current(&f, "dreams/state.md").await.unwrap();
+    assert_eq!(state.2["dreamer_state"]["inputs"], first["inputs"]);
+    assert_eq!(state.2["dreamer_state"]["location_work"], json!([]));
+    finish(
+        &f,
+        &first,
+        accepted["state_version"].as_i64().unwrap(),
+        "completed",
+    )
+    .await;
+    write(
+        &f,
+        "sources/Context/Garden.md",
+        "# Changed again\n\nExample Garden changed.\n",
+        2,
+    )
+    .await;
+    assert_eq!(review(&f).await["items"][0]["stale"], true);
+    let fresh = admit(&f).await;
+    assert!(fresh["location_work"].is_object());
+    assert_eq!(fresh["location_context"], json!([]));
+    let rediscovered = discover_context(&f, &fresh, "Example Garden").await;
+    assert_eq!(rediscovered["location_context"][0]["version"], 1);
+    assert_eq!(rediscovered["location_context"][0]["current_version"], 3);
+    finish(
+        &f,
+        &rediscovered,
+        rediscovered["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn autonomous_discovery_is_fenced_scoped_and_does_not_accept_selected_itineraries() {
+    let Some(f) = fixture().await else {
+        return;
+    };
+    control(&f, "report-only", 0).await;
+    let (from, _, _) = seed_location_pilot(&f).await;
+    let source = historical_context(
+        &f,
+        from,
+        "sources/Context/Private.md",
+        "# Private\n\nPRIVATE_CONTEXT_MARKER Example Garden.\n",
+    )
+    .await;
+    let bad=post(&f,&f.owner,"/v1/dreamer/review/location-pilot",json!({"date":from.date_naive(),"timezone":"UTC","context_sources":[{"entry_ref":source["entry_ref"]}]})).await;
+    assert_eq!(bad.status, StatusCode::BAD_REQUEST);
+    queue_pilot(&f, from).await;
+    let admitted = admit(&f).await;
+    let mut body = attempt(&admitted, admitted["state_version"].as_i64().unwrap());
+    body["context_queries"] = json!(["Example Garden"]);
+    body["web_sources"] = json!([]);
+    for actor in [&f.model, &actor(&f.pool, None, OWNER_CAPS).await] {
+        let denied = post(
+            &f,
+            actor,
+            "/v1/workspace/dreamer/location-discover",
+            body.clone(),
+        )
+        .await;
+        assert!(denied.status.is_client_error());
+        assert!(!denied.body.to_string().contains("PRIVATE_CONTEXT_MARKER"));
+    }
+    let first = discover_context(&f, &admitted, "Example Garden").await;
+    assert!(
+        first["location_context"]
+            .to_string()
+            .contains("PRIVATE_CONTEXT_MARKER")
+    );
+    sqlx::query("UPDATE brunn.entries SET path='.brunn/tasks/'||id::text||'.md' WHERE user_id=$1 AND path='sources/Context/Private.md'")
+        .bind(f.owner.user).execute(&f.pool).await.unwrap();
+    let hidden = ok(post(
+        &f,
+        &f.model,
+        "/v1/workspace/read",
+        json!({"requests":[{"path":"dreams/state.md","view":"full","max_chars":20000}]}),
+    )
+    .await);
+    assert!(!hidden.to_string().contains("PRIVATE_CONTEXT_MARKER"));
+    assert_eq!(
+        hidden["data"]["items"][0]["representation"],
+        "audit_withheld"
+    );
+    finish(
+        &f,
+        &first,
+        first["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn verified_web_evidence_is_retained_once_and_sealed_to_the_attempt() {
+    let Some(f) = fixture().await else {
+        return;
+    };
+    control(&f, "report-only", 0).await;
+    let (from, _, _) = seed_location_pilot(&f).await;
+    queue_pilot(&f, from).await;
+    let first = admit(&f).await;
+    let mut body = attempt(&first, first["state_version"].as_i64().unwrap());
+    body["context_queries"] = json!([]);
+    body["web_sources"] = json!([{"url":"https://example.org/garden","quote":"Example Garden 12 Main Street","fetched_at":Utc::now(),"body_sha256":format!("sha256:{}","a".repeat(64)),"verification":"fetched_exact_quote"}]);
+    let accepted = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/location-discover",
+        body.clone(),
+    )
+    .await)["data"]
+        .clone();
+    let source = &accepted["location_context"][0];
+    assert!(
+        source["path"]
+            .as_str()
+            .unwrap()
+            .starts_with("Evidence/Location/")
+    );
+    assert_eq!(source["discovery_origin"], "verified_web");
+    assert!(
+        source["excerpt"]
+            .as_str()
+            .unwrap()
+            .contains("Example Garden 12 Main Street")
+    );
+    let replay = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/location-discover",
+        body.clone(),
+    )
+    .await);
+    assert_eq!(replay["data"]["state_version"], accepted["state_version"]);
+    body["expected_state_version"] = accepted["state_version"].clone();
+    body["web_sources"][0]["quote"] = json!("different quote");
+    assert_eq!(
+        post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/location-discover",
+            body
+        )
+        .await
+        .status,
+        StatusCode::BAD_REQUEST
+    );
+    finish(
+        &f,
+        &accepted,
+        accepted["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn published_location_context_stales_reads_and_held_publication_on_source_change() {
+    for held in [false, true] {
+        let Some(f) = fixture().await else {
+            return;
+        };
+        control(&f, if held { "report-only" } else { "full" }, 0).await;
+        let (from, _, _) = seed_location_pilot(&f).await;
+        let source = historical_context(
+            &f,
+            from,
+            "sources/Context/Owner.md",
+            "# Owner statement\n\nI identify the stop as Example Garden.\n",
+        )
+        .await;
+        queue_pilot(&f, from).await;
+        let admitted = admit(&f).await;
+        let first = discover_context(&f, &admitted, "Example Garden").await;
+        let (_, accepted) = submit(
+            &f,
+            &first,
+            first["state_version"].as_i64().unwrap(),
+            vec![context_pilot_candidate(&first)],
+        )
+        .await;
+        finish(
+            &f,
+            &first,
+            accepted["state_version"].as_i64().unwrap(),
+            "completed",
+        )
+        .await;
+        let view = review(&f).await;
+        ok(post(
+            &f,
+            &f.owner,
+            "/v1/dreamer/review/decisions",
+            decision(&view, &view["items"][0], "approve"),
+        )
+        .await);
+        let target = format!("derived/location/{}.md", from.date_naive());
+        let read = json!({"requests":[{"path":target,"view":"full","max_chars":20000}]});
+        if !held {
+            let fresh = ok(post(&f, &f.owner, "/v1/workspace/read", read.clone()).await);
+            let rendered = &fresh["data"]["items"][0];
+            assert_eq!(rendered["freshness"]["status"], "fresh");
+            assert!(rendered.get("metadata").is_none());
+            assert!(
+                rendered["source_documents"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|item| item["reference"] == source["entry_ref"])
+            );
+        }
+        write(
+            &f,
+            "sources/Context/Owner.md",
+            "# Owner statement\n\nI correct the stop to Example Park.\n",
+            1,
+        )
+        .await;
+        if held {
+            control(&f, "full", 1).await;
+            let next = admit(&f).await;
+            assert!(current(&f, &target).await.is_none());
+            assert_eq!(review(&f).await["items"][0]["status"], "stale");
+            finish(
+                &f,
+                &next,
+                next["state_version"].as_i64().unwrap(),
+                "partial",
+            )
+            .await;
+        } else {
+            let stale = ok(post(&f, &f.owner, "/v1/workspace/read", read.clone()).await);
+            assert_ne!(stale["data"]["items"][0]["freshness"]["status"], "fresh");
+            sqlx::query("UPDATE brunn.entries SET deleted_at=now() WHERE user_id=$1 AND path='sources/Context/Owner.md'")
+                .bind(f.owner.user).execute(&f.pool).await.unwrap();
+            let hidden = ok(post(&f, &f.owner, "/v1/workspace/read", read).await);
+            assert!(!hidden.to_string().contains("Example Garden"));
+        }
+    }
+}
+
 #[tokio::test]
 async fn location_candidate_guards_retain_work_and_revision_preserves_published_uncertainty() {
     let Some(f) = fixture().await else {

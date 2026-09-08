@@ -60,12 +60,93 @@ final class DreamerReviewTests: XCTestCase {
         await harness.replace(try reviewFixture(version: 4, itemOverrides: ["body_md": "Updated proposal.", "candidate_hash": "sha256:changed"]))
         await store.refresh(api: api, userID: "owner")
         XCTAssertEqual(store.selected?.bodyMD, old.bodyMD)
+        XCTAssertEqual(store.displayedItem?.bodyMD, "Updated proposal.")
+        XCTAssertTrue(store.hasReplacement)
         XCTAssertTrue(store.changed)
         XCTAssertTrue(store.decisionsDisabled)
         store.selectUpdated()
         XCTAssertEqual(store.selected?.bodyMD, "Updated proposal.")
         XCTAssertEqual(store.drafts[old.id]?.comment, "Keep this context")
         XCTAssertFalse(store.changed)
+        XCTAssertFalse(store.hasReplacement)
+    }
+
+    func testRefreshSignalDuringRequestFetchesReplacementAndKeepsDecisionIdentityPinned() async throws {
+        let harness = ReviewHarness(snapshot: try reviewFixture())
+        let store = makeStore(harness)
+        let api = BrunnAPI()
+        await store.refresh(api: api, userID: "owner")
+        store.select(try XCTUnwrap(store.data?.items.first))
+        store.drafts["item-1"] = .init(comment: "Keep my draft", correction: "")
+        let gate = ReviewAsyncGate()
+        await harness.holdNextRead(gate)
+        let pending = Task { await store.refresh(api: api, userID: "owner") }
+        await gate.waitUntilSuspended()
+        await harness.replace(try reviewFixture(version: 4, itemOverrides: ["body_md": "Fresh replacement.", "run_version": 7, "candidate_hash": "sha256:replacement"]))
+        await store.refresh(api: api, userID: "owner")
+        await gate.release()
+        await pending.value
+        let readCount = await harness.readCount
+        XCTAssertEqual(readCount, 3)
+        XCTAssertEqual(store.displayedItem?.bodyMD, "Fresh replacement.")
+        XCTAssertEqual(store.selected?.candidateHash, "sha256:original")
+        XCTAssertTrue(store.decisionsDisabled)
+        await store.decide(.approve, api: api, userID: "owner")
+        let blockedRequests = await harness.requests
+        XCTAssertTrue(blockedRequests.isEmpty)
+        store.selectUpdated()
+        await store.decide(.approve, api: api, userID: "owner")
+        let sentRequests = await harness.requests
+        let request = try XCTUnwrap(sentRequests.first)
+        XCTAssertEqual(request.candidateHash, "sha256:replacement")
+        XCTAssertEqual(request.runVersion, 7)
+        XCTAssertEqual(request.expectedDecisionsVersion, 4)
+        XCTAssertEqual(request.comment, "Keep my draft")
+    }
+
+    func testAccountChangeRejectsOldRefreshAndClearsOldSelectionAndDraft() async throws {
+        let harness = ReviewHarness(snapshot: try reviewFixture())
+        let store = makeStore(harness)
+        let api = BrunnAPI()
+        await store.refresh(api: api, userID: "owner")
+        store.select(try XCTUnwrap(store.data?.items.first))
+        store.drafts["item-1"] = .init(comment: "Private old draft", correction: "")
+        let gate = ReviewAsyncGate()
+        await harness.holdNextRead(gate)
+        let oldRefresh = Task { await store.refresh(api: api, userID: "owner") }
+        await gate.waitUntilSuspended()
+        await harness.changeAccount()
+        await harness.replace(try reviewFixture(itemOverrides: ["body_md": "Other account content."]))
+        await store.refresh(api: api, userID: "other")
+        await gate.release()
+        await oldRefresh.value
+        XCTAssertEqual(store.data?.items.first?.bodyMD, "Other account content.")
+        XCTAssertNil(store.selected)
+        XCTAssertTrue(store.drafts.isEmpty)
+        XCTAssertNil(store.loadError)
+        XCTAssertFalse(store.isRefreshing)
+    }
+
+    func testAccountChangeRejectsAnOldDecisionResponse() async throws {
+        let harness = ReviewHarness(snapshot: try reviewFixture())
+        let store = makeStore(harness)
+        let api = BrunnAPI()
+        await store.refresh(api: api, userID: "owner")
+        store.select(try XCTUnwrap(store.data?.items.first))
+        let gate = ReviewAsyncGate()
+        await harness.holdNextWrite(gate)
+        let oldDecision = Task { await store.decide(.approve, api: api, userID: "owner") }
+        await gate.waitUntilSuspended()
+        await harness.changeAccount()
+        await harness.replace(try reviewFixture(itemOverrides: ["body_md": "Other account content."]))
+        await store.refresh(api: api, userID: "other")
+        await gate.release()
+        await oldDecision.value
+        XCTAssertEqual(store.data?.items.first?.bodyMD, "Other account content.")
+        XCTAssertNil(store.pendingRequest)
+        XCTAssertNil(store.decisionMessage)
+        XCTAssertNil(store.decisionError)
+        XCTAssertFalse(store.isSubmitting)
     }
 
     func testUncertainRetryUsesIdenticalRequestAndLocksOtherActions() async throws {
@@ -78,6 +159,10 @@ final class DreamerReviewTests: XCTestCase {
         await store.decide(.approve, api: api, userID: "owner")
         let original = try XCTUnwrap(store.pendingRequest)
         XCTAssertTrue(store.selectionLocked)
+        await harness.replace(try reviewFixture(version: 4, itemOverrides: ["body_md": "Replacement while decision is unconfirmed.", "candidate_hash": "sha256:new"]))
+        await store.refresh(api: api, userID: "owner")
+        XCTAssertEqual(store.displayedItem?.bodyMD, "Replacement while decision is unconfirmed.")
+        XCTAssertEqual(store.pendingRequest, original)
         await store.decide(.reject, api: api, userID: "owner")
         await store.retry(api: api, userID: "owner")
         let requests = await harness.requests
@@ -87,10 +172,29 @@ final class DreamerReviewTests: XCTestCase {
         XCTAssertNil(store.pendingRequest)
         XCTAssertEqual(store.decisionMessage, "Approved and held.")
         XCTAssertTrue(store.decisionsDisabled)
+        XCTAssertTrue(store.hasReplacement, "An earlier receipt must remain distinct from the displayed replacement")
         let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])
         XCTAssertEqual(encoded["run_version"] as? Int, 2)
         XCTAssertEqual(encoded["candidate_hash"] as? String, "sha256:original")
         XCTAssertNil(encoded["runVersion"])
+    }
+
+    func testForegroundNotificationSignalsAuthenticatedReviewRefreshWithoutNavigation() async {
+        _ = PushRouteBuffer.shared.take()
+        let completed = expectation(description: "presentation completed")
+        let refreshed = expectation(description: "review refresh signaled")
+        let observer = NotificationCenter.default.addObserver(forName: .brunnReviewRefresh, object: nil, queue: .main) { event in
+            XCTAssertTrue(Thread.isMainThread)
+            XCTAssertNil(event.object)
+            XCTAssertNil(PushRouteBuffer.shared.take())
+            refreshed.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        NotificationDelegateHandoff.finishPresentation([], route: .notification(notificationRef: "notification:11111111111111111111111111111111", deliveryRef: nil)) { _ in
+            XCTAssertTrue(Thread.isMainThread)
+            completed.fulfill()
+        }
+        await fulfillment(of: [completed, refreshed], timeout: 1)
     }
 
     func testConflictRequiresFreshReviewAndRetainsNote() async throws {
@@ -333,6 +437,9 @@ final class DreamerReviewTests: XCTestCase {
 
 private enum ReviewFailure: Sendable { case network, conflict }
 private actor ReviewHarness {
+    var readCount = 0
+    var readGate: ReviewAsyncGate?
+    var writeGate: ReviewAsyncGate?
     var snapshot: DreamerReviewData
     var identity = MeData(user: .init(id: "owner", displayName: "Owner"), capabilities: ["credential:manage", "save"])
     var requests: [DreamerDecisionRequest] = []
@@ -349,16 +456,32 @@ private actor ReviewHarness {
     func setIdentity(_ value: MeData) { identity = value }
     func failReads() { readsFail = true }
     func rotateDuringNextIdentity() { rotateIdentity = true }
+    func holdNextRead(_ gate: ReviewAsyncGate) { readGate = gate }
+    func holdNextWrite(_ gate: ReviewAsyncGate) { writeGate = gate }
+    func changeAccount() {
+        fingerprint = "session-other"
+        identity = MeData(user: .init(id: "other", displayName: "Other"), capabilities: ["credential:manage", "save"])
+    }
     func readIdentity() -> MeData {
         if rotateIdentity { fingerprint = "session-b"; rotateIdentity = false }
         return identity
     }
-    func read() throws -> DreamerReviewData {
+    func read() async throws -> DreamerReviewData {
+        readCount += 1
         if readsFail { throw URLError(.notConnectedToInternet) }
-        return snapshot
+        let captured = snapshot
+        if let gate = readGate {
+            readGate = nil
+            await gate.suspend()
+        }
+        return captured
     }
-    func write(_ request: DreamerDecisionRequest) throws -> DreamerDecisionResult {
+    func write(_ request: DreamerDecisionRequest) async throws -> DreamerDecisionResult {
         requests.append(request)
+        if let gate = writeGate {
+            writeGate = nil
+            await gate.suspend()
+        }
         if let failure {
             self.failure = nil
             if failure == .network { throw URLError(.networkConnectionLost) }
@@ -368,6 +491,15 @@ private actor ReviewHarness {
                                     decision: .init(id: "decision-1", itemID: request.itemID, decision: request.decision.rawValue, comment: request.comment, correction: request.correction, at: "2026-09-08T12:00:00Z", applicationStatus: "approved_held"),
                                     applicationStatus: "approved_held", message: "Approved and held.", stateVersion: 4)
     }
+}
+
+private actor ReviewAsyncGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    func suspend() async { await withCheckedContinuation { continuation = $0 } }
+    func waitUntilSuspended() async {
+        while continuation == nil { await Task.yield() }
+    }
+    func release() { continuation?.resume(); continuation = nil }
 }
 
 private func reviewFixture(version: Int = 3, available: Bool = true, itemOverrides: [String: Any] = [:]) throws -> DreamerReviewData {

@@ -279,7 +279,22 @@ async fn check(
         // edits to selected rows, late reports, boundaries and Places versions.
         let packet = evidence_in_tx(tx, auth, &query).await?;
         let complete = packet.get("fingerprint_complete").and_then(Value::as_bool) == Some(true);
-        let same = evidence_sources_match(&manifest.sources, &packet)
+        let canonical_sources: Vec<_> = manifest
+            .sources
+            .iter()
+            .filter(|source| {
+                !scope["context_sources"].as_array().is_some_and(|context| {
+                    context.iter().any(|item| {
+                        item["entry_ref"] == source.entry_ref
+                            && item["version"] == source.version
+                            && item["excerpt"] == source.excerpt
+                    })
+                })
+            })
+            .cloned()
+            .collect();
+        let same = evidence_sources_match(&canonical_sources, &packet)
+            && crate::location::summary::context_sources_current_in_tx(tx, auth, scope).await?
             && scope
                 .get("fingerprint")
                 .and_then(Value::as_str)
@@ -504,6 +519,9 @@ fn audit_item(
     let Some(citations) = candidate.get("sources").and_then(Value::as_array) else {
         return false;
     };
+    if !audit_location_context(&candidate["evidence_scope"], sources) {
+        return false;
+    }
     if let Some(version) = candidate
         .get("expected_version")
         .and_then(Value::as_i64)
@@ -539,6 +557,25 @@ fn audit_item(
         }
     }
     sources.len() + targets.len() + raw_sources.len() <= MAX_SOURCES
+}
+
+fn audit_location_context(
+    scope: &Value,
+    sources: &mut std::collections::BTreeSet<(Uuid, i64)>,
+) -> bool {
+    let Some(context) = scope.get("context_sources") else {
+        return true;
+    };
+    let Some(context) = context.as_array().filter(|sources| sources.len() <= 12) else {
+        return false;
+    };
+    for source in context {
+        let Some(reference) = exact_ref(source, "entry_ref", "version") else {
+            return false;
+        };
+        sources.insert(reference);
+    }
+    sources.len() <= MAX_SOURCES
 }
 
 /// Validate the exact dependency graph retained in immutable run/review audits.
@@ -587,6 +624,32 @@ async fn audit_access(
             .get("dreamer_run")
             .or_else(|| metadata.get("dreamer_state"))
         {
+            for key in ["location_work", "location_scopes"] {
+                if let Some(scopes) = container.get(key) {
+                    let Some(scopes) = scopes.as_array().filter(|scopes| scopes.len() <= 31) else {
+                        return Ok(false);
+                    };
+                    for scope in scopes {
+                        if !audit_location_context(scope, &mut sources) {
+                            return Ok(false);
+                        }
+                    }
+                }
+            }
+            if !audit_location_context(&container["active"]["location_work"], &mut sources) {
+                return Ok(false);
+            }
+            if let Some(dispositions) = container.get("location_dispositions") {
+                let Some(dispositions) = dispositions.as_array().filter(|items| items.len() <= 31)
+                else {
+                    return Ok(false);
+                };
+                for disposition in dispositions {
+                    if !audit_location_context(&disposition["work"], &mut sources) {
+                        return Ok(false);
+                    }
+                }
+            }
             if metadata.get("dreamer_run").is_some()
                 && container.get("schema").and_then(Value::as_str) != Some("dream.run.v1")
             {

@@ -72,6 +72,7 @@ pub async fn validate_candidate_in_tx(
         fingerprint,
         canonical_sources,
         raw_sources,
+        None,
     )
     .await?
     .0)
@@ -86,6 +87,7 @@ pub(crate) async fn validate_candidate_with_clock_evidence_in_tx(
     fingerprint: &str,
     canonical_sources: &[Source],
     raw_sources: &[RawCitation],
+    context_sources: Option<&Value>,
 ) -> ApiResult<(Value, Value)> {
     auth.require(Capability::Save)?;
     query.validate(chrono::Utc::now())?;
@@ -116,6 +118,12 @@ pub(crate) async fn validate_candidate_with_clock_evidence_in_tx(
     }
     crate::db::lock_workspace_commit(tx, auth.user_id.0).await?;
     lock_location_user(tx, auth.user_id.0).await?;
+    let context_scope = json!({"context_sources":context_sources});
+    if !context_sources_current_in_tx(tx, auth, &context_scope).await? {
+        return Err(changed(
+            "location context changed or is inaccessible; retain the day for fresh autonomous discovery",
+        ));
+    }
     let mut packet = evidence_in_tx(tx, auth, query).await?;
     if packet["completeness"]["complete"] != true || packet["fingerprint_complete"] != true {
         return Err(ApiError::conflict(
@@ -149,7 +157,9 @@ pub(crate) async fn validate_candidate_with_clock_evidence_in_tx(
         ));
     }
     for source in canonical_sources {
-        validate_canonical(tx, auth, source, &packet).await?;
+        if !is_context_source(source, &context_scope) {
+            validate_canonical(tx, auth, source, &packet).await?;
+        }
     }
     for citation in raw_sources {
         validate_raw(citation, &packet)?;
@@ -204,10 +214,119 @@ pub(crate) async fn validate_candidate_with_clock_evidence_in_tx(
             .push(json!({"ref":source.entry_ref,"version":source.version,"selectors":selectors}));
     }
     packet["canonical_months"] = json!(clock_documents);
-    Ok((
-        json!({"from":query.from.to_rfc3339(),"to":query.to.to_rfc3339(),"timezone":query.timezone,"fingerprint":fingerprint,"sources_validated":true}),
-        packet,
-    ))
+    let mut scope = json!({"from":query.from.to_rfc3339(),"to":query.to.to_rfc3339(),"timezone":query.timezone,"fingerprint":fingerprint,"sources_validated":true});
+    if let Some(context) = context_sources {
+        scope["context_sources"] = context.clone();
+    }
+    Ok((scope, packet))
+}
+
+fn source_matches_context(source: &Source, context: &Value) -> bool {
+    context["entry_ref"] == source.entry_ref
+        && context["version"] == source.version
+        && context["start_line"] == source.start_line
+        && context["end_line"] == source.end_line
+        && context["path"] == source.path
+        && context["excerpt"] == source.excerpt
+}
+
+pub(crate) fn is_context_source(source: &Source, scope: &Value) -> bool {
+    scope["context_sources"].as_array().is_some_and(|sources| {
+        sources
+            .iter()
+            .any(|context| source_matches_context(source, context))
+    })
+}
+
+/// Autonomously discovered context is independent of the raw packet hash.
+/// Current visibility and exact versions are mandatory, including on reads.
+pub(crate) async fn context_sources_current_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    auth: &AuthContext,
+    scope: &Value,
+) -> ApiResult<bool> {
+    let Some(context) = scope
+        .get("context_sources")
+        .filter(|value| !value.is_null())
+    else {
+        return Ok(true);
+    };
+    let Some(sources) = context.as_array().filter(|sources| sources.len() <= 12) else {
+        return Ok(false);
+    };
+    let mut seen = BTreeSet::new();
+    let mut bytes = 0;
+    for source in sources {
+        let Some(id) = source["entry_ref"]
+            .as_str()
+            .and_then(|reference| reference.strip_prefix("entry:"))
+            .and_then(|id| Uuid::parse_str(id).ok())
+        else {
+            return Ok(false);
+        };
+        if !seen.insert(id) {
+            return Ok(false);
+        }
+        let Some(version) = source["version"].as_i64().filter(|version| *version > 0) else {
+            return Ok(false);
+        };
+        let row = sqlx::query("SELECT e.path,e.current_version,v.content,v.content_sha256,v.metadata FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=$3 WHERE e.user_id=$1 AND e.id=$2 AND e.deleted_at IS NULL AND e.kind='markdown'")
+            .bind(auth.user_id.0).bind(id).bind(version).fetch_optional(&mut **tx).await?;
+        let Some(row) = row else {
+            return Ok(false);
+        };
+        let path: String = row.try_get("path")?;
+        if row.get::<i64, _>("current_version")
+            != source["current_version"].as_i64().unwrap_or(version)
+            || source["path"] != path
+            || [
+                "dreams/",
+                "derived/",
+                ".brunn/",
+                "agent-memory/",
+                "Location/",
+            ]
+            .iter()
+            .any(|prefix| path.starts_with(prefix))
+            || path == "private/dreamer.md"
+            || crate::dreamer_summary::protected_metadata(&row.get::<Value, _>("metadata"))
+            || source["content_hash"]
+                != format!("sha256:{}", row.get::<String, _>("content_sha256"))
+        {
+            return Ok(false);
+        }
+        if let Some(expires) = source["expires_at"].as_str() {
+            if chrono::DateTime::parse_from_rfc3339(expires)
+                .map_or(true, |at| at <= chrono::Utc::now())
+            {
+                return Ok(false);
+            }
+        }
+        let Some(content) = row.get::<Option<String>, _>("content") else {
+            return Ok(false);
+        };
+        let lines: Vec<_> = content.lines().collect();
+        let Some(start) = source["start_line"]
+            .as_u64()
+            .and_then(|line| usize::try_from(line).ok())
+            .filter(|line| *line > 0)
+        else {
+            return Ok(false);
+        };
+        let Some(end) = source["end_line"]
+            .as_u64()
+            .and_then(|line| usize::try_from(line).ok())
+            .filter(|line| *line >= start && *line <= lines.len() && *line - start <= 400)
+        else {
+            return Ok(false);
+        };
+        let excerpt = lines[start - 1..end].join("\n");
+        bytes += excerpt.len();
+        if excerpt.is_empty() || bytes > 12_000 || source["excerpt"] != excerpt {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 async fn validate_canonical(

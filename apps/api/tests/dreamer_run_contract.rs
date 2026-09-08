@@ -39,6 +39,7 @@ struct Mock {
     latest: Option<Value>,
     notifications: Vec<Value>,
     reject_candidates: bool,
+    reject_narrative: bool,
     fail_finish: bool,
     fail_auth_put: bool,
     fail_notify: bool,
@@ -77,6 +78,19 @@ async fn secret_get(State(shared): State<Shared>, Json(body): Json<Value>) -> Re
         }
         None => error(StatusCode::NOT_FOUND, "missing"),
     }
+}
+async fn location_discover(State(shared): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
+    let mut s = shared.lock().unwrap();
+    s.state_version += 1;
+    let mut value = s.location_admission.clone().unwrap();
+    value["attempt_id"] = body["attempt_id"].clone();
+    value["fence"] = body["fence"].clone();
+    value["state_version"] = json!(s.state_version);
+    value["frozen_generation"] = json!(17);
+    value["pending"] = json!(s.pending);
+    value["mode"] = json!("report-only");
+    value["location_context"] = json!([]);
+    Json(json!({"data":value}))
 }
 async fn secret_put(State(shared): State<Shared>, Json(body): Json<Value>) -> Response {
     let mut s = shared.lock().unwrap();
@@ -142,7 +156,7 @@ async fn candidates(State(shared): State<Shared>, Json(body): Json<Value>) -> Re
     let mut s = shared.lock().unwrap();
     s.submissions += 1;
     s.submitted.push(body.clone());
-    if s.reject_candidates {
+    if s.reject_candidates || (s.reject_narrative && s.submissions > 1) {
         return error(StatusCode::CONFLICT, "source changed");
     }
     let ids: Vec<_> = body["candidates"]
@@ -220,6 +234,10 @@ async fn build_with_budget(
         .route("/v1/workspace/secrets/put", post(secret_put))
         .route("/v1/workspace/dreamer/admit", post(admit))
         .route("/v1/workspace/dreamer/checkpoint", post(checkpoint))
+        .route(
+            "/v1/workspace/dreamer/location-discover",
+            post(location_discover),
+        )
         .route("/v1/workspace/dreamer/candidates", post(candidates))
         .route("/v1/workspace/dreamer/finish", post(finish))
         .route("/v1/workspace/notifications/publish", post(notify))
@@ -604,7 +622,10 @@ async fn build_location_audit(
         r#"
 if grep -q 'single word READY' "$DIR/prompt"; then echo READY; exit 0; fi
 case "$OUTPUT_NAME" in
- answer.md)
+ location-discovery-answer.md)
+  echo '{{"schema":"dream.location.discovery.v1","context_queries":[],"lookups":[],"findings":[]}}' > "$OUTPUT_PATH"
+  ;;
+ location-answer.md)
   {draft_script}
   cat "$DIR/draft.json" > "$OUTPUT_PATH"
   ;;
@@ -634,6 +655,7 @@ fn model_calls(dir: &Path) -> Vec<String> {
     std::fs::read_to_string(dir.join("calls"))
         .unwrap()
         .lines()
+        .filter(|name| *name != "location-discovery-answer.md")
         .map(str::to_owned)
         .collect()
 }
@@ -663,7 +685,10 @@ async fn location_audit_submits_only_the_corrected_artifact_under_the_original_i
     assert_eq!(report.receipt_persistence, "accepted");
     let calls = model_calls(dir.path());
     assert_eq!(calls.len(), 3, "{calls:?}");
-    assert_eq!(&calls[1..], ["answer.md", "location-audit-answer.md"]);
+    assert_eq!(
+        &calls[1..],
+        ["location-answer.md", "location-audit-answer.md"]
+    );
     let paths = std::fs::read_to_string(dir.path().join("output-paths")).unwrap();
     let paths: Vec<_> = paths.lines().collect();
     assert_ne!(paths[1], paths[2]);
@@ -680,7 +705,7 @@ async fn location_audit_submits_only_the_corrected_artifact_under_the_original_i
     }
     let audit_env =
         std::fs::read_to_string(dir.path().join("env-location-audit-answer.md")).unwrap();
-    assert!(audit_env.contains("BRUNN_API_TOKEN=model"));
+    assert!(!audit_env.contains("BRUNN_API_TOKEN="));
     for forbidden in [
         "BRUNN_API_TOKEN=runner",
         "BRUNN_API_TOKEN=workspace",
@@ -710,21 +735,84 @@ async fn location_audit_submits_only_the_corrected_artifact_under_the_original_i
 }
 
 #[tokio::test]
+async fn location_and_narrative_publish_separately_and_keep_location_on_narrative_failure() {
+    for reject in [false, true] {
+        let (shared, d, dir, _) = build_location_audit(
+            "cat \"$DIR/audited.json\" > \"$OUTPUT_PATH\"",
+            "",
+            Duration::from_secs(6),
+        )
+        .await;
+        let behavior = std::fs::read_to_string(dir.path().join("behavior.sh"))
+            .unwrap()
+            .replace(
+                " *) exit 99;;",
+                &format!(" narrative-answer.md)\n{HAPPY}\n ;;\n *) exit 99;;"),
+            );
+        std::fs::write(dir.path().join("behavior.sh"), behavior).unwrap();
+        {
+            let mut state = shared.lock().unwrap();
+            state.reject_narrative = reject;
+            state.location_admission.as_mut().unwrap()["inputs"] = json!([{"entry_ref":SOURCE,"version":2,"generation":17,"path":"NARRATIVE_SOURCE_CANARY"}]);
+        }
+        let report = d.run_once(today(), RunKind::Manual).await;
+        if reject {
+            assert!(
+                matches!(report.outcome, RunOutcome::Partial { .. }),
+                "{report:?}"
+            );
+        } else {
+            assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
+        }
+        let state = shared.lock().unwrap();
+        assert_eq!(state.submissions, 2);
+        assert!(!state.retained_location_work);
+        assert_eq!(state.submitted[0]["processed_inputs"], json!([]));
+        assert!(state.submitted[0]["candidates"][0]["evidence_scope"].is_object());
+        assert_eq!(
+            state.submitted[1]["processed_inputs"][0]["entry_ref"],
+            SOURCE
+        );
+        assert_eq!(state.notifications.len(), 1);
+        for name in [
+            "location-discovery-answer.md",
+            "location-answer.md",
+            "location-audit-answer.md",
+        ] {
+            let prompt =
+                std::fs::read_to_string(dir.path().join(format!("prompt-{name}"))).unwrap();
+            assert!(!prompt.contains("NARRATIVE_SOURCE_CANARY"));
+            assert!(!prompt.contains("Original pending observation."));
+            let env = std::fs::read_to_string(dir.path().join(format!("env-{name}"))).unwrap();
+            assert!(!env.contains("BRUNN_API_TOKEN="));
+        }
+        let narrative =
+            std::fs::read_to_string(dir.path().join("prompt-narrative-answer.md")).unwrap();
+        assert!(narrative.contains("NARRATIVE_SOURCE_CANARY"));
+        assert!(!narrative.contains("Original pending observation."));
+        assert!(!narrative.contains(CANONICAL_BOUNDARY_ROW));
+    }
+}
+
+#[tokio::test]
 async fn a_location_queue_without_a_location_draft_does_not_trigger_an_audit() {
     for location_queued in [false, true] {
-        let (s, d, dir) = build(HAPPY).await;
+        let behavior = if location_queued {
+            r#"
+if grep -q 'single word READY' "$DIR/prompt"; then echo READY; exit 0; fi
+if [ "$OUTPUT_NAME" = "location-discovery-answer.md" ]; then
+ echo '{"schema":"dream.location.discovery.v1","context_queries":[],"lookups":[],"findings":[]}' > "$OUTPUT_PATH"
+else
+ echo '{"schema":"dream.candidates.v1","candidates":[],"processed_inputs":[],"findings":["No supported location candidate; retain the day."]}' > "$OUTPUT_PATH"
+fi
+"#
+        } else {
+            HAPPY
+        };
+        let (s, d, dir) = build(behavior).await;
         enable(&s);
         if location_queued {
             enable_location(&s);
-            // Keep the ordinary source admitted so this case isolates audit routing.
-            s.lock()
-                .unwrap()
-                .location_admission
-                .as_mut()
-                .unwrap()
-                .as_object_mut()
-                .unwrap()
-                .remove("inputs");
         }
         let report = d.run_once(today(), RunKind::Manual).await;
         if location_queued {
@@ -738,7 +826,14 @@ async fn a_location_queue_without_a_location_draft_does_not_trigger_an_audit() {
         }
         let calls = model_calls(dir.path());
         assert_eq!(calls.len(), 2, "{calls:?}");
-        assert_eq!(calls[1], "answer.md");
+        assert_eq!(
+            calls[1],
+            if location_queued {
+                "location-answer.md"
+            } else {
+                "answer.md"
+            }
+        );
         assert!(!dir.path().join("prompt-location-audit-answer.md").exists());
     }
 }
@@ -963,7 +1058,7 @@ async fn unsupported_audited_clock_requires_one_correction_before_submission() {
     assert_eq!(
         &model_calls(dir.path())[1..],
         [
-            "answer.md",
+            "location-answer.md",
             "location-audit-answer.md",
             "location-correction-answer.md"
         ]
@@ -975,7 +1070,7 @@ async fn unsupported_audited_clock_requires_one_correction_before_submission() {
     assert!(correction_prompt.contains(LOCATION_ITEM));
     let correction_env =
         std::fs::read_to_string(dir.path().join("env-location-correction-answer.md")).unwrap();
-    assert!(correction_env.contains("BRUNN_API_TOKEN=model"));
+    assert!(!correction_env.contains("BRUNN_API_TOKEN="));
     assert!(!correction_env.contains("BRUNN_API_TOKEN=runner"));
     assert!(!correction_env.contains("OPENAI_API_KEY"));
     let s = s.lock().unwrap();

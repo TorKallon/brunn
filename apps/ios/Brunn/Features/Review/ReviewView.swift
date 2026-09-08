@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ReviewView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var model: AppModel
     @StateObject private var store = DreamerReviewStore()
     @State private var filter = "all"
@@ -121,6 +122,18 @@ struct ReviewView: View {
         }
         .refreshable { await refresh() }
         .task { await refresh() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await refresh() } }
+        }
+        .onChange(of: model.selectedTab) { _, tab in
+            if tab == .review { Task { await refresh() } }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .brunnReviewRefresh)) { _ in
+            if scenePhase == .active { Task { await refresh() } }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .brunnPushRoute)) { _ in
+            if scenePhase == .active { Task { await refresh() } }
+        }
         .accessibilityIdentifier("dreamer-review")
     }
 
@@ -200,14 +213,15 @@ private struct ReviewDetailView: View {
                         Label("Report-only: approvals are held; nothing is applied.", systemImage: "pause.circle")
                             .font(.footnote).foregroundStyle(BrunnTheme.signal)
                     }
-                    if !store.selectionIsHistorical && (store.changed || store.conflict) && store.decisionMessage == nil {
+                    if !store.selectionIsHistorical && (store.changed || store.conflict)
+                        && (store.decisionMessage == nil || store.hasReplacement) {
                         VStack(alignment: .leading, spacing: 10) {
                             Label("This review has changed", systemImage: "exclamationmark.triangle")
-                            Text("Read the updated item and decisions before another action. Your note is kept.")
                             if store.data?.items.contains(where: { $0.id == item.id }) == true {
+                                Text("The latest item is shown below. Read it and its decisions before another action. Your note is kept.")
                                 Button("Review updated item") { store.selectUpdated() }
                                     .disabled(store.selectionLocked)
-                            } else { Text("This item is no longer pending.") }
+                            } else { Text("This item is no longer pending. The last reviewed copy is shown below.") }
                         }
                         .foregroundStyle(BrunnTheme.amber)
                     }
@@ -357,7 +371,8 @@ private struct ReviewDetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             if store.isSubmitting { ProgressView("Recording your decision…") }
             if let message = store.decisionMessage {
-                Label("Decision recorded", systemImage: "checkmark.circle").foregroundStyle(BrunnTheme.success)
+                Label(store.hasReplacement ? "Decision recorded for the earlier candidate" : "Decision recorded",
+                      systemImage: "checkmark.circle").foregroundStyle(BrunnTheme.success)
                 Text(message).font(.footnote)
             }
             if let error = store.decisionError {
@@ -365,7 +380,9 @@ private struct ReviewDetailView: View {
                     .foregroundStyle(BrunnTheme.amber)
                 Text(error).font(.footnote)
                 if store.pendingRequest != nil {
-                    Text("Retry sends the same decision safely. Other actions are held until the result is confirmed.")
+                    Text(store.hasReplacement
+                         ? "Retry confirms the decision for the earlier candidate. The replacement needs its own review."
+                         : "Retry sends the same decision safely. Other actions are held until the result is confirmed.")
                         .font(.footnote)
                     Button("Retry same decision") {
                         Task { await store.retry(api: model.api, userID: model.user?.id) }

@@ -325,6 +325,7 @@ enum NotificationRouteParser {
 
 extension Notification.Name {
     static let brunnPushRoute = Notification.Name("brunn.push-route")
+    static let brunnReviewRefresh = Notification.Name("brunn.review-refresh")
     static let brunnPushToken = Notification.Name("brunn.push-token")
     static let brunnPushRegistrationFailed = Notification.Name("brunn.push-registration-failed")
     static let brunnMessagingPrefetch = Notification.Name("brunn.messaging-prefetch")
@@ -396,10 +397,16 @@ final class PushTokenBuffer: @unchecked Sendable {
 enum NotificationDelegateHandoff {
     static func finishPresentation(
         _ options: UNNotificationPresentationOptions,
+        route: AppRoute? = nil,
         completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void
     ) {
         DispatchQueue.main.async {
             completionHandler(options)
+            // A valid notification is only a signal to reload through the
+            // current authenticated account. No push body becomes Review data.
+            if case .notification = route {
+                NotificationCenter.default.post(name: .brunnReviewRefresh, object: nil)
+            }
         }
     }
 
@@ -541,11 +548,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
     nonisolated func userNotificationCenter(
         _: UNUserNotificationCenter,
-        willPresent _: UNNotification,
+        willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void
     ) {
         NotificationDelegateHandoff.finishPresentation(
             [.banner, .list, .sound],
+            route: NotificationRouteParser.route(from: notification.request.content.userInfo),
             completionHandler: completionHandler
         )
     }

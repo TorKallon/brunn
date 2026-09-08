@@ -172,7 +172,7 @@ function ReviewDetail({ item, historical, data, decisionVersion, changed, unavai
       <div className="review-origin"><code>{item.id}</code><span>From <EntryLink entryRef={item.run_entry_ref} version={item.run_version}>{item.run_id} · v{item.run_version}</EntryLink></span></div>
       {data.mode === "report-only" ? <p className="review-mode-note">Report-only · Approvals are held. No candidate is applied in this mode.</p> : null}
     </header>
-    {(changed || conflict) && !decisionMutation.isSuccess ? <div className="review-notice warning" role="status"><strong>This review has changed.</strong><p>Review the latest item and decisions before taking another action. Your note is kept when you open the updated item.</p>{onReviewUpdated ? <button className="button secondary" disabled={decisionMutation.isPending || uncertain} onClick={onReviewUpdated}>Review updated item</button> : <p>This item is no longer in the pending inbox.</p>}</div> : null}
+    {(changed || conflict) && !decisionMutation.isSuccess ? <div className="review-notice warning" role="status"><strong>This review has changed.</strong><p>{onReviewUpdated ? "The latest item is shown below. Read it and its decisions before another action. Your note is kept." : "This item is no longer in the pending inbox. Your note is kept."}</p>{onReviewUpdated ? <button className="button secondary" disabled={decisionMutation.isPending || uncertain} onClick={onReviewUpdated}>Review updated item</button> : null}</div> : null}
     {blocked && (item.kind !== "question" || item.stale || item.status === "needs_changes") ? <div className="review-notice warning"><strong>{item.stale || item.status === "needs_changes" ? "Needs another review" : item.status === "approved_held" ? "Approved and held" : "Candidate not ready"}</strong><p>{blocked}</p></div> : null}
     <div className="review-detail-section"><h3>{item.kind === "question" ? "The question" : "Proposal"}</h3><MarkdownView markdown={item.body_md} stripAnchors /></div>
     {item.candidate && (item.candidate.body_md?.trim() || item.candidate.before_md?.trim() || item.candidate.after_md?.trim()) ? <div className="review-detail-section">
@@ -231,10 +231,9 @@ export function DreamsPage() {
   const currentLegacyItem = selected ? legacyItems.find((item) => item.id === selected.id) : undefined;
   const historical = Boolean(selected && (currentLegacyItem || isLegacyReviewItem(selected)));
   const currentItem = selected ? currentLegacyItem ?? items.find((item) => item.id === selected.id) : undefined;
-  // Preserve decision identity across ordinary revisions, but never keep
-  // displaying cached evidence after the server explicitly withholds it.
-  const displayedItem = historical || (currentItem?.stale && !currentItem.reviewable && currentItem.sources.length === 0)
-    ? currentItem : selected;
+  // Show refreshed content, including server redaction, immediately. The
+  // selected snapshot still pins decision identity until acknowledgment.
+  const displayedItem = currentItem ?? selected;
   const changed = Boolean(selected && (!currentItem || reviewIdentity(currentItem) !== reviewIdentity(selected) || currentItem.status !== selected.status || currentItem.stale !== selected.stale || selectedDecisionVersion !== data?.decision_version));
   const navigationItems = historical ? legacyItems : visibleItems;
   const selectedIndex = selected ? navigationItems.findIndex((item) => item.id === selected.id) : -1;

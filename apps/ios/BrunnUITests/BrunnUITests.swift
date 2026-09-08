@@ -52,6 +52,29 @@ final class BrunnUITests: XCTestCase {
     }
 
     @MainActor
+    func testReviewRefreshesAnOpenDetailOnForegroundAndRequiresUpdatedAcknowledgment() {
+        let app = launchDemo(extraArguments: ["--ui-test-review-fixture", "--ui-test-review-location", "--ui-test-review-replacement"])
+        app.tabBars.buttons["Review"].tap()
+        let item = app.buttons["review-item-demo-review-location"]
+        XCTAssertTrue(item.waitForExistence(timeout: 4))
+        item.tap()
+        XCTAssertTrue(app.staticTexts["February 3 · UTC"].waitForExistence(timeout: 3))
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        let updated = app.staticTexts["The replacement summary arrived while this item was open."]
+        XCTAssertTrue(updated.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["February 3 · UTC"].exists)
+        XCTAssertTrue(app.staticTexts["This review has changed"].exists)
+        let acknowledge = app.buttons["Review updated item"]
+        XCTAssertTrue(acknowledge.exists)
+        scroll(acknowledge, intoViewIn: app)
+        acknowledge.tap()
+        XCTAssertFalse(app.staticTexts["This review has changed"].exists)
+        XCTAssertTrue(updated.exists)
+        keepScreenshot(named: "review-refreshed-open-detail", from: app)
+    }
+
+    @MainActor
     func testManagedLocationSummaryShowsSevenReadableStopsAndHidesAuditDetails() {
         let app = launchDemo(extraArguments: ["--ui-test-review-fixture", "--ui-test-review-location"])
         app.tabBars.buttons["Review"].tap()

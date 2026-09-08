@@ -166,6 +166,7 @@ const dreamer = service("dreamer", {
     // Shared secret for the api → dreamer private surface.
     DREAMER_INTERNAL_TOKEN: preserve(),
     DREAMER_CODEX_MODEL: preserve(),
+    DREAMER_REASONING_EFFORT: preserve(),
   },
 });
 

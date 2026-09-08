@@ -220,6 +220,30 @@ pub fn exec_command(spec: &ExecSpec<'_>) -> Vec<String> {
     ]
 }
 
+/// Location passes receive a frozen packet and no broad workspace or shell
+/// access. Only discovery can use public web search; drafting/audit cannot.
+pub fn restrict_to_location_evidence(args: &mut Vec<String>, discovery: bool) {
+    let at = args.len() - 1; // before the stdin prompt marker
+    args.splice(
+        at..at,
+        [
+            "--config".into(),
+            "mcp_servers.brunn.enabled=false".into(),
+            "--config".into(),
+            "features.shell_tool=false".into(),
+            "--config".into(),
+            "features.unified_exec=false".into(),
+            "--config".into(),
+            "features.multi_agent=false".into(),
+            "--config".into(),
+            format!(
+                "web_search=\"{}\"",
+                if discovery { "live" } else { "disabled" }
+            ),
+        ],
+    );
+}
+
 /// Whether probe/exec output looks like plan-capacity exhaustion. Matched
 /// leniently on the strings codex emits for subscription limits.
 pub fn looks_rate_limited(rendered: &str) -> bool {
@@ -339,6 +363,36 @@ mod tests {
         assert!(rendered.contains("BRUNN_API_TOKEN"));
         assert!(rendered.contains("--ephemeral"));
         assert!(rendered.contains("--output-last-message /tmp/run/answer.md"));
+    }
+
+    #[test]
+    fn location_stages_have_only_their_explicit_evidence_tools() {
+        for discovery in [false, true] {
+            let spec = ExecSpec {
+                codex: Path::new("codex"),
+                model: "test",
+                mcp_server_entry: Path::new("mcp"),
+                working_dir: Path::new("work"),
+                last_message_path: Path::new("answer"),
+            };
+            let mut command = exec_command(&spec);
+            restrict_to_location_evidence(&mut command, discovery);
+            assert_eq!(command.last().unwrap(), "-");
+            for config in [
+                "mcp_servers.brunn.enabled=false",
+                "features.shell_tool=false",
+                "features.unified_exec=false",
+                "features.multi_agent=false",
+            ] {
+                assert!(command.iter().any(|arg| arg == config));
+            }
+            assert!(command.iter().any(|arg| arg
+                == if discovery {
+                    "web_search=\"live\""
+                } else {
+                    "web_search=\"disabled\""
+                }));
+        }
     }
 
     #[test]

@@ -557,32 +557,65 @@ impl Dreamer {
                 };
             }
         }
+        let budget = self
+            .config
+            .time_budget_override
+            .unwrap_or_else(|| kind.time_budget());
+        let finalizer_reserve = Duration::from_secs(15).min(budget / 10);
+        let usable = budget.saturating_sub(finalizer_reserve);
+        let total_deadline = tokio::time::Instant::now() + usable;
+        let narrative_allowance = if admission["location_work"].is_object()
+            && admission["inputs"]
+                .as_array()
+                .is_some_and(|inputs| !inputs.is_empty())
+        {
+            Duration::from_secs(600).min(usable / 3)
+        } else {
+            Duration::ZERO
+        };
+        let reasoning_deadline = total_deadline - narrative_allowance;
+        let mut enriched = admission.clone();
+        if admission["location_work"].is_object() {
+            report.stage = "location_discovery".into();
+            let discovery_budget = Duration::from_secs(600).min(usable / 2);
+            match tokio::time::timeout(
+                discovery_budget,
+                self.discover_location(admission, state_version, run_home, env, discovery_budget),
+            )
+            .await
+            {
+                Ok(Ok(value)) => enriched = value,
+                Ok(Err(detail)) => return RunOutcome::Partial { detail },
+                Err(_) => {
+                    return RunOutcome::Partial {
+                        detail: "location discovery timed out; day retained for retry".into(),
+                    };
+                }
+            }
+        }
+        let admission = &enriched;
         report.stage = "reasoning".into();
         let input = prompt::candidate_prompt(
             &report.attempt_id,
             admission,
             kind.write_budget().saturating_sub(8).min(16),
         );
-        let budget = self
-            .config
-            .time_budget_override
-            .unwrap_or_else(|| kind.time_budget());
-        // Reserve time inside one monotonic budget. A second model call never
-        // receives a fresh total budget. The reserved tail reduces model time;
-        // publication and custody keep their existing separate HTTP bounds.
-        let finalizer_reserve = Duration::from_secs(15).min(budget / 10);
-        let usable = budget.saturating_sub(finalizer_reserve);
+        let remaining = reasoning_deadline.saturating_duration_since(tokio::time::Instant::now());
         let audit_allowance = if admission["location_work"].is_object() {
-            Duration::from_secs(360).min(usable / 3)
+            Duration::from_secs(360).min(remaining / 3)
         } else {
             Duration::ZERO
         };
-        let reasoning_deadline = tokio::time::Instant::now() + usable;
-        let draft_budget = usable.saturating_sub(audit_allowance);
+        let draft_budget = remaining.saturating_sub(audit_allowance);
         let draft_deadline = reasoning_deadline - audit_allowance;
+        let answer_name = if admission["location_work"].is_object() {
+            "location-answer.md"
+        } else {
+            "answer.md"
+        };
         let draft_result = tokio::time::timeout_at(
             draft_deadline,
-            self.exec_codex(run_home, env, &input, draft_budget, "answer.md"),
+            self.exec_codex(run_home, env, &input, draft_budget, answer_name),
         )
         .await
         .unwrap_or(ExecResult::TimedOut);
@@ -606,7 +639,7 @@ impl Dreamer {
             }
             ExecResult::Finished => {}
         }
-        let raw = match std::fs::read_to_string(run_home.work_dir.join("answer.md")) {
+        let raw = match std::fs::read_to_string(run_home.work_dir.join(answer_name)) {
             Ok(raw) if raw.len() <= 1024 * 1024 => raw,
             _ => {
                 return RunOutcome::Failed {
@@ -618,6 +651,25 @@ impl Dreamer {
             Ok(output) => output,
             Err(detail) => return RunOutcome::Failed { detail },
         };
+        if admission["location_work"].is_object()
+            && (output["processed_inputs"]
+                .as_array()
+                .is_some_and(|items| !items.is_empty())
+                || output["candidates"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .any(|c| {
+                        !c["path"]
+                            .as_str()
+                            .is_some_and(|p| p.starts_with("derived/location/"))
+                    }))
+        {
+            return RunOutcome::Failed {
+                detail: "location draft crossed its isolated evidence boundary; work retained"
+                    .into(),
+            };
+        }
         if prompt::has_location_candidate(&output) {
             report.stage = "location_audit".into();
             let audit_prompt =
@@ -748,51 +800,152 @@ impl Dreamer {
             "attempt_id":report.attempt_id,"fence":admission["fence"],"expected_state_version":state_version,
             "candidates":output["candidates"],"processed_inputs":output["processed_inputs"],"findings":output["findings"]
         })).await;
-        match candidates {
-            Ok(value) => {
-                *state_version = value["state_version"].as_i64().unwrap_or(*state_version);
-                let accepted = value["accepted_candidate_ids"]
-                    .as_array()
-                    .map_or(0, Vec::len);
-                if accepted > 0 {
-                    if let (Some(run_ref), Some(version)) = (
-                        value["run_entry_ref"].as_str(),
-                        value["run_version"].as_i64(),
-                    ) {
-                        let event_key = format!("dreaming-review-{}", report.attempt_id);
-                        let retry_results = report
-                            .notification
-                            .get("retry_results")
-                            .cloned()
-                            .unwrap_or(json!([]));
-                        report.notification = match self
-                            .runner
-                            .review_ready(&event_key, run_ref, version, accepted)
-                            .await
-                        {
-                            Ok(ack) => {
-                                json!({"status":"accepted","event_key":event_key,"run_entry_ref":run_ref,"run_version":version,"count":accepted,"ack":ack})
-                            }
-                            Err(_) => {
-                                json!({"status":"failed","event_key":event_key,"run_entry_ref":run_ref,"run_version":version,"count":accepted,"detail":"review-ready notification publication failed; pending work retained"})
-                            }
-                        };
-                        report.notification["retry_results"] = retry_results;
-                        report.notification["target_kind"] = json!("review");
-                    }
-                }
-                if output["processed_inputs"].as_array().map_or(0, Vec::len)
-                    < admission["inputs"].as_array().map_or(0, Vec::len)
-                {
-                    RunOutcome::Partial { detail: "bounded model work completed; unprocessed admitted inputs remain pending".into() }
-                } else {
-                    RunOutcome::Completed
-                }
+        let mut value = match candidates {
+            Ok(value) => value,
+            Err(_) => {
+                return RunOutcome::Failed {
+                    detail: "candidate validation/publication rejected; admitted work retained"
+                        .into(),
+                };
             }
-            Err(_) => RunOutcome::Failed {
-                detail: "candidate validation/publication rejected; admitted work retained".into(),
-            },
+        };
+        *state_version = value["state_version"].as_i64().unwrap_or(*state_version);
+        let mut accepted = value["accepted_candidate_ids"]
+            .as_array()
+            .map_or(0, Vec::len);
+        let mut processed = output["processed_inputs"].as_array().map_or(0, Vec::len);
+        let mut partial = None;
+        if !narrative_allowance.is_zero() {
+            report.stage = "narrative_reasoning".into();
+            // The accepted location artifact survives any narrative failure.
+            // This pass has no location packet, candidate body or authority.
+            let narrative = prompt::narrative_admission(admission);
+            let remaining = total_deadline.saturating_duration_since(tokio::time::Instant::now());
+            let input = prompt::candidate_prompt(&report.attempt_id, &narrative, 15);
+            let result = tokio::time::timeout_at(
+                total_deadline,
+                self.exec_codex(run_home, env, &input, remaining, "narrative-answer.md"),
+            )
+            .await;
+            let parsed = match result {
+                Ok(ExecResult::Finished) => {
+                    std::fs::read_to_string(run_home.work_dir.join("narrative-answer.md"))
+                        .ok()
+                        .filter(|raw| raw.len() <= 1024 * 1024)
+                        .and_then(|raw| prompt::parse_candidate_output(&raw, &narrative).ok())
+                        .filter(|output| !prompt::has_location_candidate(output))
+                }
+                _ => None,
+            };
+            if let Some(narrative_output) = parsed {
+                report.stage = "narrative_validation".into();
+                match self.runner.dreamer("candidates",json!({
+                    "attempt_id":report.attempt_id,"fence":admission["fence"],"expected_state_version":state_version,
+                    "candidates":narrative_output["candidates"],"processed_inputs":narrative_output["processed_inputs"],"findings":narrative_output["findings"]
+                })).await {
+                    Ok(receipt) => {
+                        *state_version=receipt["state_version"].as_i64().unwrap_or(*state_version);
+                        accepted+=receipt["accepted_candidate_ids"].as_array().map_or(0,Vec::len);
+                        processed+=narrative_output["processed_inputs"].as_array().map_or(0,Vec::len);
+                        value=receipt;
+                    },
+                    Err(_) => partial=Some("checked location work retained; narrative submission failed and its inputs remain pending"),
+                }
+            } else {
+                partial = Some(
+                    "checked location work retained; narrative pass did not finish valid output and its inputs remain pending",
+                );
+            }
         }
+        if accepted > 0 {
+            if let (Some(run_ref), Some(version)) = (
+                value["run_entry_ref"].as_str(),
+                value["run_version"].as_i64(),
+            ) {
+                let event_key = format!("dreaming-review-{}", report.attempt_id);
+                let retry_results = report
+                    .notification
+                    .get("retry_results")
+                    .cloned()
+                    .unwrap_or(json!([]));
+                report.notification = match self
+                    .runner
+                    .review_ready(&event_key, run_ref, version, accepted)
+                    .await
+                {
+                    Ok(ack) => {
+                        json!({"status":"accepted","event_key":event_key,"run_entry_ref":run_ref,"run_version":version,"count":accepted,"ack":ack})
+                    }
+                    Err(_) => {
+                        json!({"status":"failed","event_key":event_key,"run_entry_ref":run_ref,"run_version":version,"count":accepted,"detail":"review-ready notification publication failed; pending work retained"})
+                    }
+                };
+                report.notification["retry_results"] = retry_results;
+                report.notification["target_kind"] = json!("review");
+            }
+        }
+        if let Some(detail) = partial {
+            return RunOutcome::Partial {
+                detail: detail.into(),
+            };
+        }
+        if processed < admission["inputs"].as_array().map_or(0, Vec::len) {
+            RunOutcome::Partial {
+                detail: "bounded model work completed; unprocessed admitted inputs remain pending"
+                    .into(),
+            }
+        } else if admission["location_work"].is_object() && !prompt::has_location_candidate(&output)
+        {
+            RunOutcome::Partial { detail:"bounded reasoning completed; historical day remains pending without a supported location candidate".into() }
+        } else {
+            RunOutcome::Completed
+        }
+    }
+
+    async fn discover_location(
+        &self,
+        admission: &Value,
+        state_version: &mut i64,
+        run_home: &RunHome,
+        env: &BTreeMap<String, String>,
+        budget: Duration,
+    ) -> Result<Value, String> {
+        let input = super::discovery::prompt(admission);
+        match self
+            .exec_codex(
+                run_home,
+                env,
+                &input,
+                budget,
+                "location-discovery-answer.md",
+            )
+            .await
+        {
+            ExecResult::Finished => {}
+            ExecResult::TimedOut => return Err("location discovery timed out; day retained".into()),
+            ExecResult::Failed(_) => {
+                return Err("location discovery model failed; day retained".into());
+            }
+        }
+        let raw = std::fs::read_to_string(run_home.work_dir.join("location-discovery-answer.md"))
+            .map_err(|_| "location discovery output missing")?;
+        if raw.len() > 64 * 1024 {
+            return Err("location discovery output exceeded bound".into());
+        }
+        let discovered = super::discovery::parse(&raw)?;
+        let (verified, failures) = super::discovery::verify_lookups(&discovered.lookups).await;
+        let mut next=self.runner.dreamer("location-discover",json!({
+            "attempt_id":admission["attempt_id"],"fence":admission["fence"],
+            "expected_state_version":state_version,"context_queries":discovered.context_queries,
+            "web_sources":verified
+        })).await.map_err(|_|"location discovery source admission failed; day retained")?;
+        *state_version = next["state_version"]
+            .as_i64()
+            .ok_or("discovery state receipt missing")?;
+        let mut findings = discovered.findings;
+        findings.extend(failures);
+        next["location_discovery_findings"] = json!(findings);
+        Ok(next)
     }
 
     async fn verify_model_identity(&self) -> Result<(), String> {
@@ -959,13 +1112,33 @@ impl Dreamer {
         // forwarded by name through the codex MCP config.
         env.insert("BRUNN_API_URL".into(), self.config.api_url.clone());
         env.insert("BRUNN_API_TOKEN".into(), self.config.model_token.clone());
-        let argv = codex::exec_command(&ExecSpec {
+        let mut argv = codex::exec_command(&ExecSpec {
             codex: &self.config.codex_path,
             model: &self.config.codex_model,
             mcp_server_entry: &self.config.mcp_server_entry,
             working_dir: &run_home.work_dir,
             last_message_path: &run_home.work_dir.join(answer_name),
         });
+        if answer_name.starts_with("location-") {
+            codex::restrict_to_location_evidence(
+                &mut argv,
+                answer_name == "location-discovery-answer.md",
+            );
+            env.remove("BRUNN_API_TOKEN");
+            env.remove("BRUNN_API_URL");
+        }
+        if let Some(effort) = self.config.host_env.get("DREAMER_REASONING_EFFORT") {
+            if ["low", "medium", "high", "xhigh", "max", "ultra"].contains(&effort.as_str()) {
+                let at = argv.len() - 1;
+                argv.splice(
+                    at..at,
+                    [
+                        "--config".into(),
+                        format!("model_reasoning_effort=\"{effort}\""),
+                    ],
+                );
+            }
+        }
         let mut command = Command::new(&argv[0]);
         command
             .args(&argv[1..])

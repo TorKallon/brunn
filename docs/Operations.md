@@ -393,6 +393,39 @@ is an explicit follow-up read; expired or changed evidence still causes fallback
 When revising a consumed historical pilot, explicitly requeue its closed day
 before triggering a manual run; preserve the pending item identity and mode.
 
+Each admitted run also queues the previous closed Pacific day when it has raw
+observations and no retained or already dispositioned work for that day.
+Location reasoning has three separate model passes: autonomous discovery,
+drafting, and an independent audit (with one bounded correction when needed).
+Discovery sees raw observations with known Home coordinates/addresses removed;
+it can search the public web, but has no shell or Brunn tools. The wrapper
+independently fetches at most eight public HTTPS pages and verifies short exact
+quotations. The fenced `/workspace/dreamer/location-discover` operation retains
+those excerpts under `Evidence/Location/<date>/` and searches up to eight
+discovered aliases against at most four historical Brunn source excerpts.
+Historical version selection and generated/evaluation-output exclusions happen
+before matching. The source cutoff is the beginning of the day being summarized,
+so later answers and corrections cannot become a replay's answer key.
+
+Drafting and auditing have no tools and receive the unchanged frozen location
+packet plus the admitted source versions. They receive no earlier candidate
+body, owner decision prose, or narrative backlog. Context identity evidence
+cannot substitute for observed position/time evidence. Lookup receipts include
+URL, fetch time, exact quotation and response hash; source changes, revocation
+or the 30-day lookup freshness deadline invalidate dependent summaries. Raw
+retention remains unchanged. Manual queueing accepts a date/timezone, never a
+hand-selected context list or itinerary.
+
+The same overall run budget reserves time for ordinary memory summaries in a
+separate subsequent pass. Location results are accepted first and survive a
+failed narrative pass. Both submissions share one durable review notification;
+unprocessed work remains pending. `DREAMER_REASONING_EFFORT` can explicitly set
+the supported effort for the configured ChatGPT-backed Codex model. It does not
+enable API-key billing. To switch the Dreamer account, wait for the terminal run
+receipt, disconnect in Brunn Settings, then use Connect with the new account's
+device-code login. Host Codex authentication and personal scheduled tasks are
+independent of this stored Dreamer credential.
+
 Deploy only the tested committed `main` tree with explicit project, service,
 and environment arguments. A detached upload is not a health result: record its
 deployment ID, wait for success, check private `/healthz`, the CLI version,
