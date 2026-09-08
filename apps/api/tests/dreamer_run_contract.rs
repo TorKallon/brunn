@@ -535,6 +535,9 @@ async fn valid_partial_output_reports_retained_work() {
 const LOCATION_ITEM: &str = "fixture-location/7";
 const LOCATION_CAVEAT: &str =
     "The receipt time is unknown; this point does not establish continuous presence.";
+const CANONICAL_BOUNDARY_ROW: &str = "| 2040-02-02T23:40+00:00 | 2040-02-03T00:05+00:00 | 25m | — | unknown | Fixture | low | 1.0,2.0 |";
+const CANONICAL_POINT_ROW: &str =
+    "| 2040-02-03T10:01+00:00 | — | — | — | unknown | Fixture | low | 1.0,2.0 |";
 
 fn location_candidate(observation: &str) -> Value {
     json!({
@@ -579,8 +582,13 @@ fn enable_location(s: &Shared) {
             "reports":[{"natural_key":{"at":"2040-02-03T10:01:00Z","type":"ping"},
                 "at":"2040-02-03T10:01:00Z","type":"ping","lat":1.0,"lon":2.0,
                 "accuracy_m":5.0,"first_received_at":null}],
-            "canonical_months":[{"ref":SOURCE,"version":2,"selectors":[{
-                "start_line":1,"end_line":2,"text":"Synthetic canonical comparison row"}]}],
+            "canonical_months":[{"ref":SOURCE,"path":"Location/Visits/2040-02.md","version":2,"selectors":[{
+                "start_line":1,"end_line":1,"text":CANONICAL_BOUNDARY_ROW,
+                "arrived_at":"2040-02-02T23:40:00Z","departed_at":"2040-02-03T00:05:00Z",
+                "origin":"canonical_visit","precision":"canonical minute"}, {
+                "start_line":2,"end_line":2,"text":CANONICAL_POINT_ROW,
+                "arrived_at":"2040-02-03T10:01:00Z","departed_at":null,
+                "origin":"canonical_visit","precision":"canonical minute"}]}],
             "boundary_observations":{"before":null,"after":null}, "sample_gaps":[],
             "time_semantics":{"first_received_at":"Null means receipt time is unknown."}
         }
@@ -600,7 +608,7 @@ case "$OUTPUT_NAME" in
   {draft_script}
   cat "$DIR/draft.json" > "$OUTPUT_PATH"
   ;;
- location-audit-answer.md)
+ location-audit-answer.md|location-correction-answer.md)
   echo '{{"audit_refreshed":true}}' > "$CODEX_HOME/auth.json"
   {audit_script}
   ;;
@@ -630,6 +638,22 @@ fn model_calls(dir: &Path) -> Vec<String> {
         .collect()
 }
 
+fn assert_canonical_inventory(body: &str) {
+    let (_, inventory) = body
+        .split_once("\n\n## Canonical interval inventory\n\n")
+        .expect("the submitted body needs its canonical inventory");
+    assert!(inventory.contains("derived, minute-rounded canonical records"));
+    assert!(inventory.contains("do not establish continuous physical presence"));
+    assert!(inventory.contains("unknown departures remain unknown"));
+    for row in [CANONICAL_BOUNDARY_ROW, CANONICAL_POINT_ROW] {
+        let line = inventory.lines().find(|line| line.contains(row)).unwrap();
+        assert!(
+            line.ends_with("[^s1]"),
+            "the row must cite its existing exact canonical source: {line}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn location_audit_submits_only_the_corrected_artifact_under_the_original_identity() {
     let (s, d, dir, audited) = build_location_audit(
@@ -653,7 +677,7 @@ async fn location_audit_submits_only_the_corrected_artifact_under_the_original_i
     for evidence in [
         "location.evidence.v1",
         "Draft observation requiring independent review.",
-        "Synthetic canonical comparison row",
+        CANONICAL_BOUNDARY_ROW,
         "first_received_at",
         LOCATION_ITEM,
     ] {
@@ -671,12 +695,19 @@ async fn location_audit_submits_only_the_corrected_artifact_under_the_original_i
     }
     let s = s.lock().unwrap();
     assert_eq!(s.submissions, 1);
-    assert_eq!(s.submitted[0]["candidates"], audited["candidates"]);
+    let accepted_content = s.submitted[0]["candidates"][0]["content"].as_str().unwrap();
+    assert!(accepted_content.starts_with(audited["candidates"][0]["content"].as_str().unwrap()));
+    assert!(accepted_content.contains(CANONICAL_BOUNDARY_ROW));
+    assert!(accepted_content.contains(CANONICAL_POINT_ROW));
+    assert_canonical_inventory(accepted_content);
+    let mut expected_candidates = audited["candidates"].clone();
+    expected_candidates[0]["content"] = json!(accepted_content);
+    assert_eq!(s.submitted[0]["candidates"], expected_candidates);
     assert_eq!(s.submitted[0]["findings"], audited["findings"]);
     assert_eq!(s.submitted[0]["processed_inputs"], json!([]));
     assert_eq!(s.pending.len(), 1);
     assert_eq!(s.pending[0]["id"], LOCATION_ITEM);
-    assert_eq!(s.pending[0]["candidate"], audited["candidates"][0]);
+    assert_eq!(s.pending[0]["candidate"], s.submitted[0]["candidates"][0]);
     assert!(!s.retained_location_work);
     assert_eq!(
         s.auth_puts, 1,
@@ -808,8 +839,11 @@ async fn an_audit_can_remove_only_location_work_with_an_explicit_retention_findi
 
 #[tokio::test]
 async fn location_audit_uses_the_remaining_shared_model_deadline() {
+    // Leave several seconds between the correct shared allowance and a fresh
+    // full-budget mutant; process startup and auth finalization are outside
+    // the model deadline and can be delayed by concurrent subprocess tests.
     let (s, d, dir, _) =
-        build_location_audit("exec sleep 20", "sleep 2", Duration::from_secs(4)).await;
+        build_location_audit("exec sleep 30", "sleep 5", Duration::from_secs(12)).await;
     let started = std::time::Instant::now();
     let report = d.run_once(today(), RunKind::Manual).await;
     let elapsed = started.elapsed();
@@ -822,15 +856,194 @@ async fn location_audit_uses_the_remaining_shared_model_deadline() {
         "location-audit-answer.md"
     );
     assert!(
-        elapsed < Duration::from_secs(5),
+        elapsed < Duration::from_secs(13),
         "audit received a fresh total budget: {elapsed:?}"
     );
     assert!(
-        elapsed >= Duration::from_secs(2),
+        elapsed >= Duration::from_secs(5),
         "draft delay was not exercised"
     );
     assert_eq!(report.auth_persistence, "verified");
     assert_eq!(report.receipt_persistence, "accepted");
+    let s = s.lock().unwrap();
+    assert_eq!(s.submissions, 0);
+    assert_eq!(s.auth_puts, 1);
+    assert!(s.retained_location_work);
+}
+
+async fn build_location_correction(
+    correction_script: &str,
+    audit_delay: &str,
+    budget: Duration,
+) -> (Shared, Dreamer, tempfile::TempDir, Value) {
+    let audit_script = format!(
+        r#"
+if [ "$OUTPUT_NAME" = "location-audit-answer.md" ]; then
+ {audit_delay}
+ cp "$DIR/corrected.json" "${{OUTPUT_PATH%/*}}/location-correction-answer.md"
+ cat "$DIR/audited.json" > "$OUTPUT_PATH"
+else
+ echo '{{"correction_refreshed":true}}' > "$CODEX_HOME/auth.json"
+ {correction_script}
+fi
+"#
+    );
+    let (s, d, dir, mut audited) = build_location_audit(&audit_script, "", budget).await;
+    // The precise observation exists in the frozen packet, but the audited
+    // draft cites only the earlier observation. Truth without its supporting
+    // citation must require correction before submission.
+    audited["candidates"][0]["content"] = json!(format!(
+        "- An observation occurs at 10:02:00.[^r1][^s1]\n- {LOCATION_CAVEAT}[^r1]"
+    ));
+    s.lock().unwrap().location_admission.as_mut().unwrap()["location_evidence"]["reports"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "natural_key":{"at":"2040-02-03T10:02:00Z","type":"ping"},
+            "at":"2040-02-03T10:02:00Z","type":"ping","lat":1.0,"lon":2.0,
+            "accuracy_m":5.0,"first_received_at":null
+        }));
+    let mut corrected = audited.clone();
+    corrected["candidates"][0]["raw_sources"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "natural_key":{"at":"2040-02-03T10:02:00Z","type":"ping"},
+            "fields":["at","lat","lon","accuracy_m","first_received_at"]
+        }));
+    corrected["candidates"][0]["content"] = json!(format!(
+        "- An observation occurs at 10:02:00.[^r2][^s1]\n- {LOCATION_CAVEAT}[^r1][^r2]"
+    ));
+    corrected["findings"].as_array_mut().unwrap().push(json!(
+        "Corrected the observation's exact timestamp citation."
+    ));
+    for (name, value) in [("audited.json", &audited), ("corrected.json", &corrected)] {
+        std::fs::write(dir.path().join(name), value.to_string()).unwrap();
+    }
+    (s, d, dir, corrected)
+}
+
+#[tokio::test]
+async fn unsupported_audited_clock_requires_one_correction_before_submission() {
+    let (s, d, dir, corrected) = build_location_correction(
+        "cat \"$DIR/corrected.json\" > \"$OUTPUT_PATH\"",
+        "",
+        Duration::from_secs(6),
+    )
+    .await;
+    let report = d.run_once(today(), RunKind::Manual).await;
+    assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
+    assert_eq!(report.auth_persistence, "verified");
+    assert_eq!(report.receipt_persistence, "accepted");
+    assert_eq!(
+        &model_calls(dir.path())[1..],
+        [
+            "answer.md",
+            "location-audit-answer.md",
+            "location-correction-answer.md"
+        ]
+    );
+    let correction_prompt =
+        std::fs::read_to_string(dir.path().join("prompt-location-correction-answer.md")).unwrap();
+    assert!(correction_prompt.contains("10:02:00"));
+    assert!(correction_prompt.contains("2040-02-03T10:02:00Z"));
+    assert!(correction_prompt.contains(LOCATION_ITEM));
+    let correction_env =
+        std::fs::read_to_string(dir.path().join("env-location-correction-answer.md")).unwrap();
+    assert!(correction_env.contains("BRUNN_API_TOKEN=model"));
+    assert!(!correction_env.contains("BRUNN_API_TOKEN=runner"));
+    assert!(!correction_env.contains("OPENAI_API_KEY"));
+    let s = s.lock().unwrap();
+    assert_eq!(s.submissions, 1);
+    assert_eq!(s.pending.len(), 1);
+    assert_eq!(s.pending[0]["id"], LOCATION_ITEM);
+    let actual = &s.submitted[0]["candidates"][0];
+    assert_eq!(
+        actual["raw_sources"],
+        corrected["candidates"][0]["raw_sources"]
+    );
+    let body = actual["content"].as_str().unwrap();
+    assert!(body.starts_with(corrected["candidates"][0]["content"].as_str().unwrap()));
+    assert!(body.contains(CANONICAL_BOUNDARY_ROW));
+    assert!(body.contains(CANONICAL_POINT_ROW));
+    assert_canonical_inventory(body);
+    assert_eq!(s.submitted[0]["findings"], corrected["findings"]);
+    assert!(!s.retained_location_work);
+    assert_eq!(s.auth_puts, 1);
+    assert!(s.secrets[AUTH_SECRET].0.contains("correction_refreshed"));
+}
+
+#[tokio::test]
+async fn failed_clock_corrections_never_submit_an_earlier_or_stale_artifact() {
+    for (name, script, timeout) in [
+        ("malformed", "echo '{bad' > \"$OUTPUT_PATH\"", false),
+        ("missing", "exit 0", false),
+        (
+            "nonzero",
+            "cat \"$DIR/corrected.json\" > \"$OUTPUT_PATH\"; exit 7",
+            false,
+        ),
+        (
+            "uncorrected",
+            "cat \"$DIR/audited.json\" > \"$OUTPUT_PATH\"",
+            false,
+        ),
+        (
+            "timeout",
+            "cat \"$DIR/corrected.json\" > \"$OUTPUT_PATH\"; exec sleep 20",
+            true,
+        ),
+    ] {
+        let (s, d, dir, _) = build_location_correction(script, "", Duration::from_secs(3)).await;
+        let original = s.lock().unwrap().pending.clone();
+        let report = d.run_once(today(), RunKind::Manual).await;
+        match &report.outcome {
+            RunOutcome::Partial { .. } if timeout => (),
+            RunOutcome::Failed { .. } if !timeout => (),
+            _ => panic!("{name}: {report:?}"),
+        }
+        assert_eq!(
+            model_calls(dir.path()).len(),
+            4,
+            "{name}: one corrective attempt only"
+        );
+        assert_eq!(report.auth_persistence, "verified", "{name}");
+        assert_eq!(report.receipt_persistence, "accepted", "{name}");
+        let s = s.lock().unwrap();
+        assert_eq!(s.submissions, 0, "{name}");
+        assert_eq!(s.pending, original, "{name}");
+        assert!(s.retained_location_work, "{name}");
+        assert!(s.notifications.is_empty(), "{name}");
+        assert_eq!(s.auth_puts, 1, "{name}");
+        assert!(
+            s.secrets[AUTH_SECRET].0.contains("correction_refreshed"),
+            "{name}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn clock_correction_shares_the_first_audit_deadline() {
+    // Correct: audit + correction share 9s. A reset audit pool would take
+    // 7s + 9s. The 13s boundary tolerates process startup without admitting it.
+    let (s, d, dir, _) =
+        build_location_correction("exec sleep 30", "sleep 7", Duration::from_secs(30)).await;
+    let started = std::time::Instant::now();
+    let report = d.run_once(today(), RunKind::Manual).await;
+    let elapsed = started.elapsed();
+    assert!(
+        matches!(report.outcome, RunOutcome::Partial { .. }),
+        "{report:?}"
+    );
+    assert_eq!(
+        model_calls(dir.path()).last().unwrap(),
+        "location-correction-answer.md"
+    );
+    assert!(
+        elapsed < Duration::from_secs(13),
+        "correction received a fresh audit allowance: {elapsed:?}"
+    );
+    assert!(elapsed >= Duration::from_secs(7));
     let s = s.lock().unwrap();
     assert_eq!(s.submissions, 0);
     assert_eq!(s.auth_puts, 1);

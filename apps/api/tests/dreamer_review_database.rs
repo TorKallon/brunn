@@ -1574,7 +1574,7 @@ fn pilot_candidate(admission: &Value) -> Value {
     let selector = &document["selectors"][0];
     json!({"kind":"summary","title":"Historical location evidence","summary":"A bounded historical day with exact sources.","reason":"Review a sourced reconstruction with explicit coverage uncertainty.",
         "path":format!("derived/location/{}.md",work["date"].as_str().unwrap()),"expected_version":0,
-        "content":format!("# Historical location evidence\n\nA bounded stop is recorded in canonical history.[^s1]\nThe retained sample has five-meter reported accuracy.[^r1]\n\n{PILOT_UNCERTAINTY}[^r1]\n"),
+        "content":format!("# Historical location evidence\n\nThe canonical record gives minute-rounded boundaries 12:00 and 13:00.[^s1]\nThe retained sample at 12:00:00 has five-meter reported accuracy.[^r1]\n\n{PILOT_UNCERTAINTY}[^r1]\n"),
         "uncertainty":PILOT_UNCERTAINTY,
         "sources":[{"entry_ref":document["ref"],"version":document["version"],"start_line":selector["start_line"],"end_line":selector["end_line"]}],
         "raw_sources":[{"natural_key":packet["reports"][0]["natural_key"],"fields":["at","lat","lon","accuracy_m","first_received_at"]}],
@@ -1611,10 +1611,15 @@ async fn location_candidate_guards_retain_work_and_revision_preserves_published_
             "# Raw only\n\nA point sample has five-meter reported accuracy.[^r1]\n{PILOT_UNCERTAINTY}[^r1]\n"
         ));
         let mut unused_raw = valid.clone();
-        unused_raw["content"] = json!(valid["content"].as_str().unwrap().replace("[^r1]", "[^s1]"));
+        // Isolate citation participation from the independently checked clock claims.
+        let without_clocks = valid["content"]
+            .as_str()
+            .unwrap()
+            .replace("12:00:00", "the retained timestamp")
+            .replace("12:00 and 13:00", "as recorded");
+        unused_raw["content"] = json!(without_clocks.replace("[^r1]", "[^s1]"));
         let mut unused_canonical = valid.clone();
-        unused_canonical["content"] =
-            json!(valid["content"].as_str().unwrap().replace("[^s1]", "[^r1]"));
+        unused_canonical["content"] = json!(without_clocks.replace("[^s1]", "[^r1]"));
         let mut sidebar_only = valid.clone();
         sidebar_only["uncertainty"] =
             json!("Material gaps remain unresolved; the day may contain unobserved stops.");
@@ -1622,6 +1627,18 @@ async fn location_candidate_guards_retain_work_and_revision_preserves_published_
         heading_only_raw["content"] = json!(format!(
             "# Raw sources [^r1]\n\n{}",
             unused_raw["content"].as_str().unwrap()
+        ));
+        let mut wrong_clock = valid.clone();
+        wrong_clock["content"] = json!(
+            valid["content"]
+                .as_str()
+                .unwrap()
+                .replace("12:00:00", "12:00:37")
+        );
+        let mut canonical_seconds = valid.clone();
+        canonical_seconds["content"] = json!(valid["content"].as_str().unwrap().replace(
+            "boundaries 12:00 and 13:00",
+            "boundaries 12:00:00 and 13:00:00"
         ));
         vec![
             ("must cite retained raw observations", raw_omitted),
@@ -1636,6 +1653,11 @@ async fn location_candidate_guards_retain_work_and_revision_preserves_published_
                 unused_canonical,
             ),
             ("summary uncertainty must appear verbatim", sidebar_only),
+            ("location clock citation validation failed", wrong_clock),
+            (
+                "location clock citation validation failed",
+                canonical_seconds,
+            ),
         ]
     };
     let initial_state = current(&f, "dreams/state.md").await.unwrap();
@@ -1809,9 +1831,16 @@ async fn location_candidate_guards_retain_work_and_revision_preserves_published_
     );
 }
 
+#[derive(Clone, Copy)]
+enum ObsoleteLocationCandidate {
+    SidebarUncertainty,
+    MissingRaw,
+    WrongClock,
+}
+
 async fn seed_obsolete_location_candidate(
     f: &Fixture,
-    missing_raw: bool,
+    obsolete: ObsoleteLocationCandidate,
     status: &str,
 ) -> (chrono::DateTime<Utc>, Value, &'static str) {
     let (from, _, _) = seed_location_pilot(&f).await;
@@ -1853,19 +1882,31 @@ async fn seed_obsolete_location_candidate(
     item["run_version"] = json!(0);
     item["status"] = json!(status);
     let candidate = &mut item["candidate"];
-    let expected_error = if missing_raw {
-        candidate["raw_sources"] = json!([]);
-        candidate["content"] = json!(
-            candidate["content"]
-                .as_str()
-                .unwrap()
-                .replace("[^r1]", "[^s1]")
-        );
-        "must cite retained raw observations"
-    } else {
-        candidate["uncertainty"] =
-            json!("A material historical caveat appears only outside the publishable body.");
-        "summary uncertainty must appear verbatim"
+    let expected_error = match obsolete {
+        ObsoleteLocationCandidate::MissingRaw => {
+            candidate["raw_sources"] = json!([]);
+            candidate["content"] = json!(
+                candidate["content"]
+                    .as_str()
+                    .unwrap()
+                    .replace("[^r1]", "[^s1]")
+            );
+            "must cite retained raw observations"
+        }
+        ObsoleteLocationCandidate::SidebarUncertainty => {
+            candidate["uncertainty"] =
+                json!("A material historical caveat appears only outside the publishable body.");
+            "summary uncertainty must appear verbatim"
+        }
+        ObsoleteLocationCandidate::WrongClock => {
+            candidate["content"] = json!(
+                candidate["content"]
+                    .as_str()
+                    .unwrap()
+                    .replace("12:00:00", "12:00:37")
+            );
+            "location clock citation validation failed"
+        }
     };
     let historical: brunn::dreamer_review::Candidate =
         serde_json::from_value(candidate.clone()).unwrap();
@@ -1886,13 +1927,17 @@ async fn seed_obsolete_location_candidate(
 
 #[tokio::test]
 async fn report_only_approval_revalidates_obsolete_candidates_without_holding_them() {
-    for missing_raw in [false, true] {
+    for obsolete in [
+        ObsoleteLocationCandidate::SidebarUncertainty,
+        ObsoleteLocationCandidate::MissingRaw,
+        ObsoleteLocationCandidate::WrongClock,
+    ] {
         let Some(f) = fixture().await else {
             return;
         };
         control(&f, "report-only", 0).await;
         let (from, view, expected_error) =
-            seed_obsolete_location_candidate(&f, missing_raw, "pending").await;
+            seed_obsolete_location_candidate(&f, obsolete, "pending").await;
         let original = &view["items"][0];
         assert_eq!(view["mode"], "report-only");
         assert_eq!(original["status"], "pending");
@@ -1915,6 +1960,21 @@ async fn report_only_approval_revalidates_obsolete_candidates_without_holding_th
         );
         assert_eq!(current(&f, "dreams/state.md").await.unwrap(), before);
         assert_eq!(review(&f).await["items"], view["items"]);
+        if matches!(obsolete, ObsoleteLocationCandidate::WrongClock) {
+            control(&f, "full", 1).await;
+            let full_view = review(&f).await;
+            assert_eq!(full_view["mode"], "full");
+            let refused = post(
+                &f,
+                &f.owner,
+                "/v1/dreamer/review/decisions",
+                decision(&full_view, &full_view["items"][0], "approve"),
+            )
+            .await;
+            assert_eq!(refused.status, StatusCode::BAD_REQUEST, "{}", refused.body);
+            assert!(refused.body.to_string().contains(expected_error));
+            assert_eq!(current(&f, "dreams/state.md").await.unwrap(), before);
+        }
         assert!(
             current(&f, &format!("derived/location/{}.md", from.date_naive()))
                 .await
@@ -1932,13 +1992,17 @@ async fn report_only_approval_revalidates_obsolete_candidates_without_holding_th
 
 #[tokio::test]
 async fn obsolete_held_location_candidates_requeue_without_blocking_full_admission() {
-    for missing_raw in [false, true] {
+    for obsolete in [
+        ObsoleteLocationCandidate::SidebarUncertainty,
+        ObsoleteLocationCandidate::MissingRaw,
+        ObsoleteLocationCandidate::WrongClock,
+    ] {
         let Some(f) = fixture().await else {
             return;
         };
         control(&f, "report-only", 0).await;
         let (from, view, expected_error) =
-            seed_obsolete_location_candidate(&f, missing_raw, "approved_held").await;
+            seed_obsolete_location_candidate(&f, obsolete, "approved_held").await;
         let original = &view["items"][0];
         assert_eq!(original["status"], "approved_held");
         let old_run_id = Uuid::parse_str(

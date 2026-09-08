@@ -573,7 +573,7 @@ impl Dreamer {
         let finalizer_reserve = Duration::from_secs(15).min(budget / 10);
         let usable = budget.saturating_sub(finalizer_reserve);
         let audit_allowance = if admission["location_work"].is_object() {
-            Duration::from_secs(180).min(usable / 3)
+            Duration::from_secs(360).min(usable / 3)
         } else {
             Duration::ZERO
         };
@@ -667,6 +667,77 @@ impl Dreamer {
                     return RunOutcome::Failed {
                         detail: format!(
                             "location audit output rejected: {detail}; unchecked draft not submitted"
+                        ),
+                    };
+                }
+            };
+            let issues = prompt::location_clock_issues(&output, admission);
+            if !issues.is_empty() {
+                report.stage = "location_correction".into();
+                let correction_prompt = prompt::location_correction_prompt(
+                    &report.attempt_id,
+                    admission,
+                    &output,
+                    &issues,
+                );
+                // The correction shares the first audit's absolute deadline.
+                // Prompt construction and process setup cannot reset it.
+                let remaining =
+                    audit_deadline.saturating_duration_since(tokio::time::Instant::now());
+                if remaining.is_zero() {
+                    return RunOutcome::Partial {
+                        detail: "location correction budget exhausted; unchecked output not submitted and admitted work retained".into(),
+                    };
+                }
+                let result = tokio::time::timeout_at(
+                    audit_deadline,
+                    self.exec_codex(
+                        run_home,
+                        env,
+                        &correction_prompt,
+                        remaining,
+                        "location-correction-answer.md",
+                    ),
+                )
+                .await
+                .unwrap_or(ExecResult::TimedOut);
+                match result {
+                    ExecResult::Finished => {},
+                    ExecResult::TimedOut => return RunOutcome::Partial {
+                        detail: "location correction timed out; unchecked output not submitted and admitted work retained".into(),
+                    },
+                    ExecResult::Failed(_) => return RunOutcome::Failed {
+                        detail: "location correction failed; unchecked output not submitted and admitted work retained".into(),
+                    },
+                }
+                let corrected = match std::fs::read_to_string(run_home.work_dir.join("location-correction-answer.md")) {
+                    Ok(raw) if raw.len() <= 1024 * 1024 => raw,
+                    _ => return RunOutcome::Failed {
+                        detail: "location correction produced no bounded output; unchecked output not submitted".into(),
+                    },
+                };
+                output = match prompt::parse_location_audit_output(&corrected, admission, &output) {
+                    Ok(output) => output,
+                    Err(detail) => {
+                        return RunOutcome::Failed {
+                            detail: format!(
+                                "location correction output rejected: {detail}; unchecked output not submitted"
+                            ),
+                        };
+                    }
+                };
+                if !prompt::location_clock_issues(&output, admission).is_empty() {
+                    return RunOutcome::Failed {
+                        detail: "location clock citation validation failed after one correction; unchecked output not submitted and admitted work retained".into(),
+                    };
+                }
+            }
+            output = match prompt::compile_location_inventory(&output, admission) {
+                Ok(output) => output,
+                Err(detail) => {
+                    return RunOutcome::Failed {
+                        detail: format!(
+                            "location inventory validation failed: {detail}; unchecked output not submitted and admitted work retained"
                         ),
                     };
                 }

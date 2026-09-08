@@ -935,15 +935,26 @@ async fn validate_location_candidate(
     )?;
     let mut internal = auth.clone();
     internal.capabilities.insert("save".into());
-    crate::location::summary::validate_candidate_in_tx(
-        tx,
-        &internal,
-        &query,
-        string(scope, "fingerprint")?,
-        &candidate.sources,
-        &candidate.raw_sources,
-    )
-    .await
+    let (validated_scope, packet) =
+        crate::location::summary::validate_candidate_with_clock_evidence_in_tx(
+            tx,
+            &internal,
+            &query,
+            string(scope, "fingerprint")?,
+            &candidate.sources,
+            &candidate.raw_sources,
+        )
+        .await?;
+    let output = json!({"candidates":[candidate]});
+    let admission =
+        json!({"location_work":{"timezone":scope["timezone"]},"location_evidence":packet});
+    if let Some(issue) = crate::dreamer::prompt::location_clock_issues(&output, &admission).first()
+    {
+        return Err(ApiError::invalid(format!(
+            "location clock citation validation failed: {issue}"
+        )));
+    }
+    Ok(validated_scope)
 }
 pub async fn admit(
     State(state): State<AppState>,

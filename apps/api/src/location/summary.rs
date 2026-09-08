@@ -65,6 +65,28 @@ pub async fn validate_candidate_in_tx(
     canonical_sources: &[Source],
     raw_sources: &[RawCitation],
 ) -> ApiResult<Value> {
+    Ok(validate_candidate_with_clock_evidence_in_tx(
+        tx,
+        auth,
+        query,
+        fingerprint,
+        canonical_sources,
+        raw_sources,
+    )
+    .await?
+    .0)
+}
+
+/// Return the trusted scope and bounded evidence for content validation while
+/// retaining the same publication locks. Raw evidence stays inside the API.
+pub(crate) async fn validate_candidate_with_clock_evidence_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    auth: &AuthContext,
+    query: &EvidenceQuery,
+    fingerprint: &str,
+    canonical_sources: &[Source],
+    raw_sources: &[RawCitation],
+) -> ApiResult<(Value, Value)> {
     auth.require(Capability::Save)?;
     query.validate(chrono::Utc::now())?;
     if canonical_sources.len() + raw_sources.len() == 0
@@ -94,7 +116,7 @@ pub async fn validate_candidate_in_tx(
     }
     crate::db::lock_workspace_commit(tx, auth.user_id.0).await?;
     lock_location_user(tx, auth.user_id.0).await?;
-    let packet = evidence_in_tx(tx, auth, query).await?;
+    let mut packet = evidence_in_tx(tx, auth, query).await?;
     if packet["completeness"]["complete"] != true || packet["fingerprint_complete"] != true {
         return Err(ApiError::conflict(
             "location_evidence_incomplete",
@@ -132,9 +154,39 @@ pub async fn validate_candidate_in_tx(
     for citation in raw_sources {
         validate_raw(citation, &packet)?;
     }
-    Ok(
+
+    // Exact historical source versions remain valid when their selected rows
+    // are unchanged after unrelated month growth. Above we checked every row
+    // against the fresh packet. Preserve those typed boundaries at the cited
+    // version/line coordinates for the clock checker; never parse model prose
+    // or trust caller-supplied timestamps as canonical evidence.
+    let mut clock_documents = Vec::new();
+    for source in canonical_sources {
+        let Some(document) = packet["canonical_months"]
+            .as_array()
+            .and_then(|months| months.iter().find(|month| month["ref"] == source.entry_ref))
+        else {
+            continue; // Places has no canonical visit boundaries.
+        };
+        let mut selectors = Vec::new();
+        for (offset, line) in source.excerpt.lines().enumerate() {
+            let mut selector = document["selectors"]
+                .as_array()
+                .and_then(|rows| rows.iter().find(|row| row["text"] == line))
+                .cloned()
+                .ok_or_else(|| changed("validated canonical row is missing from clock evidence"))?;
+            selector["start_line"] = json!(source.start_line + offset);
+            selector["end_line"] = json!(source.start_line + offset);
+            selectors.push(selector);
+        }
+        clock_documents
+            .push(json!({"ref":source.entry_ref,"version":source.version,"selectors":selectors}));
+    }
+    packet["canonical_months"] = json!(clock_documents);
+    Ok((
         json!({"from":query.from.to_rfc3339(),"to":query.to.to_rfc3339(),"timezone":query.timezone,"fingerprint":fingerprint,"sources_validated":true}),
-    )
+        packet,
+    ))
 }
 
 async fn validate_canonical(
