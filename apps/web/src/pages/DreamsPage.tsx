@@ -29,11 +29,12 @@ function EvidenceSource({ source }: { source: DreamerReviewSource }) {
 }
 
 function RunStatus({ data }: { data: DreamerReviewData }) {
+  const attemptAt = data.last_attempt?.finished_at ?? data.last_attempt?.started_at;
   return <div className="review-run-status">
     <div className="review-run-fact">
       <span className="review-eyebrow">Last attempt</span>
       {data.last_attempt ? <>
-        <strong>{data.last_attempt.date ?? formatDate(data.last_attempt.started_at)}</strong>
+        <strong>{attemptAt ? <time dateTime={attemptAt}>{formatDate(attemptAt)}</time> : data.last_attempt.date ?? "Not available"}</strong>
         <StatusBadge status={data.last_attempt.outcome} />
         {data.last_attempt.detail ? <p>{data.last_attempt.detail}</p> : null}
       </> : <strong>No attempt recorded</strong>}

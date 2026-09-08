@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { DreamerReviewData, DreamerReviewItem } from "../lib/dreamerReview";
+import { formatDate } from "../lib/format";
 import { defaultMe, installApiMock, renderApp } from "./renderApp";
 
 const candidate: DreamerReviewItem = {
@@ -38,6 +39,33 @@ function reviewData(overrides: Partial<DreamerReviewData> = {}): DreamerReviewDa
 const envelope = (data: DreamerReviewData) => ({ status: "complete", data });
 
 describe("Dreamer Review inbox", () => {
+  it("shows completion times that distinguish same-day retries", async () => {
+    const firstAt = "2026-09-07T18:05:00Z";
+    const retryAt = "2026-09-07T19:25:00Z";
+    let state = reviewData({ last_attempt: { date: "2026-09-07", outcome: "partial", started_at: "2026-09-07T18:00:00Z", finished_at: firstAt } });
+    installApiMock({ "GET /api/v1/dreamer/review": () => envelope(state) });
+    const user = userEvent.setup();
+    renderApp("/dreams");
+    const firstTime = await screen.findByText(formatDate(firstAt));
+    expect(firstTime).toHaveAttribute("datetime", firstAt);
+    expect(screen.queryByText("2026-09-07", { selector: "strong" })).not.toBeInTheDocument();
+    state = reviewData({ last_attempt: { date: "2026-09-07", outcome: "completed", started_at: "2026-09-07T19:00:00Z", finished_at: retryAt } });
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(await screen.findByText(formatDate(retryAt))).toHaveAttribute("datetime", retryAt);
+    expect(screen.queryByText(formatDate(firstAt))).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { name: "start time for an unfinished attempt", attempt: { finished_at: null, started_at: "2026-09-07T19:00:00Z" }, expected: "2026-09-07T19:00:00Z" },
+    { name: "historical date without timestamps", attempt: {}, expected: undefined },
+  ])("uses $name in the last-attempt card", async ({ attempt, expected }) => {
+    installApiMock({ "GET /api/v1/dreamer/review": envelope(reviewData({ last_attempt: { date: "2026-09-07", outcome: "partial", ...attempt } })) });
+    renderApp("/dreams");
+    const text = await screen.findByText(expected ? formatDate(expected) : "2026-09-07", { selector: expected ? "time" : "strong" });
+    if (expected) expect(text).toHaveAttribute("datetime", expected);
+    else expect(text.querySelector("time")).toBeNull();
+  });
+
   it("separates run status, proposals, and questions, then records an exact held approval", async () => {
     let state = reviewData();
     let payload: Record<string, unknown> | undefined;
