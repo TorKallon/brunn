@@ -13,8 +13,6 @@ use axum::{
     extract::State,
     routing::{get, post},
 };
-use chrono::Utc;
-use chrono_tz::America::Los_Angeles;
 use serde_json::{Value, json};
 
 use crate::{
@@ -142,7 +140,7 @@ fn control_view(content: Option<&str>) -> Value {
         ControlState::Enabled(control) => json!({
             "enabled": true,
             "mode": control.mode.as_str(),
-            "advance_after": control.advance_after.format("%Y-%m-%d").to_string(),
+            "advance_after": null,
         }),
         ControlState::Disabled { reason } => json!({
             "enabled": false,
@@ -197,53 +195,54 @@ pub async fn disconnect(
         .map(Json)
 }
 
-/// Pause: `enabled: false`, preserving mode and advance date when the current
-/// file is well formed.
+/// Pause preserves a well-formed mode and removes retired calendar metadata.
 pub async fn pause(
     State(state): State<AppState>,
     Extension(auth): Extension<AuthContext>,
 ) -> ApiResult<Json<Value>> {
     auth.require(Capability::CredentialManage)?;
     let (content, version) = read_control(&state, &auth).await?;
-    let (mode, advance_after) = match control::parse(content.as_deref()) {
-        ControlState::Enabled(control) => (control.mode, control.advance_after),
-        ControlState::Disabled { .. } => (Mode::ReportOnly, default_advance_after()),
-    };
-    let rendered = control::render(false, mode, advance_after);
+    let mode = parse_ignoring_enabled(content.as_deref()).unwrap_or(Mode::ReportOnly);
+    let rendered = control::render(false, mode, None);
     write_control(&state, &auth, rendered.clone(), version).await?;
     Ok(Json(json!({"control": control_view(Some(&rendered))})))
 }
 
 /// Resume: `enabled: true`; a missing or malformed file becomes a fresh
-/// report-only CONTROL with a seven-day advance window.
+/// report-only CONTROL. Calendar passage never changes the mode.
 pub async fn resume(
     State(state): State<AppState>,
     Extension(auth): Extension<AuthContext>,
 ) -> ApiResult<Json<Value>> {
     auth.require(Capability::CredentialManage)?;
     let (content, version) = read_control(&state, &auth).await?;
-    let (mode, advance_after) = match parse_ignoring_enabled(content.as_deref()) {
-        Some((mode, advance_after)) => (mode, advance_after),
-        None => (Mode::ReportOnly, default_advance_after()),
-    };
-    let rendered = control::render(true, mode, advance_after);
+    let mode = parse_ignoring_enabled(content.as_deref()).unwrap_or(Mode::ReportOnly);
+    let rendered = control::render(true, mode, None);
     write_control(&state, &auth, rendered.clone(), version).await?;
     Ok(Json(json!({"control": control_view(Some(&rendered))})))
 }
 
-/// A paused CONTROL parses as Disabled; recover its mode and date so Resume
-/// restores rather than resets.
-fn parse_ignoring_enabled(content: Option<&str>) -> Option<(Mode, chrono::NaiveDate)> {
+/// A paused CONTROL parses as Disabled; recover its explicitly chosen mode.
+fn parse_ignoring_enabled(content: Option<&str>) -> Option<Mode> {
     let content = content?;
-    let forced = content.replace("enabled: false", "enabled: true");
+    let forced = content
+        .lines()
+        .map(|line| {
+            if line
+                .split_once(':')
+                .is_some_and(|(key, value)| key.trim() == "enabled" && value.trim() == "false")
+            {
+                "enabled: true"
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     match control::parse(Some(&forced)) {
-        ControlState::Enabled(control) => Some((control.mode, control.advance_after)),
+        ControlState::Enabled(control) => Some(control.mode),
         ControlState::Disabled { .. } => None,
     }
-}
-
-fn default_advance_after() -> chrono::NaiveDate {
-    Utc::now().with_timezone(&Los_Angeles).date_naive() + chrono::Duration::days(7)
 }
 
 #[cfg(test)]
@@ -251,12 +250,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resume_recovers_mode_and_date_from_a_paused_control() {
+    fn resume_recovers_mode_without_restoring_a_calendar_transition() {
         let paused = "enabled: false\nmode: full\nadvance_after: 2026-09-05\n";
-        let (mode, advance_after) =
-            parse_ignoring_enabled(Some(paused)).expect("recoverable control");
+        let mode = parse_ignoring_enabled(Some(paused)).expect("recoverable control");
         assert_eq!(mode, Mode::Full);
-        assert_eq!(advance_after.to_string(), "2026-09-05");
+        assert_eq!(
+            control::render(true, mode, None),
+            "enabled: true\nmode: full\n"
+        );
+        assert_eq!(
+            parse_ignoring_enabled(Some("enabled:false\nmode: report-only\n")),
+            Some(Mode::ReportOnly)
+        );
         assert!(parse_ignoring_enabled(Some("garbage")).is_none());
         assert!(parse_ignoring_enabled(None).is_none());
     }
@@ -268,6 +273,11 @@ mod tests {
         ));
         assert_eq!(enabled["enabled"], Value::Bool(true));
         assert_eq!(enabled["mode"], Value::String("report-only".into()));
+        assert_eq!(enabled["advance_after"], Value::Null);
+        assert_eq!(
+            control_view(Some("enabled: true\nmode: report-only\n"))["enabled"],
+            true
+        );
         let disabled = control_view(None);
         assert_eq!(disabled["enabled"], Value::Bool(false));
     }

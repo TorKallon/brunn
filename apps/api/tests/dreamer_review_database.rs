@@ -248,6 +248,28 @@ async fn expire_fixture_lease(f: &Fixture) {
 }
 
 #[tokio::test]
+async fn two_line_control_can_pause_resume_and_admit_without_calendar_eligibility() {
+    let Some(f) = fixture().await else {
+        return;
+    };
+    let policy = "enabled: true\nmode: report-only\n";
+    write(&f, "dreams/CONTROL.md", policy, 0).await;
+    let paused = ok(post(&f, &f.owner, "/v1/workspace/dreaming/pause", json!({})).await);
+    assert_eq!(paused["control"]["enabled"], false);
+    assert_eq!(
+        current(&f, "dreams/CONTROL.md").await.unwrap().1,
+        "enabled: false\nmode: report-only\n"
+    );
+    let resumed = ok(post(&f, &f.owner, "/v1/workspace/dreaming/resume", json!({})).await);
+    assert_eq!(resumed["control"]["enabled"], true);
+    assert_eq!(resumed["control"]["advance_after"], Value::Null);
+    assert_eq!(current(&f, "dreams/CONTROL.md").await.unwrap().1, policy);
+    let admitted = admit(&f).await;
+    assert_eq!(admitted["admitted"], true);
+    assert_eq!(admitted["mode"], "report-only");
+}
+
+#[tokio::test]
 async fn real_runner_to_review_decisions_preserves_report_only_and_exact_idempotence() {
     let Some(f) = fixture().await else {
         return;

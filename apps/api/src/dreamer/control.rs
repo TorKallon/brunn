@@ -1,7 +1,7 @@
 //! `dreams/CONTROL.md` — the fail-closed dreaming switch.
 //!
 //! The file is plain `key: value` lines. A missing file, an unparseable
-//! line, an unknown key or value, a duplicate or missing key, or
+//! line, an unknown key or value, a duplicate or missing required key, or
 //! `enabled` ≠ true all mean the same thing: dreaming is disabled and the
 //! run exits without writing anything.
 
@@ -25,7 +25,8 @@ impl Mode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Control {
     pub mode: Mode,
-    pub advance_after: NaiveDate,
+    /// Legacy metadata only; never authorizes a mode transition.
+    pub advance_after: Option<NaiveDate>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,7 +103,7 @@ pub fn parse(content: Option<&str>) -> ControlState {
             }
         }
     }
-    let (Some(enabled), Some(mode), Some(advance_after)) = (enabled, mode, advance_after) else {
+    let (Some(enabled), Some(mode)) = (enabled, mode) else {
         return ControlState::disabled("CONTROL is missing a required key");
     };
     if !enabled {
@@ -114,14 +115,14 @@ pub fn parse(content: Option<&str>) -> ControlState {
     })
 }
 
-/// Render CONTROL.md content. Used for the day-8 mode flip and for
-/// Pause/Resume rewrites; always emits the strict shape `parse` accepts.
-pub fn render(enabled: bool, mode: Mode, advance_after: NaiveDate) -> String {
-    format!(
-        "enabled: {enabled}\nmode: {}\nadvance_after: {}\n",
-        mode.as_str(),
-        advance_after.format("%Y-%m-%d"),
-    )
+/// Render explicit policy. A supplied legacy date can round-trip as inert
+/// metadata; normal Pause/Resume writes pass None and never invent a date.
+pub fn render(enabled: bool, mode: Mode, advance_after: Option<NaiveDate>) -> String {
+    let mut text = format!("enabled: {enabled}\nmode: {}\n", mode.as_str());
+    if let Some(date) = advance_after {
+        text.push_str(&format!("advance_after: {}\n", date.format("%Y-%m-%d")));
+    }
+    text
 }
 
 #[cfg(test)]
@@ -146,7 +147,7 @@ mod tests {
             state,
             ControlState::Enabled(Control {
                 mode: Mode::ReportOnly,
-                advance_after: date("2026-09-05"),
+                advance_after: Some(date("2026-09-05")),
             })
         );
     }
@@ -160,7 +161,7 @@ mod tests {
             state,
             ControlState::Enabled(Control {
                 mode: Mode::Full,
-                advance_after: date("2026-09-05"),
+                advance_after: Some(date("2026-09-05")),
             })
         );
     }
@@ -204,18 +205,36 @@ mod tests {
 
     #[test]
     fn render_round_trips() {
-        let rendered = render(true, Mode::ReportOnly, date("2026-09-05"));
+        let rendered = render(true, Mode::ReportOnly, Some(date("2026-09-05")));
         assert_eq!(
             parse(Some(&rendered)),
             ControlState::Enabled(Control {
                 mode: Mode::ReportOnly,
-                advance_after: date("2026-09-05"),
+                advance_after: Some(date("2026-09-05")),
             })
         );
-        let paused = render(false, Mode::ReportOnly, date("2026-09-05"));
+        let paused = render(false, Mode::ReportOnly, None);
         assert!(matches!(
             parse(Some(&paused)),
             ControlState::Disabled { .. }
         ));
+    }
+
+    #[test]
+    fn two_line_policy_requires_no_calendar_date() {
+        for mode in [Mode::ReportOnly, Mode::Full] {
+            let rendered = render(true, mode, None);
+            assert_eq!(
+                rendered,
+                format!("enabled: true\nmode: {}\n", mode.as_str())
+            );
+            assert_eq!(
+                parse(Some(&rendered)),
+                ControlState::Enabled(Control {
+                    mode,
+                    advance_after: None,
+                })
+            );
+        }
     }
 }
