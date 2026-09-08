@@ -1,6 +1,20 @@
 //! Fenced location source admission. Historical context is filtered before
 //! matching/snippets; only the wrapper can retain independently fetched pages.
 use super::*;
+use std::sync::LazyLock;
+
+static SENSITIVE_EXCERPT: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
+    r"(?i)(-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(api[_ -]?key|access[_ -]?token|refresh[_ -]?token|password)\s*[:=])|[A-Za-z0-9_-]{40,}"
+).expect("fixed sensitive excerpt pattern")
+});
+
+fn query_pattern(query: &str) -> String {
+    format!(
+        r"(^|[^[:alnum:]_]){}([^[:alnum:]_]|$)",
+        regex::escape(query.trim())
+    )
+}
 
 fn excluded(path: &str, metadata: &Value) -> bool {
     input_excluded(path, metadata["kind"].as_str())
@@ -29,18 +43,26 @@ fn evaluation_metadata(value: &Value) -> bool {
 
 fn selectors(content: &str, queries: &[String]) -> Option<(usize, usize, String)> {
     let lines: Vec<_> = content.lines().collect();
-    let center = lines.iter().position(|line| {
-        queries
-            .iter()
-            .any(|q| line.to_lowercase().contains(&q.to_lowercase()))
-    })?;
+    let patterns: Vec<_> = queries
+        .iter()
+        .map(|q| {
+            regex::RegexBuilder::new(&query_pattern(q))
+                .case_insensitive(true)
+                .build()
+                .expect("escaped literal query")
+        })
+        .collect();
+    let center = lines
+        .iter()
+        .position(|line| patterns.iter().any(|pattern| pattern.is_match(line)))?;
     let start = center.saturating_sub(2);
     let mut end = (center + 4).min(lines.len());
     while end > center + 1 && lines[start..end].join("\n").len() > 1800 {
         end -= 1;
     }
     let excerpt = lines[start..end].join("\n");
-    (!excerpt.is_empty() && excerpt.len() <= 1800).then_some((start + 1, end, excerpt))
+    (!excerpt.is_empty() && excerpt.len() <= 1800 && !SENSITIVE_EXCERPT.is_match(&excerpt))
+        .then_some((start + 1, end, excerpt))
 }
 
 async fn context(
@@ -59,6 +81,7 @@ async fn context(
     let cutoff = DateTime::parse_from_rfc3339(string(work, "from")?)
         .map_err(|_| ApiError::invalid("invalid historical context boundary"))?
         .to_utc();
+    let patterns: Vec<_> = queries.iter().map(|q| query_pattern(q)).collect();
     let rows = sqlx::query(r#"
         WITH historical AS MATERIALIZED (
             SELECT e.id,e.path,e.current_version,v.version,v.content,v.content_sha256,v.metadata,
@@ -79,6 +102,7 @@ async fn context(
                 AND e.path NOT LIKE 'memory/evidence/%' AND e.path NOT LIKE 'artifacts/%'
                 AND e.path NOT LIKE 'Location/%' AND e.path NOT LIKE 'Evidence/Location/%'
                 AND e.path <> 'private/dreamer.md'
+                AND e.path !~* $5
                 AND v.content IS NOT NULL AND v.size_bytes<=1048576
                 AND NOT (v.metadata ?| ARRAY['dreamer_summary','dreamer_run','dreamer_review','dreamer_state','dreamer_receipt'])
                 AND NOT (current_v.metadata ?| ARRAY['dreamer_summary','dreamer_run','dreamer_review','dreamer_state','dreamer_receipt'])
@@ -88,11 +112,11 @@ async fn context(
                 AND current_v.metadata::text NOT LIKE '%"exclude_from_same_day_evaluation_inputs": true%'
         ), matched AS MATERIALIZED (
             SELECT h.*, ARRAY(SELECT q FROM unnest($3::text[]) q
-                WHERE position(lower(q) IN lower(h.content))>0) AS matches
+                WHERE h.content ~* q) AS matches
             FROM historical h
         ) SELECT * FROM matched WHERE cardinality(matches)>0
           ORDER BY cardinality(matches) DESC,created_at DESC,id LIMIT 32
-    "#).bind(auth.user_id.0).bind(cutoff).bind(queries).bind(frozen)
+    "#).bind(auth.user_id.0).bind(cutoff).bind(patterns).bind(frozen).bind(SENSITIVE_INPUT_PATH)
         .fetch_all(&mut **tx).await?;
     let mut sources = Vec::new();
     for row in rows {

@@ -406,6 +406,10 @@ discovered aliases against at most four historical Brunn source excerpts.
 Historical version selection and generated/evaluation-output exclusions happen
 before matching. The source cutoff is the beginning of the day being summarized,
 so later answers and corrections cannot become a replay's answer key.
+Place aliases match complete words/phrases, never substrings inside opaque
+strings. Credential documents are excluded before matching and from narrative
+admission; excerpts containing token-like strings are withheld. Narrative reads
+receive a server-issued session correlation reference with their frozen input.
 
 Drafting and auditing have no tools and receive the unchanged frozen location
 packet plus the admitted source versions. They receive no earlier candidate

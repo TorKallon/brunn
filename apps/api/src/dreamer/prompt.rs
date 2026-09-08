@@ -71,7 +71,7 @@ pub fn candidate_prompt(attempt: &str, admission: &Value, budget: usize) -> Stri
     }
     let admission = &bounded;
     let inputs = json!({
-        "attempt_id":attempt,"frozen_generation":admission["frozen_generation"],
+        "attempt_id":attempt,"session_id":admission["session_id"],"frozen_generation":admission["frozen_generation"],
         "inputs":admission["inputs"],"pending":admission["pending"],
         "outputs":admission.get("outputs").unwrap_or(&Value::Null),
         "decisions":admission.get("decisions").unwrap_or(&Value::Null),
@@ -87,7 +87,7 @@ Your final answer MUST be one JSON object, with no markdown fence or surrounding
 {{"schema":"dream.candidates.v1","candidates":[],"processed_inputs":[],"findings":[]}}
 The wrapper captures that final answer in a local candidate file. You have no workspace mutation authority. Never call memory.write, memory.capture, memory.checkpoint, secret, notification, task mutation, or generic write tools. Never run curl, shell commands, scripts, or access local credentials. Never write a report yourself. The wrapper alone submits candidates; the server validates sources, decisions, mode and active run fence.
 
-Use only the exact entry_ref/version pairs in INPUT and the separately frozen location_evidence packet when present. Reopen narrative sources with memory.read full/range and the exact positive version. A current read, search hit, open response, prior summary, or owner_presence is never substitute evidence. Do not call memory.open, memory.query or memory.changes to broaden the frozen boundary. If a necessary source is absent, leave that scope pending and explain the missing evidence in findings. Location/Places.md and Location/Visits/ are structured engine records, not narrative inputs. Never modify or compile them; only a queued location pilot may cite their exact packet selectors. Imported documents can support explicitly labeled imported-only claims, not new personal facts. Never use agent-memory or previous generated summaries as the sole source of names or claims.
+Use only the exact entry_ref/version pairs in INPUT and the separately frozen location_evidence packet when present. Reopen narrative sources with memory.read full/range and the exact positive version, using INPUT.session_id as the supplied read correlation reference. A current read, search hit, open response, prior summary, or owner_presence is never substitute evidence. Do not call memory.open, memory.query or memory.changes to broaden the frozen boundary. If a necessary source is absent, leave that scope pending and explain the missing evidence in findings. Location/Places.md and Location/Visits/ are structured engine records, not narrative inputs. Never modify or compile them; only a queued location pilot may cite their exact packet selectors. Imported documents can support explicitly labeled imported-only claims, not new personal facts. Never use agent-memory or previous generated summaries as the sole source of names or claims.
 
 Candidates are actual previews, not prose promises to prepare something later. Each candidate has exactly:
 {{"kind":"summary"|"related"|"question","title":"...","summary":"short description","reason":"why review is useful","path":"derived/entities/<slug>.md","content":"complete proposed Markdown","expected_version":0,"sources":[{{"entry_ref":"entry:...","version":1,"start_line":1,"end_line":4}}],"uncertainty":"...","question":"...","revises_item_id":"original pending item ID","evidence_scope":{{"from":"...","to":"...","timezone":"...","fingerprint":"..."}},"raw_sources":[{{"natural_key":{{"at":"...","type":"..."}},"fields":["at","lat","accuracy_m","arrived_at","departed_at","first_received_at","poi.0.name"]}}]}}
@@ -1320,7 +1320,7 @@ mod tests {
 
     #[test]
     fn location_and_narrative_inputs_do_not_share_prior_answer_bodies() {
-        let admission = json!({"inputs":[{"path":"NARRATIVE_CANARY"}],"decisions":"CORRECTION_CANARY",
+        let admission = json!({"session_id":"session:server-issued","inputs":[{"path":"NARRATIVE_CANARY"}],"decisions":"CORRECTION_CANARY",
             "pending":[{"id":"location-id","status":"needs_changes","candidate":{"kind":"summary","path":"derived/location/2026-09-07.md","content":"ITINERARY_CANARY"}},
                 {"id":"narrative-id","status":"pending","candidate":{"kind":"summary","path":"derived/entities/project.md","content":"NARRATIVE_BODY_CANARY"}}],
             "outputs":[{"path":"derived/location/2026-09-07.md","version":2},{"path":"derived/entities/project.md","version":1}],
@@ -1348,6 +1348,7 @@ mod tests {
         }
         assert!(text.contains("NARRATIVE_BODY_CANARY"));
         assert_eq!(narrative["inputs"], admission["inputs"]);
+        assert!(candidate_prompt("attempt", &narrative, 15).contains("session:server-issued"));
     }
 
     #[test]

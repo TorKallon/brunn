@@ -2142,6 +2142,68 @@ async fn latest_closed_day_is_automatically_admitted_and_retained_across_failure
 }
 
 #[tokio::test]
+async fn place_discovery_excludes_substring_hits_credentials_and_secret_adjacent_excerpts() {
+    let Some(f) = fixture().await else {
+        return;
+    };
+    control(&f, "report-only", 0).await;
+    let (from, _, _) = seed_location_pilot(&f).await;
+    let valid = historical_context(
+        &f,
+        from,
+        "sources/Places/Familiar.md",
+        "# Familiar venues\n\nFogo is a restaurant.\n",
+    )
+    .await;
+    for (path, content) in [
+        (
+            "sources/Notes/Unrelated.md",
+            "# Unrelated\n\nPREFIXFogoSUFFIX\n".to_owned(),
+        ),
+        (
+            "sources/Private/API Keys.md",
+            "# Credential fixture\n\nFogo CREDENTIAL_DOCUMENT_CANARY\n".to_owned(),
+        ),
+        (
+            "sources/Private/passwords.md",
+            "# Fixture\n\nFogo PASSWORD_DOCUMENT_CANARY\n".to_owned(),
+        ),
+        (
+            "sources/Notes/Mixed.md",
+            format!(
+                "# Fogo\n\n{}\nSECRET_ADJACENT_CANARY\n",
+                "fake1234".repeat(8)
+            ),
+        ),
+    ] {
+        historical_context(&f, from, path, &content).await;
+    }
+    queue_pilot(&f, from).await;
+    let admitted = admit(&f).await;
+    assert_eq!(
+        admitted["session_id"],
+        format!("session:{}", admitted["attempt_id"].as_str().unwrap())
+    );
+    assert!(!admitted["inputs"].to_string().contains("API Keys.md"));
+    assert!(!admitted["inputs"].to_string().contains("passwords.md"));
+    let found = discover_context(&f, &admitted, "Fogo").await;
+    let sources = found["location_context"].as_array().unwrap();
+    assert_eq!(sources.len(), 1, "unexpected discovery sources");
+    assert_eq!(sources[0]["entry_ref"], valid["entry_ref"]);
+    assert_eq!(
+        sources[0]["excerpt"],
+        "# Familiar venues\n\nFogo is a restaurant."
+    );
+    finish(
+        &f,
+        &found,
+        found["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn autonomous_context_uses_historical_versions_before_matching_and_preserves_progress() {
     let Some(f) = fixture().await else {
         return;

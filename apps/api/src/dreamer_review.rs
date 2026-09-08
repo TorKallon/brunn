@@ -32,6 +32,17 @@ const MAX_LEGACY_ITEMS: usize = 96;
 const LEGACY_REASON: &str =
     "Retained from an earlier run; a concrete candidate is required before application.";
 const MAX_STATE_BYTES: usize = 256 * 1024;
+const SENSITIVE_INPUT_PATH: &str = r"(^|[/[:space:]_.-])(api[[:space:]_-]*keys?|access[[:space:]_-]*tokens?|credentials?|passwords?|secrets?|private[[:space:]_-]*keys?)([/[:space:]_.-]|$)";
+
+fn sensitive_input_path(path: &str) -> bool {
+    static PATTERN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::RegexBuilder::new(SENSITIVE_INPUT_PATH)
+            .case_insensitive(true)
+            .build()
+            .expect("fixed sensitive path pattern")
+    });
+    PATTERN.is_match(path)
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Input {
@@ -807,7 +818,8 @@ fn candidate_body(candidate: &Candidate) -> String {
     body
 }
 fn input_excluded(path: &str, kind: Option<&str>) -> bool {
-    path.starts_with("dreams/")
+    sensitive_input_path(path)
+        || path.starts_with("dreams/")
         || path.starts_with("derived/")
         || path.starts_with(".brunn/")
         || path == "private/dreamer.md"
@@ -823,6 +835,15 @@ async fn retain_inputs(
     data: &mut RunState,
     upper: i64,
 ) -> ApiResult<()> {
+    // Re-evaluate retained headers after policy upgrades without reading the
+    // excluded bodies or pretending the model reasoned about them.
+    data.inputs.retain(|input| {
+        if sensitive_input_path(&input.path) {
+            data.source_dispositions.push(json!({"entry_ref":input.entry_ref,"version":input.version,"generation":input.generation,
+                "disposition":"excluded_credential_record","detail":"Credential records are excluded from automatic synthesis."}));
+            false
+        } else { true }
+    });
     // RLS can substantially underestimate rows. Bound the ordered page before
     // any version joins, then resolve each distinct entry only once. Without
     // these fences the planner can put LIMIT after whole-corpus nested loops.
@@ -1428,7 +1449,7 @@ async fn admission_response(
         .bind(user).fetch_all(&mut **tx).await?;
     let outputs=rows.iter().map(|r|json!({"path":r.get::<String,_>("path"),"version":r.get::<i64,_>("current_version")})).collect::<Vec<_>>();
     Ok(
-        json!({"admitted":true,"attempt_id":a.attempt_id,"fence":a.fence,"state_version":version,"mode":a.mode,"frozen_generation":a.frozen_generation,"scanned_generation":data.scanned_generation,"processed_generation":data.processed_generation,"inputs":data.inputs,"outputs":outputs,"location_work":a.location_work,"location_evidence":location_evidence,"location_context":a.location_work.as_ref().and_then(|work|work.get("context_sources")).cloned().unwrap_or_else(||json!([])),"pending":pending_items,"pending_notifications":data.pending_notifications,"decisions":decisions.as_ref().map(|e|e.content.as_str()).unwrap_or(""),"decisions_version":decisions.map_or(0,|e|e.version)}),
+        json!({"admitted":true,"session_id":format!("session:{}",a.attempt_id),"attempt_id":a.attempt_id,"fence":a.fence,"state_version":version,"mode":a.mode,"frozen_generation":a.frozen_generation,"scanned_generation":data.scanned_generation,"processed_generation":data.processed_generation,"inputs":data.inputs,"outputs":outputs,"location_work":a.location_work,"location_evidence":location_evidence,"location_context":a.location_work.as_ref().and_then(|work|work.get("context_sources")).cloned().unwrap_or_else(||json!([])),"pending":pending_items,"pending_notifications":data.pending_notifications,"decisions":decisions.as_ref().map(|e|e.content.as_str()).unwrap_or(""),"decisions_version":decisions.map_or(0,|e|e.version)}),
     )
 }
 pub async fn checkpoint(

@@ -84,6 +84,7 @@ async fn location_discover(State(shared): State<Shared>, Json(body): Json<Value>
     s.state_version += 1;
     let mut value = s.location_admission.clone().unwrap();
     value["attempt_id"] = body["attempt_id"].clone();
+    value["session_id"] = json!(format!("session:{}", body["attempt_id"].as_str().unwrap()));
     value["fence"] = body["fence"].clone();
     value["state_version"] = json!(s.state_version);
     value["frozen_generation"] = json!(17);
@@ -133,7 +134,7 @@ async fn admit(State(shared): State<Shared>, Json(body): Json<Value>) -> Json<Va
     s.admissions += 1;
     s.state_version += 1;
     s.writes += 2;
-    let mut response = json!({"admitted":true,"attempt_id":body["attempt_id"],"fence":s.admissions,"state_version":s.state_version,"mode":"report-only","frozen_generation":17,"scanned_generation":17,"processed_generation":0,
+    let mut response = json!({"admitted":true,"session_id":format!("session:{}",body["attempt_id"].as_str().unwrap()),"attempt_id":body["attempt_id"],"fence":s.admissions,"state_version":s.state_version,"mode":"report-only","frozen_generation":17,"scanned_generation":17,"processed_generation":0,
       "inputs":[{"entry_ref":SOURCE,"path":"sources/Project.md","version":2,"generation":17,"operation":"update","content_hash":"sha256:source"}],
       "pending":s.pending,"pending_notifications":s.prior_pending_notification.iter().collect::<Vec<_>>()});
     if let Some(location) = &s.location_admission {
