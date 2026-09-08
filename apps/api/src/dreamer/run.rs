@@ -857,11 +857,11 @@ impl Dreamer {
                         processed+=narrative_output["processed_inputs"].as_array().map_or(0,Vec::len);
                         value=receipt;
                     },
-                    Err(_) => partial=Some("checked location work retained; narrative submission failed and its inputs remain pending"),
+                    Err(error) => partial=Some(format!("checked location work retained; narrative submission rejected: {error}; inputs remain pending")),
                 }
             } else {
                 partial = Some(
-                    "checked location work retained; narrative pass did not finish valid output and its inputs remain pending",
+                    "checked location work retained; narrative pass did not finish valid output and its inputs remain pending".into(),
                 );
             }
         }
@@ -893,9 +893,7 @@ impl Dreamer {
             }
         }
         if let Some(detail) = partial {
-            return RunOutcome::Partial {
-                detail: detail.into(),
-            };
+            return RunOutcome::Partial { detail };
         }
         if processed < admission["inputs"].as_array().map_or(0, Vec::len) {
             RunOutcome::Partial {

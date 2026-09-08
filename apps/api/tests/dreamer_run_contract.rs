@@ -40,6 +40,7 @@ struct Mock {
     notifications: Vec<Value>,
     reject_candidates: bool,
     reject_narrative: bool,
+    review_conflicts: usize,
     fail_finish: bool,
     fail_auth_put: bool,
     fail_notify: bool,
@@ -163,6 +164,18 @@ async fn candidates(State(shared): State<Shared>, Json(body): Json<Value>) -> Re
     let mut s = shared.lock().unwrap();
     s.submissions += 1;
     s.submitted.push(body.clone());
+    if s.review_conflicts > 0 {
+        s.review_conflicts -= 1;
+        s.state_version += 1;
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error":{
+                "message":"Review or run state changed; reload before retrying",
+                "details":{"actual_version":s.state_version}
+            }})),
+        )
+            .into_response();
+    }
     if s.reject_candidates || (s.reject_narrative && s.submissions > 1) {
         return error(StatusCode::CONFLICT, "source changed");
     }
@@ -370,6 +383,41 @@ async fn accepted_candidates_have_exact_receipt_and_read_only_model() {
         Some("enabled: true\nmode: report-only\nadvance_after: 2020-01-01\n")
     );
 }
+#[tokio::test]
+async fn owner_review_race_retries_the_same_evidence_without_rerunning_the_model() {
+    let (s, d, dir) = build(HAPPY).await;
+    enable(&s);
+    s.lock().unwrap().review_conflicts = 1;
+    let report = d.run_once(today(), RunKind::Manual).await;
+    assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
+    let state = s.lock().unwrap();
+    assert_eq!(state.submitted.len(), 2);
+    let mut expected_retry = state.submitted[0].clone();
+    expected_retry["expected_state_version"] =
+        json!(expected_retry["expected_state_version"].as_i64().unwrap() + 1);
+    assert_eq!(state.submitted[1], expected_retry);
+    assert_eq!(state.pending.len(), 1);
+    let calls = std::fs::read_to_string(dir.path().join("calls")).unwrap();
+    assert_eq!(calls.lines().filter(|line| *line == "answer.md").count(), 1);
+}
+
+#[tokio::test]
+async fn repeated_owner_review_races_are_bounded_and_do_not_claim_progress() {
+    let (s, d, _dir) = build(HAPPY).await;
+    enable(&s);
+    s.lock().unwrap().review_conflicts = 2;
+    let report = d.run_once(today(), RunKind::Manual).await;
+    assert!(
+        matches!(report.outcome, RunOutcome::Failed { .. }),
+        "{report:?}"
+    );
+    assert_eq!(report.receipt_persistence, "accepted");
+    let state = s.lock().unwrap();
+    assert_eq!(state.submissions, 2);
+    assert!(state.pending.is_empty());
+    assert_eq!(state.runs[0]["outcome"], "failed");
+}
+
 #[tokio::test]
 async fn enabled_auth_skip_has_durable_receipt_and_no_model_work() {
     let (s, d, dir) = build(HAPPY).await;
@@ -836,7 +884,7 @@ async fn location_and_narrative_publish_separately_and_keep_location_on_narrativ
         let report = d.run_once(today(), RunKind::Manual).await;
         if reject {
             assert!(
-                matches!(report.outcome, RunOutcome::Partial { .. }),
+                matches!(&report.outcome, RunOutcome::Partial { detail } if detail.contains("narrative submission rejected") && detail.contains("source changed")),
                 "{report:?}"
             );
         } else {

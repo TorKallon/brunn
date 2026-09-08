@@ -396,10 +396,28 @@ impl ApiClient {
 
     /// Server-owned attempt operations. Returned values are unwrapped here so
     /// transport envelopes never leak into lifecycle state.
-    pub async fn dreamer(&self, operation: &str, body: Value) -> ClientResult<Value> {
-        let response = self
-            .post(&format!("/v1/workspace/dreamer/{operation}"), body)
-            .await?;
+    pub async fn dreamer(&self, operation: &str, mut body: Value) -> ClientResult<Value> {
+        let path = format!("/v1/workspace/dreamer/{operation}");
+        let result = self.post(&path, body.clone()).await;
+        // An unrelated owner decision can advance the shared review state while
+        // the model reasons. Retry only an explicit, pre-mutation state rejection.
+        // Keep the same evidence and attempt fence: the server revalidates source
+        // freshness, ownership, decisions and destinations under its lock.
+        let response = match result {
+            Err(ClientError::Conflict {
+                actual_version: Some(version),
+                detail,
+            }) if matches!(operation, "candidates" | "checkpoint" | "location-discover")
+                && detail == "Review or run state changed; reload before retrying"
+                && body["expected_state_version"]
+                    .as_i64()
+                    .is_some_and(|expected| version > expected) =>
+            {
+                body["expected_state_version"] = json!(version);
+                self.post(&path, body).await?
+            }
+            other => other?,
+        };
         Ok(response.get("data").cloned().unwrap_or(response))
     }
 

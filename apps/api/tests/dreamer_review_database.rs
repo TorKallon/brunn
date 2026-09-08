@@ -1111,6 +1111,100 @@ async fn real_runner_to_review_decisions_preserves_report_only_and_exact_idempot
 }
 
 #[tokio::test]
+async fn review_state_retry_preserves_owner_approval_and_attempt_fencing() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let source = write(
+        &f,
+        "sources/ReviewRace.md",
+        "# Fixture\n\nA source-backed observation.\n",
+        0,
+    )
+    .await;
+    let first = admit(&f).await;
+    let (_, submitted) = submit(
+        &f,
+        &first,
+        first["state_version"].as_i64().unwrap(),
+        vec![candidate(&source, "original")],
+    )
+    .await;
+    finish(
+        &f,
+        &first,
+        submitted["state_version"].as_i64().unwrap(),
+        "completed",
+    )
+    .await;
+    let second = admit(&f).await;
+    let view = review(&f).await;
+    let original = view["items"][0].clone();
+    ok(post(
+        &f,
+        &f.owner,
+        "/v1/dreamer/review/decisions",
+        decision(&view, &original, "approve"),
+    )
+    .await);
+
+    let mut body = attempt(&second, second["state_version"].as_i64().unwrap());
+    body["candidates"] = json!([candidate(&source, "independent")]);
+    body["processed_inputs"] = json!([]);
+    body["findings"] = json!([]);
+    let stale = post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/candidates",
+        body.clone(),
+    )
+    .await;
+    assert_eq!(stale.status, StatusCode::CONFLICT);
+    assert_eq!(
+        stale.body["error"]["message"],
+        "Review or run state changed; reload before retrying"
+    );
+    body["expected_state_version"] = stale.body["error"]["details"]["actual_version"].clone();
+    let mut unfenced = body.clone();
+    unfenced["fence"] = json!(Uuid::now_v7().to_string());
+    assert_eq!(
+        post(&f, &f.runner, "/v1/workspace/dreamer/candidates", unfenced)
+            .await
+            .status,
+        StatusCode::CONFLICT
+    );
+    let accepted = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/candidates",
+        body.clone(),
+    )
+    .await);
+    let current_view = review(&f).await;
+    let held = current_view["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == original["id"])
+        .unwrap();
+    assert_eq!(held["status"], "approved_held");
+    assert_eq!(held["candidate_hash"], original["candidate_hash"]);
+    assert_eq!(current_view["items"].as_array().unwrap().len(), 2);
+
+    body["expected_state_version"] = accepted["state_version"].clone();
+    let mut replacement = candidate(&source, "original");
+    replacement["revises_item_id"] = original["id"].clone();
+    body["candidates"] = json!([replacement]);
+    let rejected = post(&f, &f.runner, "/v1/workspace/dreamer/candidates", body).await;
+    assert_eq!(
+        rejected.status,
+        StatusCode::BAD_REQUEST,
+        "{}",
+        rejected.body
+    );
+    assert!(current(&f, "derived/entities/original.md").await.is_none());
+}
+
+#[tokio::test]
 async fn full_review_publishes_exact_candidate_and_rejects_foreign_or_stale_authority() {
     let Some(f) = fixture().await else {
         return;
