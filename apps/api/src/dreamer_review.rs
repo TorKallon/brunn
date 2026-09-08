@@ -665,11 +665,56 @@ async fn retain_inputs(
     data: &mut RunState,
     upper: i64,
 ) -> ApiResult<()> {
-    let rows=sqlx::query("SELECT c.generation,snapshot.generation AS snapshot_generation,c.entry_id,snapshot.entry_version,snapshot.path,snapshot.operation,snapshot.content_sha256,v.metadata,(v.content IS NOT NULL) AS is_text FROM brunn.workspace_changes c JOIN LATERAL (SELECT c2.* FROM brunn.workspace_changes c2 WHERE c2.user_id=c.user_id AND c2.entry_id=c.entry_id AND c2.generation<=$3 ORDER BY c2.generation DESC LIMIT 1) snapshot ON true JOIN brunn.entry_versions v ON v.user_id=c.user_id AND v.entry_id=c.entry_id AND v.version=snapshot.entry_version WHERE c.user_id=$1 AND c.generation>$2 AND c.generation<=$3 ORDER BY c.generation LIMIT 2000")
-        .bind(user).bind(data.scanned_generation).bind(upper).fetch_all(&mut **tx).await?;
+    // RLS can substantially underestimate rows. Bound the ordered page before
+    // any version joins, then resolve each distinct entry only once. Without
+    // these fences the planner can put LIMIT after whole-corpus nested loops.
+    let rows = sqlx::query(
+        r#"
+        WITH change_page AS MATERIALIZED (
+            SELECT generation, entry_id
+            FROM brunn.workspace_changes
+            WHERE user_id=$1 AND generation>$2 AND generation<=$3
+            ORDER BY generation LIMIT 2000
+        ), snapshots AS MATERIALIZED (
+            SELECT ids.entry_id, latest.*
+            FROM (SELECT DISTINCT entry_id FROM change_page) ids
+            CROSS JOIN LATERAL (
+                SELECT generation, entry_version, path, operation, content_sha256
+                FROM brunn.workspace_changes
+                WHERE user_id=$1 AND entry_id=ids.entry_id AND generation<=$3
+                ORDER BY generation DESC LIMIT 1
+            ) latest
+        )
+        SELECT c.generation, snapshot.generation AS snapshot_generation,
+               c.entry_id, snapshot.entry_version, snapshot.path,
+               snapshot.operation, snapshot.content_sha256, v.metadata,
+               (v.version IS NOT NULL) AS source_available,
+               (v.content IS NOT NULL) AS is_text
+        FROM change_page c JOIN snapshots snapshot ON snapshot.entry_id=c.entry_id
+        LEFT JOIN brunn.entry_versions v
+          ON v.user_id=$1 AND v.entry_id=c.entry_id AND v.version=snapshot.entry_version
+        ORDER BY c.generation
+    "#,
+    )
+    .bind(user)
+    .bind(data.scanned_generation)
+    .bind(upper)
+    .fetch_all(&mut **tx)
+    .await?;
     for row in rows {
         let path: String = row.get("path");
         let generation: i64 = row.get("generation");
+        if !row.get::<bool, _>("source_available") {
+            // A visible historical change can outlive access to its version.
+            // Emit an explicit bounded disposition instead of dropping every
+            // row of the page at the join and retrying that empty page forever.
+            if data.source_dispositions.len() >= MAX_INPUTS {
+                break;
+            }
+            data.source_dispositions.push(json!({"entry_ref":format!("entry:{}",row.get::<Uuid,_>("entry_id")),"version":row.get::<i64,_>("entry_version"),"generation":row.get::<i64,_>("snapshot_generation"),"disposition":"source_unavailable","detail":"The change is visible but its exact source version is unavailable. No model read or summary publication is allowed; any previously retained input remains pending."}));
+            data.scanned_generation = generation;
+            continue;
+        }
         let metadata: Value = row.get("metadata");
         if !row.get::<bool, _>("is_text")
             || input_excluded(&path, metadata.get("kind").and_then(Value::as_str))

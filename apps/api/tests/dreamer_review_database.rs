@@ -7,6 +7,7 @@ use axum::{
 };
 use brunn::{AppState, Config, auth::hash_token, router};
 use chrono::Utc;
+use futures::FutureExt;
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use sqlx::{PgPool, Row, postgres::PgPoolOptions};
@@ -76,6 +77,9 @@ async fn actor(pool: &PgPool, user: Option<Uuid>, caps: &[&str]) -> Actor {
     Actor { user, id, token }
 }
 async fn fixture() -> Option<Fixture> {
+    fixture_with_deadline(None).await
+}
+async fn fixture_with_deadline(request_timeout: Option<std::time::Duration>) -> Option<Fixture> {
     let Some(url) = std::env::var("BRUNN_TEST_DATABASE_URL")
         .ok()
         .filter(|u| !u.is_empty())
@@ -102,6 +106,9 @@ async fn fixture() -> Option<Fixture> {
     config.database_max_connections = 4;
     config.apns_delivery_enabled = false;
     config.messaging_enabled = false;
+    if let Some(timeout) = request_timeout {
+        config.request_timeout = timeout;
+    }
     let state = AppState::connect(config).await.unwrap();
     let owner = actor(&pool, None, OWNER_CAPS).await;
     let runner = actor(
@@ -245,6 +252,205 @@ async fn current(f: &Fixture, path: &str) -> Option<(i64, String, Value)> {
 async fn expire_fixture_lease(f: &Fixture) {
     sqlx::query("UPDATE brunn.entry_versions v SET metadata=jsonb_set(metadata,'{dreamer_state,active,lease_until}',to_jsonb($2::text)) FROM brunn.entries e WHERE e.user_id=$1 AND e.path='dreams/state.md' AND v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version")
         .bind(f.owner.user).bind((Utc::now()-chrono::Duration::seconds(1)).to_rfc3339()).execute(&f.pool).await.unwrap();
+}
+
+async fn cleanup_scale_fixture(pool: &PgPool, user: Uuid) {
+    let fixture_owner: bool =
+        sqlx::query_scalar("SELECT external_ref=$2 FROM brunn.users WHERE id=$1")
+            .bind(user)
+            .bind(format!("dreamer-api-fixture:{user}"))
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert!(
+        fixture_owner,
+        "refuse cleanup outside the exact disposable fixture owner"
+    );
+    let unexpected: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM brunn.entries WHERE user_id=$1 AND NOT starts_with(path,'sources/Scale/') AND path NOT IN ('dreams/CONTROL.md','dreams/state.md','dreams/latest-receipt.md') AND NOT starts_with(path,'dreams/runs/'))")
+        .bind(user).fetch_one(pool).await.unwrap();
+    assert!(
+        !unexpected,
+        "refuse cleanup when the scale owner has unrelated entries"
+    );
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("SET CONSTRAINTS ALL DEFERRED")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    // Credential activity may flush after the request returns. Keep the tiny
+    // disposable principal; remove only this run's workspace fixture data.
+    sqlx::query("DELETE FROM brunn.search_chunks WHERE user_id=$1")
+        .bind(user)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let changes = sqlx::query("DELETE FROM brunn.workspace_changes WHERE user_id=$1")
+        .bind(user)
+        .execute(&mut *tx)
+        .await
+        .unwrap()
+        .rows_affected();
+    let versions = sqlx::query("DELETE FROM brunn.entry_versions WHERE user_id=$1")
+        .bind(user)
+        .execute(&mut *tx)
+        .await
+        .unwrap()
+        .rows_affected();
+    let entries = sqlx::query("DELETE FROM brunn.entries WHERE user_id=$1")
+        .bind(user)
+        .execute(&mut *tx)
+        .await
+        .unwrap()
+        .rows_affected();
+    tx.commit().await.unwrap();
+    let remaining: i64 = sqlx::query_scalar("SELECT (SELECT count(*) FROM brunn.entries WHERE user_id=$1)+(SELECT count(*) FROM brunn.entry_versions WHERE user_id=$1)+(SELECT count(*) FROM brunn.workspace_changes WHERE user_id=$1)")
+        .bind(user).fetch_one(pool).await.unwrap();
+    assert_eq!(remaining, 0);
+    eprintln!(
+        "Dreamer scale cleanup: owner={user}, entries={entries}, versions={versions}, changes={changes}, remaining=0"
+    );
+}
+
+#[tokio::test]
+async fn owner_scale_admission_freezes_latest_versions_and_retains_only_128_inputs() {
+    let Some(f) = fixture_with_deadline(Some(std::time::Duration::from_secs(30))).await else {
+        return;
+    };
+    // Catch assertion panics so both a deadline regression and a successful
+    // run remove their large fixture before preserving the original result.
+    let outcome = std::panic::AssertUnwindSafe(async {
+    control(&f, "report-only", 0).await;
+    const ENTRY_COUNT: i64 = 21_000;
+    const UPDATED_COUNT: i64 = 15_000;
+    let original = "# Scale source\n\nOriginal immutable observation.\n";
+    let updated = "# Scale source\n\nLatest observation before the frozen boundary.\n";
+    let original_hash = hash_token(original);
+    let updated_hash = hash_token(updated);
+    let seed_started = std::time::Instant::now();
+    // Seed only this disposable owner. Keep the real FK constraints and
+    // workspace commit-order trigger; no index or planner shortcuts. A large
+    // history with few versions per entry matches the production lookup shape.
+    let mut tx = f.pool.begin().await.unwrap();
+    sqlx::query("INSERT INTO brunn.entries(user_id,path,title,kind,media_type,current_version) SELECT $1,'sources/Scale/'||lpad(n::text,6,'0')||'.md','Scale source','markdown','text/markdown',1 FROM generate_series(1,$2::bigint) AS n")
+        .bind(f.owner.user).bind(ENTRY_COUNT).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO brunn.entry_versions(user_id,entry_id,version,content_sha256,content,size_bytes,metadata,created_by_credential_id) SELECT user_id,id,1,$2,$3,$4,'{}'::jsonb,$5 FROM brunn.entries WHERE user_id=$1 AND starts_with(path,'sources/Scale/')")
+        .bind(f.owner.user).bind(&original_hash).bind(original).bind(original.len() as i64).bind(f.owner.id).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO brunn.workspace_changes(user_id,entry_id,entry_version,operation,path,content_sha256) SELECT user_id,id,1,'create',path,$2 FROM brunn.entries WHERE user_id=$1 AND starts_with(path,'sources/Scale/') ORDER BY path")
+        .bind(f.owner.user).bind(&original_hash).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO brunn.entry_versions(user_id,entry_id,version,content_sha256,content,size_bytes,metadata,created_by_credential_id) SELECT user_id,id,2,$2,$3,$4,'{}'::jsonb,$5 FROM brunn.entries WHERE user_id=$1 AND starts_with(path,'sources/Scale/') AND substring(path from '([0-9]+)[.]md$')::bigint<=$6")
+        .bind(f.owner.user).bind(&updated_hash).bind(updated).bind(updated.len() as i64).bind(f.owner.id).bind(UPDATED_COUNT).execute(&mut *tx).await.unwrap();
+    sqlx::query("UPDATE brunn.entries SET current_version=2 WHERE user_id=$1 AND starts_with(path,'sources/Scale/') AND substring(path from '([0-9]+)[.]md$')::bigint<=$2")
+        .bind(f.owner.user).bind(UPDATED_COUNT).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO brunn.workspace_changes(user_id,entry_id,entry_version,operation,path,content_sha256) SELECT user_id,id,2,'update',path,$2 FROM brunn.entries WHERE user_id=$1 AND starts_with(path,'sources/Scale/') AND current_version=2 ORDER BY path")
+        .bind(f.owner.user).bind(&updated_hash).execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+    let seed_ms = seed_started.elapsed().as_millis();
+    let source_entries: i64 = sqlx::query_scalar("SELECT count(*) FROM brunn.entries WHERE user_id=$1 AND starts_with(path,'sources/Scale/')")
+        .bind(f.owner.user).fetch_one(&f.pool).await.unwrap();
+    let source_changes: i64 = sqlx::query_scalar("SELECT count(*) FROM brunn.workspace_changes WHERE user_id=$1 AND starts_with(path,'sources/Scale/')")
+        .bind(f.owner.user).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(source_entries, ENTRY_COUNT);
+    assert_eq!(source_changes, ENTRY_COUNT + UPDATED_COUNT);
+    let frozen: i64 =
+        sqlx::query_scalar("SELECT max(generation) FROM brunn.workspace_changes WHERE user_id=$1")
+            .bind(f.owner.user)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    let expected = sqlx::query("SELECT entry_id,generation,path FROM brunn.workspace_changes WHERE user_id=$1 AND operation='create' AND starts_with(path,'sources/Scale/') ORDER BY generation LIMIT 129")
+        .bind(f.owner.user).fetch_all(&f.pool).await.unwrap();
+    assert_eq!(expected.len(), 129);
+    let body =
+        json!({"attempt_id":Uuid::now_v7(),"date":date(),"kind":"manual","lease_seconds":60});
+    let started = std::time::Instant::now();
+    let response = post(&f, &f.runner, "/v1/workspace/dreamer/admit", body.clone()).await;
+    let elapsed = started.elapsed();
+    eprintln!(
+        "Dreamer scale admission: entries={source_entries}, source_changes={source_changes}, seed_ms={seed_ms}, admission_ms={}, status={}, request_deadline_ms=30000, sql_deadline_ms=25000",
+        elapsed.as_millis(),
+        response.status.as_u16()
+    );
+    assert_eq!(
+        response.status,
+        StatusCode::OK,
+        "owner-scale admission must complete inside the normal production SQL deadline: {}",
+        response.body
+    );
+    assert!(
+        elapsed < std::time::Duration::from_secs(25),
+        "scale admission exhausted the normal SQL deadline"
+    );
+    let admitted = response.body;
+    assert_eq!(admitted["admitted"], true);
+    assert_eq!(admitted["frozen_generation"], frozen);
+    let inputs = admitted["inputs"].as_array().unwrap();
+    assert_eq!(inputs.len(), 128);
+    for (actual, expected) in inputs.iter().zip(&expected[..128]) {
+        assert_eq!(
+            actual["entry_ref"],
+            format!("entry:{}", expected.get::<Uuid, _>("entry_id"))
+        );
+        assert_eq!(actual["path"], expected.get::<String, _>("path"));
+        assert_eq!(
+            actual["version"], 2,
+            "snapshot must select the later pre-fence version"
+        );
+        assert_eq!(actual["operation"], "update");
+        assert_eq!(actual["content_hash"], format!("sha256:{updated_hash}"));
+        assert_eq!(
+            actual["generation"],
+            expected.get::<i64, _>("generation"),
+            "retain the original unprocessed position, not the newer snapshot generation"
+        );
+    }
+    assert_eq!(
+        admitted["scanned_generation"],
+        expected[127].get::<i64, _>("generation")
+    );
+    assert!(
+        admitted["scanned_generation"].as_i64().unwrap()
+            < expected[128].get::<i64, _>("generation"),
+        "do not consume the first source beyond retained capacity"
+    );
+    assert_eq!(
+        admitted["processed_generation"],
+        expected[0].get::<i64, _>("generation") - 1
+    );
+    let written = write(
+        &f,
+        expected[0].get::<&str, _>("path"),
+        "# Scale source\n\nCommitted after admission.\n",
+        2,
+    )
+    .await;
+    assert_eq!(written["version"], 3);
+    let replay_started = std::time::Instant::now();
+    let replay = ok(post(&f, &f.runner, "/v1/workspace/dreamer/admit", body).await);
+    eprintln!(
+        "Dreamer scale frozen replay: replay_ms={}, inputs={}",
+        replay_started.elapsed().as_millis(),
+        replay["inputs"].as_array().unwrap().len()
+    );
+    assert_eq!(replay["fence"], admitted["fence"]);
+    assert_eq!(replay["frozen_generation"], frozen);
+    assert_eq!(
+        replay["inputs"], admitted["inputs"],
+        "a later committed version cannot alter the accepted frozen input set"
+    );
+    finish(
+        &f,
+        &admitted,
+        admitted["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
+    let retained = current(&f, "dreams/state.md").await.unwrap();
+    assert_eq!(retained.2["dreamer_state"]["inputs"], admitted["inputs"]);
+    }).catch_unwind().await;
+    cleanup_scale_fixture(&f.pool, f.owner.user).await;
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
 }
 
 #[tokio::test]
@@ -1931,4 +2137,139 @@ async fn historical_location_pilot_late_raw_change_blocks_owner_approval() {
         "completed",
     )
     .await;
+}
+
+#[tokio::test]
+async fn unavailable_change_pages_advance_without_consuming_retained_evidence() {
+    let Some(f) = fixture().await else {
+        return;
+    };
+    const MARKER: &str = "UNAVAILABLE_SOURCE_BODY_MUST_NOT_REACH_MODEL";
+    control(&f, "report-only", 0).await;
+    let original = write(
+        &f,
+        "sources/Unavailable/Retained.md",
+        &format!("# Retained\n\n{MARKER}\n"),
+        0,
+    )
+    .await;
+    let first = admit(&f).await;
+    assert_eq!(first["inputs"].as_array().unwrap().len(), 1);
+    finish(
+        &f,
+        &first,
+        first["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
+    let never_admitted = write(
+        &f,
+        "sources/Unavailable/Unseen.md",
+        &format!("# Unseen\n\n{MARKER}\n"),
+        0,
+    )
+    .await;
+
+    // Reproduce imported historical paths that remain visible after their
+    // entries become task-managed. The actual RLS policies then hide all of
+    // these versions from the runner's internal read/save lane and model.
+    // A full page must not disappear at an inner version join and stall.
+    let mut tx = f.pool.begin().await.unwrap();
+    sqlx::query("INSERT INTO brunn.workspace_changes(user_id,entry_id,entry_version,operation,path,content_sha256) SELECT e.user_id,e.id,e.current_version,'update',e.path,v.content_sha256 FROM generate_series(1,1000) n CROSS JOIN brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version WHERE e.user_id=$1 AND starts_with(e.path,'sources/Unavailable/') ORDER BY n,e.path")
+        .bind(f.owner.user).execute(&mut *tx).await.unwrap();
+    sqlx::query("UPDATE brunn.entries SET path='.brunn/tasks/'||id::text||'.md' WHERE user_id=$1 AND starts_with(path,'sources/Unavailable/')")
+        .bind(f.owner.user).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO brunn.workspace_changes(user_id,entry_id,entry_version,operation,path,content_sha256) SELECT e.user_id,e.id,e.current_version,'update',e.path,v.content_sha256 FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version WHERE e.user_id=$1 AND starts_with(e.path,'.brunn/tasks/')")
+        .bind(f.owner.user).execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+    let readable = write(
+        &f,
+        "sources/AfterUnavailable/Readable.md",
+        "# Readable\n\nA supported observation after the unavailable page.\n",
+        0,
+    )
+    .await;
+
+    let hidden_read = ok(post(
+        &f,
+        &f.model,
+        "/v1/workspace/read",
+        json!({"requests":[{"ref":original["entry_ref"],"version":1},{"ref":never_admitted["entry_ref"],"version":1}]}),
+    )
+    .await);
+    assert_eq!(hidden_read["data"]["missing_requests"], 2);
+    assert!(
+        hidden_read["data"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["status"] == "not_found")
+    );
+    assert!(!hidden_read.to_string().contains(MARKER));
+
+    let mut cursor = first["scanned_generation"].as_i64().unwrap();
+    let mut reached_readable = false;
+    // The bounded disposition budget may split one 2,000-event page across
+    // attempts. Each attempt must advance without evicting prior input.
+    for round in 0..18 {
+        let admitted = admit(&f).await;
+        let next_cursor = admitted["scanned_generation"].as_i64().unwrap();
+        assert!(next_cursor > cursor, "unavailable page stalled at {cursor}");
+        cursor = next_cursor;
+        let inputs = admitted["inputs"].as_array().unwrap();
+        assert!(inputs.contains(&first["inputs"][0]));
+        assert!(
+            !inputs
+                .iter()
+                .any(|i| i["entry_ref"] == never_admitted["entry_ref"])
+        );
+        assert_eq!(
+            admitted["processed_generation"],
+            first["processed_generation"]
+        );
+        assert!(!admitted.to_string().contains(MARKER));
+        let stored = current(&f, "dreams/state.md").await.unwrap();
+        let dispositions = stored.2["dreamer_state"]["source_dispositions"]
+            .as_array()
+            .unwrap();
+        assert!(!dispositions.is_empty());
+        assert!(dispositions.len() <= 128);
+        assert!(
+            dispositions
+                .iter()
+                .all(|d| d["disposition"] == "source_unavailable")
+        );
+
+        if round == 0 {
+            assert_eq!(
+                admitted["inputs"], first["inputs"],
+                "first page is wholly unavailable"
+            );
+            let mut body = attempt(&admitted, admitted["state_version"].as_i64().unwrap());
+            body["candidates"] = json!([candidate(&original, "unavailable-rejected")]);
+            body["processed_inputs"] = json!([]);
+            let refused = post(&f, &f.runner, "/v1/workspace/dreamer/candidates", body).await;
+            assert_eq!(refused.status, StatusCode::BAD_REQUEST);
+            assert!(refused.body.to_string().contains("missing or inaccessible"));
+        }
+        reached_readable = inputs
+            .iter()
+            .any(|i| i["entry_ref"] == readable["entry_ref"]);
+        let (_, finished) = finish(
+            &f,
+            &admitted,
+            admitted["state_version"].as_i64().unwrap(),
+            "partial",
+        )
+        .await;
+        assert_eq!(finished["counts"]["processed"], 0);
+        assert_eq!(finished["counts"]["retained"], inputs.len());
+        if reached_readable {
+            break;
+        }
+    }
+    assert!(
+        reached_readable,
+        "unavailable events prevented the next readable source from admission"
+    );
 }
