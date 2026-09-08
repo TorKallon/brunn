@@ -4,6 +4,23 @@ import XCTest
 
 @MainActor
 final class DreamerReviewTests: XCTestCase {
+    func testDecisionConfirmationDecodesInitialAndIdempotentReplayResponses() throws {
+        // The live decision endpoint returns the action string; the complete
+        // decision object belongs to Review history, not this confirmation.
+        let responses = [
+            #"{"status":"complete","data":{"saved":true,"decision":"approve","application_status":"approved_held","message":"Approved. Application is held until publication is explicitly enabled.","state_version":64}}"#,
+            #"{"status":"complete","data":{"saved":true,"decision":"approve","application_status":"approved_held","message":"Decision already recorded.","state_version":64}}"#,
+        ]
+        for response in responses {
+            let result = try JSONDecoder().decode(WorkspaceEnvelope<DreamerDecisionResult>.self, from: Data(response.utf8)).data
+            XCTAssertEqual(result.saved, true)
+            XCTAssertEqual(result.decision, "approve")
+            XCTAssertEqual(result.applicationStatus, "approved_held")
+            XCTAssertEqual(result.stateVersion, 64)
+            XCTAssertFalse(try XCTUnwrap(result.message).isEmpty)
+        }
+    }
+
     func testManagedSummaryTablePreservesSevenStopsAndExactCandidateBytes() throws {
         let markdown = DreamerReviewStore.uiTestLocationSummary
         let candidate = DreamerReviewCandidate(bodyMD: "Earlier draft", beforeMD: "Before", afterMD: markdown,
@@ -327,9 +344,11 @@ final class DreamerReviewTests: XCTestCase {
             XCTAssertTrue(request.value(forHTTPHeaderField: "Cookie")?.contains("account-a") == true)
             XCTAssertFalse(request.value(forHTTPHeaderField: "Cookie")?.contains("account-b") == true)
             XCTAssertEqual(request.value(forHTTPHeaderField: "X-CSRF-Token"), "csrf-a")
-            return Data(#"{"status":"complete","data":{"decision":{"id":"decision-1","item_id":"item-1","decision":"approve","at":"2026-09-08T12:00:00Z","application_status":"approved_held"},"application_status":"approved_held"}}"#.utf8)
+            return Data(#"{"status":"complete","data":{"saved":true,"decision":"approve","application_status":"approved_held","message":"Approved. Application is held until publication is explicitly enabled.","state_version":4}}"#.utf8)
         }
         let result = try await api.dreamerReviewDecision(payload, expectedSessionFingerprint: fingerprint)
+        XCTAssertEqual(result.decision, "approve")
+        XCTAssertEqual(result.saved, true)
         XCTAssertEqual(result.applicationStatus, "approved_held")
     }
 
@@ -488,7 +507,7 @@ private actor ReviewHarness {
             throw BrunnAPIError.server(status: 409, code: "dreamer_state_conflict", message: "Another decision was recorded.")
         }
         return DreamerDecisionResult(saved: true,
-                                    decision: .init(id: "decision-1", itemID: request.itemID, decision: request.decision.rawValue, comment: request.comment, correction: request.correction, at: "2026-09-08T12:00:00Z", applicationStatus: "approved_held"),
+                                    decision: request.decision.rawValue,
                                     applicationStatus: "approved_held", message: "Approved and held.", stateVersion: 4)
     }
 }

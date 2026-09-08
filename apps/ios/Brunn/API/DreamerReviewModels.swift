@@ -196,7 +196,7 @@ public struct DreamerDecisionRequest: Codable, Sendable, Equatable {
 
 public struct DreamerDecisionResult: Codable, Sendable, Equatable {
     public let saved: Bool?
-    public let decision: DreamerReviewDecision
+    public let decision: String
     public let applicationStatus: String
     public let message: String?
     public let stateVersion: Int?
