@@ -39,6 +39,28 @@ function reviewData(overrides: Partial<DreamerReviewData> = {}): DreamerReviewDa
 const envelope = (data: DreamerReviewData) => ({ status: "complete", data });
 
 describe("Dreamer Review inbox", () => {
+  it("opens the complete proposal and keeps notes through previous/next navigation", async () => {
+    const ending = "The final instruction and its uncertainty must remain readable.";
+    const fullTitle = "Refresh the project summary using the exact approved milestone, including the original source references and the unresolved delivery date, so the owner can understand the entire proposal.";
+    const longCandidate = { ...candidate, title: fullTitle, body_md: `${"Supporting context that belongs to the original proposal. ".repeat(30)}\n\n${ending}` };
+    installApiMock({ "GET /api/v1/dreamer/review": envelope(reviewData({ items: [longCandidate, question] })) });
+    const user = userEvent.setup();
+    renderApp("/dreams");
+    const row = await screen.findByRole("button", { name: `Review ${fullTitle}` });
+    expect(within(row).getByText("Read full proposal")).toBeInTheDocument();
+    await user.click(row);
+    expect(screen.getByRole("heading", { name: fullTitle })).toHaveTextContent(fullTitle);
+    expect(screen.getByText(ending)).toBeInTheDocument();
+    expect(screen.getByText("Report-only · Approvals are held. No candidate is applied in this mode.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Previous review item" })).toBeDisabled();
+    await user.type(screen.getByRole("textbox", { name: "Comment (optional)" }), "Keep the original caveat.");
+    await user.click(screen.getByRole("button", { name: "Next review item" }));
+    expect(screen.getByRole("heading", { name: question.title })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next review item" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Previous review item" }));
+    expect(screen.getByRole("textbox", { name: "Comment (optional)" })).toHaveValue("Keep the original caveat.");
+  });
+
   it("shows completion times that distinguish same-day retries", async () => {
     const firstAt = "2026-09-07T18:05:00Z";
     const retryAt = "2026-09-07T19:25:00Z";
@@ -209,6 +231,7 @@ describe("Dreamer Review inbox", () => {
     await user.click(screen.getByRole("button", { name: "Defer" }));
     const retry = await screen.findByRole("button", { name: "Retry" });
     expect(screen.getByRole("button", { name: `Review ${question.title}` })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next review item" })).toBeDisabled();
     await user.click(retry);
     expect(await screen.findByText("Deferred after retry.")).toBeInTheDocument();
     expect(submitted).toHaveLength(2);

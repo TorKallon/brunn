@@ -15,6 +15,29 @@ struct DashboardView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("dashboard-search")
 
+                Button {
+                    model.selectedTab = .review
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.title3).foregroundStyle(BrunnTheme.signal)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Review").font(.headline).foregroundStyle(BrunnTheme.ink)
+                            Text("Dreamer proposals, questions, and decisions")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .multilineTextAlignment(.leading)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay { RoundedRectangle(cornerRadius: 8).stroke(BrunnTheme.line, lineWidth: 1) }
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("dashboard-review")
+
                 if let message = model.dashboardMessage {
                     Label(message, systemImage: "chart.bar.xaxis")
                         .font(.footnote)

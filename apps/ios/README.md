@@ -5,6 +5,13 @@ Alerts inbox for hosted Brunn.
 
 ## Implemented MVP
 
+- visible Review tab and Home shortcut for Dreamer proposals, questions, complete
+  candidate previews, pinned evidence, uncertainty, and decision history
+- owner Review decisions through the existing authenticated session, with exact
+  session binding, CSRF protection, stale snapshot guards, and idempotent retries;
+  device task and location credentials are not expanded
+- Dreamer alerts link directly to Review; `brunn://review` and `brunn://dreams`
+  open the native destination
 - full-width Today reader modeled on the mobile web view
 - dedicated bounded Tasks tab with Urgent/Next, completion, snooze, Done today,
   projects, source provenance, and content-free Todoist import status

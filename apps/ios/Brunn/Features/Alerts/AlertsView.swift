@@ -233,6 +233,18 @@ private struct AlertDetailView: View {
                     .font(.body)
                     .textSelection(.enabled)
 
+                if current.source?.type == "dreamer_run" {
+                    Button {
+                        model.presentedNotification = nil
+                        model.selectedTab = .review
+                    } label: {
+                        Label("Open Review", systemImage: "doc.text.magnifyingglass")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("alert-open-review")
+                }
+
                 targetAction
 
                 if let source = current.source {

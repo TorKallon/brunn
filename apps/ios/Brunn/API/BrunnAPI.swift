@@ -192,6 +192,42 @@ public actor BrunnAPI {
         }
     }
 
+    public func dreamerReview() async throws -> DreamerReviewData {
+        let response: WorkspaceEnvelope<DreamerReviewData> = try await get(path: "dreamer/review")
+        return response.data
+    }
+
+    /// Owner decisions use the existing interactive session and its CSRF token.
+    /// The least-privilege device task/location bearers do not gain review powers.
+    public func dreamerReviewDecision(
+        _ request: DreamerDecisionRequest,
+        expectedSessionFingerprint: String
+    ) async throws -> DreamerDecisionResult {
+        // Freeze this request to the exact interactive session that reviewed it.
+        // Ambient cookie handling could otherwise send an old draft as a newly
+        // signed-in account while CFNetwork waits to start the request.
+        let cookies = cookiesForServer()
+        guard sessionFingerprint(from: cookies) == expectedSessionFingerprint else {
+            throw BrunnAPIError.notConnected
+        }
+        let url = try makeURL(path: "dreamer/review/decisions", queryItems: [])
+        var wireRequest = URLRequest(url: url)
+        wireRequest.httpMethod = "POST"
+        wireRequest.httpShouldHandleCookies = false
+        wireRequest.httpBody = try JSONEncoder().encode(request)
+        for (name, value) in HTTPCookie.requestHeaderFields(with: cookies) {
+            wireRequest.setValue(value, forHTTPHeaderField: name)
+        }
+        guard let csrf = cookies.first(where: { Self.csrfCookieNames.contains($0.name) })?.value,
+              !csrf.isEmpty else { throw BrunnAPIError.notConnected }
+        wireRequest.setValue(csrf, forHTTPHeaderField: "X-CSRF-Token")
+        wireRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+        wireRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let (data, response) = try await session.data(for: wireRequest)
+        let envelope: WorkspaceEnvelope<DreamerDecisionResult> = try decodeResponse(data: data, response: response)
+        return envelope.data
+    }
+
     public func me() async throws -> MeData {
         try await get(path: "me")
     }

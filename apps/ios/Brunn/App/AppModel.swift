@@ -37,6 +37,7 @@ enum AppTab: Hashable {
     case dashboard
     case today
     case tasks
+    case review
     case agents
     case alerts
     case archive
@@ -1983,7 +1984,7 @@ final class AppModel: ObservableObject {
 
         applyLocalRoute(route)
         switch route {
-        case .today:
+        case .today, .review:
             return
         case let .task(reference):
             await openTask(reference: reference)
@@ -2093,6 +2094,8 @@ final class AppModel: ObservableObject {
 
     private func applyLocalRoute(_ route: AppRoute) {
         switch route {
+        case .review:
+            selectedTab = .review
         case .today:
             selectedTab = .today
         case let .briefing(_, _, itemID):

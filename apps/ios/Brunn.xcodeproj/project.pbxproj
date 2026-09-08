@@ -54,6 +54,10 @@
 		F91DFAC9B86C2C8EC033F066 /* MessagingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC136BCE51797E2FE025114 /* MessagingModels.swift */; };
 		F96A127FCD80EDA063BCCAAA /* AgentMessagingTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D65A4E54EF4FF03A7748726 /* AgentMessagingTransportTests.swift */; };
 		FDCBDBAC6023BFE5C4D8137E /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F5AB3385284E27CC4B0F44E /* APIModels.swift */; };
+		74B8608FCCCDE5A6C472E6DF /* DreamerReviewModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3FD4A7858D0C96E5F9CB038 /* DreamerReviewModels.swift */; };
+		09D28BC860EFC23D32AA1E56 /* DreamerReviewStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F320F8FA87FB9D10AD5BEB6 /* DreamerReviewStore.swift */; };
+		1E00384004DD9A9791FB7977 /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E684D2B4F289B5981E3C2150 /* ReviewView.swift */; };
+		A23684B61CD0564390D27402 /* DreamerReviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4FE0F9C2CCB60965C3F7B60 /* DreamerReviewTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -126,6 +130,10 @@
 		F9B2C3729BC469B6DBB96FC1 /* BrunnTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrunnTests.swift; sourceTree = "<group>"; };
 		FE81EB492B6F79BE0CC8513F /* AgentPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPickerView.swift; sourceTree = "<group>"; };
 		FEAFCFFB2640FBD9131A0253 /* LocationKeychainCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationKeychainCredentialStore.swift; sourceTree = "<group>"; };
+		E3FD4A7858D0C96E5F9CB038 /* DreamerReviewModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DreamerReviewModels.swift; sourceTree = "<group>"; };
+		7F320F8FA87FB9D10AD5BEB6 /* DreamerReviewStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Review/DreamerReviewStore.swift; sourceTree = "<group>"; };
+		E684D2B4F289B5981E3C2150 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Review/ReviewView.swift; sourceTree = "<group>"; };
+		F4FE0F9C2CCB60965C3F7B60 /* DreamerReviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DreamerReviewTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -202,6 +210,7 @@
 		5DD5387F7ADFB21B1C336F57 /* BrunnTests */ = {
 			isa = PBXGroup;
 			children = (
+				F4FE0F9C2CCB60965C3F7B60 /* DreamerReviewTests.swift */,
 				668926FA2643A2E633CE5F24 /* AgentMessagingStoreTests.swift */,
 				5D65A4E54EF4FF03A7748726 /* AgentMessagingTransportTests.swift */,
 				F9B2C3729BC469B6DBB96FC1 /* BrunnTests.swift */,
@@ -255,6 +264,7 @@
 		81CD999A7E974DC50E255E59 /* API */ = {
 			isa = PBXGroup;
 			children = (
+				E3FD4A7858D0C96E5F9CB038 /* DreamerReviewModels.swift */,
 				3F5AB3385284E27CC4B0F44E /* APIModels.swift */,
 				5D164938F02B8BA879E64F87 /* BrunnAPI.swift */,
 				4A38E471DE64CD0E1F6E698D /* MessagingBackgroundTransport.swift */,
@@ -315,6 +325,8 @@
 		ADB1F8405B5793D3D11631F5 /* Features */ = {
 			isa = PBXGroup;
 			children = (
+				E684D2B4F289B5981E3C2150 /* ReviewView.swift */,
+				7F320F8FA87FB9D10AD5BEB6 /* DreamerReviewStore.swift */,
 				7F07F4A5D552B4F10ADD84DA /* Agents */,
 				3C4795097550EEC254D26581 /* Alerts */,
 				911B3835BE855B6E33060AC7 /* Archive */,
@@ -491,6 +503,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				FDCBDBAC6023BFE5C4D8137E /* APIModels.swift in Sources */,
+				1E00384004DD9A9791FB7977 /* ReviewView.swift in Sources */,
+				09D28BC860EFC23D32AA1E56 /* DreamerReviewStore.swift in Sources */,
+				74B8608FCCCDE5A6C472E6DF /* DreamerReviewModels.swift in Sources */,
 				3044409B0F764615A0AB9A67 /* AgentPickerView.swift in Sources */,
 				B9291DA9572DAB79F99F4A8C /* AgentsView.swift in Sources */,
 				ACE08501F7EC0720019B478C /* AlertsView.swift in Sources */,
@@ -538,6 +553,7 @@
 				384F6C6AE6D6354916A78589 /* AgentMessagingStoreTests.swift in Sources */,
 				F96A127FCD80EDA063BCCAAA /* AgentMessagingTransportTests.swift in Sources */,
 				4693B59B2E476054E7F01CB8 /* BrunnTests.swift in Sources */,
+				A23684B61CD0564390D27402 /* DreamerReviewTests.swift in Sources */,
 				BC5F37E0FB10688E9453178D /* MessagingBackgroundTransportTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -637,7 +653,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_LANGUAGE = en;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -768,7 +784,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_LANGUAGE = en;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

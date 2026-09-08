@@ -2,6 +2,50 @@ import XCTest
 
 final class BrunnUITests: XCTestCase {
     @MainActor
+    func testReviewIsVisibleInTabBarAndReachableFromHome() {
+        let app = launchDemo()
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
+        let reviewTab = app.tabBars.buttons["Review"]
+        XCTAssertTrue(reviewTab.exists)
+        XCTAssertTrue(reviewTab.isHittable)
+        let shortcut = app.buttons["dashboard-review"]
+        XCTAssertTrue(shortcut.exists)
+        shortcut.tap()
+        XCTAssertTrue(app.navigationBars["Review"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Sign in to read your Dreamer proposals, evidence, and decisions."].exists)
+        keepScreenshot(named: "review-native-tab", from: app)
+    }
+
+    @MainActor
+    func testNativeReviewReadsCompleteQuestionAndPinnedEvidence() {
+        let app = launchDemo(extraArguments: ["--ui-test-review-fixture"])
+        app.tabBars.buttons["Review"].tap()
+        let item = app.buttons["review-item-demo-review-question"]
+        XCTAssertTrue(item.waitForExistence(timeout: 4))
+        item.tap()
+        XCTAssertTrue(app.navigationBars["Review item"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Report-only: approvals are held; nothing is applied."].exists)
+        let finalDetail = app.staticTexts["Final detail: keep the plan in review until I decide."]
+        scroll(finalDetail, intoViewIn: app)
+        XCTAssertTrue(finalDetail.isHittable)
+        keepScreenshot(named: "review-complete-question-end", from: app)
+        let evidence = app.buttons["Evidence for the review · v12"]
+        scroll(evidence, intoViewIn: app)
+        evidence.tap()
+        XCTAssertTrue(app.navigationBars["Entry"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Pinned v12"].exists)
+        keepScreenshot(named: "review-exact-evidence", from: app)
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Review item"].waitForExistence(timeout: 3))
+        let approve = app.buttons["Approve"]
+        scroll(approve, intoViewIn: app)
+        XCTAssertFalse(approve.isEnabled)
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Review"].waitForExistence(timeout: 3))
+        XCTAssertTrue(item.exists)
+    }
+
+    @MainActor
     func testFirstRunConnectionScreenAppearsPromptly() {
         let app = XCUIApplication()
         app.launchArguments = [

@@ -249,6 +249,33 @@ async fn current(f: &Fixture, path: &str) -> Option<(i64, String, Value)> {
         .bind(f.owner.user).bind(path).fetch_optional(&f.pool).await.unwrap().map(|r|(r.get("current_version"),r.get("content"),r.get("metadata")))
 }
 
+// Historical runs predate the server-only Dreamer writer. Seed those versions
+// only for this isolated fixture user, without weakening the live write guard.
+async fn historical_run(f: &Fixture, path: &str, content: &str, version: i64) -> Value {
+    let staging = format!(
+        "sources/LegacyFixture/{}",
+        path.strip_prefix("dreams/runs/").unwrap()
+    );
+    if version > 0 {
+        sqlx::query("UPDATE brunn.entries SET path=$3 WHERE user_id=$1 AND path=$2")
+            .bind(f.owner.user)
+            .bind(path)
+            .bind(&staging)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+    }
+    let result = write(f, &staging, content, version).await;
+    sqlx::query("UPDATE brunn.entries SET path=$3 WHERE user_id=$1 AND path=$2")
+        .bind(f.owner.user)
+        .bind(&staging)
+        .bind(path)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    result
+}
+
 async fn expire_fixture_lease(f: &Fixture) {
     sqlx::query("UPDATE brunn.entry_versions v SET metadata=jsonb_set(metadata,'{dreamer_state,active,lease_until}',to_jsonb($2::text)) FROM brunn.entries e WHERE e.user_id=$1 AND e.path='dreams/state.md' AND v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version")
         .bind(f.owner.user).bind((Utc::now()-chrono::Duration::seconds(1)).to_rfc3339()).execute(&f.pool).await.unwrap();
@@ -451,6 +478,137 @@ async fn owner_scale_admission_freezes_latest_versions_and_retains_only_128_inpu
     if let Err(panic) = outcome {
         std::panic::resume_unwind(panic);
     }
+}
+
+#[tokio::test]
+async fn legacy_review_restores_full_exact_version_text_without_changing_decision_identity() {
+    let Some(f) = fixture().await else {
+        return;
+    };
+    control(&f, "report-only", 0).await;
+    let title = format!(
+        "Keep the complete proposal: {} END_OF_LONG_TITLE",
+        "descriptive context ".repeat(15)
+    );
+    let body = format!(
+        "{title}\n\n{}\n\n### Proposed details\n\n```markdown\n2. This is code, not a different proposal.\n## Needs your call\n```\n\nEND_OF_COMPLETE_PROPOSAL",
+        "Evidence and rationale. ".repeat(90)
+    );
+    let run = historical_run(&f, "dreams/runs/2020-01-02.md", &format!("# Legacy run\n\n## Proposed\n\n1. {body}\n\n## Needs your call\n\n1. Which source should win?\n\nKeep the qualification.\n\n## Applied\n\nNothing.\n"), 0).await;
+    let admitted = admit(&f).await;
+    finish(
+        &f,
+        &admitted,
+        admitted["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
+    let before = current(&f, "dreams/state.md").await.unwrap();
+    let stored = before.2["dreamer_state"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == "2020-01-02/1")
+        .unwrap()
+        .clone();
+    assert!(stored["candidate"]["title"].as_str().unwrap().len() < title.len());
+    assert!(stored["candidate"]["summary"].as_str().unwrap().len() < body.len());
+    // Newer source text must never replace the exact version imported earlier.
+    historical_run(
+        &f,
+        "dreams/runs/2020-01-02.md",
+        "# Rewritten run\n\n## Proposed\n\n1. UNREVIEWED_NEW_HEAD\n",
+        1,
+    )
+    .await;
+    let view = review(&f).await;
+    let restored = view["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == stored["id"])
+        .unwrap();
+    assert_eq!(restored["title"], title);
+    assert_eq!(restored["body_md"], body);
+    assert_eq!(restored["candidate"], Value::Null);
+    assert_eq!(restored["sources"][0]["entry_ref"], run["entry_ref"]);
+    assert_eq!(restored["sources"][0]["version"], 1);
+    assert_eq!(restored["reviewable"], false);
+    for key in ["id", "candidate_hash", "run_entry_ref", "run_version"] {
+        assert_eq!(restored[key], stored[key], "projection cannot change {key}");
+    }
+    assert!(!view.to_string().contains("UNREVIEWED_NEW_HEAD"));
+    assert_eq!(
+        current(&f, "dreams/state.md").await.unwrap().2,
+        before.2,
+        "GET cannot mutate stored proposal or decision state"
+    );
+    let reader = ok(request(&f.app, &f.model, Method::GET, "/v1/dreamer/review", None).await);
+    assert!(reader.to_string().contains("END_OF_COMPLETE_PROPOSAL"));
+    assert_eq!(
+        post(
+            &f,
+            &f.owner,
+            "/v1/dreamer/review/decisions",
+            decision(&view, restored, "approve")
+        )
+        .await
+        .status,
+        StatusCode::CONFLICT
+    );
+    ok(post(
+        &f,
+        &f.owner,
+        "/v1/dreamer/review/decisions",
+        decision(&view, restored, "reject"),
+    )
+    .await);
+}
+
+#[tokio::test]
+async fn unavailable_legacy_run_withholds_cached_text_and_foreign_versions() {
+    let Some(f) = fixture().await else {
+        return;
+    };
+    control(&f, "report-only", 0).await;
+    let run = historical_run(&f, "dreams/runs/2020-01-03.md", "## Proposed\n\n1. PRIVATE_LEGACY_TEXT\n\n## Needs your call\n\n1. PRIVATE_LEGACY_QUESTION\n", 0).await;
+    let admitted = admit(&f).await;
+    finish(
+        &f,
+        &admitted,
+        admitted["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
+    assert!(review(&f).await.to_string().contains("PRIVATE_LEGACY_TEXT"));
+    let reference = run["entry_ref"].as_str().unwrap();
+    // Reserved run paths cannot be deleted through ordinary workspace writes;
+    // emulate historical retention/removal directly for this fixture only.
+    sqlx::query("UPDATE brunn.entries SET deleted_at=now() WHERE user_id=$1 AND id=$2")
+        .bind(f.owner.user)
+        .bind(Uuid::parse_str(reference.strip_prefix("entry:").unwrap()).unwrap())
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let deleted = review(&f).await;
+    assert!(!deleted.to_string().contains("PRIVATE_LEGACY_"));
+    assert!(
+        deleted["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|i| i["stale"] == true && i["reviewable"] == false)
+    );
+    let foreign = actor(&f.pool, None, OWNER_CAPS).await;
+    let other = ok(post(&f, &foreign, "/v1/workspace/write", json!({"path":"sources/ForeignLegacy.md","content":"## Proposed\n\n1. FOREIGN_LEGACY_SECRET\n","expected_version":0})).await)["data"].clone();
+    sqlx::query("UPDATE brunn.entries SET path='dreams/runs/2020-01-03.md' WHERE user_id=$1 AND path='sources/ForeignLegacy.md'")
+        .bind(foreign.user).execute(&f.pool).await.unwrap();
+    // Even a corrupt retained reference cannot expose another owner's version.
+    sqlx::query("UPDATE brunn.entry_versions v SET metadata=jsonb_set(v.metadata,'{dreamer_state,items,0,run_entry_ref}',$2::jsonb) FROM brunn.entries e WHERE e.user_id=$1 AND e.path='dreams/state.md' AND v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version")
+        .bind(f.owner.user).bind(other["entry_ref"].clone()).execute(&f.pool).await.unwrap();
+    let unavailable = review(&f).await;
+    assert!(!unavailable.to_string().contains("FOREIGN_LEGACY_SECRET"));
+    assert!(!unavailable.to_string().contains("PRIVATE_LEGACY_"));
 }
 
 #[tokio::test]

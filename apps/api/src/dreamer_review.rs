@@ -2230,6 +2230,183 @@ async fn item_stale(
     }
     Ok(false)
 }
+
+/// Legacy state intentionally stores compact previews. Read the complete proposal
+/// from the immutable run it came from; never rewrite its decision identity/hash
+/// or substitute a newer run. Both tables remain subject to the caller's RLS.
+async fn legacy_review_texts(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+    data: &RunState,
+) -> ApiResult<std::collections::BTreeMap<String, Option<String>>> {
+    let legacy = data.items.iter().filter(|item| {
+        pending(item)
+            && (item.candidate.kind == "legacy"
+                || (item.candidate.kind == "question"
+                    && item.frozen_generation == 0
+                    && item.candidate.reason
+                        == "Retained from an earlier run; a concrete candidate is required before application."))
+    }).collect::<Vec<_>>();
+    let mut runs = std::collections::BTreeMap::new();
+    let mut texts = std::collections::BTreeMap::new();
+    for item in legacy {
+        let key = (entry_id(&item.run_entry_ref)?, item.run_version);
+        if let std::collections::btree_map::Entry::Vacant(slot) = runs.entry(key) {
+            let row = sqlx::query("SELECT e.path,v.content,v.metadata FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=$3 WHERE e.user_id=$1 AND e.id=$2 AND e.deleted_at IS NULL")
+                .bind(user).bind(key.0).bind(key.1).fetch_optional(&mut **tx).await?;
+            slot.insert(row.map(|row| {
+                (
+                    row.get::<String, _>("path"),
+                    row.get::<Value, _>("metadata"),
+                    legacy_proposal_texts(&row.get::<String, _>("content")),
+                )
+            }));
+        }
+        let text =
+            runs.get(&key)
+                .and_then(Option::as_ref)
+                .and_then(|(path, metadata, paragraphs)| {
+                    if path != &format!("dreams/runs/{}.md", item.run_id)
+                        || metadata.get("dreamer_run").is_some()
+                    {
+                        return None;
+                    }
+                    let number = item.id.strip_prefix(&format!("{}/", item.run_id))?;
+                    let (section, number) = if item.candidate.kind == "question" {
+                        ("Needs your call", number.strip_prefix("question-")?)
+                    } else {
+                        ("Proposed", number)
+                    };
+                    paragraphs
+                        .get(&(section.to_owned(), number.parse::<usize>().ok()?))?
+                        .clone()
+                });
+        texts.insert(item.id.clone(), text);
+    }
+    Ok(texts)
+}
+
+fn legacy_fence_opening(line: &str) -> Option<(char, usize)> {
+    let trimmed = line.trim_start_matches(' ');
+    if line.len() - trimmed.len() > 3 {
+        return None;
+    }
+    let character = trimmed.chars().next().filter(|c| matches!(c, '`' | '~'))?;
+    let length = trimmed.chars().take_while(|c| *c == character).count();
+    // Backticks in an info string make this ordinary inline text, not a fence.
+    (length >= 3 && (character != '`' || !trimmed[length..].contains('`')))
+        .then_some((character, length))
+}
+
+fn legacy_proposal_texts(
+    content: &str,
+) -> std::collections::BTreeMap<(String, usize), Option<String>> {
+    let mut result = std::collections::BTreeMap::new();
+    let mut section = String::new();
+    let mut current: Option<(String, usize)> = None;
+    let mut fence: Option<(char, usize)> = None;
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        let marker = trimmed.chars().next().filter(|c| matches!(c, '`' | '~'));
+        let run = marker.map_or(0, |c| trimmed.chars().take_while(|x| *x == c).count());
+        let in_fence = fence.is_some();
+        if let Some((character, length)) = fence {
+            if marker == Some(character) && run >= length && trimmed[run..].trim().is_empty() {
+                fence = None;
+            }
+        } else {
+            fence = legacy_fence_opening(line);
+        }
+        if !in_fence && fence.is_none() {
+            if line.starts_with("# ") {
+                section.clear();
+                current = None;
+                continue;
+            }
+            if let Some(heading) = line.strip_prefix("## ") {
+                section = heading.trim().to_owned();
+                current = None;
+                continue;
+            }
+            if matches!(section.as_str(), "Proposed" | "Needs your call") {
+                if let Some((number, text)) = line.split_once(". ") {
+                    if let Ok(number) = number.parse::<usize>() {
+                        let key = (section.clone(), number);
+                        result
+                            .entry(key.clone())
+                            .and_modify(|value| *value = None)
+                            .or_insert_with(|| Some(text.to_owned()));
+                        current = Some(key);
+                        fence = legacy_fence_opening(text);
+                        continue;
+                    }
+                }
+            }
+        }
+        if let Some(key) = &current {
+            if let Some(Some(text)) = result.get_mut(key) {
+                text.push('\n');
+                text.push_str(line);
+            }
+        }
+    }
+    for text in result.values_mut().flatten() {
+        *text = text.trim_end().to_owned();
+    }
+    result
+}
+
+#[cfg(test)]
+mod legacy_review_tests {
+    use super::legacy_proposal_texts;
+
+    #[test]
+    fn inline_backticks_cannot_swallow_the_next_proposal() {
+        let items = legacy_proposal_texts("## Proposed\n1. Original\n\n```literal```\n\n2. Other");
+        assert_eq!(
+            items[&("Proposed".into(), 1)].as_deref(),
+            Some("Original\n\n```literal```")
+        );
+        assert_eq!(items[&("Proposed".into(), 2)].as_deref(), Some("Other"));
+    }
+
+    #[test]
+    fn first_line_fence_preserves_code_and_real_item_boundaries() {
+        let items = legacy_proposal_texts(
+            "## Proposed\n1. ```markdown\n   2. Code, not an item\n   ## Needs your call\n   ```\n\n2. Actual next item\n\n## Needs your call\n1. Actual question",
+        );
+        assert_eq!(
+            items[&("Proposed".into(), 1)].as_deref(),
+            Some("```markdown\n   2. Code, not an item\n   ## Needs your call\n   ```")
+        );
+        assert_eq!(
+            items[&("Proposed".into(), 2)].as_deref(),
+            Some("Actual next item")
+        );
+        assert_eq!(
+            items[&("Needs your call".into(), 1)].as_deref(),
+            Some("Actual question")
+        );
+    }
+
+    #[test]
+    fn repeated_numbers_are_unavailable_instead_of_silently_picking_one() {
+        let items = legacy_proposal_texts("## Proposed\n1. First\n\n1. Conflicting second\n");
+        assert_eq!(items[&("Proposed".into(), 1)], None);
+    }
+
+    #[test]
+    fn new_report_heading_ends_the_proposal_but_subheadings_do_not() {
+        let items = legacy_proposal_texts(
+            "## Proposed\n1. First\n\n### Details\nKeep these.\n\n# Another report\nWithhold this.",
+        );
+        assert_eq!(
+            items[&("Proposed".into(), 1)].as_deref(),
+            Some("First\n\n### Details\nKeep these.")
+        );
+    }
+}
+
 async fn review_view(
     tx: &mut Transaction<'_, Postgres>,
     auth: &AuthContext,
@@ -2238,9 +2415,12 @@ async fn review_view(
     current_mode: Option<String>,
 ) -> ApiResult<Value> {
     let user = auth.user_id.0;
+    let legacy_texts = legacy_review_texts(tx, user, data).await?;
     let mut items = Vec::new();
     for original in data.items.iter().filter(|i| pending(i)) {
-        let available = (original.candidate.raw_sources.is_empty() || auth.can(Capability::Save))
+        let legacy_text = legacy_texts.get(&original.id);
+        let available = !matches!(legacy_text, Some(None))
+            && (original.candidate.raw_sources.is_empty() || auth.can(Capability::Save))
             && item_available(tx, user, original).await?;
         let shown = if available {
             original.clone()
@@ -2258,12 +2438,15 @@ async fn review_view(
         } else {
             None
         };
-        let preview = if i.candidate.kind == "question" {
+        let preview = if i.candidate.kind == "question" || legacy_text.is_some() {
             Value::Null
         } else {
             json!({"body_md":candidate_body(&i.candidate),"before_md":i.before_md,"after_md":candidate_body(&i.candidate),"target_path":i.candidate.path})
         };
         let mut sources=i.candidate.sources.iter().map(|s|json!({"entry_ref":s.entry_ref,"path":s.path,"version":s.version,"label":format!("{} v{} · lines {}–{}",s.path,s.version,s.start_line,s.end_line),"excerpt":s.excerpt})).collect::<Vec<_>>();
+        if available && legacy_text.is_some() {
+            sources.push(json!({"entry_ref":i.run_entry_ref,"path":format!("dreams/runs/{}.md",i.run_id),"version":i.run_version,"label":format!("Original proposal · {} v{}",i.run_id,i.run_version)}));
+        }
         let raw = if !stale && !i.candidate.raw_sources.is_empty() && auth.can(Capability::Save) {
             crate::location::summary::citation_previews_in_tx(
                 tx,
@@ -2284,8 +2467,20 @@ async fn review_view(
             sources.extend(raw);
         }
 
-        items.push(json!({"id":i.id,"kind":if i.candidate.kind=="question"{"question"}else{"proposal"},"title":i.candidate.title,"body_md":if i.candidate.kind=="question"{&i.candidate.question}else{&i.candidate.summary},"why_md":i.candidate.reason,"uncertainty_md":i.candidate.uncertainty,"run_id":i.run_id,"run_entry_ref":i.run_entry_ref,"run_version":i.run_version,"candidate_hash":i.candidate_hash,"candidate":preview,"sources":sources,"status":if stale{"stale"}else{&i.status},"reviewable":i.reviewable&&i.candidate.kind!="question","stale":stale,"blocked_reason":block}));
+        let full_text = legacy_text.and_then(Option::as_deref).filter(|_| available);
+        let title = full_text
+            .and_then(|text| text.lines().next())
+            .unwrap_or(&i.candidate.title);
+        let body = full_text.unwrap_or(if i.candidate.kind == "question" {
+            &i.candidate.question
+        } else {
+            &i.candidate.summary
+        });
+        items.push(json!({"id":i.id,"kind":if i.candidate.kind=="question"{"question"}else{"proposal"},"title":title,"body_md":body,"why_md":i.candidate.reason,"uncertainty_md":i.candidate.uncertainty,"run_id":i.run_id,"run_entry_ref":i.run_entry_ref,"run_version":i.run_version,"candidate_hash":i.candidate_hash,"candidate":preview,"sources":sources,"status":if stale{"stale"}else{&i.status},"reviewable":i.reviewable&&i.candidate.kind!="question","stale":stale,"blocked_reason":block}));
     }
+    // Put actionable candidates within reach before the retained legacy backlog;
+    // stable sorting preserves the existing order and every decision identity.
+    items.sort_by_key(|item| !(item["reviewable"] == true && item["stale"] == false));
     Ok(
         json!({"available":true,"mode":current_mode,"paused":current_mode.is_none(),"last_attempt":data.last_attempt,"last_successful_run":data.last_successful_run,"counts":counts(data),"items":items,"history":data.history,"decision_version":version}),
     )

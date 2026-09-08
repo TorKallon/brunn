@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Check, CircleHelp, Clock3, FileDiff, History, MessageSquareText, RefreshCw, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, CircleHelp, Clock3, FileDiff, History, MessageSquareText, RefreshCw, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { MarkdownView } from "../components/MarkdownView";
 import { Metric, Page, PageHeader, Section } from "../components/Page";
 import { EmptyState, ErrorState, LoadingState, ReadOnlyNotice, StatusBadge } from "../components/StateViews";
@@ -118,6 +118,7 @@ function ReviewDetail({ item, data, decisionVersion, changed, unavailable, draft
       <div className="review-detail-meta"><span className="review-eyebrow">{item.kind === "question" ? "Needs your call" : "Proposed"}</span><StatusBadge status={item.status} /></div>
       <h2>{item.title}</h2>
       <div className="review-origin"><code>{item.id}</code><span>From <EntryLink entryRef={item.run_entry_ref} version={item.run_version}>{item.run_id} · v{item.run_version}</EntryLink></span></div>
+      {data.mode === "report-only" ? <p className="review-mode-note">Report-only · Approvals are held. No candidate is applied in this mode.</p> : null}
     </header>
     {(changed || conflict) && !decisionMutation.isSuccess ? <div className="review-notice warning" role="status"><strong>This review has changed.</strong><p>Review the latest item and decisions before taking another action. Your note is kept when you open the updated item.</p>{onReviewUpdated ? <button className="button secondary" disabled={decisionMutation.isPending || uncertain} onClick={onReviewUpdated}>Review updated item</button> : <p>This item is no longer in the pending inbox.</p>}</div> : null}
     {blocked ? <div className="review-notice warning"><strong>{item.stale || item.status === "needs_changes" ? "Needs another review" : item.status === "approved_held" ? "Approved and held" : "Candidate not ready"}</strong><p>{blocked}</p></div> : null}
@@ -168,6 +169,9 @@ export function DreamsPage() {
   const [selectedDecisionVersion, setSelectedDecisionVersion] = useState(0);
   const [selectionRevision, setSelectionRevision] = useState(0);
   const [decisionBusy, setDecisionBusy] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const detailRef = useRef<HTMLDivElement>(null);
+  const itemButtons = useRef(new Map<string, HTMLButtonElement>());
   const [drafts, setDrafts] = useState<Record<string, ReviewDraft>>({});
   const reviewQuery = useQuery({ queryKey: ["dreamer-review"], queryFn: () => api.dreamerReview(), refetchInterval: 60_000 });
   const data = reviewQuery.data?.data;
@@ -179,14 +183,27 @@ export function DreamsPage() {
   const displayedItem = currentItem?.stale && !currentItem.reviewable && currentItem.sources.length === 0
     ? currentItem : selected;
   const changed = Boolean(selected && (!currentItem || reviewIdentity(currentItem) !== reviewIdentity(selected) || currentItem.status !== selected.status || currentItem.stale !== selected.stale || selectedDecisionVersion !== data?.decision_version));
+  const selectedIndex = selected ? visibleItems.findIndex((item) => item.id === selected.id) : -1;
+
+  useEffect(() => {
+    if (!detailOpen) return;
+    detailRef.current?.focus({ preventScroll: true });
+    detailRef.current?.scrollIntoView?.({ block: "start" });
+  }, [detailOpen, selectionRevision]);
+
+  useEffect(() => {
+    if (!detailOpen && selected) itemButtons.current.get(selected.id)?.focus();
+  }, [detailOpen, selected]);
 
   function selectItem(item: DreamerReviewItem) {
+    if (decisionBusy) return;
     setSelected(item);
+    setDetailOpen(true);
     setSelectedDecisionVersion(data?.decision_version ?? 0);
     setSelectionRevision((value) => value + 1);
   }
 
-  return <Page>
+  return <Page className={`review-page${detailOpen ? " review-reading" : ""}`}>
     <PageHeader title="Review" description="Proposals, questions, and decisions from nightly dreaming" actions={<button className="button secondary" type="button" onClick={() => void reviewQuery.refetch()} disabled={reviewQuery.isFetching}><RefreshCw size={16} aria-hidden="true" />{reviewQuery.isFetching ? "Refreshing…" : "Refresh"}</button>} />
     {readOnly ? <ReadOnlyNotice /> : null}
     {reviewQuery.isPending ? <LoadingState label="Loading review inbox" /> : null}
@@ -195,21 +212,32 @@ export function DreamsPage() {
       <RunStatus data={data} />
       {!data.available ? <div className="review-notice warning" role="status"><strong>Review is not available yet</strong><p>{data.unavailable_reason ?? "A complete review snapshot is not available. Pending work cannot be confirmed."}</p></div> : null}
       <div className="metric-grid review-metrics"><Metric label="Proposed" value={data.available ? data.counts.proposals : "—"} detail="Pending proposals" /><Metric label="Needs your call" value={data.available ? data.counts.questions : "—"} detail="Questions to resolve" /><Metric label="Approved & held" value={data.available ? data.counts.approved_held : "—"} detail="Awaiting authorized application" /><Metric label="Applied" value={data.available ? data.counts.applied : "—"} detail="Confirmed changes" /></div>
-      <div className="review-workspace">
+      <div className="review-workspace" data-detail-open={detailOpen}>
         <Section title="Pending review" meta={data.available ? `${data.counts.pending} items` : "Unavailable"} className="review-inbox">
           <div className="review-filters" role="group" aria-label="Filter review items">{([
             ["all", "All", items.length], ["proposal", "Proposed", data.counts.proposals], ["question", "Needs your call", data.counts.questions],
           ] as const).map(([value, label, count]) => <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}{" "}<span>{count}</span></button>)}</div>
           {visibleItems.length ? <ul className="review-item-list">{visibleItems.map((item) => <li key={item.id}>
-            <button type="button" className={`review-item ${selected?.id === item.id ? "selected" : ""}`} disabled={decisionBusy} onClick={() => selectItem(item)} aria-pressed={selected?.id === item.id} aria-label={`Review ${item.title}`}>
+            <button ref={(node) => { if (node) itemButtons.current.set(item.id, node); else itemButtons.current.delete(item.id); }} type="button" className={`review-item ${selected?.id === item.id ? "selected" : ""}`} disabled={decisionBusy} onClick={() => selectItem(item)} aria-pressed={selected?.id === item.id} aria-label={`Review ${item.title}`}>
               <span className="review-item-kind">{item.kind === "question" ? <CircleHelp size={16} aria-hidden="true" /> : <FileDiff size={16} aria-hidden="true" />}{item.kind === "question" ? "Needs your call" : "Proposed"}<span>{item.run_id}</span></span>
-              <strong>{item.title}</strong><span className="review-item-status"><StatusBadge status={item.stale ? "stale" : item.status} />{!item.reviewable ? <span>Candidate not ready</span> : null}</span>
+              <strong className="review-item-title">{item.title}</strong><span className="review-item-status"><StatusBadge status={item.stale ? "stale" : item.status} />{!item.reviewable ? <span>Candidate not ready</span> : null}</span>
+              <span className="review-item-open">Read full {item.kind === "question" ? "question" : "proposal"}<ChevronRight size={16} aria-hidden="true" /></span>
             </button>
           </li>)}</ul> : <EmptyState title={data.available ? (filter === "all" ? "Nothing waiting for review" : `No ${filter === "proposal" ? "proposals" : "questions"} waiting`) : "Pending items unavailable"} detail={data.available ? "New proposals and questions will appear here after a run. Past decisions remain below." : "Refresh when the review snapshot is available."} />}
         </Section>
-        <div className="review-detail-wrap">{selected ? <ReviewDetail key={`${reviewIdentity(selected)}:${selectionRevision}`} item={displayedItem ?? selected} data={data} decisionVersion={selectedDecisionVersion} changed={changed} unavailable={!data.available || reviewQuery.isError} draft={drafts[selected.id] ?? { comment: "", correction: "" }} onDraftChange={(draft) => setDrafts((current) => ({ ...current, [selected.id]: draft }))} onDecisionBusy={setDecisionBusy} onReviewUpdated={currentItem ? () => selectItem(currentItem) : undefined} /> : <div className="review-unselected"><FileDiff size={28} aria-hidden="true" /><h2>Choose an item to review</h2><p>Read the candidate, its evidence, and any uncertainty before recording a decision.</p></div>}</div>
+        <div className="review-detail-wrap" ref={detailRef} role="region" tabIndex={-1} aria-label="Selected review">{selected ? <>
+          <nav className="review-navigation" aria-label="Review navigation">
+            <button type="button" className="button secondary review-back" disabled={decisionBusy} onClick={() => setDetailOpen(false)}><ArrowLeft size={16} aria-hidden="true" />Back to inbox</button>
+            <span className="review-position">{selectedIndex >= 0 ? `${selectedIndex + 1} of ${visibleItems.length}` : "Reviewed item"}</span>
+            <div className="review-step-buttons">
+              <button type="button" className="button secondary" aria-label="Previous review item" disabled={decisionBusy || selectedIndex <= 0} onClick={() => selectItem(visibleItems[selectedIndex - 1])}><ChevronLeft size={16} aria-hidden="true" /><span>Previous</span></button>
+              <button type="button" className="button secondary" aria-label="Next review item" disabled={decisionBusy || selectedIndex >= visibleItems.length - 1} onClick={() => selectItem(visibleItems[selectedIndex + 1])}><span>Next</span><ChevronRight size={16} aria-hidden="true" /></button>
+            </div>
+          </nav>
+          <ReviewDetail key={`${reviewIdentity(selected)}:${selectionRevision}`} item={displayedItem ?? selected} data={data} decisionVersion={selectedDecisionVersion} changed={changed} unavailable={!data.available || reviewQuery.isError} draft={drafts[selected.id] ?? { comment: "", correction: "" }} onDraftChange={(draft) => setDrafts((current) => ({ ...current, [selected.id]: draft }))} onDecisionBusy={setDecisionBusy} onReviewUpdated={currentItem ? () => selectItem(currentItem) : undefined} />
+        </> : <div className="review-unselected"><FileDiff size={28} aria-hidden="true" /><h2>Choose an item to review</h2><p>Read the candidate, its evidence, and any uncertainty before recording a decision.</p></div>}</div>
       </div>
-      <Section title="Decision history" meta="Recorded decisions and application state" actions={<History size={18} aria-hidden="true" />}>
+      <Section title="Decision history" meta="Recorded decisions and application state" className="review-history-section" actions={<History size={18} aria-hidden="true" />}>
         {data.history.length ? <ol className="review-history">{data.history.map((decision) => <li key={decision.id}><div className="review-history-heading"><strong>{humanize(decision.decision)}</strong><StatusBadge status={decision.application_status} /><time dateTime={decision.at}>{formatDate(decision.at)}</time></div><code>{decision.item_id}</code>{decision.comment ? <p>{decision.comment}</p> : null}{decision.correction ? <p><strong>Correction:</strong> {decision.correction}</p> : null}</li>)}</ol> : <EmptyState title="No decisions recorded" detail="Approvals, rejections, deferrals, and corrections will appear here." />}
       </Section>
     </> : null}

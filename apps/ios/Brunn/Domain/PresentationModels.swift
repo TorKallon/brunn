@@ -433,6 +433,14 @@ public struct WorkspaceEntryRequest: Hashable, Sendable {
     public let title: String
     public let lookupTerm: String?
 
+    public init(reference: String, version: Int, title: String) {
+        self.reference = reference
+        self.version = version
+        self.title = title
+        pathCandidates = []
+        lookupTerm = nil
+    }
+
     public init(candidate: WorkspaceSearchCandidate) {
         reference = candidate.reference
         pathCandidates = [candidate.path]

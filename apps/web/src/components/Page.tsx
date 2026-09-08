@@ -1,7 +1,7 @@
 import type { PropsWithChildren, ReactNode } from "react";
 
-export function Page({ children }: PropsWithChildren) {
-  return <main className="page">{children}</main>;
+export function Page({ children, className = "" }: PropsWithChildren<{ className?: string }>) {
+  return <main className={`page ${className}`.trim()}>{children}</main>;
 }
 
 export function PageHeader({

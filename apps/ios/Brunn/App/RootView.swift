@@ -146,6 +146,13 @@ private struct MainTabView: View {
             .tabItem { Label("Tasks", systemImage: "checklist") }
             .tag(AppTab.tasks)
 
+            NavigationStack {
+                ReviewView()
+                    .id("review-" + (model.user?.id ?? "signed-out") + (model.isDemo ? "-demo" : "-live"))
+            }
+            .tabItem { Label("Review", systemImage: "doc.text.magnifyingglass") }
+            .tag(AppTab.review)
+
             if model.messagingEnabled, let messagingController = model.messagingController {
                 NavigationStack {
                     AgentsView(
