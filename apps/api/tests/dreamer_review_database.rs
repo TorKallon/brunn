@@ -10,6 +10,7 @@ use chrono::Utc;
 use futures::FutureExt;
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row, postgres::PgPoolOptions};
 use tower::ServiceExt;
 use url::Url;
@@ -504,7 +505,7 @@ async fn legacy_review_restores_full_exact_version_text_without_changing_decisio
     )
     .await;
     let before = current(&f, "dreams/state.md").await.unwrap();
-    let stored = before.2["dreamer_state"]["items"]
+    let stored = before.2["dreamer_state"]["legacy_items"]
         .as_array()
         .unwrap()
         .iter()
@@ -522,7 +523,9 @@ async fn legacy_review_restores_full_exact_version_text_without_changing_decisio
     )
     .await;
     let view = review(&f).await;
-    let restored = view["items"]
+    assert_eq!(view["items"], json!([]));
+    assert_eq!(view["counts"]["pending"], 0);
+    let restored = view["legacy_items"]
         .as_array()
         .unwrap()
         .iter()
@@ -534,6 +537,7 @@ async fn legacy_review_restores_full_exact_version_text_without_changing_decisio
     assert_eq!(restored["sources"][0]["entry_ref"], run["entry_ref"]);
     assert_eq!(restored["sources"][0]["version"], 1);
     assert_eq!(restored["reviewable"], false);
+    assert_eq!(restored["legacy"], true);
     for key in ["id", "candidate_hash", "run_entry_ref", "run_version"] {
         assert_eq!(restored[key], stored[key], "projection cannot change {key}");
     }
@@ -556,13 +560,21 @@ async fn legacy_review_restores_full_exact_version_text_without_changing_decisio
         .status,
         StatusCode::CONFLICT
     );
-    ok(post(
-        &f,
-        &f.owner,
-        "/v1/dreamer/review/decisions",
-        decision(&view, restored, "reject"),
-    )
-    .await);
+    for choice in ["reject", "defer", "correct"] {
+        assert_eq!(
+            post(
+                &f,
+                &f.owner,
+                "/v1/dreamer/review/decisions",
+                decision(&view, restored, choice),
+            )
+            .await
+            .status,
+            StatusCode::CONFLICT
+        );
+    }
+    assert_eq!(current(&f, "dreams/state.md").await.unwrap(), before);
+    assert!(current(&f, "dreams/decisions.md").await.is_none());
 }
 
 #[tokio::test]
@@ -581,6 +593,9 @@ async fn unavailable_legacy_run_withholds_cached_text_and_foreign_versions() {
     )
     .await;
     assert!(review(&f).await.to_string().contains("PRIVATE_LEGACY_TEXT"));
+    let state_read = json!({"requests":[{"path":"dreams/state.md"}]});
+    let visible_state = ok(post(&f, &f.model, "/v1/workspace/read", state_read.clone()).await);
+    assert!(visible_state.to_string().contains("PRIVATE_LEGACY_TEXT"));
     let reference = run["entry_ref"].as_str().unwrap();
     // Reserved run paths cannot be deleted through ordinary workspace writes;
     // emulate historical retention/removal directly for this fixture only.
@@ -592,8 +607,14 @@ async fn unavailable_legacy_run_withholds_cached_text_and_foreign_versions() {
         .unwrap();
     let deleted = review(&f).await;
     assert!(!deleted.to_string().contains("PRIVATE_LEGACY_"));
+    let deleted_state = ok(post(&f, &f.model, "/v1/workspace/read", state_read.clone()).await);
+    assert!(!deleted_state.to_string().contains("PRIVATE_LEGACY_"));
+    assert_eq!(
+        deleted_state["data"]["items"][0]["representation"],
+        "audit_withheld"
+    );
     assert!(
-        deleted["items"]
+        deleted["legacy_items"]
             .as_array()
             .unwrap()
             .iter()
@@ -604,11 +625,278 @@ async fn unavailable_legacy_run_withholds_cached_text_and_foreign_versions() {
     sqlx::query("UPDATE brunn.entries SET path='dreams/runs/2020-01-03.md' WHERE user_id=$1 AND path='sources/ForeignLegacy.md'")
         .bind(foreign.user).execute(&f.pool).await.unwrap();
     // Even a corrupt retained reference cannot expose another owner's version.
-    sqlx::query("UPDATE brunn.entry_versions v SET metadata=jsonb_set(v.metadata,'{dreamer_state,items,0,run_entry_ref}',$2::jsonb) FROM brunn.entries e WHERE e.user_id=$1 AND e.path='dreams/state.md' AND v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version")
+    sqlx::query("UPDATE brunn.entry_versions v SET metadata=jsonb_set(v.metadata,'{dreamer_state,legacy_items,0,run_entry_ref}',$2::jsonb) FROM brunn.entries e WHERE e.user_id=$1 AND e.path='dreams/state.md' AND v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version")
         .bind(f.owner.user).bind(other["entry_ref"].clone()).execute(&f.pool).await.unwrap();
     let unavailable = review(&f).await;
     assert!(!unavailable.to_string().contains("FOREIGN_LEGACY_SECRET"));
     assert!(!unavailable.to_string().contains("PRIVATE_LEGACY_"));
+    let foreign_state = ok(post(&f, &f.model, "/v1/workspace/read", state_read).await);
+    assert!(!foreign_state.to_string().contains("FOREIGN_LEGACY_SECRET"));
+    assert!(!foreign_state.to_string().contains("PRIVATE_LEGACY_"));
+}
+
+#[tokio::test]
+async fn legacy_history_capacity_does_not_starve_candidates_or_current_questions() {
+    for size in [64usize, 96] {
+        let Some(f) = fixture().await else {
+            return;
+        };
+        control(&f, "report-only", 0).await;
+        let mut old = "## Proposed\n\n".to_owned();
+        for number in 1..size {
+            old.push_str(&format!("{number}. HISTORICAL_PROMISE_{number}\n\n"));
+        }
+        old.push_str("## Needs your call\n\n1. HISTORICAL_QUESTION\n");
+        if size == 96 {
+            old.push_str("\n2. HISTORICAL_OVERFLOW_REMAINS_IN_ORIGINAL_REPORT\n");
+        }
+        historical_run(&f, "dreams/runs/2020-01-04.md", &old, 0).await;
+        let source = write(
+            &f,
+            "sources/CurrentWork.md",
+            "# Current work\n\nA source-backed observation.\n",
+            0,
+        )
+        .await;
+        let admitted = admit(&f).await;
+        assert_eq!(admitted["pending"], json!([]));
+        assert!(!admitted.to_string().contains("HISTORICAL_"));
+        assert!(
+            admitted["inputs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|input| input["entry_ref"] == source["entry_ref"])
+        );
+        let before = current(&f, "dreams/state.md").await.unwrap();
+        assert_eq!(
+            before.2["dreamer_state"]["legacy_items"]
+                .as_array()
+                .unwrap()
+                .len(),
+            size
+        );
+        assert_eq!(before.2["dreamer_state"]["items"], json!([]));
+        let question = json!({"kind":"question","title":"Which current source should win?","question":"Resolve the current source conflict.","sources":[{"entry_ref":source["entry_ref"],"version":source["version"],"start_line":3,"end_line":3}]});
+        let mut body = attempt(&admitted, admitted["state_version"].as_i64().unwrap());
+        body["candidates"] = json!([candidate(&source, "current-work"), question]);
+        body["processed_inputs"] = json!([]);
+        let submitted = ok(post(&f, &f.runner, "/v1/workspace/dreamer/candidates", body).await);
+        assert_eq!(
+            submitted["accepted_candidate_ids"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2,
+            "full history must not consume active slots"
+        );
+        let (_, finished) = finish(
+            &f,
+            &admitted,
+            submitted["state_version"].as_i64().unwrap(),
+            "partial",
+        )
+        .await;
+        assert_eq!(finished["counts"]["pending"], 2);
+        assert_eq!(finished["counts"]["legacy"], size);
+        let view = review(&f).await;
+        assert_eq!(view["items"].as_array().unwrap().len(), 2);
+        assert_eq!(view["counts"]["questions"], 1);
+        assert_eq!(view["counts"]["proposals"], 1);
+        assert_eq!(view["legacy_items"].as_array().unwrap().len(), size);
+        assert_eq!(view["history"], json!([]));
+        assert!(
+            view["legacy_items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|item| item["legacy"] == true
+                    && item["candidate"].is_null()
+                    && item["reviewable"] == false)
+        );
+        let current_question = view["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["kind"] == "question")
+            .unwrap();
+        assert_eq!(current_question["legacy"], false);
+        assert_eq!(
+            current_question["body_md"],
+            "Resolve the current source conflict."
+        );
+        assert_eq!(current_question["blocked_reason"], Value::Null);
+        let after = current(&f, "dreams/state.md").await.unwrap();
+        assert_eq!(
+            after.2["dreamer_state"]["inputs"], before.2["dreamer_state"]["inputs"],
+            "archiving history cannot discard unprocessed source work"
+        );
+        assert_eq!(
+            after.2["dreamer_state"]["legacy_items"],
+            before.2["dreamer_state"]["legacy_items"]
+        );
+        let audit = current(&f, &format!("dreams/runs/{}.md", date()))
+            .await
+            .unwrap();
+        let receipt = current(&f, "dreams/latest-receipt.md").await.unwrap();
+        assert!(!audit.1.contains("HISTORICAL_"));
+        assert!(!audit.2.to_string().contains("2020-01-04/"));
+        assert!(!receipt.1.contains("2020-01-04/"));
+        let successor = admit(&f).await;
+        assert_eq!(successor["pending"].as_array().unwrap().len(), 2);
+        assert!(!successor.to_string().contains("HISTORICAL_"));
+        let (_, processed) = submit(
+            &f,
+            &successor,
+            successor["state_version"].as_i64().unwrap(),
+            vec![],
+        )
+        .await;
+        let (_, completed) = finish(
+            &f,
+            &successor,
+            processed["state_version"].as_i64().unwrap(),
+            "completed",
+        )
+        .await;
+        assert_eq!(
+            completed["latest_receipt"]["status"], "completed",
+            "historical overflow cannot make current work partial"
+        );
+        if size == 96 {
+            let state = current(&f, "dreams/state.md").await.unwrap();
+            assert_eq!(state.2["dreamer_state"]["legacy_complete"], false);
+            assert_eq!(
+                state.2["dreamer_state"]["legacy_scan_after"],
+                before.2["dreamer_state"]["legacy_scan_after"]
+            );
+            assert!(
+                current(&f, "dreams/runs/2020-01-04.md")
+                    .await
+                    .unwrap()
+                    .1
+                    .contains("HISTORICAL_OVERFLOW_REMAINS_IN_ORIGINAL_REPORT")
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn old_state_history_migrates_without_get_writes_and_keeps_exact_decision_replay() {
+    let Some(f) = fixture().await else {
+        return;
+    };
+    control(&f, "report-only", 0).await;
+    historical_run(&f, "dreams/runs/2020-01-05.md", "## Proposed\n\n1. Original historical proposal\n\n## Needs your call\n\n1. Original historical question\n", 0).await;
+    write(
+        &f,
+        "sources/Unprocessed.md",
+        "# Source\n\nRetained source work.\n",
+        0,
+    )
+    .await;
+    let admitted = admit(&f).await;
+    finish(
+        &f,
+        &admitted,
+        admitted["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
+    let initial = current(&f, "dreams/state.md").await.unwrap();
+    let view = review(&f).await;
+    let mut replay = decision(&view, &view["legacy_items"][0], "defer");
+    replay["expected_decisions_version"] = json!(1);
+    let recorded = json!({"id":"decision:historical-fixture","item_id":replay["item_id"],"idempotency_key":replay["idempotency_key"],"request_hash":hex::encode(Sha256::digest(serde_json::to_vec(&replay).unwrap())),"decision":"defer","application_status":"deferred","candidate_hash":replay["candidate_hash"],"run_entry_ref":replay["run_entry_ref"],"run_version":replay["run_version"]});
+    let mut old_metadata = initial.2;
+    let data = old_metadata["dreamer_state"].as_object_mut().unwrap();
+    let mut old_items = data.remove("legacy_items").unwrap();
+    old_items[0]["status"] = json!("deferred");
+    data.insert("items".into(), old_items);
+    data.insert("history".into(), json!([recorded]));
+    sqlx::query("UPDATE brunn.entry_versions v SET metadata=$2 FROM brunn.entries e WHERE e.user_id=$1 AND e.path='dreams/state.md' AND v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version")
+        .bind(f.owner.user).bind(&old_metadata).execute(&f.pool).await.unwrap();
+    let before = current(&f, "dreams/state.md").await.unwrap();
+    let migrated_view = review(&f).await;
+    assert_eq!(migrated_view["items"], json!([]));
+    assert_eq!(migrated_view["counts"]["legacy"], 2);
+    assert_eq!(migrated_view["counts"]["questions"], 0);
+    for (original, shown) in old_metadata["dreamer_state"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(migrated_view["legacy_items"].as_array().unwrap())
+    {
+        for field in [
+            "id",
+            "candidate_hash",
+            "run_id",
+            "run_entry_ref",
+            "run_version",
+            "status",
+        ] {
+            assert_eq!(original[field], shown[field], "migration preserves {field}");
+        }
+        assert!(shown["candidate"].is_null());
+    }
+    assert_eq!(
+        current(&f, "dreams/state.md").await.unwrap(),
+        before,
+        "GET migration is a projection only"
+    );
+    let result = ok(post(&f, &f.owner, "/v1/dreamer/review/decisions", replay.clone()).await);
+    assert_eq!(result["data"]["application_status"], "deferred");
+    assert_eq!(
+        current(&f, "dreams/state.md").await.unwrap(),
+        before,
+        "replay cannot append a replacement decision"
+    );
+    let mut changed = replay;
+    changed["decision"] = json!("reject");
+    assert_eq!(
+        post(&f, &f.owner, "/v1/dreamer/review/decisions", changed)
+            .await
+            .status,
+        StatusCode::CONFLICT
+    );
+    let successor = admit(&f).await;
+    assert_eq!(successor["pending"], json!([]));
+    let persisted = current(&f, "dreams/state.md").await.unwrap();
+    for key in [
+        "inputs",
+        "processed_generation",
+        "processed_count",
+        "next_item",
+        "history",
+        "legacy_scan_after",
+        "legacy_complete",
+    ] {
+        assert_eq!(
+            persisted.2["dreamer_state"][key], before.2["dreamer_state"][key],
+            "migration preserves {key}"
+        );
+    }
+    assert_eq!(
+        persisted.2["dreamer_state"]["legacy_items"],
+        before.2["dreamer_state"]["items"]
+    );
+    assert_eq!(persisted.2["dreamer_state"]["items"], json!([]));
+    assert!(
+        persisted.2["dreamer_state"]["scanned_generation"]
+            .as_i64()
+            .unwrap()
+            >= before.2["dreamer_state"]["scanned_generation"]
+                .as_i64()
+                .unwrap(),
+        "normal admission may scan subsequent operational writes"
+    );
+    finish(
+        &f,
+        &successor,
+        successor["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
 }
 
 #[tokio::test]

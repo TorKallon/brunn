@@ -368,6 +368,17 @@ value. Enable it only after the accepted-summary canary proves exact source
 validation and source links; set it false to withdraw summaries from readers
 without discarding review decisions or changing Dreamer publication mode.
 
+Imported prose and questions from untyped historical runs appear in Review's
+History through `legacy_items`, with `legacy: true` and `counts.legacy`.
+They retain their original IDs, hashes, statuses, and exact source versions,
+but have no candidate preview or new decision actions. Existing identical
+decision requests still replay. Current questions remain in `items`.
+State loading separates old imports in memory; the next normal write persists
+the split without advancing source work or inventing decisions. History is
+bounded at 96 notes independently of the 96 active-item slots and does not enter
+runner admission, pending counts, new run bodies, or receipts. Original run
+versions retain full text; protected reads still validate their visibility.
+
 Historical location candidates have a primary timeline of at most 250 words:
 chronological places and approximate times, preserving meaningful brief stops
 and material uncertainty. The runner independently audits the complete frozen

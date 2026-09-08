@@ -609,6 +609,24 @@ async fn audit_access(
                     return Ok(false);
                 }
             }
+            // Archived imported notes retain exact original-run dependencies,
+            // including when their cached text has been compacted in state.
+            if let Some(legacy) = container.get("legacy_items") {
+                let Some(legacy) = legacy.as_array().filter(|items| items.len() <= 96) else {
+                    return Ok(false);
+                };
+                for item in legacy {
+                    if !audit_item(
+                        item,
+                        &mut sources,
+                        &mut queue,
+                        &mut targets,
+                        &mut raw_sources,
+                    ) {
+                        return Ok(false);
+                    }
+                }
+            }
             if let Some(pending) = container.get("pending_refs").and_then(Value::as_array) {
                 if pending.len() > 96 {
                     return Ok(false);

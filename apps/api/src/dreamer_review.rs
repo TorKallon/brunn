@@ -27,6 +27,9 @@ use uuid::Uuid;
 const STATE_PATH: &str = "dreams/state.md";
 const MAX_INPUTS: usize = 128;
 const MAX_ITEMS: usize = 96;
+const MAX_LEGACY_ITEMS: usize = 96;
+const LEGACY_REASON: &str =
+    "Retained from an earlier run; a concrete candidate is required before application.";
 const MAX_STATE_BYTES: usize = 256 * 1024;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -123,6 +126,8 @@ struct RunState {
     inputs: Vec<Input>,
     #[serde(default)]
     items: Vec<Item>,
+    #[serde(default)]
+    legacy_items: Vec<Item>,
     #[serde(default)]
     history: Vec<Value>,
     #[serde(default)]
@@ -257,6 +262,7 @@ async fn load_state(tx: &mut Transaction<'_, Postgres>, user: Uuid) -> ApiResult
             let mut data: RunState = serde_json::from_value(value.clone()).map_err(|_| {
                 ApiError::invalid("Dreamer state is invalid; refusing to reset progress")
             })?;
+            separate_legacy_history(&mut data)?;
             let mut audits = std::collections::BTreeMap::<(String, i64), Vec<Item>>::new();
             for item in &mut data.items {
                 if !item.reviewable || item.run_version == 0 {
@@ -342,6 +348,12 @@ async fn save_state(
             item.candidate.question.clear();
         }
     }
+    // Original untyped run versions remain the text source. Review restores
+    // their full text only after checking exact-version ownership/visibility.
+    for item in &mut compact.legacy_items {
+        item.candidate.summary.clear();
+        item.candidate.question.clear();
+    }
     let metadata = json!({"kind":"dreamer_state","dreamer_state":compact});
     if serde_json::to_vec(&metadata)?.len() > MAX_STATE_BYTES {
         return Err(ApiError::invalid(
@@ -349,11 +361,12 @@ async fn save_state(
         ));
     }
     let text = format!(
-        "# Dreamer progress\n\nScanned generation: {}\nProcessed generation: {}\nRetained inputs: {}\nReview items: {}\n\n[Open Review](https://brunn.ai/dreams) for decisions. Immutable run versions retain the audit.\n",
+        "# Dreamer progress\n\nScanned generation: {}\nProcessed generation: {}\nRetained inputs: {}\nReview items: {}\nHistorical notes: {}\n\n[Open Review](https://brunn.ai/dreams) for decisions. Immutable run versions retain the audit.\n",
         data.scanned_generation,
         data.processed_generation,
         data.inputs.len(),
-        data.items.len()
+        data.items.len(),
+        data.legacy_items.len()
     );
     let receipt = put_entry(state, tx, auth, STATE_PATH, text, metadata, version).await?;
     Ok(receipt["version"].as_i64().expect("version"))
@@ -393,8 +406,45 @@ fn active(data: &RunState, body: &Value, auth: &AuthContext, version: i64) -> Ap
 fn pending(item: &Item) -> bool {
     !matches!(item.status.as_str(), "rejected" | "applied" | "superseded")
 }
+fn is_legacy_history(item: &Item) -> bool {
+    !item.reviewable
+        && item.frozen_generation == 0
+        && item.candidate.reason == LEGACY_REASON
+        && matches!(item.candidate.kind.as_str(), "legacy" | "question")
+}
+
+fn separate_legacy_history(data: &mut RunState) -> ApiResult<()> {
+    let migrating = data
+        .items
+        .iter()
+        .filter(|item| is_legacy_history(item))
+        .count();
+    let mut identities = std::collections::BTreeSet::new();
+    if data.legacy_items.len() + migrating > MAX_LEGACY_ITEMS
+        || data.items.len() - migrating > MAX_ITEMS
+        || data
+            .legacy_items
+            .iter()
+            .any(|item| !is_legacy_history(item))
+        || data
+            .items
+            .iter()
+            .chain(&data.legacy_items)
+            .any(|item| !identities.insert(&item.id))
+    {
+        return Err(ApiError::invalid(
+            "Dreamer retained history is invalid or full; no item or progress was discarded",
+        ));
+    }
+    let (historical, current) = std::mem::take(&mut data.items)
+        .into_iter()
+        .partition(is_legacy_history);
+    data.items = current;
+    data.legacy_items.extend(historical);
+    Ok(())
+}
 fn counts(data: &RunState) -> Value {
-    json!({"retained":data.inputs.len(),"processed":data.processed_count,"processed_generation":data.processed_generation,"pending":data.items.iter().filter(|i|pending(i)).count(),"proposals":data.items.iter().filter(|i|pending(i)&&i.candidate.kind!="question").count(),"questions":data.items.iter().filter(|i|pending(i)&&i.candidate.kind=="question").count(),"approved_held":data.items.iter().filter(|i|i.status=="approved_held").count(),"applied":data.items.iter().filter(|i|i.status=="applied").count(),"published":data.items.iter().filter(|i|i.status=="applied").count(),"legacy_backlog":!data.legacy_complete,"retained_location_days":data.location_work.len()})
+    json!({"retained":data.inputs.len(),"processed":data.processed_count,"processed_generation":data.processed_generation,"pending":data.items.iter().filter(|i|pending(i)).count(),"proposals":data.items.iter().filter(|i|pending(i)&&i.candidate.kind!="question").count(),"questions":data.items.iter().filter(|i|pending(i)&&i.candidate.kind=="question").count(),"approved_held":data.items.iter().filter(|i|i.status=="approved_held").count(),"applied":data.items.iter().filter(|i|i.status=="applied").count(),"published":data.items.iter().filter(|i|i.status=="applied").count(),"legacy":data.legacy_items.len(),"legacy_backlog":!data.legacy_complete,"retained_location_days":data.location_work.len()})
 }
 fn next_run(now: DateTime<Utc>) -> DateTime<Utc> {
     let local = now.with_timezone(&Los_Angeles);
@@ -1369,6 +1419,11 @@ async fn import_legacy(
     user: Uuid,
     data: &mut RunState,
 ) -> ApiResult<()> {
+    if data.legacy_items.len() >= MAX_LEGACY_ITEMS {
+        // The bounded History projection can be full while current work runs.
+        // Preserve the scan cursor and the original reports for later access.
+        return Ok(());
+    }
     let decisions = load_entry(tx, user, "dreams/decisions.md")
         .await?
         .map(|e| e.content)
@@ -1428,10 +1483,16 @@ async fn import_legacy(
             } else {
                 format!("{date}/{n}")
             };
-            if data.items.iter().any(|i| i.id == id) || vetoed(&decisions, date, n) {
+            if data
+                .items
+                .iter()
+                .chain(&data.legacy_items)
+                .any(|i| i.id == id)
+                || vetoed(&decisions, date, n)
+            {
                 continue;
             }
-            if data.items.len() >= MAX_ITEMS {
+            if data.legacy_items.len() >= MAX_LEGACY_ITEMS {
                 return Ok(());
             }
             let title = text
@@ -1441,8 +1502,31 @@ async fn import_legacy(
                 .chars()
                 .take(150)
                 .collect::<String>();
-            let candidate=Candidate {kind:if section=="Needs your call"{"question"}else{"legacy"}.into(),title,summary:text.chars().take(1000).collect(),reason:"Retained from an earlier run; a concrete candidate is required before application.".into(),path:None,content:None,expected_version:None,sources:vec![],uncertainty:String::new(),question:if section=="Needs your call"{text}else{String::new()},revises_item_id:None,evidence_scope:None,raw_sources:vec![]};
-            data.items.push(Item {
+            let candidate = Candidate {
+                kind: if section == "Needs your call" {
+                    "question"
+                } else {
+                    "legacy"
+                }
+                .into(),
+                title,
+                summary: text.chars().take(1000).collect(),
+                reason: LEGACY_REASON.into(),
+                path: None,
+                content: None,
+                expected_version: None,
+                sources: vec![],
+                uncertainty: String::new(),
+                question: if section == "Needs your call" {
+                    text
+                } else {
+                    String::new()
+                },
+                revises_item_id: None,
+                evidence_scope: None,
+                raw_sources: vec![],
+            };
+            data.legacy_items.push(Item {
                 id,
                 run_id: date.into(),
                 run_entry_ref: format!("entry:{}", row.get::<Uuid, _>("id")),
@@ -2303,17 +2387,9 @@ async fn legacy_review_texts(
     user: Uuid,
     data: &RunState,
 ) -> ApiResult<std::collections::BTreeMap<String, Option<String>>> {
-    let legacy = data.items.iter().filter(|item| {
-        pending(item)
-            && (item.candidate.kind == "legacy"
-                || (item.candidate.kind == "question"
-                    && item.frozen_generation == 0
-                    && item.candidate.reason
-                        == "Retained from an earlier run; a concrete candidate is required before application."))
-    }).collect::<Vec<_>>();
     let mut runs = std::collections::BTreeMap::new();
     let mut texts = std::collections::BTreeMap::new();
-    for item in legacy {
+    for item in &data.legacy_items {
         let key = (entry_id(&item.run_entry_ref)?, item.run_version);
         if let std::collections::btree_map::Entry::Vacant(slot) = runs.entry(key) {
             let row = sqlx::query("SELECT e.path,v.content,v.metadata FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=$3 WHERE e.user_id=$1 AND e.id=$2 AND e.deleted_at IS NULL")
@@ -2422,7 +2498,64 @@ fn legacy_proposal_texts(
 
 #[cfg(test)]
 mod legacy_review_tests {
-    use super::legacy_proposal_texts;
+    use super::*;
+
+    #[test]
+    fn history_migration_preserves_progress_and_requires_exact_import_provenance() {
+        let imported: Item = serde_json::from_value(json!({
+            "id":"2020-01-01/1","run_id":"2020-01-01",
+            "run_entry_ref":format!("entry:{}",Uuid::now_v7()),"run_version":1,
+            "candidate_hash":"original-immutable-hash",
+            "candidate":{"kind":"legacy","title":"Old promise","summary":"Original cached text","reason":LEGACY_REASON},
+            "status":"deferred","reviewable":false,"frozen_generation":0,"created_at":Utc::now()
+        })).unwrap();
+        let mut current_question = imported.clone();
+        current_question.id = "current-question".into();
+        current_question.candidate.kind = "question".into();
+        current_question.reviewable = true;
+        let mut other_prose = imported.clone();
+        other_prose.id = "other-prose".into();
+        other_prose.candidate.reason = "A different provenance".into();
+        let mut terminal = imported.clone();
+        terminal.id = "2020-01-01/question-2".into();
+        terminal.candidate.kind = "question".into();
+        terminal.status = "rejected".into();
+        let mut data = RunState {
+            items: vec![
+                imported.clone(),
+                current_question.clone(),
+                other_prose.clone(),
+                terminal.clone(),
+            ],
+            inputs: vec![Input {
+                entry_ref: "entry:source".into(),
+                path: "sources/Unprocessed.md".into(),
+                version: 3,
+                generation: 42,
+                operation: "update".into(),
+                content_hash: "source-hash".into(),
+            }],
+            scanned_generation: 100,
+            processed_generation: 41,
+            processed_count: 5,
+            next_item: std::collections::BTreeMap::from([("2020-01-01".into(), 2)]),
+            history: vec![json!({"decision":"reject","item_id":terminal.id})],
+            legacy_scan_after: "dreams/runs/2020-01-01.md".into(),
+            legacy_complete: true,
+            ..RunState::default()
+        };
+        let mut expected = serde_json::to_value(&data).unwrap();
+        expected["items"] = json!([current_question, other_prose]);
+        expected["legacy_items"] = json!([imported, terminal]);
+        separate_legacy_history(&mut data).unwrap();
+        assert_eq!(serde_json::to_value(&data).unwrap(), expected);
+        separate_legacy_history(&mut data).unwrap();
+        assert_eq!(
+            serde_json::to_value(&data).unwrap(),
+            expected,
+            "repeat loading is lossless"
+        );
+    }
 
     #[test]
     fn inline_backticks_cannot_swallow_the_next_proposal() {
@@ -2481,7 +2614,14 @@ async fn review_view(
     let user = auth.user_id.0;
     let legacy_texts = legacy_review_texts(tx, user, data).await?;
     let mut items = Vec::new();
-    for original in data.items.iter().filter(|i| pending(i)) {
+    let mut legacy_items = Vec::new();
+    for original in data
+        .items
+        .iter()
+        .filter(|i| pending(i))
+        .chain(&data.legacy_items)
+    {
+        let legacy = is_legacy_history(original);
         let legacy_text = legacy_texts.get(&original.id);
         let available = !matches!(legacy_text, Some(None))
             && (original.candidate.raw_sources.is_empty() || auth.can(Capability::Save))
@@ -2495,6 +2635,8 @@ async fn review_view(
         let stale = !available || item_stale(tx, auth, original).await?;
         let block = if !available {
             Some("Evidence is no longer available. Cached proposal text has been withheld.")
+        } else if legacy {
+            Some("Historical note; no generated candidate or decision is pending.")
         } else if stale {
             Some("Sources or the target changed. A new candidate must be reviewed.")
         } else if !i.reviewable {
@@ -2502,7 +2644,7 @@ async fn review_view(
         } else {
             None
         };
-        let preview = if i.candidate.kind == "question" || legacy_text.is_some() {
+        let preview = if i.candidate.kind == "question" || legacy {
             Value::Null
         } else {
             json!({"body_md":candidate_body(&i.candidate),"before_md":i.before_md,"after_md":candidate_body(&i.candidate),"target_path":i.candidate.path})
@@ -2540,13 +2682,18 @@ async fn review_view(
         } else {
             &i.candidate.summary
         });
-        items.push(json!({"id":i.id,"kind":if i.candidate.kind=="question"{"question"}else{"proposal"},"title":title,"body_md":body,"why_md":i.candidate.reason,"uncertainty_md":i.candidate.uncertainty,"run_id":i.run_id,"run_entry_ref":i.run_entry_ref,"run_version":i.run_version,"candidate_hash":i.candidate_hash,"candidate":preview,"sources":sources,"status":if stale{"stale"}else{&i.status},"reviewable":i.reviewable&&i.candidate.kind!="question","stale":stale,"blocked_reason":block}));
+        let destination = if legacy {
+            &mut legacy_items
+        } else {
+            &mut items
+        };
+        destination.push(json!({"id":i.id,"kind":if i.candidate.kind=="question"{"question"}else{"proposal"},"legacy":legacy,"title":title,"body_md":body,"why_md":i.candidate.reason,"uncertainty_md":i.candidate.uncertainty,"run_id":i.run_id,"run_entry_ref":i.run_entry_ref,"run_version":i.run_version,"candidate_hash":i.candidate_hash,"candidate":preview,"sources":sources,"status":if stale{"stale"}else{&i.status},"reviewable":i.reviewable&&i.candidate.kind!="question","stale":stale,"blocked_reason":block}));
     }
-    // Put actionable candidates within reach before the retained legacy backlog;
+    // Put actionable candidates within reach before other current items;
     // stable sorting preserves the existing order and every decision identity.
     items.sort_by_key(|item| !(item["reviewable"] == true && item["stale"] == false));
     Ok(
-        json!({"available":true,"mode":current_mode,"paused":current_mode.is_none(),"last_attempt":data.last_attempt,"last_successful_run":data.last_successful_run,"counts":counts(data),"items":items,"history":data.history,"decision_version":version}),
+        json!({"available":true,"mode":current_mode,"paused":current_mode.is_none(),"last_attempt":data.last_attempt,"last_successful_run":data.last_successful_run,"counts":counts(data),"items":items,"legacy_items":legacy_items,"history":data.history,"decision_version":version}),
     )
 }
 pub async fn review(
@@ -2690,6 +2837,12 @@ pub async fn decide(
         ));
     }
     let id = string(&body, "item_id")?;
+    if data.legacy_items.iter().any(|item| item.id == id) {
+        return Err(conflict(
+            "Historical notes are read-only; no generated candidate or decision is pending",
+            version,
+        ));
+    }
     let index = data
         .items
         .iter()
