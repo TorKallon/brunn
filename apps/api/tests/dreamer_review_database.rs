@@ -2396,7 +2396,11 @@ async fn autonomous_context_uses_historical_versions_before_matching_and_preserv
     }
     let replay = discover_context(&f, &admitted, "Example Garden").await;
     assert_eq!(replay["state_version"], first["state_version"]);
-    let valid = context_pilot_candidate(&first);
+    let mut valid = context_pilot_candidate(&first);
+    valid["content"] = json!(format!(
+        "Times are approximate observation windows.\n\n{}",
+        valid["content"].as_str().unwrap()
+    ));
     let envelope = json!({"schema":"dream.candidates.v1","candidates":[valid.clone()],"processed_inputs":[],"findings":[]});
     assert_eq!(
         brunn::dreamer::prompt::location_submission_issues(&envelope, &first),

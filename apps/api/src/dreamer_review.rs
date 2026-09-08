@@ -742,6 +742,11 @@ pub(crate) fn validate_candidate(candidate: &Candidate, before: &str) -> ApiResu
     Ok(())
 }
 fn location_table_structure(line: &str) -> bool {
+    // This fixed reading legend defines the presentation, like the column
+    // headings. It makes no claim about a particular place or observation.
+    if line == "Times are approximate observation windows." {
+        return true;
+    }
     let cells: Vec<_> = line.trim_matches('|').split('|').map(str::trim).collect();
     line.starts_with('|')
         && line.ends_with('|')

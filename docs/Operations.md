@@ -408,8 +408,10 @@ place identities and away observations only.
 
 Nightly and manual runs have a shared one-hour ceiling. Discovery receives at
 most twenty minutes across its two passes; the independent audit and its one
-correction share at most fifteen minutes. Stage setup, verification and retries
-cannot reset these deadlines. The narrative pass retains its separate allowance.
+correction share the remaining location reasoning deadline. Time reserved before
+drafting is a minimum reservation, not a cap that discards time an early draft
+leaves unused. Stage setup and retries cannot reset the overall deadline. The
+narrative pass and finalization retain their separate reserves.
 The primary timeline normally uses one first-to-last approximate observation
 window per place, with material gaps stated once rather than a list of every
 sampling segment. This does not assert continuous presence.
@@ -437,6 +439,18 @@ evidence locks. Rejected submissions retain the bounded public API error in the
 attempt outcome so source conflicts and contract failures remain diagnosable.
 The wrapper attaches the frozen context manifest after auditing; the model does
 not recopy it. A supplied manifest that differs from admission is rejected.
+
+Client-rendered public pages may carry a quoted description in an inert
+`application/json` or `application/ld+json` script. The verifier can match an exact
+quote within one decoded JSON string and records `inert_json_string` extraction.
+It never executes scripts or joins unrelated JSON values into a quotation.
+Replay saved autonomous discovery outputs against the real fetcher on Nyx with
+`cargo run --manifest-path apps/api/Cargo.toml --example location-source-replay -- <discovery.json> ...`.
+This performs public reads only and never admits sources or changes a candidate.
+Use the `location-candidate-replay` example with a matching admission packet and
+candidate output for an offline publication preflight. The fixed legend
+“Times are approximate observation windows.” is presentation text, like table
+headings; specific factual and uncertainty statements still require citations.
 Place aliases match complete words/phrases, never substrings inside opaque
 strings. Credential documents are excluded before matching and from narrative
 admission; excerpts containing token-like strings are withheld. Narrative reads

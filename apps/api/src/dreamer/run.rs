@@ -674,8 +674,12 @@ impl Dreamer {
             report.stage = "location_audit".into();
             let audit_prompt =
                 prompt::location_audit_prompt(&report.attempt_id, admission, &output);
-            let audit_budget = audit_allowance
-                .min(reasoning_deadline.saturating_duration_since(tokio::time::Instant::now()));
+            // audit_allowance reserves time before drafting; it is not a cap
+            // that discards time an early draft leaves unused. Audit and its
+            // correction share the remaining location deadline, preserving
+            // narrative and finalization reserves and the overall run ceiling.
+            let audit_budget =
+                reasoning_deadline.saturating_duration_since(tokio::time::Instant::now());
             if audit_budget.is_zero() {
                 return RunOutcome::Partial {
                     detail: "location audit budget exhausted; unchecked draft not submitted and admitted work retained".into(),

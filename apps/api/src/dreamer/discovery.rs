@@ -238,6 +238,43 @@ fn visible_text(html: &str) -> String {
     normalized(&parts.join(" "))
 }
 
+fn html_quote_source(html: &str, quote: &str) -> Option<&'static str> {
+    if visible_text(html).contains(quote) {
+        return Some("visible_text");
+    }
+    // Client-rendered public pages often put their actual description in inert
+    // JSON. Verify within one decoded string; never execute JS or manufacture a
+    // quotation by joining unrelated JSON fields. The response is already byte
+    // bounded and serde_json retains its default nesting limit.
+    fn contains(value: &Value, quote: &str) -> bool {
+        match value {
+            Value::String(text) => normalized(text).contains(quote),
+            Value::Array(values) => values.iter().any(|v| contains(v, quote)),
+            Value::Object(values) => values.values().any(|v| contains(v, quote)),
+            _ => false,
+        }
+    }
+    let document = Html::parse_document(html);
+    let selector = scraper::Selector::parse("script[type]").expect("fixed selector");
+    document
+        .select(&selector)
+        .any(|script| {
+            let mime = script
+                .value()
+                .attr("type")
+                .unwrap_or("")
+                .split(';')
+                .next()
+                .unwrap_or("")
+                .trim();
+            (mime.eq_ignore_ascii_case("application/json")
+                || mime.eq_ignore_ascii_case("application/ld+json"))
+                && serde_json::from_str::<Value>(&script.text().collect::<String>())
+                    .is_ok_and(|value| contains(&value, quote))
+        })
+        .then_some("inert_json_string")
+}
+
 async fn pdf_text(bytes: &[u8], program: &str, budget: Duration) -> Result<String, String> {
     static CONVERTERS: std::sync::LazyLock<tokio::sync::Semaphore> =
         std::sync::LazyLock::new(|| tokio::sync::Semaphore::new(1));
@@ -375,24 +412,25 @@ async fn fetch_inner(lookup: &Lookup) -> Result<Value, String> {
         }
         let is_pdf = bytes.starts_with(b"%PDF-");
         let body = String::from_utf8_lossy(&bytes);
-        let text = if is_pdf {
+        let extraction = if is_pdf {
             let program =
                 std::env::var("BRUNN_PDFTOTEXT").unwrap_or_else(|_| "/usr/bin/pdftotext".into());
-            pdf_text(&bytes, &program, Duration::from_secs(8)).await?
+            pdf_text(&bytes, &program, Duration::from_secs(8))
+                .await?
+                .contains(&quote)
+                .then_some("pdftotext_first_20_pages")
         } else if mime.starts_with("text/html") {
-            visible_text(&body)
+            html_quote_source(&body, &quote)
         } else if mime.starts_with("text/plain") {
-            normalized(&body)
+            normalized(&body).contains(&quote).then_some("plain_text")
         } else {
             return Err("lookup body is not supported text or PDF".into());
         };
-        if !text.contains(&quote) {
-            return Err("quotation was not found in fetched page text".into());
-        }
+        let extraction = extraction.ok_or("quotation was not found in fetched page text")?;
         return Ok(
             json!({"url":url.as_str(),"requested_url":lookup.url,"quote":quote,
             "fetched_at":Utc::now(),"body_sha256":format!("sha256:{}",hex::encode(Sha256::digest(&bytes))),
-            "verification":"fetched_exact_quote","text_extraction":if is_pdf{"pdftotext_first_20_pages"}else{"visible_text"}}),
+            "verification":"fetched_exact_quote","text_extraction":extraction}),
         );
     }
     Err("lookup redirect limit reached".into())
@@ -575,6 +613,32 @@ mod tests {
                 quote: "word ".repeat(26)
             })
             .is_err()
+        );
+    }
+
+    #[test]
+    fn client_rendered_quotes_require_one_inert_json_string() {
+        let quote = "Example Road is a service station";
+        for mime in [
+            "application/json",
+            "application/ld+json",
+            "Application/JSON; charset=utf-8",
+        ] {
+            let html = format!(
+                r#"<script type="{mime}">{{"props":{{"location":{{"description":"Example Road is a service\u0020station in Town."}}}}}}</script><main></main>"#
+            );
+            assert_eq!(html_quote_source(&html, quote), Some("inert_json_string"));
+        }
+        for html in [
+            r#"<script>const description = "Example Road is a service station";</script>"#,
+            r#"<script type="application/json">{"name":"Example Road", "description":"is a service station"}</script>"#,
+            r#"<script type="application/json">{broken: "Example Road is a service station"}</script>"#,
+        ] {
+            assert_eq!(html_quote_source(html, quote), None);
+        }
+        assert_eq!(
+            html_quote_source("<p>Example Road is a service station.</p>", quote),
+            Some("visible_text")
         );
     }
     #[test]

@@ -1037,6 +1037,19 @@ async fn location_audit_uses_the_remaining_shared_model_deadline() {
     assert!(s.retained_location_work);
 }
 
+#[tokio::test]
+async fn an_early_draft_returns_unused_time_to_the_location_audit() {
+    let (s, d, _dir, _) = build_location_audit(
+        "sleep 3\ncat \"$DIR/audited.json\" > \"$OUTPUT_PATH\"",
+        "",
+        Duration::from_secs(6),
+    )
+    .await;
+    let report = d.run_once(today(), RunKind::Manual).await;
+    assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
+    assert_eq!(s.lock().unwrap().submissions, 1);
+}
+
 async fn build_location_correction(
     correction_script: &str,
     audit_delay: &str,
@@ -1220,10 +1233,10 @@ async fn failed_clock_corrections_never_submit_an_earlier_or_stale_artifact() {
 
 #[tokio::test]
 async fn clock_correction_shares_the_first_audit_deadline() {
-    // Correct: audit + correction share 9s. A reset audit pool would take
-    // 7s + 9s. The 13s boundary tolerates process startup without admitting it.
+    // Audit + correction share the remaining 18s. A fresh pool after the 7s
+    // audit would exceed 25s. Allow startup overhead without admitting a reset.
     let (s, d, dir, _) =
-        build_location_correction("exec sleep 30", "sleep 7", Duration::from_secs(30)).await;
+        build_location_correction("exec sleep 30", "sleep 7", Duration::from_secs(20)).await;
     let started = std::time::Instant::now();
     let report = d.run_once(today(), RunKind::Manual).await;
     let elapsed = started.elapsed();
@@ -1236,7 +1249,7 @@ async fn clock_correction_shares_the_first_audit_deadline() {
         "location-correction-answer.md"
     );
     assert!(
-        elapsed < Duration::from_secs(13),
+        elapsed < Duration::from_secs(22),
         "correction received a fresh audit allowance: {elapsed:?}"
     );
     assert!(elapsed >= Duration::from_secs(7));
