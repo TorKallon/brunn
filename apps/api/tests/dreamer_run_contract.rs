@@ -638,20 +638,15 @@ fn model_calls(dir: &Path) -> Vec<String> {
         .collect()
 }
 
-fn assert_canonical_inventory(body: &str) {
-    let (_, inventory) = body
-        .split_once("\n\n## Canonical interval inventory\n\n")
-        .expect("the submitted body needs its canonical inventory");
-    assert!(inventory.contains("derived, minute-rounded canonical records"));
-    assert!(inventory.contains("do not establish continuous physical presence"));
-    assert!(inventory.contains("unknown departures remain unknown"));
-    for row in [CANONICAL_BOUNDARY_ROW, CANONICAL_POINT_ROW] {
-        let line = inventory.lines().find(|line| line.contains(row)).unwrap();
-        assert!(
-            line.ends_with("[^s1]"),
-            "the row must cite its existing exact canonical source: {line}"
-        );
-    }
+fn assert_canonical_evidence_inventory(candidate: &Value) {
+    let body = candidate["content"].as_str().unwrap();
+    assert!(!body.contains("Canonical interval inventory"));
+    assert!(!body.contains(CANONICAL_BOUNDARY_ROW));
+    assert!(!body.contains(CANONICAL_POINT_ROW));
+    // The fixture's exact two-line source covers both canonical rows; neither
+    // needs to be duplicated in the primary answer to retain that evidence.
+    assert_eq!(candidate["sources"][0]["start_line"], 1);
+    assert_eq!(candidate["sources"][0]["end_line"], 2);
 }
 
 #[tokio::test]
@@ -697,9 +692,7 @@ async fn location_audit_submits_only_the_corrected_artifact_under_the_original_i
     assert_eq!(s.submissions, 1);
     let accepted_content = s.submitted[0]["candidates"][0]["content"].as_str().unwrap();
     assert!(accepted_content.starts_with(audited["candidates"][0]["content"].as_str().unwrap()));
-    assert!(accepted_content.contains(CANONICAL_BOUNDARY_ROW));
-    assert!(accepted_content.contains(CANONICAL_POINT_ROW));
-    assert_canonical_inventory(accepted_content);
+    assert_canonical_evidence_inventory(&s.submitted[0]["candidates"][0]);
     let mut expected_candidates = audited["candidates"].clone();
     expected_candidates[0]["content"] = json!(accepted_content);
     assert_eq!(s.submitted[0]["candidates"], expected_candidates);
@@ -924,6 +917,38 @@ fi
 }
 
 #[tokio::test]
+async fn a_citation_valid_but_verbose_audit_gets_the_same_bounded_correction() {
+    let (s, d, dir, corrected) = build_location_correction(
+        "cat \"$DIR/corrected.json\" > \"$OUTPUT_PATH\"",
+        "",
+        Duration::from_secs(6),
+    )
+    .await;
+    let mut verbose = corrected.clone();
+    verbose["candidates"][0]["content"] = json!(format!(
+        "{}\n{}[^r1]",
+        corrected["candidates"][0]["content"].as_str().unwrap(),
+        "Repeated evidence detail. ".repeat(90)
+    ));
+    std::fs::write(dir.path().join("audited.json"), verbose.to_string()).unwrap();
+    let report = d.run_once(today(), RunKind::Manual).await;
+    assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
+    assert_eq!(model_calls(dir.path()).len(), 4);
+    let correction_prompt =
+        std::fs::read_to_string(dir.path().join("prompt-location-correction-answer.md")).unwrap();
+    assert!(correction_prompt.contains("at most 250 words"));
+    let state = s.lock().unwrap();
+    assert_eq!(state.submissions, 1);
+    assert_eq!(
+        state.submitted[0]["candidates"][0]["content"],
+        corrected["candidates"][0]["content"]
+    );
+    assert_canonical_evidence_inventory(&state.submitted[0]["candidates"][0]);
+    assert!(!state.retained_location_work);
+    assert_eq!(report.auth_persistence, "verified");
+}
+
+#[tokio::test]
 async fn unsupported_audited_clock_requires_one_correction_before_submission() {
     let (s, d, dir, corrected) = build_location_correction(
         "cat \"$DIR/corrected.json\" > \"$OUTPUT_PATH\"",
@@ -964,9 +989,7 @@ async fn unsupported_audited_clock_requires_one_correction_before_submission() {
     );
     let body = actual["content"].as_str().unwrap();
     assert!(body.starts_with(corrected["candidates"][0]["content"].as_str().unwrap()));
-    assert!(body.contains(CANONICAL_BOUNDARY_ROW));
-    assert!(body.contains(CANONICAL_POINT_ROW));
-    assert_canonical_inventory(body);
+    assert_canonical_evidence_inventory(actual);
     assert_eq!(s.submitted[0]["findings"], corrected["findings"]);
     assert!(!s.retained_location_work);
     assert_eq!(s.auth_puts, 1);

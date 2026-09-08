@@ -368,6 +368,20 @@ value. Enable it only after the accepted-summary canary proves exact source
 validation and source links; set it false to withdraw summaries from readers
 without discarding review decisions or changing Dreamer publication mode.
 
+Historical location candidates have a primary timeline of at most 250 words:
+chronological places and approximate times, preserving meaningful brief stops
+and material uncertainty. The runner independently audits the complete frozen
+packet and retains all canonical selectors in evidence metadata. Exact clocks,
+source versions, raw selections, fingerprints, and publication locks remain
+enforced; concise wording does not establish continuous presence or venues.
+Review and publication omit citation-marker noise and audit appendices from the
+primary body. The immutable candidate and protected summary manifest retain
+claim-to-source mappings. Default location-summary reads return compact evidence
+pointers instead of injecting that manifest into the response. Detailed evidence
+is an explicit follow-up read; expired or changed evidence still causes fallback.
+When revising a consumed historical pilot, explicitly requeue its closed day
+before triggering a manual run; preserve the pending item identity and mode.
+
 Deploy only the tested committed `main` tree with explicit project, service,
 and environment arguments. A detached upload is not a health result: record its
 deployment ID, wait for success, check private `/healthz`, the CLI version,

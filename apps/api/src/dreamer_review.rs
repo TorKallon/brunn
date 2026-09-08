@@ -539,6 +539,20 @@ fn validate_candidate(candidate: &Candidate, before: &str) -> ApiResult<()> {
     }
     match candidate.kind.as_str() {
         "summary" => {
+            let markers = regex::Regex::new(r"\[\^([sr])([0-9]+)\]").expect("fixed citation regex");
+            if markers.captures_iter(content).any(|capture| {
+                let index = capture[2].parse::<usize>().unwrap_or(usize::MAX);
+                let count = if &capture[1] == "s" {
+                    candidate.sources.len()
+                } else {
+                    candidate.raw_sources.len()
+                };
+                index == 0 || index > count || capture[2] != index.to_string()
+            }) {
+                return Err(ApiError::invalid(
+                    "summary contains an undeclared citation marker",
+                ));
+            }
             let cited_inline = |marker: &str| {
                 content.lines().map(str::trim).any(|line| {
                     !line.starts_with('#')
@@ -565,14 +579,13 @@ fn validate_candidate(candidate: &Candidate, before: &str) -> ApiResult<()> {
                 ));
             }
             if candidate.evidence_scope.is_some()
-                && candidate
-                    .sources
-                    .iter()
-                    .enumerate()
-                    .any(|(index, _)| !cited_inline(&format!("[^s{}]", index + 1)))
+                && candidate.sources.iter().enumerate().any(|(index, source)| {
+                    !source.path.starts_with("Location/Visits/")
+                        && !cited_inline(&format!("[^s{}]", index + 1))
+                })
             {
                 return Err(ApiError::invalid(
-                    "every declared canonical location source must be cited in the proposed summary content",
+                    "every non-inventory canonical location source must be cited in the proposed summary content",
                 ));
             }
             if path.starts_with("derived/location/") && candidate.evidence_scope.is_none() {
@@ -585,11 +598,11 @@ fn validate_candidate(candidate: &Candidate, before: &str) -> ApiResult<()> {
                     "summaries may publish only to managed derived summary paths",
                 ));
             }
-            for line in content
-                .lines()
-                .map(str::trim)
-                .filter(|l| !l.is_empty() && !l.starts_with('#'))
-            {
+            for line in content.lines().map(str::trim).filter(|l| {
+                !l.is_empty()
+                    && !l.starts_with('#')
+                    && !(candidate.evidence_scope.is_some() && location_table_structure(l))
+            }) {
                 if line.starts_with("[^s")
                     || line.starts_with("[^r")
                     || !candidate
@@ -661,7 +674,57 @@ fn validate_candidate(candidate: &Candidate, before: &str) -> ApiResult<()> {
     }
     Ok(())
 }
+fn location_table_structure(line: &str) -> bool {
+    let cells: Vec<_> = line.trim_matches('|').split('|').map(str::trim).collect();
+    line.starts_with('|')
+        && line.ends_with('|')
+        && cells.len() == 2
+        && ((cells[0].eq_ignore_ascii_case("when") && cells[1].eq_ignore_ascii_case("where"))
+            || cells.iter().all(|cell| {
+                cell.trim_matches(':').len() >= 3
+                    && cell.trim_matches(':').chars().all(|c| c == '-')
+            }))
+}
+
+/// Citation selectors remain on the immutable candidate and in the published
+/// manifest. The primary location representation contains only readable prose.
+fn location_primary_content(candidate: &Candidate) -> (String, Value) {
+    let marker = regex::Regex::new(r"\[\^([sr])([1-9][0-9]*)\]").expect("fixed citation regex");
+    let mut claims = Vec::new();
+    let content = candidate.content.as_deref().unwrap_or("");
+    let body = content
+        .lines()
+        .enumerate()
+        .map(|(line_number, line)| {
+            let mut sources = std::collections::BTreeSet::new();
+            let rendered = marker.replace_all(line, |capture: &regex::Captures<'_>| {
+                let index = capture[2].parse::<usize>().unwrap_or(usize::MAX);
+                let count = if &capture[1] == "s" {
+                    candidate.sources.len()
+                } else {
+                    candidate.raw_sources.len()
+                };
+                if index <= count {
+                    sources.insert(format!("{}{}", &capture[1], index));
+                    String::new()
+                } else {
+                    capture[0].to_owned()
+                }
+            });
+            if !sources.is_empty() {
+                claims.push(json!({"line":line_number + 1,"sources":sources}));
+            }
+            rendered.trim_end().to_owned()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    (body, json!(claims))
+}
+
 fn candidate_body(candidate: &Candidate) -> String {
+    if candidate.kind == "summary" && candidate.evidence_scope.is_some() {
+        return location_primary_content(candidate).0;
+    }
     let mut body = candidate
         .content
         .clone()
@@ -948,10 +1011,11 @@ async fn validate_location_candidate(
     let output = json!({"candidates":[candidate]});
     let admission =
         json!({"location_work":{"timezone":scope["timezone"]},"location_evidence":packet});
-    if let Some(issue) = crate::dreamer::prompt::location_clock_issues(&output, &admission).first()
+    if let Some(issue) =
+        crate::dreamer::prompt::location_content_issues(&output, &admission).first()
     {
         return Err(ApiError::invalid(format!(
-            "location clock citation validation failed: {issue}"
+            "location content validation failed: {issue}"
         )));
     }
     Ok(validated_scope)
@@ -2537,7 +2601,7 @@ async fn publish_item(
     }
     validate_candidate(&item.candidate, &item.before_md)?;
     let path = item.candidate.path.clone().expect("validated path");
-    let metadata = if item.candidate.kind == "summary" {
+    let mut metadata = if item.candidate.kind == "summary" {
         let prefixes: std::collections::BTreeSet<_> = item
             .candidate
             .sources
@@ -2555,6 +2619,10 @@ async fn publish_item(
             .map(|e| e.metadata)
             .unwrap_or(json!({}))
     };
+    if location && item.candidate.kind == "summary" {
+        metadata["dreamer_summary"]["claim_sources"] = location_primary_content(&item.candidate).1;
+        metadata["dreamer_summary"]["presentation"] = json!("location-timeline.v1");
+    }
     let mut published = put_entry(
         state,
         tx,

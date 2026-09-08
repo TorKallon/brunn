@@ -671,7 +671,7 @@ impl Dreamer {
                     };
                 }
             };
-            let issues = prompt::location_clock_issues(&output, admission);
+            let issues = prompt::location_content_issues(&output, admission);
             if !issues.is_empty() {
                 report.stage = "location_correction".into();
                 let correction_prompt = prompt::location_correction_prompt(
@@ -726,18 +726,18 @@ impl Dreamer {
                         };
                     }
                 };
-                if !prompt::location_clock_issues(&output, admission).is_empty() {
+                if !prompt::location_content_issues(&output, admission).is_empty() {
                     return RunOutcome::Failed {
-                        detail: "location clock citation validation failed after one correction; unchecked output not submitted and admitted work retained".into(),
+                        detail: "location content validation failed after one correction; unchecked output not submitted and admitted work retained".into(),
                     };
                 }
             }
-            output = match prompt::compile_location_inventory(&output, admission) {
+            output = match prompt::compile_location_evidence_inventory(&output, admission) {
                 Ok(output) => output,
                 Err(detail) => {
                     return RunOutcome::Failed {
                         detail: format!(
-                            "location inventory validation failed: {detail}; unchecked output not submitted and admitted work retained"
+                            "location evidence inventory validation failed: {detail}; unchecked output not submitted and admitted work retained"
                         ),
                     };
                 }

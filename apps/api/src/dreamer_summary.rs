@@ -399,7 +399,32 @@ fn render(document: &Document, request: &ReadItem, max_chars: usize) -> Value {
     if selected.chars().count() > max_chars {
         value["truncated"] = json!(true);
     }
-    if document.metadata != json!({}) {
+    if document.path.starts_with("derived/location/") {
+        // Full evidence is available through the immutable run, not injected
+        // into every fast read. Validation above still uses the full manifest.
+        let manifest = &document.metadata["dreamer_summary"];
+        if let Some((id, version)) = exact_ref(manifest, "run_entry_ref", "run_version") {
+            value["evidence"] =
+                json!({"reference":format!("entry:{id}"),"version":version,"view":"full"});
+        }
+        // Independent exact source pointers remain usable if an unrelated
+        // proposal's deleted dependency later withholds the whole-run audit.
+        let mut pointers = Vec::new();
+        for source in manifest["sources"].as_array().into_iter().flatten() {
+            if let Some((id, version)) = exact_ref(source, "entry_ref", "version") {
+                let pointer = json!({"reference":format!("entry:{id}"),"version":version});
+                if !pointers.contains(&pointer) && pointers.len() < MAX_ALTERNATIVES {
+                    pointers.push(pointer);
+                }
+            }
+        }
+        value["source_documents"] = json!(pointers);
+        if let Some(scope) = manifest["evidence_scope"].as_object() {
+            value["location_evidence_request"] = json!({"from":scope.get("from"),"to":scope.get("to"),"timezone":scope.get("timezone")});
+        }
+        value["metadata_omitted"] = json!(true);
+        value["metadata_omitted_reason"] = json!("evidence_available_separately");
+    } else if document.metadata != json!({}) {
         let remaining = max_chars.saturating_sub(selected.chars().count().min(max_chars));
         if document.metadata.to_string().chars().count() <= remaining {
             value["metadata"] = document.metadata.clone();

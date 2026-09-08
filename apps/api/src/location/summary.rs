@@ -155,6 +155,27 @@ pub(crate) async fn validate_candidate_with_clock_evidence_in_tx(
         validate_raw(citation, &packet)?;
     }
 
+    // The readable timeline may merge or omit misleading canonical intervals,
+    // but its evidence inventory must retain every relevant row for review.
+    // Check before narrowing the packet to exact historical clock selectors.
+    if packet["canonical_months"].as_array().is_some_and(|months| {
+        months.iter().any(|month| {
+            month["selectors"].as_array().is_some_and(|rows| {
+                rows.iter().any(|row| {
+                    let text = row["text"].as_str().unwrap_or("");
+                    !canonical_sources.iter().any(|source| {
+                        month["ref"] == source.entry_ref
+                            && source.excerpt.lines().any(|line| line == text)
+                    })
+                })
+            })
+        })
+    }) {
+        return Err(ApiError::invalid(
+            "location evidence inventory must retain every relevant canonical row",
+        ));
+    }
+
     // Exact historical source versions remain valid when their selected rows
     // are unchanged after unrelated month growth. Above we checked every row
     // against the fresh packet. Preserve those typed boundaries at the cited

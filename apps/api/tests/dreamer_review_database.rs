@@ -1776,8 +1776,17 @@ async fn location_candidate_guards_retain_work_and_revision_preserves_published_
             .replace("12:00:00", "the retained timestamp")
             .replace("12:00 and 13:00", "as recorded");
         unused_raw["content"] = json!(without_clocks.replace("[^r1]", "[^s1]"));
-        let mut unused_canonical = valid.clone();
-        unused_canonical["content"] = json!(without_clocks.replace("[^s1]", "[^r1]"));
+        let mut overlong = valid.clone();
+        overlong["content"] = json!(format!(
+            "{}\n{}[^r1]",
+            valid["content"].as_str().unwrap(),
+            "Audit detail. ".repeat(130)
+        ));
+        let mut undeclared = valid.clone();
+        undeclared["content"] = json!(format!(
+            "{}\nAn unsupported marker.[^r1][^r999]",
+            valid["content"].as_str().unwrap()
+        ));
         let mut sidebar_only = valid.clone();
         sidebar_only["uncertainty"] =
             json!("Material gaps remain unresolved; the day may contain unobserved stops.");
@@ -1806,16 +1815,11 @@ async fn location_candidate_guards_retain_work_and_revision_preserves_published_
             ),
             ("every declared raw source must be cited", unused_raw),
             ("every declared raw source must be cited", heading_only_raw),
-            (
-                "every declared canonical location source must be cited",
-                unused_canonical,
-            ),
+            ("at most 250 words", overlong),
+            ("undeclared citation marker", undeclared),
             ("summary uncertainty must appear verbatim", sidebar_only),
-            ("location clock citation validation failed", wrong_clock),
-            (
-                "location clock citation validation failed",
-                canonical_seconds,
-            ),
+            ("location content validation failed", wrong_clock),
+            ("location content validation failed", canonical_seconds),
         ]
     };
     let initial_state = current(&f, "dreams/state.md").await.unwrap();
@@ -1940,6 +1944,11 @@ async fn location_candidate_guards_retain_work_and_revision_preserves_published_
             .contains("at most one location candidate is allowed per submission")
     );
     assert_eq!(current(&f, "dreams/state.md").await.unwrap(), pending_state);
+    // The canonical inventory remains exact metadata even when only raw
+    // observations are useful in the human-readable timeline.
+    revision["content"] = json!(format!(
+        "# Reviewed day\n\n| When | Where |\n| --- | --- |\n| Around 12:00 | A bounded stop was observed.[^r1] |\n\n{PILOT_UNCERTAINTY}[^r1]"
+    ));
     let (_, recompiled) = submit(
         &f,
         &next,
@@ -1966,8 +1975,8 @@ async fn location_candidate_guards_retain_work_and_revision_preserves_published_
     assert_eq!(item["uncertainty_md"], PILOT_UNCERTAINTY);
     let exact_preview = item["candidate"]["after_md"].as_str().unwrap();
     assert_eq!(exact_preview.matches(PILOT_UNCERTAINTY).count(), 1);
-    assert!(exact_preview.contains("[^s1]:"));
-    assert!(exact_preview.contains("[^r1]:"));
+    assert!(!exact_preview.contains("[^"));
+    assert!(exact_preview.contains("| Around 12:00 |"));
     let applied = ok(post(
         &f,
         &f.owner,
@@ -1981,12 +1990,76 @@ async fn location_candidate_guards_retain_work_and_revision_preserves_published_
         published.1, exact_preview,
         "publication must preserve exact reviewed bytes, including uncertainty"
     );
+    let manifest = &published.2["dreamer_summary"];
+    assert_eq!(manifest["presentation"], "location-timeline.v1");
+    assert_eq!(manifest["sources"].as_array().unwrap().len(), 1);
+    assert_eq!(manifest["raw_sources"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        manifest["claim_sources"][0],
+        json!({"line":5,"sources":["r1"]})
+    );
+    // Default reads preserve the exact primary body and a small evidence
+    // pointer, without reinjecting raw keys, excerpts, or repeated footnotes.
+    for view in ["full", "current_state"] {
+        let read = ok(post(
+            &f,
+            &f.owner,
+            "/v1/workspace/read",
+            json!({"requests":[{"path":target,"view":view,"max_chars":20000}]}),
+        )
+        .await);
+        let rendered = &read["data"]["items"][0];
+        assert_eq!(rendered["text"], exact_preview);
+        assert!(rendered.get("metadata").is_none());
+        assert_eq!(rendered["evidence"]["reference"], item["run_entry_ref"]);
+        assert_eq!(rendered["evidence"]["version"], item["run_version"]);
+        assert_eq!(
+            rendered["source_documents"][0]["reference"],
+            manifest["sources"][0]["entry_ref"]
+        );
+        assert_eq!(rendered["location_evidence_request"]["timezone"], "UTC");
+        assert!(!rendered.to_string().contains("natural_key"));
+        assert!(!rendered.to_string().contains("first_received_at"));
+    }
     let still_historical: (String, Value) = sqlx::query_as("SELECT content,metadata FROM brunn.entry_versions WHERE user_id=$1 AND entry_id=$2 AND version=$3")
         .bind(f.owner.user).bind(old_run_id).bind(old_version).fetch_one(&f.pool).await.unwrap();
     assert_eq!(
         still_historical, old_audit,
         "a rejected or successful revision cannot mutate its prior immutable run"
     );
+}
+
+#[tokio::test]
+async fn location_readable_timeline_cannot_discard_uncited_canonical_evidence_rows() {
+    let Some(f) = fixture().await else {
+        return;
+    };
+    control(&f, "report-only", 0).await;
+    let (from, path, mut content) = seed_location_pilot(&f).await;
+    content.push_str(&format!("| {}T14:00+00:00 | {}T15:00+00:00 | 1h | Another stop | visit | Bellevue | medium | 47.1000,-122.1000 |\n",from.date_naive(),from.date_naive()));
+    write(&f, &path, &content, 1).await;
+    queue_pilot(&f, from).await;
+    let admission = admit(&f).await;
+    assert_eq!(
+        admission["location_evidence"]["canonical_months"][0]["selectors"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let mut body = attempt(&admission, admission["state_version"].as_i64().unwrap());
+    body["candidates"] = json!([pilot_candidate(&admission)]);
+    body["processed_inputs"] = json!([]);
+    let before = current(&f, "dreams/state.md").await.unwrap();
+    let response = post(&f, &f.runner, "/v1/workspace/dreamer/candidates", body).await;
+    assert_eq!(response.status, StatusCode::BAD_REQUEST);
+    assert!(
+        response
+            .body
+            .to_string()
+            .contains("must retain every relevant canonical row")
+    );
+    assert_eq!(current(&f, "dreams/state.md").await.unwrap(), before);
 }
 
 #[derive(Clone, Copy)]
@@ -2063,7 +2136,7 @@ async fn seed_obsolete_location_candidate(
                     .unwrap()
                     .replace("12:00:00", "12:00:37")
             );
-            "location clock citation validation failed"
+            "location content validation failed"
         }
     };
     let historical: brunn::dreamer_review::Candidate =
@@ -2670,7 +2743,13 @@ async fn historical_location_pilot_flows_from_queue_to_held_review_and_full_publ
         item["candidate"]["after_md"]
             .as_str()
             .unwrap()
-            .contains("[^r1]: Retained location report")
+            .contains("Point samples")
+    );
+    assert!(
+        !item["candidate"]["after_md"]
+            .as_str()
+            .unwrap()
+            .contains("[^")
     );
     let approved = ok(post(
         &f,
