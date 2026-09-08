@@ -1,4 +1,4 @@
-//! The nightly run: a deterministic wrapper around one `codex exec`.
+//! The nightly run: read-only drafting and a bounded location evidence audit.
 //!
 //! CONTROL fail-closed → server admission/frozen intake → read-only reasoning
 //! → checked auth custody → server-validated terminal run and v2 projection.
@@ -38,7 +38,7 @@ pub struct DreamerConfig {
     /// Scratch root for ephemeral per-run homes.
     pub work_root: PathBuf,
     pub host_env: BTreeMap<String, String>,
-    /// Test hook: overrides the kind's time budget for the main exec.
+    /// Test hook: overrides the shared draft/audit budget, excluding the probe.
     pub time_budget_override: Option<Duration>,
 }
 
@@ -567,7 +567,26 @@ impl Dreamer {
             .config
             .time_budget_override
             .unwrap_or_else(|| kind.time_budget());
-        match self.exec_codex(run_home, env, &input, budget).await {
+        // Reserve time inside one monotonic budget. A second model call never
+        // receives a fresh total budget. The reserved tail reduces model time;
+        // publication and custody keep their existing separate HTTP bounds.
+        let finalizer_reserve = Duration::from_secs(15).min(budget / 10);
+        let usable = budget.saturating_sub(finalizer_reserve);
+        let audit_allowance = if admission["location_work"].is_object() {
+            Duration::from_secs(180).min(usable / 3)
+        } else {
+            Duration::ZERO
+        };
+        let reasoning_deadline = tokio::time::Instant::now() + usable;
+        let draft_budget = usable.saturating_sub(audit_allowance);
+        let draft_deadline = reasoning_deadline - audit_allowance;
+        let draft_result = tokio::time::timeout_at(
+            draft_deadline,
+            self.exec_codex(run_home, env, &input, draft_budget, "answer.md"),
+        )
+        .await
+        .unwrap_or(ExecResult::TimedOut);
+        match draft_result {
             ExecResult::TimedOut => {
                 return RunOutcome::Partial {
                     detail: "model time budget elapsed; admitted inputs remain pending".into(),
@@ -595,10 +614,64 @@ impl Dreamer {
                 };
             }
         };
-        let output = match prompt::parse_candidate_output(&raw, admission) {
+        let mut output = match prompt::parse_candidate_output(&raw, admission) {
             Ok(output) => output,
             Err(detail) => return RunOutcome::Failed { detail },
         };
+        if prompt::has_location_candidate(&output) {
+            report.stage = "location_audit".into();
+            let audit_prompt =
+                prompt::location_audit_prompt(&report.attempt_id, admission, &output);
+            let audit_budget = audit_allowance
+                .min(reasoning_deadline.saturating_duration_since(tokio::time::Instant::now()));
+            if audit_budget.is_zero() {
+                return RunOutcome::Partial {
+                    detail: "location audit budget exhausted; unchecked draft not submitted and admitted work retained".into(),
+                };
+            }
+            let audit_deadline = reasoning_deadline.min(tokio::time::Instant::now() + audit_budget);
+            let audit_result = tokio::time::timeout_at(
+                audit_deadline,
+                self.exec_codex(
+                    run_home,
+                    env,
+                    &audit_prompt,
+                    audit_budget,
+                    "location-audit-answer.md",
+                ),
+            )
+            .await
+            .unwrap_or(ExecResult::TimedOut);
+            match audit_result {
+                ExecResult::Finished => {}
+                ExecResult::TimedOut => return RunOutcome::Partial {
+                    detail: "location audit timed out; unchecked draft not submitted and admitted work retained".into(),
+                },
+                ExecResult::Failed(_) => return RunOutcome::Failed {
+                    detail: "location audit failed; unchecked draft not submitted and admitted work retained".into(),
+                },
+            }
+            let audited = match std::fs::read_to_string(
+                run_home.work_dir.join("location-audit-answer.md"),
+            ) {
+                Ok(raw) if raw.len() <= 1024 * 1024 => raw,
+                _ => return RunOutcome::Failed {
+                    detail:
+                        "location audit produced no bounded output; unchecked draft not submitted"
+                            .into(),
+                },
+            };
+            output = match prompt::parse_location_audit_output(&audited, admission, &output) {
+                Ok(output) => output,
+                Err(detail) => {
+                    return RunOutcome::Failed {
+                        detail: format!(
+                            "location audit output rejected: {detail}; unchecked draft not submitted"
+                        ),
+                    };
+                }
+            };
+        }
         report.stage = "candidate_validation".into();
         let candidates = self.runner.dreamer("candidates", json!({
             "attempt_id":report.attempt_id,"fence":admission["fence"],"expected_state_version":state_version,
@@ -772,9 +845,10 @@ impl Dreamer {
         env: &BTreeMap<String, String>,
         dream_prompt: &str,
         budget: Duration,
+        answer_name: &str,
     ) -> ExecResult {
         match self
-            .exec_codex_raw(run_home, env, dream_prompt, budget, "answer.md")
+            .exec_codex_raw(run_home, env, dream_prompt, budget, answer_name)
             .await
         {
             RawExec::Finished { rendered, success } => {
@@ -802,6 +876,13 @@ impl Dreamer {
         budget: Duration,
         answer_name: &str,
     ) -> RawExec {
+        // Distinct per-stage files and a clean output slot prevent stale draft
+        // bytes from being accepted as a successful audit with no output.
+        if let Err(error) = std::fs::remove_file(run_home.work_dir.join(answer_name))
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            return RawExec::SpawnFailed("could not clear model output slot".into());
+        }
         let mut env = env.clone();
         // The MCP server codex spawns needs the model credential; it is
         // forwarded by name through the codex MCP config.

@@ -33,6 +33,8 @@ struct Mock {
     state_version: i64,
     admissions: usize,
     submissions: usize,
+    submitted: Vec<Value>,
+    auth_puts: usize,
     runs: Vec<Value>,
     latest: Option<Value>,
     notifications: Vec<Value>,
@@ -41,6 +43,7 @@ struct Mock {
     fail_auth_put: bool,
     fail_notify: bool,
     retained_location_work: bool,
+    location_admission: Option<Value>,
     model_read_only: bool,
     pending: Vec<Value>,
     prior_pending_notification: Option<Value>,
@@ -78,6 +81,9 @@ async fn secret_get(State(shared): State<Shared>, Json(body): Json<Value>) -> Re
 async fn secret_put(State(shared): State<Shared>, Json(body): Json<Value>) -> Response {
     let mut s = shared.lock().unwrap();
     let name = body["name"].as_str().unwrap();
+    if name == AUTH_SECRET {
+        s.auth_puts += 1;
+    }
     if name == AUTH_SECRET && s.fail_auth_put {
         return error(StatusCode::CONFLICT, "secret changed");
     }
@@ -113,11 +119,16 @@ async fn admit(State(shared): State<Shared>, Json(body): Json<Value>) -> Json<Va
     s.admissions += 1;
     s.state_version += 1;
     s.writes += 2;
-    Json(
-        json!({"admitted":true,"attempt_id":body["attempt_id"],"fence":s.admissions,"state_version":s.state_version,"mode":"report-only","frozen_generation":17,"scanned_generation":17,"processed_generation":0,
+    let mut response = json!({"admitted":true,"attempt_id":body["attempt_id"],"fence":s.admissions,"state_version":s.state_version,"mode":"report-only","frozen_generation":17,"scanned_generation":17,"processed_generation":0,
       "inputs":[{"entry_ref":SOURCE,"path":"sources/Project.md","version":2,"generation":17,"operation":"update","content_hash":"sha256:source"}],
-      "pending":s.pending,"pending_notifications":s.prior_pending_notification.iter().collect::<Vec<_>>()}),
-    )
+      "pending":s.pending,"pending_notifications":s.prior_pending_notification.iter().collect::<Vec<_>>()});
+    if let Some(location) = &s.location_admission {
+        response
+            .as_object_mut()
+            .unwrap()
+            .extend(location.as_object().unwrap().clone());
+    }
+    Json(response)
 }
 async fn checkpoint(State(shared): State<Shared>, Json(body): Json<Value>) -> Response {
     let mut s = shared.lock().unwrap();
@@ -130,17 +141,29 @@ async fn checkpoint(State(shared): State<Shared>, Json(body): Json<Value>) -> Re
 async fn candidates(State(shared): State<Shared>, Json(body): Json<Value>) -> Response {
     let mut s = shared.lock().unwrap();
     s.submissions += 1;
+    s.submitted.push(body.clone());
     if s.reject_candidates {
         return error(StatusCode::CONFLICT, "source changed");
     }
-    s.pending
-        .extend(body["candidates"].as_array().unwrap().iter().cloned());
     let ids: Vec<_> = body["candidates"]
         .as_array()
         .unwrap()
         .iter()
         .enumerate()
-        .map(|(n, _)| format!("{}/{}", body["attempt_id"].as_str().unwrap(), n))
+        .map(|(n, candidate)| {
+            if candidate["evidence_scope"].is_object() {
+                s.retained_location_work = false;
+            }
+            if let Some(id) = candidate["revises_item_id"].as_str() {
+                let item = s.pending.iter_mut().find(|item| item["id"] == id).unwrap();
+                item["candidate"] = candidate.clone();
+                item["status"] = json!("pending");
+                id.to_owned()
+            } else {
+                s.pending.push(candidate.clone());
+                format!("{}/{}", body["attempt_id"].as_str().unwrap(), n)
+            }
+        })
         .collect();
     s.state_version += 1;
     s.run_version += 1;
@@ -179,6 +202,12 @@ async fn notify(State(shared): State<Shared>, Json(body): Json<Value>) -> Respon
     Json(json!({"notification_ref":"notification:one","replayed":false,"delivery_count":0,"delivery_status":"no_installations"})).into_response()
 }
 async fn build(behavior: &str) -> (Shared, Dreamer, tempfile::TempDir) {
+    build_with_budget(behavior, Duration::from_secs(2)).await
+}
+async fn build_with_budget(
+    behavior: &str,
+    budget: Duration,
+) -> (Shared, Dreamer, tempfile::TempDir) {
     let shared = Arc::new(Mutex::new(Mock {
         model_read_only: true,
         ..Mock::default()
@@ -215,7 +244,7 @@ async fn build(behavior: &str) -> (Shared, Dreamer, tempfile::TempDir) {
             ("PATH".into(), std::env::var("PATH").unwrap()),
             ("OPENAI_API_KEY".into(), "must-not-escape".into()),
         ]),
-        time_budget_override: Some(Duration::from_secs(2)),
+        time_budget_override: Some(budget),
     });
     (shared, dreamer, dir)
 }
@@ -234,9 +263,14 @@ while [ "$#" -gt 0 ]; do
  if [ "$1" = '--output-last-message' ]; then shift; OUTPUT_PATH="$1"; fi
  shift
 done
-export OUTPUT_PATH
+OUTPUT_NAME=${{OUTPUT_PATH##*/}}
+export OUTPUT_PATH OUTPUT_NAME
+printf '%s\n' "$OUTPUT_NAME" >> "$DIR/calls"
+printf '%s\n' "$OUTPUT_PATH" >> "$DIR/output-paths"
 cat > "$DIR/prompt"
+cp "$DIR/prompt" "$DIR/prompt-$OUTPUT_NAME"
 env > "$DIR/model-env"
+cp "$DIR/model-env" "$DIR/env-$OUTPUT_NAME"
 exec /bin/sh "$DIR/behavior.sh"
 "#,
         dir = dir.display()
@@ -496,4 +530,309 @@ async fn valid_partial_output_reports_retained_work() {
         "{report:?}"
     );
     assert_eq!(report.receipt_persistence, "accepted");
+}
+
+const LOCATION_ITEM: &str = "fixture-location/7";
+const LOCATION_CAVEAT: &str =
+    "The receipt time is unknown; this point does not establish continuous presence.";
+
+fn location_candidate(observation: &str) -> Value {
+    json!({
+        "kind":"summary", "title":"Synthetic location reconciliation",
+        "summary":"Reconcile one synthetic observation", "reason":"Preserve the source qualifications",
+        "path":"derived/location/2040-02-03.md", "expected_version":0,
+        "revises_item_id":LOCATION_ITEM,
+        "evidence_scope":{
+            "from":"2040-02-03T00:00:00Z", "to":"2040-02-04T00:00:00Z", "timezone":"UTC",
+            "fingerprint":format!("sha256:{}", "a".repeat(64))
+        },
+        "content":format!("- {observation}[^r1][^s1]\n- {LOCATION_CAVEAT}[^r1]"),
+        "uncertainty":LOCATION_CAVEAT,
+        "sources":[{"entry_ref":SOURCE,"version":2,"start_line":1,"end_line":2}],
+        "raw_sources":[{"natural_key":{"at":"2040-02-03T10:01:00Z","type":"ping"},
+            "fields":["at","lat","lon","accuracy_m","first_received_at"]}]
+    })
+}
+
+fn location_output(observation: &str) -> Value {
+    json!({"schema":"dream.candidates.v1", "candidates":[location_candidate(observation)],
+        "processed_inputs":[], "findings":["Retain source qualifications."]})
+}
+
+fn enable_location(s: &Shared) {
+    enable(s);
+    let candidate = location_candidate("Original pending observation.");
+    let scope = &candidate["evidence_scope"];
+    let mut s = s.lock().unwrap();
+    s.retained_location_work = true;
+    s.pending = vec![
+        json!({"id":LOCATION_ITEM,"status":"needs_changes", "candidate":candidate,
+        "run_entry_ref":RUN,"run_version":4,"candidate_hash":"sha256:original-pending"}),
+    ];
+    s.location_admission = Some(json!({
+        "inputs":[],
+        "location_work":{"date":"2040-02-03","from":scope["from"],"to":scope["to"],
+            "timezone":scope["timezone"],"fingerprint":scope["fingerprint"]},
+        "location_evidence":{
+            "schema":"location.evidence.v1", "evidence_fingerprint":scope["fingerprint"],
+            "fingerprint_complete":true, "completeness":{"complete":true},
+            "reports":[{"natural_key":{"at":"2040-02-03T10:01:00Z","type":"ping"},
+                "at":"2040-02-03T10:01:00Z","type":"ping","lat":1.0,"lon":2.0,
+                "accuracy_m":5.0,"first_received_at":null}],
+            "canonical_months":[{"ref":SOURCE,"version":2,"selectors":[{
+                "start_line":1,"end_line":2,"text":"Synthetic canonical comparison row"}]}],
+            "boundary_observations":{"before":null,"after":null}, "sample_gaps":[],
+            "time_semantics":{"first_received_at":"Null means receipt time is unknown."}
+        }
+    }));
+}
+
+async fn build_location_audit(
+    audit_script: &str,
+    draft_script: &str,
+    budget: Duration,
+) -> (Shared, Dreamer, tempfile::TempDir, Value) {
+    let behavior = format!(
+        r#"
+if grep -q 'single word READY' "$DIR/prompt"; then echo READY; exit 0; fi
+case "$OUTPUT_NAME" in
+ answer.md)
+  {draft_script}
+  cat "$DIR/draft.json" > "$OUTPUT_PATH"
+  ;;
+ location-audit-answer.md)
+  echo '{{"audit_refreshed":true}}' > "$CODEX_HOME/auth.json"
+  {audit_script}
+  ;;
+ *) exit 99;;
+esac
+"#
+    );
+    let (s, d, dir) = build_with_budget(&behavior, budget).await;
+    enable_location(&s);
+    let draft = location_output("Draft observation requiring independent review.");
+    let mut audited = location_output("Audited observation with corrected source qualification.");
+    audited["findings"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!("Checked the bounded packet against the draft."));
+    for (name, value) in [("draft.json", &draft), ("audited.json", &audited)] {
+        std::fs::write(dir.path().join(name), value.to_string()).unwrap();
+    }
+    (s, d, dir, audited)
+}
+
+fn model_calls(dir: &Path) -> Vec<String> {
+    std::fs::read_to_string(dir.join("calls"))
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
+#[tokio::test]
+async fn location_audit_submits_only_the_corrected_artifact_under_the_original_identity() {
+    let (s, d, dir, audited) = build_location_audit(
+        "cat \"$DIR/audited.json\" > \"$OUTPUT_PATH\"",
+        "",
+        Duration::from_secs(3),
+    )
+    .await;
+    let report = d.run_once(today(), RunKind::Manual).await;
+    assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
+    assert_eq!(report.auth_persistence, "verified");
+    assert_eq!(report.receipt_persistence, "accepted");
+    let calls = model_calls(dir.path());
+    assert_eq!(calls.len(), 3, "{calls:?}");
+    assert_eq!(&calls[1..], ["answer.md", "location-audit-answer.md"]);
+    let paths = std::fs::read_to_string(dir.path().join("output-paths")).unwrap();
+    let paths: Vec<_> = paths.lines().collect();
+    assert_ne!(paths[1], paths[2]);
+    let audit_prompt =
+        std::fs::read_to_string(dir.path().join("prompt-location-audit-answer.md")).unwrap();
+    for evidence in [
+        "location.evidence.v1",
+        "Draft observation requiring independent review.",
+        "Synthetic canonical comparison row",
+        "first_received_at",
+        LOCATION_ITEM,
+    ] {
+        assert!(audit_prompt.contains(evidence), "missing {evidence}");
+    }
+    let audit_env =
+        std::fs::read_to_string(dir.path().join("env-location-audit-answer.md")).unwrap();
+    assert!(audit_env.contains("BRUNN_API_TOKEN=model"));
+    for forbidden in [
+        "BRUNN_API_TOKEN=runner",
+        "BRUNN_API_TOKEN=workspace",
+        "OPENAI_API_KEY",
+    ] {
+        assert!(!audit_env.contains(forbidden));
+    }
+    let s = s.lock().unwrap();
+    assert_eq!(s.submissions, 1);
+    assert_eq!(s.submitted[0]["candidates"], audited["candidates"]);
+    assert_eq!(s.submitted[0]["findings"], audited["findings"]);
+    assert_eq!(s.submitted[0]["processed_inputs"], json!([]));
+    assert_eq!(s.pending.len(), 1);
+    assert_eq!(s.pending[0]["id"], LOCATION_ITEM);
+    assert_eq!(s.pending[0]["candidate"], audited["candidates"][0]);
+    assert!(!s.retained_location_work);
+    assert_eq!(
+        s.auth_puts, 1,
+        "one finalizer owns auth persistence across both calls"
+    );
+    assert!(s.secrets[AUTH_SECRET].0.contains("audit_refreshed"));
+}
+
+#[tokio::test]
+async fn a_location_queue_without_a_location_draft_does_not_trigger_an_audit() {
+    for location_queued in [false, true] {
+        let (s, d, dir) = build(HAPPY).await;
+        enable(&s);
+        if location_queued {
+            enable_location(&s);
+            // Keep the ordinary source admitted so this case isolates audit routing.
+            s.lock()
+                .unwrap()
+                .location_admission
+                .as_mut()
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .remove("inputs");
+        }
+        let report = d.run_once(today(), RunKind::Manual).await;
+        if location_queued {
+            assert!(
+                matches!(report.outcome, RunOutcome::Partial { .. }),
+                "{report:?}"
+            );
+            assert!(s.lock().unwrap().retained_location_work);
+        } else {
+            assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
+        }
+        let calls = model_calls(dir.path());
+        assert_eq!(calls.len(), 2, "{calls:?}");
+        assert_eq!(calls[1], "answer.md");
+        assert!(!dir.path().join("prompt-location-audit-answer.md").exists());
+    }
+}
+
+#[tokio::test]
+async fn invalid_location_audits_never_submit_the_draft_and_still_finalize_auth() {
+    let variants = [
+        ("malformed", "echo '{bad' > \"$OUTPUT_PATH\"", false),
+        ("missing", "exit 0", false),
+        (
+            "failed",
+            "cat \"$DIR/audited.json\" > \"$OUTPUT_PATH\"; exit 7",
+            false,
+        ),
+        (
+            "timed_out",
+            "cat \"$DIR/audited.json\" > \"$OUTPUT_PATH\"; exec sleep 20",
+            true,
+        ),
+    ];
+    for (name, script, timeout) in variants {
+        let (s, d, dir, _) = build_location_audit(
+            script,
+            // A pre-existing valid audit slot must be cleared before the second process.
+            "cp \"$DIR/audited.json\" \"${OUTPUT_PATH%/*}/location-audit-answer.md\"",
+            Duration::from_secs(3),
+        )
+        .await;
+        let original = s.lock().unwrap().pending.clone();
+        let report = d.run_once(today(), RunKind::Manual).await;
+        let detail = match &report.outcome {
+            RunOutcome::Partial { detail } if timeout => detail,
+            RunOutcome::Failed { detail } if !timeout => detail,
+            _ => panic!("{name}: {report:?}"),
+        };
+        assert!(detail.contains("location audit"), "{name}: {detail}");
+        assert!(
+            detail.contains("unchecked draft not submitted"),
+            "{name}: {detail}"
+        );
+        assert_eq!(report.auth_persistence, "verified", "{name}: {report:?}");
+        assert_eq!(report.receipt_persistence, "accepted", "{name}: {report:?}");
+        assert_eq!(model_calls(dir.path()).len(), 3, "{name}");
+        let s = s.lock().unwrap();
+        assert_eq!(
+            s.submissions, 0,
+            "{name}: neither draft nor audit may be submitted"
+        );
+        assert_eq!(s.pending, original, "{name}");
+        assert!(s.retained_location_work, "{name}");
+        assert!(s.notifications.is_empty(), "{name}");
+        assert_eq!(s.auth_puts, 1, "{name}");
+        assert!(
+            s.secrets[AUTH_SECRET].0.contains("audit_refreshed"),
+            "{name}"
+        );
+        let latest = s.latest.as_ref().unwrap();
+        assert_eq!(latest["status"], if timeout { "partial" } else { "failed" });
+        assert!(receipt::parse_latest(&receipt::render_latest(latest).unwrap()).is_ok());
+    }
+}
+
+#[tokio::test]
+async fn an_audit_can_remove_only_location_work_with_an_explicit_retention_finding() {
+    let (s, d, dir, mut audited) = build_location_audit(
+        "cat \"$DIR/audited.json\" > \"$OUTPUT_PATH\"",
+        "",
+        Duration::from_secs(3),
+    )
+    .await;
+    audited["candidates"] = json!([]);
+    audited["findings"][1] =
+        json!("The bounded evidence does not support a complete reconciliation; retain the day.");
+    std::fs::write(dir.path().join("audited.json"), audited.to_string()).unwrap();
+    let original = s.lock().unwrap().pending.clone();
+    let report = d.run_once(today(), RunKind::Manual).await;
+    assert!(
+        matches!(report.outcome, RunOutcome::Partial { .. }),
+        "{report:?}"
+    );
+    assert_eq!(report.auth_persistence, "verified");
+    assert_eq!(report.receipt_persistence, "accepted");
+    let s = s.lock().unwrap();
+    assert_eq!(s.submissions, 1);
+    assert_eq!(s.submitted[0]["candidates"], json!([]));
+    assert_eq!(s.submitted[0]["findings"], audited["findings"]);
+    assert_eq!(s.pending, original);
+    assert!(s.retained_location_work);
+    assert!(s.notifications.is_empty());
+}
+
+#[tokio::test]
+async fn location_audit_uses_the_remaining_shared_model_deadline() {
+    let (s, d, dir, _) =
+        build_location_audit("exec sleep 20", "sleep 2", Duration::from_secs(4)).await;
+    let started = std::time::Instant::now();
+    let report = d.run_once(today(), RunKind::Manual).await;
+    let elapsed = started.elapsed();
+    assert!(
+        matches!(report.outcome, RunOutcome::Partial { .. }),
+        "{report:?}"
+    );
+    assert_eq!(
+        model_calls(dir.path()).last().unwrap(),
+        "location-audit-answer.md"
+    );
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "audit received a fresh total budget: {elapsed:?}"
+    );
+    assert!(
+        elapsed >= Duration::from_secs(2),
+        "draft delay was not exercised"
+    );
+    assert_eq!(report.auth_persistence, "verified");
+    assert_eq!(report.receipt_persistence, "accepted");
+    let s = s.lock().unwrap();
+    assert_eq!(s.submissions, 0);
+    assert_eq!(s.auth_puts, 1);
+    assert!(s.retained_location_work);
 }
