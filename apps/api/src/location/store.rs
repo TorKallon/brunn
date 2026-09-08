@@ -92,7 +92,7 @@ pub(crate) async fn ingest_once(
         .iter()
         .filter(|report| raw_report_is_eligible(report, pings_enabled, as_of))
         .collect::<Vec<_>>();
-    insert_raw_reports(&mut tx, auth.user_id.0, &eligible).await?;
+    insert_raw_reports(&mut tx, auth.user_id.0, &eligible, as_of).await?;
 
     let places_document = read_workspace_document(&mut tx, auth.user_id.0, PLACES_PATH).await?;
     let parsed_places = parse_places(places_document.content.as_deref());
@@ -333,14 +333,35 @@ pub(crate) async fn delete_expired_reports(
         .admin_pool
         .as_ref()
         .ok_or_else(|| ApiError::configuration("location retention requires DATABASE_URL_ADMIN"))?;
-    let result = sqlx::query("DELETE FROM brunn.location_reports WHERE at < $1")
-        .bind(as_of - RETENTION)
-        .execute(pool)
-        .await?;
-    Ok(result.rows_affected())
+    // Retention participates in the publication fence too: a raw-dependent
+    // summary cannot validate evidence while this worker removes it. Owners
+    // without expired rows incur no transaction/lock work.
+    let owners = sqlx::query_scalar::<_, Uuid>(
+        "SELECT DISTINCT user_id FROM brunn.location_reports WHERE at < $1 ORDER BY user_id",
+    )
+    .bind(as_of - RETENTION)
+    .fetch_all(pool)
+    .await?;
+    let mut deleted = 0;
+    for owner in owners {
+        let mut tx = pool.begin().await?;
+        crate::db::lock_workspace_commit(&mut tx, owner).await?;
+        lock_location_user(&mut tx, owner).await?;
+        deleted += sqlx::query("DELETE FROM brunn.location_reports WHERE user_id=$1 AND at < $2")
+            .bind(owner)
+            .bind(as_of - RETENTION)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+        tx.commit().await?;
+    }
+    Ok(deleted)
 }
 
-async fn lock_location_user(tx: &mut Transaction<'_, Postgres>, user_id: Uuid) -> ApiResult<()> {
+pub async fn lock_location_user(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+) -> ApiResult<()> {
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
         .bind(format!("location-presence:{user_id}"))
         .execute(&mut **tx)
@@ -491,6 +512,7 @@ async fn insert_raw_reports(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
     reports: &[&LocationReport],
+    first_received_at: DateTime<Utc>,
 ) -> ApiResult<()> {
     let mut inserted = Vec::new();
     for report in reports {
@@ -500,8 +522,8 @@ async fn insert_raw_reports(
             r#"
             INSERT INTO brunn.location_reports (
               user_id,at,type,offset_min,lat,lon,accuracy_m,arrived_at,
-              departed_at,city,region,country,name
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+              departed_at,city,region,country,name,first_received_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
             ON CONFLICT DO NOTHING
             "#,
         )
@@ -518,6 +540,7 @@ async fn insert_raw_reports(
         .bind(geocode.and_then(|value| value.region.as_deref()))
         .bind(geocode.and_then(|value| value.country.as_deref()))
         .bind(geocode.and_then(|value| value.name.as_deref()))
+        .bind(first_received_at)
         .execute(&mut **tx)
         .await?;
         if result.rows_affected() == 1 {
@@ -1433,7 +1456,7 @@ mod database_tests {
         let report = completed_report(as_of - Duration::minutes(1));
         let trigger = install_month_write_failure(&pool, user_id).await;
 
-        let result = ingest_once(&state, &auth, &[report], true, as_of).await;
+        let result = ingest_once(&state, &auth, std::slice::from_ref(&report), true, as_of).await;
         drop_test_trigger(&pool, trigger).await;
 
         assert!(
@@ -1456,6 +1479,44 @@ mod database_tests {
         .await
         .expect("read presence after rolled-back month write");
         assert_eq!(stored_presence_at, original_presence_at);
+
+        let committed_receipt = as_of + Duration::seconds(2);
+        ingest_once(
+            &state,
+            &auth,
+            std::slice::from_ref(&report),
+            true,
+            committed_receipt,
+        )
+        .await
+        .expect("next request commits after rolled-back receipt");
+        let stored_receipt=sqlx::query_scalar::<_,Option<DateTime<Utc>>>("SELECT first_received_at FROM brunn.location_reports WHERE user_id=$1 AND at=$2 AND type=$3")
+            .bind(user_id).bind(report.at).bind(report.kind.as_str()).fetch_one(&pool).await.unwrap().unwrap();
+        assert_eq!(
+            stored_receipt.timestamp_micros(),
+            committed_receipt.timestamp_micros()
+        );
+        ingest_with_retry(
+            &state,
+            &auth,
+            &[report],
+            true,
+            committed_receipt + Duration::minutes(1),
+        )
+        .await
+        .expect("duplicate raw upload");
+        let duplicate_receipt = sqlx::query_scalar::<_, Option<DateTime<Utc>>>(
+            "SELECT first_received_at FROM brunn.location_reports WHERE user_id=$1",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            duplicate_receipt, stored_receipt,
+            "duplicate preserves first committed receipt"
+        );
     }
 
     #[tokio::test]
@@ -1544,9 +1605,26 @@ mod database_tests {
             .expect("seed retained location POI");
         }
 
-        let deleted = delete_expired_reports(&state, as_of)
+        let mut publication = pool.begin().await.unwrap();
+        crate::db::lock_workspace_commit(&mut publication, user_id)
             .await
-            .expect("delete expired location reports");
+            .unwrap();
+        lock_location_user(&mut publication, user_id).await.unwrap();
+        let cleanup_state = state.clone();
+        let mut cleanup =
+            tokio::spawn(async move { delete_expired_reports(&cleanup_state, as_of).await });
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(100), &mut cleanup)
+                .await
+                .is_err(),
+            "retention waits for a raw-dependent publication fence"
+        );
+        assert_eq!(user_row_count(&pool, "location_reports", user_id).await, 2);
+        publication.commit().await.unwrap();
+        let deleted = cleanup
+            .await
+            .unwrap()
+            .expect("delete expired location reports after publication fence releases");
 
         assert!(deleted >= 1, "retention must delete the seeded old report");
         for (at, expected) in [(old_at, 0_i64), (new_at, 1_i64)] {

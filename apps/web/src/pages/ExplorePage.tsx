@@ -97,6 +97,7 @@ function linkedEntryTargetFromSearch(
   search: {
     entryRef?: string;
     entryPath?: string;
+    version?: number;
     alternatePaths?: string;
     linkTarget?: string;
     fallbackQuery?: string;
@@ -111,6 +112,7 @@ function linkedEntryTargetFromSearch(
   return {
     ref,
     path,
+    version: search.version,
     alternatePaths: alternatePaths.length ? alternatePaths : undefined,
     linkTarget,
     fallbackQuery,
@@ -284,6 +286,7 @@ export function ExplorePage() {
       target: {
         ref: target.ref,
         path: target.path,
+        version: target.version,
         link_target: target.linkTarget,
       },
       alternatePaths: target.alternatePaths,
@@ -297,8 +300,16 @@ export function ExplorePage() {
     if (handledEntryLink.current === entryLinkKey) return;
     const target = linkedEntryTargetFromSearch(entryLinkSearch);
     if (!target) return;
-    handledEntryLink.current = entryLinkKey;
-    readLinkedEntry(target);
+    // StrictMode replays this effect before the mutation observer has finished
+    // remounting. Start only the surviving effect, so its result remains
+    // observed instead of leaving the initial exact read permanently pending.
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      handledEntryLink.current = entryLinkKey;
+      readLinkedEntry(target);
+    });
+    return () => { cancelled = true; };
   }, [entryLinkKey]);
 
   return (

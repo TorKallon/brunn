@@ -231,6 +231,39 @@ describe("durable alert inbox", () => {
     ).toBeInTheDocument();
   });
 
+  it("opens Dreamer Review and preserves the notification's exact run version", async () => {
+    const entryRef = "entry:019f8800-0000-7000-8000-000000000004";
+    const alert = { ...briefingAlert, title: "Dreamer review ready", source: { type: "dreamer_run", ref: entryRef, version_ref: `${entryRef}@3` }, target: { type: "entry", entry_ref: entryRef }, opened_at: "2026-08-02T18:01:00Z" } satisfies NotificationItem;
+    let readBody: unknown;
+    const fetchMock = installApiMock({
+      [`GET /api/v1/workspace/notifications/${encodeURIComponent(notificationRef)}`]: { notification: alert },
+      "POST /api/v1/workspace/read": async (request: Request) => {
+        readBody = await request.json();
+        return { status: "complete", data: { items: [{ reference: entryRef, path: "dreams/runs/2026-09-07.md", title: "Pinned run", version: 3, text: "Exact run version three.", view: "full" }] } };
+      },
+    });
+    const user = userEvent.setup();
+    renderApp(`/alerts/${notificationRef}`);
+    expect(await screen.findByRole("link", { name: "Open Review" })).toHaveAttribute("href", "/dreams");
+    const runLink = screen.getByRole("link", { name: "Open run v3" });
+    expect(runLink).toHaveAttribute("href", expect.stringContaining("version=3"));
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/workspace/read"))).toBe(false);
+    await user.click(runLink);
+    expect(await screen.findByText("Exact run version three.")).toBeInTheDocument();
+    expect(readBody).toEqual({ requests: [{ ref: entryRef, version: 3, view: "full" }] });
+  });
+
+  it("does not fall back to the current run when a Dreamer notification has an invalid pin", async () => {
+    const entryRef = "entry:019f8800-0000-7000-8000-000000000004";
+    const alert = { ...briefingAlert, source: { type: "dreamer_run", ref: entryRef, version_ref: `${entryRef}@0` }, target: { type: "entry", entry_ref: entryRef }, opened_at: "2026-08-02T18:01:00Z" } satisfies NotificationItem;
+    const fetchMock = installApiMock({ [`GET /api/v1/workspace/notifications/${encodeURIComponent(notificationRef)}`]: { notification: alert } });
+    renderApp(`/alerts/${notificationRef}`);
+    expect(await screen.findByRole("link", { name: "Open Review" })).toBeInTheDocument();
+    expect(screen.getByText("Pinned run unavailable")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Open run/ })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/workspace/read"))).toBe(false);
+  });
+
   it("carries a briefing item target through the route and opens that item", async () => {
     installApiMock({
       "GET /api/v1/workspace/briefings": briefingListFixture,

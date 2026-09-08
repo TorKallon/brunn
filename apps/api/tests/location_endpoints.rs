@@ -1784,3 +1784,789 @@ async fn field_day_gate_is_exact_on_real_router_with_pings_on_and_off() {
     exercise_field_day_gate(&pool, &on_app, &pings_on, true).await;
     exercise_field_day_gate(&pool, &off_app, &pings_off, false).await;
 }
+
+fn evidence_uri(from: DateTime<Utc>, to: DateTime<Utc>) -> String {
+    let query = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("from", &from.to_rfc3339())
+        .append_pair("to", &to.to_rfc3339())
+        .append_pair("timezone", "UTC")
+        .finish();
+    format!("/v1/location/evidence?{query}")
+}
+
+struct SummaryFixture {
+    pool: PgPool,
+    state: AppState,
+    app: Router,
+    owner: LocationFixture,
+    auth: brunn::auth::AuthContext,
+    query: brunn::location::evidence::EvidenceQuery,
+    packet: Value,
+    canonical: brunn::dreamer_review::Source,
+    raw: brunn::location::summary::RawCitation,
+    content: String,
+}
+
+async fn summary_fixture() -> Option<SummaryFixture> {
+    let (pool, state) = connect_test_state().await?;
+    let owner = seed_fixture(&pool).await;
+    let app = router(state.clone());
+    let auth = brunn::auth::authenticate(&state, &owner.saver.token)
+        .await
+        .unwrap();
+    let from = (Utc::now() - Duration::days(2))
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc();
+    let query = brunn::location::evidence::EvidenceQuery {
+        from: from.fixed_offset(),
+        to: (from + Duration::days(1)).fixed_offset(),
+        timezone: "UTC".into(),
+    };
+    let row = format!(
+        "| {} | {} | 1h | A bounded stop | visit | Bellevue | medium | 47.0000,-122.0000 |\n",
+        (from + Duration::hours(12)).format("%Y-%m-%dT%H:%M%:z"),
+        (from + Duration::hours(13)).format("%Y-%m-%dT%H:%M%:z")
+    );
+    let content = format!(
+        "---\nkind: location-visits\nmonth: {}\n---\n| Arrived | Departed | Dwell | Place | Kind | City | Conf | Coord |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n{row}",
+        from.format("%Y-%m")
+    );
+    let path = format!("Location/Visits/{}.md", from.format("%Y-%m"));
+    let written=request_json(&app,Method::POST,"/v1/workspace/write",&owner.saver.token,json!({"path":path,"content":content,"expected_version":0,"metadata":{"kind":"location-visits"}})).await;
+    assert_eq!(written.status, StatusCode::OK, "{}", written.body);
+    for at in [
+        from - Duration::hours(2),
+        from - Duration::hours(1),
+        from + Duration::hours(12),
+    ] {
+        sqlx::query("INSERT INTO brunn.location_reports(user_id,at,type,offset_min,lat,lon,accuracy_m,name) VALUES($1,$2,'ping',0,47,-122,5,'Approximate address')").bind(owner.user_id).bind(at).execute(&pool).await.unwrap();
+    }
+    sqlx::query("INSERT INTO brunn.location_report_poi(user_id,at,type,rank,name,category,distance_m) VALUES($1,$2,'ping',1,'Nearby candidate','cafe',20)").bind(owner.user_id).bind(from+Duration::hours(12)).execute(&pool).await.unwrap();
+    let packet = brunn::location::evidence::read_evidence(&state, &auth, &query)
+        .await
+        .unwrap();
+    assert_eq!(packet["fingerprint_complete"], true, "{packet}");
+    let doc = &packet["canonical_months"][0];
+    let selector = &doc["selectors"][0];
+    let canonical = brunn::dreamer_review::Source {
+        entry_ref: doc["ref"].as_str().unwrap().into(),
+        version: doc["version"].as_i64().unwrap(),
+        path: doc["path"].as_str().unwrap().into(),
+        start_line: selector["start_line"].as_u64().unwrap() as usize,
+        end_line: selector["end_line"].as_u64().unwrap() as usize,
+        excerpt: selector["text"].as_str().unwrap().into(),
+    };
+    let raw = brunn::location::summary::RawCitation {
+        natural_key: packet["reports"][0]["natural_key"].clone(),
+        fields: vec![
+            "lat".into(),
+            "accuracy_m".into(),
+            "first_received_at".into(),
+            "departed_at".into(),
+            "poi.0.name".into(),
+        ],
+    };
+    Some(SummaryFixture {
+        pool,
+        state,
+        app,
+        owner,
+        auth,
+        query,
+        packet,
+        canonical,
+        raw,
+        content,
+    })
+}
+
+async fn validate_location_summary(
+    f: &SummaryFixture,
+    query: &brunn::location::evidence::EvidenceQuery,
+    fingerprint: &str,
+    canonical: &[brunn::dreamer_review::Source],
+    raw: &[brunn::location::summary::RawCitation],
+) -> brunn::error::ApiResult<Value> {
+    let mut tx = f.state.begin_write(&f.auth).await.unwrap();
+    let result = brunn::location::summary::validate_candidate_in_tx(
+        &mut tx,
+        &f.auth,
+        query,
+        fingerprint,
+        canonical,
+        raw,
+    )
+    .await;
+    tx.rollback().await.unwrap();
+    result
+}
+
+#[tokio::test]
+async fn location_summary_publication_rechecks_raw_and_selected_canonical_rows() {
+    let Some(f) = summary_fixture().await else {
+        return;
+    };
+    let fingerprint = f.packet["evidence_fingerprint"].as_str().unwrap();
+    let valid = validate_location_summary(
+        &f,
+        &f.query,
+        fingerprint,
+        std::slice::from_ref(&f.canonical),
+        std::slice::from_ref(&f.raw),
+    )
+    .await
+    .unwrap();
+    assert_eq!(valid["sources_validated"], true);
+    assert_eq!(valid["fingerprint"], fingerprint);
+    assert!(
+        valid.get("reports").is_none(),
+        "validator must not create a copied raw archive"
+    );
+    let next = f.query.to.to_utc() + Duration::hours(12);
+    let appended = format!(
+        "{}| {} | {} | 1h | Unrelated later stop | visit | Seattle | medium | 47.1000,-122.1000 |\n",
+        f.content,
+        next.format("%Y-%m-%dT%H:%M%:z"),
+        (next + Duration::hours(1)).format("%Y-%m-%dT%H:%M%:z")
+    );
+    let written=request_json(&f.app,Method::POST,"/v1/workspace/write",&f.owner.saver.token,json!({"path":f.canonical.path,"content":appended,"expected_version":1,"metadata":{"kind":"location-visits"}})).await;
+    assert_eq!(written.status, StatusCode::OK, "{}", written.body);
+    validate_location_summary(
+        &f,
+        &f.query,
+        fingerprint,
+        std::slice::from_ref(&f.canonical),
+        std::slice::from_ref(&f.raw),
+    )
+    .await
+    .unwrap();
+    let mut outside = f.canonical.clone();
+    outside.version = 2;
+    outside.start_line = appended.lines().count();
+    outside.end_line = outside.start_line;
+    outside.excerpt = appended.lines().last().unwrap().to_owned();
+    assert!(
+        validate_location_summary(&f, &f.query, fingerprint, &[outside], &[])
+            .await
+            .is_err(),
+        "an exact next-day canonical row is not evidence for the requested day"
+    );
+    let edited = appended.replace("A bounded stop", "A corrected bounded stop");
+    let written=request_json(&f.app,Method::POST,"/v1/workspace/write",&f.owner.saver.token,json!({"path":f.canonical.path,"content":edited,"expected_version":2,"metadata":{"kind":"location-visits"}})).await;
+    assert_eq!(written.status, StatusCode::OK, "{}", written.body);
+    assert!(
+        validate_location_summary(
+            &f,
+            &f.query,
+            fingerprint,
+            std::slice::from_ref(&f.canonical),
+            &[]
+        )
+        .await
+        .is_err()
+    );
+    let edited_packet = brunn::location::evidence::read_evidence(&f.state, &f.auth, &f.query)
+        .await
+        .unwrap();
+    assert!(
+        validate_location_summary(
+            &f,
+            &f.query,
+            edited_packet["evidence_fingerprint"].as_str().unwrap(),
+            std::slice::from_ref(&f.canonical),
+            &[]
+        )
+        .await
+        .is_err(),
+        "fresh packet cannot validate a historical excerpt that changed"
+    );
+    let generation: i64 =
+        sqlx::query_scalar("SELECT max(generation) FROM brunn.workspace_changes WHERE user_id=$1")
+            .bind(f.owner.user_id)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    sqlx::query("INSERT INTO brunn.location_reports(user_id,at,type,offset_min,lat,lon,accuracy_m,arrived_at,departed_at) VALUES($1,$2,'visit_departure',0,47.002,-122.002,8,$3,$4)").bind(f.owner.user_id).bind(f.query.to.to_utc()+Duration::hours(2)).bind(f.query.from.to_utc()+Duration::hours(14)).bind(f.query.from.to_utc()+Duration::hours(15)).execute(&f.pool).await.unwrap();
+    let unchanged: i64 =
+        sqlx::query_scalar("SELECT max(generation) FROM brunn.workspace_changes WHERE user_id=$1")
+            .bind(f.owner.user_id)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    assert_eq!(generation, unchanged);
+    assert!(
+        validate_location_summary(
+            &f,
+            &f.query,
+            edited_packet["evidence_fingerprint"].as_str().unwrap(),
+            &[],
+            std::slice::from_ref(&f.raw)
+        )
+        .await
+        .is_err(),
+        "late raw-only callback must invalidate despite unchanged workspace generation"
+    );
+}
+
+#[tokio::test]
+async fn location_summary_citations_reject_unavailable_scope_fields_and_partial_packets() {
+    let Some(f) = summary_fixture().await else {
+        return;
+    };
+    let fingerprint = f.packet["evidence_fingerprint"].as_str().unwrap();
+    assert!(
+        validate_location_summary(&f, &f.query, fingerprint, &[], &[])
+            .await
+            .is_err()
+    );
+    let mut forged = f.canonical.clone();
+    forged.excerpt = "Invented canonical evidence".into();
+    assert!(
+        validate_location_summary(&f, &f.query, fingerprint, &[forged], &[])
+            .await
+            .is_err()
+    );
+    let mut forbidden = f.raw.clone();
+    forbidden.fields = vec!["user_id".into()];
+    assert!(
+        validate_location_summary(&f, &f.query, fingerprint, &[], &[forbidden])
+            .await
+            .is_err()
+    );
+    let mut missing = f.raw.clone();
+    missing.fields = vec!["poi.99.name".into()];
+    assert!(
+        validate_location_summary(&f, &f.query, fingerprint, &[], &[missing])
+            .await
+            .is_err()
+    );
+    let outside:Value=sqlx::query_scalar("SELECT jsonb_build_object('at',at,'type',type) FROM brunn.location_reports WHERE user_id=$1 ORDER BY at LIMIT 1").bind(f.owner.user_id).fetch_one(&f.pool).await.unwrap();
+    let outside = brunn::location::summary::RawCitation {
+        natural_key: outside,
+        fields: vec!["at".into()],
+    };
+    assert!(
+        validate_location_summary(&f, &f.query, fingerprint, &[], &[outside])
+            .await
+            .is_err(),
+        "outside non-boundary raw record is not packet evidence"
+    );
+    let old = brunn::location::evidence::EvidenceQuery {
+        from: (f.query.from - Duration::days(40)),
+        to: (f.query.to - Duration::days(40)),
+        timezone: "UTC".into(),
+    };
+    assert!(
+        validate_location_summary(&f, &old, fingerprint, &[], std::slice::from_ref(&f.raw))
+            .await
+            .is_err()
+    );
+    let mut pinned = f.state.rw_pool.begin().await.unwrap();
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        .execute(&mut *pinned)
+        .await
+        .unwrap();
+    brunn::db::set_context(&mut pinned, &f.auth).await.unwrap();
+    assert!(
+        brunn::location::summary::validate_candidate_in_tx(
+            &mut pinned,
+            &f.auth,
+            &f.query,
+            fingerprint,
+            &[],
+            std::slice::from_ref(&f.raw)
+        )
+        .await
+        .is_err(),
+        "an older pinned transaction may not validate publication after waiting for owner locks"
+    );
+    pinned.rollback().await.unwrap();
+    let foreign = seed_fixture(&f.pool).await;
+    let foreign_auth = brunn::auth::authenticate(&f.state, &foreign.saver.token)
+        .await
+        .unwrap();
+    let mut foreign_tx = f.state.begin_write(&foreign_auth).await.unwrap();
+    assert!(
+        brunn::location::summary::validate_candidate_in_tx(
+            &mut foreign_tx,
+            &foreign_auth,
+            &f.query,
+            fingerprint,
+            std::slice::from_ref(&f.canonical),
+            std::slice::from_ref(&f.raw)
+        )
+        .await
+        .is_err()
+    );
+    foreign_tx.rollback().await.unwrap();
+    let reader = brunn::auth::authenticate(&f.state, &f.owner.reader.token)
+        .await
+        .unwrap();
+    let mut read = f.state.begin_read(&reader).await.unwrap();
+    assert!(
+        brunn::location::summary::validate_candidate_in_tx(
+            &mut read,
+            &reader,
+            &f.query,
+            fingerprint,
+            &[],
+            std::slice::from_ref(&f.raw)
+        )
+        .await
+        .is_err()
+    );
+    read.rollback().await.unwrap();
+    sqlx::query("INSERT INTO brunn.location_reports(user_id,at,type,offset_min,lat,lon,accuracy_m) SELECT $1,$2::timestamptz+n*interval '1 second','ping',0,47,-122,5 FROM generate_series(1,2001)n").bind(f.owner.user_id).bind(f.query.from.to_utc()).execute(&f.pool).await.unwrap();
+    let partial = brunn::location::evidence::read_evidence(&f.state, &f.auth, &f.query)
+        .await
+        .unwrap();
+    assert_eq!(partial["fingerprint_complete"], false);
+    assert!(
+        validate_location_summary(&f, &f.query, fingerprint, &[], std::slice::from_ref(&f.raw))
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn location_summary_validation_holds_owner_evidence_fences_until_publication_ends() {
+    let Some(f) = summary_fixture().await else {
+        return;
+    };
+    let fingerprint = f.packet["evidence_fingerprint"].as_str().unwrap();
+    let mut publication = f.state.begin_write(&f.auth).await.unwrap();
+    brunn::location::summary::validate_candidate_in_tx(
+        &mut publication,
+        &f.auth,
+        &f.query,
+        fingerprint,
+        std::slice::from_ref(&f.canonical),
+        std::slice::from_ref(&f.raw),
+    )
+    .await
+    .unwrap();
+    let (started, ready) = tokio::sync::oneshot::channel();
+    let state = f.state.clone();
+    let auth = brunn::auth::authenticate(&f.state, &f.owner.device.token)
+        .await
+        .unwrap();
+    let at = f.query.from.to_utc() + Duration::hours(11);
+    let mut writer = tokio::spawn(async move {
+        started.send(()).unwrap();
+        let mut tx = state.begin_write(&auth).await.unwrap();
+        brunn::location::store::lock_location_user(&mut tx, auth.user_id.0)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO brunn.location_reports(user_id,at,type,offset_min,lat,lon,accuracy_m) VALUES($1,$2,'ping',0,47.001,-122.001,5)").bind(auth.user_id.0).bind(at).execute(&mut *tx).await.unwrap();
+        tx.commit().await.unwrap();
+    });
+    ready.await.unwrap();
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(100), &mut writer)
+            .await
+            .is_err()
+    );
+    publication.commit().await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), writer)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        validate_location_summary(
+            &f,
+            &f.query,
+            fingerprint,
+            std::slice::from_ref(&f.canonical),
+            std::slice::from_ref(&f.raw)
+        )
+        .await
+        .is_err()
+    );
+}
+
+#[tokio::test]
+async fn location_summary_places_citations_require_the_exact_current_definition_version() {
+    let Some(f) = summary_fixture().await else {
+        return;
+    };
+    write_places(&f.app, &f.owner.saver.token, places_document(100), 0).await;
+    let packet = brunn::location::evidence::read_evidence(&f.state, &f.auth, &f.query)
+        .await
+        .unwrap();
+    let place = &packet["places"];
+    let text = place["text"].as_str().unwrap();
+    let source = brunn::dreamer_review::Source {
+        entry_ref: place["ref"].as_str().unwrap().into(),
+        version: place["version"].as_i64().unwrap(),
+        path: place["path"].as_str().unwrap().into(),
+        start_line: 1,
+        end_line: text.lines().count(),
+        excerpt: text.lines().collect::<Vec<_>>().join("\n"),
+    };
+    validate_location_summary(
+        &f,
+        &f.query,
+        packet["evidence_fingerprint"].as_str().unwrap(),
+        std::slice::from_ref(&source),
+        &[],
+    )
+    .await
+    .unwrap();
+    write_places(&f.app, &f.owner.saver.token, places_document(150), 1).await;
+    let changed = brunn::location::evidence::read_evidence(&f.state, &f.auth, &f.query)
+        .await
+        .unwrap();
+    assert!(
+        validate_location_summary(
+            &f,
+            &f.query,
+            packet["evidence_fingerprint"].as_str().unwrap(),
+            std::slice::from_ref(&source),
+            &[]
+        )
+        .await
+        .is_err()
+    );
+    assert!(
+        validate_location_summary(
+            &f,
+            &f.query,
+            changed["evidence_fingerprint"].as_str().unwrap(),
+            std::slice::from_ref(&source),
+            &[]
+        )
+        .await
+        .is_err(),
+        "even a refreshed packet cannot validate the superseded Places definition version"
+    );
+}
+
+async fn preview_location_citations(f: &SummaryFixture, scope: &Value) -> Vec<Value> {
+    let mut tx = f.state.rw_pool.begin().await.unwrap();
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    brunn::db::set_context(&mut tx, &f.auth).await.unwrap();
+    let rows = brunn::location::summary::citation_previews_in_tx(
+        &mut tx,
+        &f.auth,
+        scope,
+        std::slice::from_ref(&f.raw),
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    rows
+}
+
+#[tokio::test]
+async fn location_raw_citation_previews_show_only_selected_current_values_from_matching_scope() {
+    let Some(f) = summary_fixture().await else {
+        return;
+    };
+    let scope = validate_location_summary(
+        &f,
+        &f.query,
+        f.packet["evidence_fingerprint"].as_str().unwrap(),
+        std::slice::from_ref(&f.canonical),
+        std::slice::from_ref(&f.raw),
+    )
+    .await
+    .unwrap();
+    let rows = preview_location_citations(&f, &scope).await;
+    assert_eq!(rows.len(), 1);
+    let preview = &rows[0];
+    assert!(
+        preview["entry_ref"]
+            .as_str()
+            .unwrap()
+            .starts_with("location-report:")
+    );
+    assert!(preview.get("path").is_none());
+    assert!(preview.get("version").is_none());
+    let text = preview["excerpt"].as_str().unwrap();
+    assert!(text.contains("lat: 47"));
+    assert!(text.contains("accuracy_m: 5"));
+    assert!(text.contains("first_received_at: null"));
+    assert!(text.contains("poi.0.name: \"Nearby candidate\""));
+    assert!(text.contains("not confirmed venues"));
+    assert!(
+        !text.contains("Approximate address"),
+        "unselected raw values are not previewed"
+    );
+    sqlx::query("UPDATE brunn.location_reports SET accuracy_m=45 WHERE user_id=$1 AND at=$2 AND type='ping'").bind(f.owner.user_id).bind(f.query.from.to_utc()+Duration::hours(12)).execute(&f.pool).await.unwrap();
+    assert!(
+        preview_location_citations(&f, &scope).await.is_empty(),
+        "changed packet cannot preview new or cached raw values under the accepted old scope"
+    );
+    let packet = brunn::location::evidence::read_evidence(&f.state, &f.auth, &f.query)
+        .await
+        .unwrap();
+    let fresh = validate_location_summary(
+        &f,
+        &f.query,
+        packet["evidence_fingerprint"].as_str().unwrap(),
+        std::slice::from_ref(&f.canonical),
+        std::slice::from_ref(&f.raw),
+    )
+    .await
+    .unwrap();
+    let current = preview_location_citations(&f, &fresh).await;
+    assert!(
+        current[0]["excerpt"]
+            .as_str()
+            .unwrap()
+            .contains("accuracy_m: 45")
+    );
+    let mut expired = fresh.clone();
+    expired["from"] = json!(f.query.from - Duration::days(40));
+    expired["to"] = json!(f.query.to - Duration::days(40));
+    assert!(preview_location_citations(&f, &expired).await.is_empty());
+    let reader = brunn::auth::authenticate(&f.state, &f.owner.reader.token)
+        .await
+        .unwrap();
+    let mut read = f.state.begin_read(&reader).await.unwrap();
+    assert!(
+        brunn::location::summary::citation_previews_in_tx(
+            &mut read,
+            &reader,
+            &fresh,
+            std::slice::from_ref(&f.raw)
+        )
+        .await
+        .is_err()
+    );
+    read.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn historical_evidence_preserves_late_visits_receipts_snapshot_and_source_boundaries() {
+    let Some((pool, state)) = connect_test_state().await else {
+        return;
+    };
+    let fixture = seed_fixture(&pool).await;
+    let other = seed_fixture(&pool).await;
+    let app = router(state.clone());
+    write_places(&app, &fixture.saver.token, places_document(100), 0).await;
+    let from = (Utc::now() - Duration::days(2))
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc();
+    let to = from + Duration::days(1);
+    let uri = evidence_uri(from, to);
+    let callback = to + Duration::hours(3);
+    let late = json!({"type":"visit_departure","at":callback,"lat":47.02,"lon":-122.0,"accuracy_m":20,
+        "arrived_at":from+Duration::hours(18),"departed_at":from+Duration::hours(19),
+        "geocode":{"name":"An approximate street","city":"Bellevue"},
+        "poi":[{"name":"Nearby candidate A","distance_m":15},{"name":"Nearby candidate B","distance_m":15}]});
+    let reports = json!({"timezone":"UTC","reports":[
+        {"type":"ping","at":from-Duration::minutes(1),"lat":47.0,"lon":-122.0,"accuracy_m":5},
+        {"type":"ping","at":from+Duration::hours(12),"lat":47.0,"lon":-122.0,"accuracy_m":5},
+        {"type":"ping","at":to+Duration::minutes(1),"lat":47.0,"lon":-122.0,"accuracy_m":5},late]});
+    let first_receipt_start = Utc::now();
+    let response = request_json(
+        &app,
+        Method::POST,
+        "/v1/location/reports",
+        &fixture.device.token,
+        reports.clone(),
+    )
+    .await;
+    assert_eq!(response.status, StatusCode::OK, "{}", response.body);
+    let receipt = sqlx::query_scalar::<_, Option<DateTime<Utc>>>(
+        "SELECT first_received_at FROM brunn.location_reports WHERE user_id=$1 AND at=$2",
+    )
+    .bind(fixture.user_id)
+    .bind(callback)
+    .fetch_one(&pool)
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(receipt >= first_receipt_start - Duration::milliseconds(1) && receipt <= Utc::now());
+    let response = request_json(
+        &app,
+        Method::POST,
+        "/v1/location/reports",
+        &fixture.device.token,
+        reports,
+    )
+    .await;
+    assert_eq!(response.status, StatusCode::OK, "{}", response.body);
+    let duplicate_receipt = sqlx::query_scalar::<_, Option<DateTime<Utc>>>(
+        "SELECT first_received_at FROM brunn.location_reports WHERE user_id=$1 AND at=$2",
+    )
+    .bind(fixture.user_id)
+    .bind(callback)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(duplicate_receipt, Some(receipt));
+    for token in [&fixture.reader.token, &fixture.device.token] {
+        let denied = request_bytes(&app, Method::GET, &uri, token, None).await;
+        assert_error(&denied, StatusCode::FORBIDDEN, "capability_denied");
+    }
+    let foreign = request_bytes(&app, Method::GET, &uri, &other.saver.token, None).await;
+    assert_eq!(foreign.status, StatusCode::OK, "{}", foreign.body);
+    assert!(foreign.body["reports"].as_array().unwrap().is_empty());
+    assert!(foreign.body["places"].is_null());
+    let response = request_bytes(&app, Method::GET, &uri, &fixture.saver.token, None).await;
+    assert_eq!(response.status, StatusCode::OK, "{}", response.body);
+    assert_eq!(
+        response.body["completeness"]["complete"], true,
+        "{}",
+        response.body
+    );
+    let rows = response.body["reports"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "one day ping and late overlapping visit");
+    let visit = rows
+        .iter()
+        .find(|r| r["type"] == "visit_departure")
+        .unwrap();
+    assert_eq!(visit["origin"], "apple_visit_estimate");
+    assert_eq!(visit["poi"].as_array().unwrap().len(), 2);
+    assert_eq!(visit["poi"][0]["rank"], 1);
+    assert_eq!(visit["poi"][1]["rank"], 2);
+    assert!(
+        DateTime::parse_from_rfc3339(visit["at"].as_str().unwrap())
+            .unwrap()
+            .to_utc()
+            >= to
+    );
+    assert!(response.body["boundary_observations"]["before"].is_object());
+    assert!(response.body["boundary_observations"]["after"].is_object());
+    assert!(
+        response.body["canonical_months"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|doc| !doc["selectors"].as_array().unwrap().is_empty())
+    );
+    assert_eq!(response.body["places"]["version"], 1);
+    assert_eq!(
+        response.body["sample_gaps"]["intervals"][0]["label"],
+        "sample_gap"
+    );
+    let fingerprint = response.body["evidence_fingerprint"].clone();
+    let next_day = completed_report(
+        to + Duration::hours(12),
+        "Another next-day area",
+        "Seattle",
+        json!([]),
+    );
+    let changed = request_json(
+        &app,
+        Method::POST,
+        "/v1/location/reports",
+        &fixture.device.token,
+        batch(next_day),
+    )
+    .await;
+    assert_eq!(changed.status, StatusCode::OK, "{}", changed.body);
+    let after_unrelated = request_bytes(&app, Method::GET, &uri, &fixture.saver.token, None).await;
+    assert_eq!(
+        after_unrelated.body["evidence_fingerprint"], fingerprint,
+        "unrelated later-day canonical append is not day invalidation"
+    );
+
+    // A backdated raw-only write changes no workspace generation. One pinned
+    // snapshot remains coherent; a new snapshot observes the new evidence.
+    let auth = brunn::auth::authenticate(&state, &fixture.saver.token)
+        .await
+        .unwrap();
+    let query = brunn::location::evidence::EvidenceQuery {
+        from: from.fixed_offset(),
+        to: to.fixed_offset(),
+        timezone: "UTC".into(),
+    };
+    let mut tx = state.rw_pool.begin().await.unwrap();
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    brunn::db::set_context(&mut tx, &auth).await.unwrap();
+    let pinned = brunn::location::evidence::evidence_in_tx(&mut tx, &auth, &query)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO brunn.location_reports(user_id,at,type,offset_min,lat,lon,accuracy_m,name) VALUES($1,$2,'ping',0,47.001,-122.001,5,'Legacy unknown receipt')")
+        .bind(fixture.user_id).bind(from+Duration::hours(14)).execute(&pool).await.unwrap();
+    let still_pinned = brunn::location::evidence::evidence_in_tx(&mut tx, &auth, &query)
+        .await
+        .unwrap();
+    assert_eq!(
+        pinned["evidence_fingerprint"],
+        still_pinned["evidence_fingerprint"]
+    );
+    tx.commit().await.unwrap();
+    let fresh = brunn::location::evidence::read_evidence(&state, &auth, &query)
+        .await
+        .unwrap();
+    assert_eq!(
+        pinned["snapshot"]["workspace_generation"],
+        fresh["snapshot"]["workspace_generation"]
+    );
+    assert_ne!(
+        pinned["evidence_fingerprint"],
+        fresh["evidence_fingerprint"]
+    );
+    assert!(
+        fresh["reports"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|report| report["name"] == "Legacy unknown receipt"
+                && report["first_received_at"].is_null())
+    );
+    let expired = request_bytes(
+        &app,
+        Method::GET,
+        &evidence_uri(from - Duration::days(40), to - Duration::days(40)),
+        &fixture.saver.token,
+        None,
+    )
+    .await;
+    assert_eq!(expired.status, StatusCode::OK);
+    assert_eq!(expired.body["completeness"]["complete"], false);
+    assert!(
+        expired.body["completeness"]["reasons"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("raw_retention_expired"))
+    );
+}
+
+#[tokio::test]
+async fn historical_evidence_caps_defer_instead_of_claiming_complete_sources() {
+    let Some((pool, state)) = connect_test_state().await else {
+        return;
+    };
+    let fixture = seed_fixture(&pool).await;
+    let app = router(state);
+    let from = (Utc::now() - Duration::days(2))
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc();
+    sqlx::query("INSERT INTO brunn.location_reports(user_id,at,type,offset_min,lat,lon,accuracy_m,name) SELECT $1,$2::timestamptz+n*interval '1 second','ping',0,47,-122,5,repeat('x',1000) FROM generate_series(1,2001) n")
+        .bind(fixture.user_id).bind(from).execute(&pool).await.unwrap();
+    let response = request_bytes(
+        &app,
+        Method::GET,
+        &evidence_uri(from, from + Duration::days(1)),
+        &fixture.saver.token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status, StatusCode::OK, "{}", response.body);
+    assert_eq!(response.body["completeness"]["complete"], false);
+    assert_eq!(response.body["fingerprint_complete"], false);
+    assert!(response.body["evidence_fingerprint"].is_null());
+    let reasons = response.body["completeness"]["reasons"].as_array().unwrap();
+    assert!(reasons.contains(&json!("report_limit")));
+    assert!(reasons.contains(&json!("packet_byte_limit")));
+    assert!(response.body["reports"].as_array().unwrap().len() < 2000);
+    assert!(serde_json::to_vec(&response.body).unwrap().len() <= 250_000);
+}

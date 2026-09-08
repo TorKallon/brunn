@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, time::Instant};
 
 use axum::{
     Extension, Json,
-    extract::{State, rejection::JsonRejection},
+    extract::{Query, State, rejection::JsonRejection},
     http::StatusCode,
 };
 use chrono::{DateTime, Duration, FixedOffset, Utc};
@@ -146,6 +146,16 @@ pub(crate) async fn presence(
         )
     })?;
     Ok(Json(presence_view(&row, Utc::now())))
+}
+
+pub async fn evidence(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Query(query): Query<super::evidence::EvidenceQuery>,
+) -> ApiResult<Json<serde_json::Value>> {
+    super::evidence::read_evidence(&state, &auth, &query)
+        .await
+        .map(Json)
 }
 
 pub(crate) async fn rederive(

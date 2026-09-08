@@ -191,3 +191,19 @@ test("secret tool annotations separate reads from writes", async () => {
     await close();
   }
 });
+
+test("secret.put preserves optional version and identity checks for guarded refresh", async () => {
+  const calls: RecordedCall[] = [];
+  const { client, close } = await connectedPair(calls, { status: "stored", version: 4 });
+  const input = { name: "refresh-fixture", value: "fixture-value", expected_version: 3, expected_secret_ref: "secret:019f8800000070008000000000000002" };
+  try {
+    assert.notEqual((await client.callTool({ name: "secret.put", arguments: input })).isError, true);
+    assert.deepEqual(JSON.parse(calls[0]?.body ?? ""), input);
+    assert.notEqual((await client.callTool({ name: "secret.put", arguments: { name: "new-fixture", value: "fixture-value", expected_version: 0 } })).isError, true);
+    assert.equal(JSON.parse(calls[1]?.body ?? "").expected_version, 0);
+    for (const extra of [{ expected_version: -1 }, { expected_secret_ref: "not-a-secret-ref" }]) {
+      assert.equal((await client.callTool({ name: "secret.put", arguments: { name: "refresh-fixture", value: "fixture-value", ...extra } })).isError, true);
+    }
+    assert.equal(calls.length, 2);
+  } finally { await close(); }
+});

@@ -1256,53 +1256,6 @@ export interface StageReceipt {
   }>;
 }
 
-export interface DreamSummary {
-  id: string;
-  region?: string;
-  status: string;
-  base_revision?: string;
-  candidate_revision?: string;
-  trigger?: string;
-  created_at?: string;
-  updated_at?: string;
-  risk_level?: string;
-}
-
-export interface DreamGate {
-  id: string;
-  name: string;
-  status: "passed" | "failed" | "warning" | "pending";
-  summary?: string;
-  details?: JsonValue;
-}
-
-export interface DreamDetail extends DreamSummary {
-  diff?: Array<{
-    id?: string;
-    kind: string;
-    target?: string;
-    disposition?: string;
-    before?: JsonValue;
-    after?: JsonValue;
-  }>;
-  gates?: DreamGate[];
-  lineage?: EvidenceRef[];
-  evaluation?: {
-    baseline_score?: number;
-    candidate_score?: number;
-    regressions?: string[];
-  };
-  audit?: AuditEvent[];
-  review?: {
-    decision?: string;
-    reviewer?: string;
-    note?: string;
-    decided_at?: string;
-  };
-  promotion_receipt?: JsonValue;
-  rollback_receipt?: JsonValue;
-}
-
 export interface CredentialSummary {
   id: string;
   name: string;

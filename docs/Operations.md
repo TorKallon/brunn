@@ -3,7 +3,8 @@
 ## Prerequisites
 
 - Docker Desktop or Docker Engine with Compose and BuildKit
-- an OpenAI API key for semantic indexing, automatic capture, and deep dreaming
+- an OpenAI API key for semantic indexing and automatic capture
+- a connected ChatGPT subscription for the optional production Codex Dreamer
 - free ports recorded in the Nyx project port map
 
 Create `.env` from `.env.example`, replace every placeholder secret, and keep
@@ -289,8 +290,96 @@ BRUNN_DREAM_INACTIVITY_SECONDS=60
 BRUNN_DREAM_COOLDOWN_SECONDS=900
 ```
 
-The scheduler remains shadow-only. These intervals control refresh latency,
-not authority or active-corpus promotion.
+These `BRUNN_DREAM_*` intervals belong to the older shadow scheduler, which
+remains disabled in the production Railway configuration. The separate Codex
+Dreamer uses the schedule and authority described below.
+
+## Production Codex Dreamer
+
+The private Railway `dreamer` service runs `brunn dreamer serve`. Its internal
+scheduler runs at 03:00 America/Los_Angeles; Railway cron stays unset. Startup
+attempts at most the newest due slot, and server admission suppresses duplicate
+successful nightly work. Manual attempts can retry the same date. Each accepted
+attempt receives a new version of `dreams/runs/YYYY-MM-DD.md`, preserving earlier
+successes and failures.
+
+`dreams/CONTROL.md` must explicitly enable the service. Missing, malformed, or
+disabled CONTROL produces zero workspace writes. Calendar dates never promote
+report-only mode to full. In report-only mode, approvals remain held; enabling
+publication explicitly permits validated application of those approvals.
+Silence and an elapsed review window never approve a proposal. The Dreams page
+supports approve, reject, defer, and correction against the displayed candidate
+and state version. Source or target changes require renewed validation; failed
+validation leaves the proposal available for review.
+
+Keep these four credentials separate:
+
+| Variable | Authority and custody |
+| --- | --- |
+| `DREAMER_WORKSPACE_TOKEN` | Wrapper reads CONTROL and existing workspace context. It never reaches Codex. |
+| `DREAMER_MODEL_TOKEN` | Dedicated `read_only` Brunn credential. Before model execution, the wrapper checks `/v1/me` for read access and an allowlist of read capabilities; vault, mutation, and credential-management access are rejected. |
+| `DREAMER_RUNNER_TOKEN` | Exactly `dreamer:run`, `secret:read`, `secret:write`, and `notification:publish`; only the wrapper holds it. |
+| `DREAMER_INTERNAL_TOKEN` | Shared API-to-Dreamer private HTTP authentication; only API and Dreamer receive it. |
+
+The Docker image pins Codex CLI 0.153.4 and defaults to `gpt-5.6-sol`.
+`DREAMER_CODEX_MODEL` controls the model; `DREAMER_CODEX_VERSION` checks the
+qualified CLI version. ChatGPT authentication lives in the owner-scoped
+`dreamer-codex-auth` vault secret. `dreamer-runtime` holds bounded operational
+state and any terminal publication awaiting retry. Connect and every execution
+exit preserve refreshed authentication using secret identity and version
+compare-and-set, followed by readback. A failed custody or receipt write is a
+failure, even when Codex exited successfully. Keep the existing encryption key
+and authenticated vault contents across deployment; no reconnect is needed.
+
+The wrapper uses `/v1/workspace/dreamer/admit`, `/checkpoint`, `/candidates`, and
+`/finish` with the runner credential. Admission freezes exact input references,
+versions, hashes, and an upper generation under an owner-scoped lease and fence.
+One versioned `dreams/state.md` retains progress and unfinished work. Scanned
+generation and processed generation are distinct: partial attempts cannot erase
+unprocessed inputs, and concurrent writes remain eligible for the next pass.
+Codex receives the frozen input list and returns a bounded `dream.candidates.v1`
+JSON file. The server validates sources, citations, permissions, and target
+versions before publishing candidate records or approved summaries.
+
+The server atomically publishes the accepted terminal run and the deterministic
+`dreams/latest-receipt.md` projection using `dream.latest-receipt.v2`. The latter
+contains the exact immutable run reference and version consumed by briefings.
+Failed terminal publication remains in runtime custody for retry before any new
+model execution. A review-ready notification uses the accepted run version as
+its entry target and source. Inbox publication and push delivery have separate
+outcomes; failure retains the same event key for retry. No real push belongs in
+a fixture run.
+
+For Railway rollout, first pass the local database, runner, MCP, and UI gates
+and record the existing deployment IDs and digests. Stage a dedicated model
+token with `railway variable set DREAMER_MODEL_TOKEN --stdin --skip-deploys
+--service dreamer --environment production`; `.railway/railway.ts` preserves
+the value. Never place a token in command arguments or shared output. Apply the
+additive migrations through the worker's existing migrate pre-deploy step, then
+verify the API and runner credential authority before deploying Dreamer. The
+existing runner needs an explicit, audited `dreamer:run` grant, or replacement
+with the updated bounded runner template. Migrations do not upgrade existing
+credentials automatically. Deploy matching API, MCP, and web contracts before
+the new runner can publish review notifications.
+
+`BRUNN_DREAMER_SUMMARY_READS_ENABLED` independently gates summary-first reader
+responses and defaults to false. Railway configuration preserves its deployed
+value. Enable it only after the accepted-summary canary proves exact source
+validation and source links; set it false to withdraw summaries from readers
+without discarding review decisions or changing Dreamer publication mode.
+
+Deploy only the tested committed `main` tree with explicit project, service,
+and environment arguments. A detached upload is not a health result: record its
+deployment ID, wait for success, check private `/healthz`, the CLI version,
+credential capabilities, and a coherent attempt/receipt. Startup catch-up may
+start a run immediately when CONTROL is enabled, so credential provisioning and
+publication gates must be ready first. An explicitly authorized report-only
+canary must prove exact source-to-candidate-to-receipt lineage and retained work;
+full-mode publication remains an independent owner choice. If rollback is
+needed, disable Dreamer admission before reverting its image and dependent
+services to the recorded deployments. Preserve vault secrets, run versions,
+state, and additive schema; an older image must not regain calendar-based full
+mode while rollback is being inspected.
 
 ## Production Observability
 
@@ -704,10 +793,11 @@ against the same backup format.
 - Ordinary read/write tokens cannot manage credentials.
 - Evaluation import is an administrative local harness surface and should not
   be exposed unchanged in a public deployment.
-- The API sends the submitted source plus bounded current context to OpenAI for
-  `memory.capture`; the dream worker sends bounded selected evidence for deep
-  consolidation. Both request paths use `store: false` and a privacy-preserving
-  user-scoped safety identifier.
+- The API sends submitted source plus bounded current context to OpenAI for
+  `memory.capture`, using `store: false` and a privacy-preserving user-scoped
+  safety identifier. The production Codex Dreamer uses the connected ChatGPT
+  subscription and a separate read-only Brunn identity; its authentication and
+  storage behavior are governed by that Codex runtime.
 
 ## Troubleshooting
 

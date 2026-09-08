@@ -217,9 +217,14 @@ pub struct NotificationView {
 
 #[derive(Debug, Serialize)]
 pub struct PublishResponse {
-    pub notification: NotificationView,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notification: Option<NotificationView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notification_ref: Option<String>,
     pub replayed: bool,
     pub delivery_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery_status: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -303,7 +308,10 @@ pub async fn publish(
     Json(request): Json<PublishRequest>,
 ) -> ApiResult<Json<PublishResponse>> {
     require_publish(&auth)?;
-    auth.require(Capability::Read)?;
+    let publisher_only = !auth.can(Capability::Read);
+    if publisher_only {
+        auth.require(Capability::NotificationPublish)?;
+    }
     let request = normalize_publish(request);
     if !state.config.messaging_enabled
         && matches!(request.target, NotificationTarget::Conversation { .. })
@@ -323,8 +331,24 @@ pub async fn publish(
         None,
     )
     .await?;
+    let delivery_status = if publisher_only {
+        Some(
+            sqlx::query_scalar::<_, String>(
+                "SELECT delivery_status FROM brunn.publisher_notification_fanout($1,false,false,NULL)",
+            )
+            .bind(result.notification_id)
+            .fetch_one(&mut *tx)
+            .await?,
+        )
+    } else {
+        None
+    };
     tx.commit().await?;
-    let notification = load_notification(&state, &auth, result.notification_id).await?;
+    let notification = if publisher_only {
+        None
+    } else {
+        Some(load_notification(&state, &auth, result.notification_id).await?)
+    };
     metrics::counter!(
         "notifications.publish",
         "result" => if result.inserted { "created" } else { "replayed" },
@@ -333,9 +357,50 @@ pub async fn publish(
     .increment(1);
     Ok(Json(PublishResponse {
         notification,
+        notification_ref: publisher_only
+            .then(|| format_ref("notification", result.notification_id)),
         replayed: !result.inserted,
         delivery_count: result.delivery_count,
+        delivery_status,
     }))
+}
+
+/// Publisher credentials can address only their accepted Dreamer run or emit a
+/// operational alert. The database predicate also guards INSERT,
+/// so metadata/source access is never granted to validate a review destination.
+async fn validate_publisher_only_target(
+    tx: &mut Transaction<'_, Postgres>,
+    request: &PublishRequest,
+) -> ApiResult<()> {
+    if request.kind != "operational" {
+        return Err(ApiError::invalid(
+            "publisher-only credentials can publish operational notifications only",
+        ));
+    }
+    if matches!(request.target, NotificationTarget::Notification) && request.source.is_none() {
+        return Ok(());
+    }
+    if matches!(request.target, NotificationTarget::Entry { .. }) {
+        let allowed = sqlx::query_scalar::<_, bool>(
+            "SELECT brunn.publisher_notification_target_allowed($1,$2)",
+        )
+        .bind(serde_json::to_value(&request.target)?)
+        .bind(
+            request
+                .source
+                .as_ref()
+                .map(serde_json::to_value)
+                .transpose()?,
+        )
+        .fetch_one(&mut **tx)
+        .await?;
+        if allowed {
+            return Ok(());
+        }
+    }
+    Err(ApiError::invalid(
+        "publisher-only target must be an accepted own Dreamer run or an operational notification without a source",
+    ))
 }
 
 pub(crate) async fn publish_in_tx(
@@ -348,6 +413,40 @@ pub(crate) async fn publish_in_tx(
 ) -> ApiResult<PublishTxResult> {
     validate_publish_for_access(request, access)?;
     let request_hash = canonical_request_hash(request)?;
+    let publisher_only = !auth.can(Capability::Read) && access == PublishAccess::Public;
+    if publisher_only {
+        // Exact accepted replays survive later run versions/deletions. A new
+        // event still validates the accepted version and visible entry.
+        if let Some((notification_id, existing_hash)) = sqlx::query_as::<_, (Uuid, String)>(
+            "SELECT id,request_hash FROM brunn.notifications WHERE user_id=$1 AND event_key=$2 AND producer_credential_id=$3",
+        )
+        .bind(auth.user_id.0)
+        .bind(request.event_key.trim())
+        .bind(auth.credential_id.0)
+        .fetch_optional(&mut **tx)
+        .await?
+        {
+            if existing_hash != request_hash {
+                return Err(ApiError::conflict(
+                    "notification_event_key_conflict",
+                    "the event key was already used with different notification content",
+                    json!({"event_key": request.event_key.trim()}),
+                ));
+            }
+            let delivery_count = sqlx::query_scalar::<_, i64>(
+                "SELECT delivery_count FROM brunn.publisher_notification_fanout($1,false,false,NULL)",
+            )
+            .bind(notification_id)
+            .fetch_one(&mut **tx)
+            .await? as usize;
+            return Ok(PublishTxResult {
+                notification_id,
+                inserted: false,
+                delivery_count,
+            });
+        }
+        validate_publisher_only_target(tx, request).await?;
+    }
     let occurred_at = request.occurred_at.unwrap_or_else(Utc::now);
     let expires_at = effective_notification_expiry(occurred_at, request.expires_at);
     let source = request
@@ -387,10 +486,11 @@ pub(crate) async fn publish_in_tx(
         == 1;
 
     let existing = sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT id,request_hash FROM brunn.notifications WHERE user_id=$1 AND event_key=$2",
+        "SELECT id,request_hash FROM brunn.notifications WHERE user_id=$1 AND event_key=$2 AND producer_credential_id=$3",
     )
     .bind(auth.user_id.0)
     .bind(request.event_key.trim())
+    .bind(auth.credential_id.0)
     .fetch_optional(&mut **tx)
     .await?;
     let Some((resolved_id, existing_hash)) = existing else {
@@ -406,6 +506,24 @@ pub(crate) async fn publish_in_tx(
             "the event key was already used with different notification content",
             json!({"event_key": request.event_key.trim()}),
         ));
+    }
+    // A narrowly scoped definer performs installation fan-out and returns only
+    // an aggregate. No installation tokens or per-delivery rows become readable.
+    if publisher_only {
+        let delivery_count = sqlx::query_scalar::<_, i64>(
+            "SELECT delivery_count FROM brunn.publisher_notification_fanout($1,$2,$3,$4)",
+        )
+        .bind(resolved_id)
+        .bind(inserted)
+        .bind(state.config.apns_delivery_enabled)
+        .bind(delivery_available_at)
+        .fetch_one(&mut **tx)
+        .await? as usize;
+        return Ok(PublishTxResult {
+            notification_id: resolved_id,
+            inserted,
+            delivery_count,
+        });
     }
     if inserted {
         sqlx::query(

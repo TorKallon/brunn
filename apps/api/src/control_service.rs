@@ -283,10 +283,15 @@ fn credential_template(access: Option<&str>) -> ApiResult<(&'static str, Vec<&'s
             IOS_LOCATION_CAPABILITIES_MESSAGING_ON.to_vec(),
         )),
         // The dreamer wrapper: vault custody of the codex tokens plus the
-        // run's single operational notification. Codex never holds this.
+        // bounded server run authority and notifications. Codex never holds this.
         "dreamer_runner" => Ok((
             "dreamer_runner",
-            vec!["secret:read", "secret:write", "notification:publish"],
+            vec![
+                "secret:read",
+                "secret:write",
+                "notification:publish",
+                "dreamer:run",
+            ],
         )),
         "owner" => Ok((
             "owner",
@@ -430,7 +435,8 @@ fn credential_row_value(row: sqlx::postgres::PgRow) -> ApiResult<Value> {
 }
 
 fn credential_access_label(capabilities: &[String]) -> &'static str {
-    if capabilities.len() == 3
+    if (capabilities.len() == 3
+        || (capabilities.len() == 4 && capabilities.iter().any(|value| value == "dreamer:run")))
         && capabilities.iter().any(|value| value == "secret:read")
         && capabilities.iter().any(|value| value == "secret:write")
         && capabilities
@@ -693,13 +699,18 @@ mod credential_tests {
     }
 
     #[test]
-    fn dreamer_runner_template_is_vault_and_notify_only() {
+    fn dreamer_runner_template_has_bounded_run_authority_without_generic_writes() {
         let (access, capabilities) =
             credential_template(Some("dreamer_runner")).expect("dreamer_runner template");
         assert_eq!(access, "dreamer_runner");
         assert_eq!(
             capabilities,
-            ["secret:read", "secret:write", "notification:publish"]
+            [
+                "secret:read",
+                "secret:write",
+                "notification:publish",
+                "dreamer:run"
+            ]
         );
         for forbidden in [
             "open",

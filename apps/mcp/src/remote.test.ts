@@ -332,7 +332,8 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
       assert.equal(client.getServerVersion()?.name, "Brunn");
       const tools = await client.listTools();
       const requiredToolNames = [
-        "location.presence",
+        "location.evidence",
+      "location.presence",
         "location.rederive",
         "memory.open",
         "memory.read",

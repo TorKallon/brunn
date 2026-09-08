@@ -1,10 +1,9 @@
 //! The dreamer's HTTP client for the Brunn API.
 //!
 //! The dreamer shares this crate's code but never its database authority:
-//! every workspace effect goes through the public API. Two tokens exist —
-//! the `dreamer` credential (read_write; also handed to codex via MCP) and
-//! the wrapper-only `dreamer_runner` credential (vault custody and run
-//! notifications; codex never sees it).
+//! every workspace effect goes through the API. The model receives only its
+//! dedicated read-only identity. The wrapper retains its existing read identity
+//! and a distinct fenced-publication/vault/notification credential.
 
 use std::time::Duration;
 
@@ -63,6 +62,13 @@ pub struct ChangesPage {
     pub changes: Vec<ChangeRecord>,
 }
 
+/// Deliberately no Debug: this value carries plaintext custody material.
+pub struct SecretVersion {
+    pub secret_ref: String,
+    pub value: String,
+    pub version: i64,
+}
+
 #[derive(Clone)]
 pub struct ApiClient {
     http: reqwest::Client,
@@ -91,7 +97,7 @@ impl ApiClient {
         &self.token
     }
 
-    async fn post(&self, path: &str, body: Value) -> ClientResult<Value> {
+    pub async fn post(&self, path: &str, body: Value) -> ClientResult<Value> {
         let response = self
             .http
             .post(format!("{}{path}", self.base_url))
@@ -103,7 +109,7 @@ impl ApiClient {
         Self::decode(path, response).await
     }
 
-    async fn get(&self, path: &str) -> ClientResult<Value> {
+    pub async fn get(&self, path: &str) -> ClientResult<Value> {
         let response = self
             .http
             .get(format!("{}{path}", self.base_url))
@@ -324,29 +330,101 @@ impl ApiClient {
         .map(|_| ())
     }
 
+    pub async fn secret_get_version(&self, name: &str) -> ClientResult<Option<SecretVersion>> {
+        let response = self
+            .http
+            .post(format!("{}/v1/workspace/secrets/get", self.base_url))
+            .bearer_auth(&self.token)
+            .json(&json!({"name": name}))
+            .send()
+            .await
+            .map_err(|_| ClientError::Failed("vault read transport failed".into()))?;
+        if response.status() == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let response = Self::decode("/v1/workspace/secrets/get", response).await?;
+        let data = response.get("data").unwrap_or(&response);
+        Ok(Some(SecretVersion {
+            secret_ref: data["secret_ref"]
+                .as_str()
+                .ok_or_else(|| ClientError::Failed("vault identity missing".into()))?
+                .to_owned(),
+            value: data["value"]
+                .as_str()
+                .ok_or_else(|| ClientError::Failed("vault value missing".into()))?
+                .to_owned(),
+            version: data["version"]
+                .as_i64()
+                .filter(|v| *v > 0)
+                .ok_or_else(|| ClientError::Failed("vault version missing".into()))?,
+        }))
+    }
+
+    pub async fn secret_put_checked(
+        &self,
+        name: &str,
+        value: &str,
+        expected_version: i64,
+        expected_secret_ref: Option<&str>,
+    ) -> ClientResult<i64> {
+        let response = self.post("/v1/workspace/secrets/put", json!({"name":name,"value":value,"expected_version":expected_version,"expected_secret_ref":expected_secret_ref})).await?;
+        let data = response.get("data").unwrap_or(&response);
+        data["version"]
+            .as_i64()
+            .filter(|v| *v > 0)
+            .ok_or_else(|| ClientError::Failed("vault write version missing".into()))
+    }
+
     pub async fn secret_delete(&self, name: &str) -> ClientResult<()> {
         self.post("/v1/workspace/secrets/delete", json!({"name": name}))
             .await
             .map(|_| ())
     }
 
+    /// Server-owned attempt operations. Returned values are unwrapped here so
+    /// transport envelopes never leak into lifecycle state.
+    pub async fn dreamer(&self, operation: &str, body: Value) -> ClientResult<Value> {
+        let response = self
+            .post(&format!("/v1/workspace/dreamer/{operation}"), body)
+            .await?;
+        Ok(response.get("data").cloned().unwrap_or(response))
+    }
+
+    pub async fn review_ready(
+        &self,
+        event_key: &str,
+        run_ref: &str,
+        version: i64,
+        count: usize,
+    ) -> ClientResult<Value> {
+        let response = self.post("/v1/workspace/notifications/publish", json!({
+            "event_key": event_key, "correlation_id": event_key,
+            "kind": "operational", "importance": "important",
+            "title": "Dreaming is ready for review",
+            "body": format!("{count} new review item(s) have evidence and a candidate preview. [Open Review](https://brunn.ai/dreams) to approve, reject, defer, or correct them."),
+            "target": {"type": "entry", "entry_ref": run_ref},
+            "source": {"type": "dreamer_run", "ref": run_ref, "version_ref": format!("{run_ref}@{version}")}
+        })).await?;
+        Ok(response.get("data").cloned().unwrap_or(response))
+    }
+
     /// One operational notification. Uses a stable event key so retries and
     /// repeated skip states never fan out into notification spam.
-    pub async fn notify(&self, event_key: &str, title: &str, body: &str) -> ClientResult<()> {
+    pub async fn notify(&self, event_key: &str, title: &str, body: &str) -> ClientResult<Value> {
         self.post(
             "/v1/workspace/notifications/publish",
             json!({
                 "event_key": event_key,
                 "correlation_id": event_key,
                 "kind": "operational",
-                "importance": "high",
+                "importance": "important",
                 "title": title,
                 "body": body,
                 "target": {"type": "notification"}
             }),
         )
         .await
-        .map(|_| ())
+        .map(|response| response.get("data").cloned().unwrap_or(response))
     }
 }
 

@@ -809,8 +809,11 @@ pub async fn open(
         &continuation_evidence
     };
     let hydrate_started = Instant::now();
-    let (evidence, hydrated_generation) =
+    let (mut evidence, hydrated_generation) =
         hydrate_candidates(&state, &auth, evidence_candidates, evidence_budget).await?;
+    let mut summary_checks = 3;
+    crate::dreamer_summary::protect_evidence(&state, &auth, &mut evidence, &mut summary_checks)
+        .await?;
     let hydrate_ms = elapsed_ms(hydrate_started);
     let generation = eager_generation.or(hydrated_generation).ok_or_else(|| {
         ApiError::Internal("read-path hydration did not return workspace generation".to_owned())
@@ -827,6 +830,13 @@ pub async fn open(
         .map(render_evidence_lead)
         .collect::<Vec<_>>();
     evidence_leads.extend(resume_delta_batch.leads);
+    crate::dreamer_summary::protect_evidence(
+        &state,
+        &auth,
+        &mut evidence_leads,
+        &mut summary_checks,
+    )
+    .await?;
     record_candidate_usage(&state, &auth, &candidates);
 
     let mut response_data = json!({
@@ -1158,6 +1168,18 @@ pub async fn search(
         result_sets.push(Value::Object(result));
     }
     let budget_ms = elapsed_ms(budget_started);
+    let mut summary_checks = 3;
+    for result in &mut result_sets {
+        if let Some(candidates) = result.get_mut("candidates").and_then(Value::as_array_mut) {
+            crate::dreamer_summary::protect_evidence(
+                &state,
+                &auth,
+                candidates,
+                &mut summary_checks,
+            )
+            .await?;
+        }
+    }
     record_candidate_usage(&state, &auth, &all_candidates);
     let generation = if let Some(generation) = eager_generation.or(piggyback_generation) {
         generation
@@ -1226,6 +1248,15 @@ pub async fn read(
             "read requires between 1 and 32 exact requests",
         ));
     }
+    if request
+        .requests
+        .iter()
+        .any(|item| item.version.is_some() && item.view.as_deref() == Some("current_truth"))
+    {
+        return Err(ApiError::invalid(
+            "an exact version cannot be combined with current_truth",
+        ));
+    }
     let requested_count = request.requests.len();
     let eager_generation = if !state.config.read_path_roundtrip_v1
         || state.config.supersession_demotion
@@ -1245,6 +1276,7 @@ pub async fn read(
     let mut skipped_requests = 0_usize;
     let mut missing_requests = 0_usize;
     let mut piggyback_generation = None;
+    let mut summary_checks = 3;
     let mut resolved = futures::stream::iter(request.requests.into_iter().enumerate().map(
         |(index, item)| {
             let state = state.clone();
@@ -1345,6 +1377,22 @@ pub async fn read(
             .clamp(1, exact_read_limit)
             .min(remaining_chars);
         let mut rendered = render_read(&entry, &item, max_chars)?;
+        if crate::dreamer_summary::protected_metadata(&entry.metadata)
+            || crate::dreamer_summary::protected_path(&entry.path)
+            || (state.config.dreamer_summary_reads_enabled
+                && item.version.is_none()
+                && item.view.as_deref() == Some("current_state"))
+        {
+            rendered = crate::dreamer_summary::project_read(
+                &state,
+                &auth,
+                rendered,
+                &item,
+                max_chars,
+                &mut summary_checks,
+            )
+            .await?;
+        }
         if let Some(resolution) = current_truth {
             rendered["supersession_chain"] = json!(resolution.chain);
             if let Some(warning) = resolution.warning {
@@ -1722,6 +1770,13 @@ pub async fn delete_entry(
     .ok_or_else(|| ApiError::not_found("entry_not_found", &entry_ref))?;
     let path: String = row.get("path");
     validate_public_path(&path)?;
+    if crate::dreamer_summary::protected_path(&path)
+        || crate::dreamer_summary::protected_metadata(&row.get::<Value, _>("metadata"))
+    {
+        return Err(ApiError::invalid(
+            "Dreamer artifacts cannot be deleted through ordinary workspace operations",
+        ));
+    }
     let version: i64 = row.get("current_version");
     if let Some(expected_version) = query.expected_version
         && expected_version != version
@@ -6199,7 +6254,31 @@ pub(crate) async fn prepare_markdown(
     state: &AppState,
     request: WriteRequest,
 ) -> ApiResult<PreparedMarkdown> {
+    prepare_markdown_checked(state, request, false).await
+}
+
+/// Reserved Dreamer artifacts are assigned only by the validated server routes.
+pub(crate) async fn prepare_dreamer_markdown(
+    state: &AppState,
+    request: WriteRequest,
+) -> ApiResult<PreparedMarkdown> {
+    prepare_markdown_checked(state, request, true).await
+}
+
+async fn prepare_markdown_checked(
+    state: &AppState,
+    request: WriteRequest,
+    trusted_dreamer: bool,
+) -> ApiResult<PreparedMarkdown> {
     validate_path(&request.path)?;
+    if !trusted_dreamer
+        && (crate::dreamer_summary::protected_path(&request.path)
+            || crate::dreamer_summary::protected_metadata(&request.metadata))
+    {
+        return Err(ApiError::invalid(
+            "Dreamer artifacts and metadata are assigned only by the validated Dreamer API",
+        ));
+    }
     if request.media_type != "text/markdown" && request.media_type != "text/plain" {
         return Err(ApiError::invalid(
             "workspace.write accepts Markdown or plain text; upload other files as binaries",
@@ -6432,6 +6511,7 @@ pub(crate) async fn write_markdown_as_worker(
         .as_ref()
         .ok_or_else(|| ApiError::configuration("the worker requires DATABASE_URL_ADMIN"))?;
     let mut tx = pool.begin().await?;
+    crate::db::lock_workspace_commit(&mut tx, user_id).await?;
     require_local_publish_lock(
         &mut tx,
         format!(
@@ -8733,6 +8813,11 @@ fn validate_path(path: &str) -> ApiResult<()> {
 }
 
 pub(crate) fn validate_public_path(path: &str) -> ApiResult<()> {
+    if crate::dreamer_summary::protected_path(path) {
+        return Err(ApiError::invalid(
+            "Dreamer artifacts are reserved for validated server operations",
+        ));
+    }
     validate_path(path)?;
     if path.starts_with(".brunn/") {
         return Err(ApiError::invalid(

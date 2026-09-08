@@ -16,8 +16,6 @@ import type {
   CaptureReceipt,
   CredentialSummary,
   DataUsage,
-  DreamDetail,
-  DreamSummary,
   JsonObject,
   JsonValue,
   ListData,
@@ -65,6 +63,7 @@ import type {
   WorkspaceUsageSort,
   WorkspaceWriteReceipt,
 } from "./types";
+import type { DreamerDecisionData, DreamerDecisionInput, DreamerReviewData } from "./dreamerReview";
 
 const API_ROOT = "/api/v1";
 const MAX_BROWSER_DOWNLOAD_BYTES = 64 * 1024 * 1024;
@@ -193,6 +192,8 @@ export interface BrunnApi {
     payload: JsonObject,
   ): Promise<ApiEnvelope<WorkspaceDreamReceipt>>;
   dreamingStatus(): Promise<ApiEnvelope<JsonValue>>;
+  dreamerReview(): Promise<ApiEnvelope<DreamerReviewData>>;
+  dreamerReviewDecision(payload: DreamerDecisionInput): Promise<ApiEnvelope<DreamerDecisionData>>;
   dreamingConnectStart(): Promise<ApiEnvelope<JsonValue>>;
   dreamingConnectWait(): Promise<ApiEnvelope<JsonValue>>;
   dreamingDisconnect(): Promise<ApiEnvelope<JsonValue>>;
@@ -257,13 +258,6 @@ export interface BrunnApi {
     expectedHash: string,
     expectedSize: number,
   ): Promise<AssetDownload>;
-  dreams(): Promise<ApiEnvelope<ListData<DreamSummary> | DreamSummary[]>>;
-  dream(id: string): Promise<ApiEnvelope<DreamDetail>>;
-  reviewDream(
-    id: string,
-    payload: JsonObject,
-  ): Promise<ApiEnvelope<DreamDetail>>;
-  rollbackDream(id: string, payload: JsonObject): Promise<ApiEnvelope<DreamDetail>>;
   credentials(): Promise<
     ApiEnvelope<ListData<CredentialSummary> | CredentialSummary[]>
   >;
@@ -603,6 +597,8 @@ export function createApiClient(): BrunnApi {
     workspaceDream: (payload) =>
       post<WorkspaceDreamReceipt>("/workspace/dreams", payload),
     dreamingStatus: () => get<JsonValue>("/workspace/dreaming/status"),
+    dreamerReview: () => get<DreamerReviewData>("/dreamer/review"),
+    dreamerReviewDecision: (payload) => post<DreamerDecisionData>("/dreamer/review/decisions", { ...payload }),
     dreamingConnectStart: () =>
       post<JsonValue>("/workspace/dreaming/connect/start"),
     dreamingConnectWait: () => get<JsonValue>("/workspace/dreaming/connect/wait"),
@@ -706,12 +702,6 @@ export function createApiClient(): BrunnApi {
         { contentHash: expectedHash, sizeBytes: expectedSize },
       );
     },
-    dreams: () => get<ListData<DreamSummary> | DreamSummary[]>("/dreams"),
-    dream: (id) => get<DreamDetail>(`/dreams/${encodeURIComponent(id)}`),
-    reviewDream: (id, payload) =>
-      post<DreamDetail>(`/dreams/${encodeURIComponent(id)}/review`, payload),
-    rollbackDream: (id, payload) =>
-      post<DreamDetail>(`/dreams/${encodeURIComponent(id)}/rollback`, payload),
     credentials: () =>
       get<ListData<CredentialSummary> | CredentialSummary[]>("/credentials"),
     createCredential: (payload) => post<CredentialSummary>("/credentials", payload),

@@ -156,6 +156,7 @@ export function BriefingEditionPage() {
               meta={`${section.itemCount} item${
                 section.itemCount === 1 ? "" : "s"
               }`}
+              actions={section.parts.some((part) => part.section.topic === "dreaming") ? <Link className="button secondary" to="/dreams">Open Review</Link> : undefined}
             >
               <div className="briefing-section-items">
                 {section.parts.flatMap((part) =>

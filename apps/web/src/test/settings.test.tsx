@@ -18,6 +18,7 @@ describe("human-facing navigation and settings", () => {
     expect(links.getByRole("link", { name: "Overview" })).toBeInTheDocument();
     expect(links.getByRole("link", { name: "Alerts" })).toBeInTheDocument();
     expect(links.getByRole("link", { name: "Briefings" })).toBeInTheDocument();
+    expect(links.getByRole("link", { name: "Review" })).toHaveAttribute("href", "/dreams");
     expect(links.getByRole("link", { name: "Search" })).toBeInTheDocument();
     expect(
       links.getByRole("link", { name: "Detailed Activity" }),

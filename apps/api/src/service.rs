@@ -151,6 +151,7 @@ pub async fn status(
 fn runtime_feature_flags(state: &AppState) -> Value {
     json!({
         "allow_degraded_embeddings": state.config.allow_degraded_embeddings,
+        "dreamer_summary_reads_enabled": state.config.dreamer_summary_reads_enabled,
         "embed_cache": state.config.embed_cache,
         "embedding_backfill_guard": state.config.embedding_backfill_guard,
         "embedding_backfill_foreground_status_url_configured":
@@ -175,6 +176,7 @@ fn runtime_feature_flags(state: &AppState) -> Value {
 fn runtime_features(state: &AppState) -> Value {
     json!({
         "allow_degraded_embeddings": state.config.allow_degraded_embeddings,
+        "dreamer_summary_reads_enabled": state.config.dreamer_summary_reads_enabled,
         "embed_cache": state.config.embed_cache,
         "semantic_lane": state.config.semantic_lane,
         "semantic_deadline_ms": state.config.semantic_deadline.map(|value| {

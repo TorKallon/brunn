@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { MoonStar } from "lucide-react";
 import { useEffect } from "react";
 import { Section } from "./Page";
@@ -131,6 +132,7 @@ export function DreamingSettings() {
     <Section
       title="Dreaming"
       meta="Nightly memory consolidation on the dedicated Codex account"
+      actions={<Link className="button secondary" to="/dreams">Open Review</Link>}
     >
       <div className="dreaming-status-card">
         <p>
@@ -163,12 +165,14 @@ export function DreamingSettings() {
           </div>
           {control.enabled && control.advance_after ? (
             <div>
-              <dt>Full mode after</dt>
+              <dt>Earliest mode eligibility</dt>
               <dd>{control.advance_after}</dd>
             </div>
           ) : null}
         </dl>
       </div>
+
+      <p className="settings-note">Review proposals and questions in the Review inbox. Approval in report-only mode remains held; a date alone does not authorize application.</p>
 
       {connectPending && connect.url ? (
         <p className="dreaming-device-code" role="status">

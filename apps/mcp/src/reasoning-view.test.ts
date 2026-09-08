@@ -500,3 +500,22 @@ test("non-checkpoint write receipts remain complete", () => {
   const body = { status: "committed", data: { receipt: "commit:1", items: [1, 2] } };
   assert.equal(compactReasoningResponse("memory.save", body), body);
 });
+
+test("summary and fallback representations retain exact freshness in compact reads, opens, and queries", () => {
+  const freshness = { status: "stale", checked_at: "2026-09-07T12:00:00Z", reason: "source_version_changed", source_refs: [{ entry_ref: "entry:source", expected_version: 2, current_version: 3 }] };
+  const source = { reference: "entry:summary", path: "dreams/summaries/source.md", title: "Source summary", version: 2, text: "Current source fallback.", representation: "current_source_fallback", freshness };
+  const read = compactReasoningResponse("memory.read", { status: "complete", data: { items: [source] } });
+  const readItems = (read.data as Record<string, unknown>).items as Record<string, unknown>[];
+  assert.deepEqual(readItems[0]?.freshness, freshness);
+  assert.equal(readItems[0]?.representation, "current_source_fallback");
+  const open = compactReasoningResponse("memory.open", { status: "complete", data: { evidence: [{ ...source, representation: "derived_summary" }] } });
+  const evidence = (open.data as Record<string, unknown>).initial_evidence as Record<string, unknown>[];
+  assert.equal(evidence[0]?.content_scope, "derived_summary");
+  assert.equal(evidence[0]?.representation, "derived_summary");
+  assert.deepEqual(evidence[0]?.freshness, freshness);
+  const query = compactReasoningResponse("memory.query", { status: "complete", data: { results: [{ id: "q1", candidates: [source] }] } });
+  const results = (query.data as Record<string, unknown>).items as Record<string, unknown>[];
+  const candidates = results[0]?.results as Record<string, unknown>[];
+  assert.equal(candidates[0]?.representation, "current_source_fallback");
+  assert.deepEqual(candidates[0]?.freshness, freshness);
+});

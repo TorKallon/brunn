@@ -83,6 +83,7 @@ export interface LoginSearch {
 export interface ExploreSearch {
   entryRef?: string;
   entryPath?: string;
+  version?: number;
   alternatePaths?: string;
   linkTarget?: string;
   fallbackQuery?: string;
@@ -215,6 +216,7 @@ const exploreRoute = createRoute({
   validateSearch: (search: Record<string, unknown>): ExploreSearch => ({
     entryRef: boundedSearchString(search.entryRef),
     entryPath: boundedSearchString(search.entryPath),
+    version: positiveSearchInteger(search.version),
     alternatePaths: boundedSearchString(search.alternatePaths, 16_000),
     linkTarget: boundedSearchString(search.linkTarget),
     fallbackQuery: boundedSearchString(search.fallbackQuery),

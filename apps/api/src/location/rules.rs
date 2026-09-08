@@ -813,6 +813,14 @@ fn splice_table_rows_preserving(
 }
 
 pub fn parse_history_rows(text: &str) -> Vec<HistoryRow> {
+    parse_history_rows_with_lines(text)
+        .into_iter()
+        .map(|(_, row)| row)
+        .collect()
+}
+
+/// Preserve immutable Markdown row selectors when returning historical evidence.
+pub fn parse_history_rows_with_lines(text: &str) -> Vec<(usize, HistoryRow)> {
     let lines = text.lines().collect::<Vec<_>>();
     let Some(header_index) = lines.iter().enumerate().find_map(|(index, line)| {
         let cells = history_cells(line)?;
@@ -826,9 +834,10 @@ pub fn parse_history_rows(text: &str) -> Vec<HistoryRow> {
     };
     lines
         .iter()
+        .enumerate()
         .skip(header_index + 2)
-        .map_while(|line| history_cells(line))
-        .filter_map(|cells| parse_history_row(&cells))
+        .map_while(|(index, line)| history_cells(line).map(|cells| (index, cells)))
+        .filter_map(|(index, cells)| parse_history_row(&cells).map(|row| (index + 1, row)))
         .collect()
 }
 

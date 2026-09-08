@@ -10,6 +10,130 @@ use brunn::{
     secret_service::{decrypt_secret_value, encrypt_secret_value, secret_value_aad},
 };
 
+#[tokio::test]
+async fn secret_refresh_cas_has_one_winner_and_rejects_delete_recreate_aba() {
+    use axum::{Extension, Json, extract::State, response::IntoResponse};
+    use brunn::{
+        AppState, Config,
+        secret_service::{self, DeleteRequest, PutRequest},
+    };
+    let Some(pool) = connect_test_pool().await else {
+        return;
+    };
+    let principal = insert_principal(
+        &pool,
+        "refresh-cas",
+        &["read", "secret:read", "secret:write"],
+    )
+    .await;
+    let mut config = Config::from_env().unwrap();
+    let url = std::env::var("BRUNN_TEST_DATABASE_URL").unwrap();
+    let mut rw = url::Url::parse(&url).unwrap();
+    rw.query_pairs_mut()
+        .append_pair("options", "-c role=app_rw");
+    let mut ro = url::Url::parse(&url).unwrap();
+    ro.query_pairs_mut()
+        .append_pair("options", "-c role=app_ro");
+    config.database_url_rw = rw.to_string();
+    config.database_url_ro = ro.to_string();
+    config.database_url_admin = None;
+    config.secret_encryption_key = Some("ERERERERERERERERERERERERERERERERERERERERERE=".into());
+    config.apns_delivery_enabled = false;
+    let state = AppState::connect(config).await.unwrap();
+    let name = format!("refresh-cas-{}", Uuid::now_v7());
+    let request = |version, reference| PutRequest {
+        name: name.clone(),
+        value: "synthetic refreshed auth".into(),
+        expected_version: Some(version),
+        expected_secret_ref: reference,
+        description: None,
+    };
+    let (a, b) = tokio::join!(
+        secret_service::put(
+            State(state.clone()),
+            Extension(principal.auth.clone()),
+            Json(request(0, None))
+        ),
+        secret_service::put(
+            State(state.clone()),
+            Extension(principal.auth.clone()),
+            Json(request(0, None))
+        ),
+    );
+    assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
+    let (winner, loser) = if a.is_ok() {
+        (a.unwrap().0, b.unwrap_err())
+    } else {
+        (b.unwrap().0, a.unwrap_err())
+    };
+    assert_eq!(
+        loser.into_response().status(),
+        axum::http::StatusCode::CONFLICT
+    );
+    let old_ref = winner.secret_ref;
+    let (a, b) = tokio::join!(
+        secret_service::put(
+            State(state.clone()),
+            Extension(principal.auth.clone()),
+            Json(request(1, Some(old_ref.clone())))
+        ),
+        secret_service::put(
+            State(state.clone()),
+            Extension(principal.auth.clone()),
+            Json(request(1, Some(old_ref.clone())))
+        ),
+    );
+    assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
+    let loser = if a.is_ok() {
+        b.unwrap_err()
+    } else {
+        a.unwrap_err()
+    };
+    assert_eq!(
+        loser.into_response().status(),
+        axum::http::StatusCode::CONFLICT
+    );
+    let _ = secret_service::delete_secret(
+        State(state.clone()),
+        Extension(principal.auth.clone()),
+        Json(DeleteRequest { name: name.clone() }),
+    )
+    .await
+    .unwrap();
+    let replacement = secret_service::put(
+        State(state.clone()),
+        Extension(principal.auth.clone()),
+        Json(request(0, None)),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert_eq!(replacement.version, 1);
+    assert_ne!(replacement.secret_ref, old_ref);
+    let stale = secret_service::put(
+        State(state),
+        Extension(principal.auth.clone()),
+        Json(request(1, Some(old_ref))),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        stale.into_response().status(),
+        axum::http::StatusCode::CONFLICT
+    );
+    let actual: i32 =
+        sqlx::query_scalar("SELECT version FROM brunn.secrets WHERE user_id=$1 AND name=$2")
+            .bind(principal.user_id)
+            .bind(&name)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        actual, 1,
+        "stale refresh cannot replace the new connected identity"
+    );
+}
+
 struct Principal {
     auth: AuthContext,
     user_id: Uuid,

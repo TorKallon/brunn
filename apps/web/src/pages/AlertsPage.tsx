@@ -293,6 +293,19 @@ export function AlertDetailPage() {
 
 function NotificationTargetAction({ notification }: { notification: NotificationItem }) {
   const target = notification.target;
+  if (notification.source?.type === "dreamer_run") {
+    const match = /^(entry:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})@([1-9][0-9]*)$/u.exec(notification.source.version_ref ?? "");
+    const version = match ? Number(match[2]) : undefined;
+    const pinned = target.type === "entry" && match?.[1] === target.entry_ref && notification.source.ref === target.entry_ref && Number.isSafeInteger(version);
+    return <section className="alert-target-card">
+      <FileText size={21} aria-hidden="true" />
+      <div><strong>Dreamer review</strong><span>Inspect the proposed changes and record your decision.</span></div>
+      <Link className="button primary" to="/dreams">Open Review</Link>
+      {pinned && match && version !== undefined
+        ? <Link className="button secondary" to="/explore" search={{ entryRef: match[1], version }}>Open run v{version}</Link>
+        : <span>Pinned run unavailable</span>}
+    </section>;
+  }
   if (target.type === "notification") return null;
   if (target.type === "today") {
     return (

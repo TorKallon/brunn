@@ -532,7 +532,11 @@ async fn conversation_notification_target_is_typed_and_fails_closed() {
     .await
     .expect("valid typed conversation target is accepted");
     assert_eq!(
-        response.0.notification.target,
+        response
+            .0
+            .notification
+            .expect("read-bearing response")
+            .target,
         json!({
             "type": "conversation",
             "conversation_id": conversation_id,

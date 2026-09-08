@@ -1,0 +1,44 @@
+{
+  "schema": "brunn.location-pilot.rubric.v1",
+  "grading": "Independent human review or the same ChatGPT-authenticated Astra Ultra configuration; never expose this rubric to summary compilation or answer arms.",
+  "known_day_evidence_anchors": [
+    {"label": "Home", "time": "18:19", "semantics": "last observed around this time; exact physical departure unknown"},
+    {"label": "Main Street", "from": "18:32", "to": "19:46", "semantics": "estimated visit interval; 520 Bar & Grill unconfirmed"},
+    {"label": "Lincoln Square South", "from": "19:47", "to": "23:44", "semantics": "estimated visit interval; no continuous occupancy or activity proof"},
+    {"label": "Home", "time": "23:53", "semantics": "observed Home evidence; historical, not current presence"}
+  ],
+  "independent_all_day_stop_truth": "unverified; report observed-stop coverage only",
+  "gates": {
+    "all_independently_confirmed_fixture_stops_represented": true,
+    "invented_stops_venues_activities_routes_or_continuous_occupancy": 0,
+    "lost_corrections": 0,
+    "citation_degradation": 0,
+    "historical_current_confusion": 0,
+    "quality_regression_vs_A": false,
+    "timing_target_minutes": 5,
+    "timing_target_is_guarantee": false,
+    "online_tokens_or_source_calls_reduction_target": 0.30,
+    "client_supported_answer_latency_regression": false
+  },
+  "per_answer_grade": {
+    "supported": null,
+    "observed_stops_represented": null,
+    "observed_stops_available": null,
+    "exhaustive_stop_recall": null,
+    "invented_stops": null,
+    "false_venues": null,
+    "false_activities_routes_or_driving": null,
+    "continuous_occupancy_claims": null,
+    "lost_corrections": null,
+    "citation_validity": null,
+    "historical_current_confusion": null,
+    "arrival_error_minutes": null,
+    "departure_error_minutes": null,
+    "truth_interval_contained": null,
+    "answer_interval_width_minutes": null,
+    "physical_arrival_to_usable_evidence_ms": null,
+    "receipt_to_presence_ms": null,
+    "client_time_to_supported_answer_ms": null,
+    "notes": "Null means not measured, not zero. Populate supported-answer latency only after a passing evidence grade."
+  }
+}

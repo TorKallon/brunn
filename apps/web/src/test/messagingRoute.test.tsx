@@ -60,6 +60,7 @@ describe("messaging runtime route", () => {
       "Overview",
       "Alerts",
       "Briefings",
+      "Review",
       "Search",
       "Detailed Activity",
     ]);

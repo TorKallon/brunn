@@ -43,6 +43,8 @@ const releaseRuntime = {
   BRUNN_SEMANTIC_LANE: preserve(),
   BRUNN_TODOIST_SYNC_ENABLED: preserve(),
   BRUNN_MESSAGING_ENABLED: preserve(),
+  // Enable only after the accepted-summary source-validation canary passes.
+  BRUNN_DREAMER_SUMMARY_READS_ENABLED: preserve(),
   BRUNN_LOCATION_PINGS_ENABLED: "true",
   BRUNN_LOCATION_PRESENCE_IN_OPEN: "true",
   BRUNN_SEMANTIC_DEADLINE_MS: "2500",
@@ -152,11 +154,14 @@ const dreamer = service("dreamer", {
   env: {
     BRUNN_API_URL: "http://api.railway.internal:8080",
     DREAMER_BIND: "[::]:8090",
-    // Brunn credentials for the runner: `dreamer` (read_write; also
-    // handed to codex through the MCP server) and `dreamer_runner` (vault
-    // custody + run notifications; codex never holds it). Minted via
-    // POST /credentials with an owner token; values managed outside IaC.
+    // The wrapper reads CONTROL with the existing workspace credential.
+    // Only the dedicated read_only model credential reaches Codex/MCP.
+    // The runner credential has dreamer:run, vault custody, and notification
+    // publication; it has no general workspace write authority.
+    // Mint through POST /v1/credentials with an owner credential. Keep values
+    // outside IaC and stage them with variable set --stdin --skip-deploys.
     DREAMER_WORKSPACE_TOKEN: preserve(),
+    DREAMER_MODEL_TOKEN: preserve(),
     DREAMER_RUNNER_TOKEN: preserve(),
     // Shared secret for the api → dreamer private surface.
     DREAMER_INTERNAL_TOKEN: preserve(),

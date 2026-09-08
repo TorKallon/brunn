@@ -91,6 +91,8 @@ describe("Settings → Dreaming", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
     expect(screen.getByText("2026-09-06")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open Review" })).toHaveAttribute("href", "/dreams");
+    expect(screen.queryByText("Full mode after")).not.toBeInTheDocument();
   });
 
   it("pauses dreaming and reflects the paused state", async () => {

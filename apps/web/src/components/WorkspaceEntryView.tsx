@@ -11,6 +11,7 @@ import type { WorkspaceReadItem } from "../lib/types";
 export interface WorkspaceEntryNavigationTarget {
   ref?: string;
   path?: string;
+  version?: number;
   alternatePaths?: string[];
   linkTarget?: string;
   fallbackQuery?: string;
@@ -19,6 +20,7 @@ export interface WorkspaceEntryNavigationTarget {
 export interface WorkspaceEntryNavigationSearch {
   entryRef?: string;
   entryPath?: string;
+  version?: number;
   alternatePaths?: string;
   linkTarget?: string;
   fallbackQuery?: string;
@@ -30,6 +32,7 @@ export function workspaceEntryNavigationSearch(
   return {
     entryRef: target.ref,
     entryPath: target.path,
+    version: target.version,
     alternatePaths: target.alternatePaths?.join("\n"),
     linkTarget: target.linkTarget,
     fallbackQuery: target.fallbackQuery,

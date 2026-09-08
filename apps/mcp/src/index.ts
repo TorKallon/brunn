@@ -455,6 +455,9 @@ function createReadItem(maxChars: number) {
     path: z.string().min(1).optional().describe(
       "Exact source path copied verbatim from a Brunn State response. Never synthesize a filename from a title or topic.",
     ),
+    version: z.number().int().positive().optional().describe(
+      "Exact positive historical version returned by Brunn. Omit for the current version. Cannot be combined with current_truth; use full, range, or outline for exact historical evidence.",
+    ),
     view: z.enum([
       "current_state",
       "current_truth",
@@ -467,6 +470,8 @@ function createReadItem(maxChars: number) {
     max_chars: z.number().int().min(1).max(maxChars).optional(),
   }).refine((value) => value.ref !== undefined || value.path !== undefined, {
     message: "read request requires ref or path",
+  }).refine((value) => value.version === undefined || value.view !== "current_truth", {
+    message: "an exact historical version cannot be combined with current_truth",
   });
 }
 
@@ -553,7 +558,7 @@ registerJsonTool(
 
 registerJsonTool(
   "memory.read",
-  "Batch exact reads of current Markdown files or checkpoints by returned entry reference or path.",
+  "Batch exact reads of Markdown files or checkpoints by returned entry reference or path. Supply a positive version for exact historical evidence; omit it for the current version. Historical reads cannot follow current_truth successors.",
   {
     session_id: reference,
     requests: z.array(createReadItem(maxReadChars)).min(1).max(32),
@@ -735,6 +740,25 @@ registerJsonTool(
       }
       throw error;
     }
+  },
+);
+
+registerJsonTool(
+  "location.evidence",
+  "Read bounded historical location evidence for one closed local-day interval, including exact canonical/Places versions, retained raw observations, late Apple visit estimates and ranked POI hints. Requires Save capability despite this read-only operation. Completeness=false means defer derived publication; gaps never establish driving, missed stops or continuous presence. Uses existing evidence without synchronous geocoding, reasoning, or writes.",
+  {
+    from: rfc3339Timestamp.describe("Inclusive start of the closed historical interval, with an explicit timezone offset or Z."),
+    to: rfc3339Timestamp.describe("Exclusive end of the interval, no later than now and at most 26 hours after from."),
+    timezone: z.string().min(1).max(80).describe("IANA timezone for the historical local day, such as America/Los_Angeles."),
+  },
+  (input) => {
+    const from = Date.parse(input.from);
+    const to = Date.parse(input.to);
+    if (to <= from || to - from > 26 * 60 * 60 * 1_000 || to > Date.now()) {
+      throw new Error("location evidence requires a closed historical interval with positive duration of at most 26 hours");
+    }
+    const query = new URLSearchParams(input);
+    return client.request("GET", `/v1/location/evidence?${query.toString()}`);
   },
 );
 
@@ -1235,6 +1259,12 @@ registerJsonTool(
     description: z.string().min(1).max(1_000).optional().describe(
       "Non-secret usage note, e.g. what the credential unlocks. Omitting it on replace "
       + "keeps the existing note.",
+    ),
+    expected_version: z.number().int().nonnegative().optional().describe(
+      "Optional version from the preceding secret read to prevent overwriting a concurrent rotation. Use zero only to create an absent name.",
+    ),
+    expected_secret_ref: z.string().regex(/^secret:[0-9a-f]{32}$/).optional().describe(
+      "Optional exact secret_ref from the preceding read, used with expected_version to reject deletion and recreation under the same name.",
     ),
   },
   (input) => client.request("/v1/workspace/secrets/put", input),

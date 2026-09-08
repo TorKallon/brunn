@@ -60,16 +60,15 @@ function parseToolText(content: unknown): Record<string, unknown> {
   return JSON.parse(first.text) as Record<string, unknown>;
 }
 
-test("location tools expose only presence and rederive with the approved route contracts", async () => {
+test("location tools expose required named historical and current route contracts", async () => {
   const calls: RecordedCall[] = [];
   const { client, close } = await connectedPair(calls);
   try {
     const tools = (await client.listTools()).tools
       .filter((tool) => tool.name.startsWith("location."));
-    assert.deepEqual(tools.map((tool) => tool.name).sort(), [
-      "location.presence",
-      "location.rederive",
-    ]);
+    for (const name of ["location.presence", "location.rederive", "location.evidence"]) {
+      assert.ok(tools.some((tool) => tool.name === name), `missing ${name}`);
+    }
 
     const presence = tools.find((tool) => tool.name === "location.presence");
     const rederive = tools.find((tool) => tool.name === "location.rederive");
@@ -176,4 +175,41 @@ test("location.presence translates only the API no-row 404 into status none", as
   } finally {
     await other.close();
   }
+});
+
+test("location.evidence exposes bounded read-only historical evidence and preserves completeness", async () => {
+  const calls: RecordedCall[] = [];
+  const body = { completeness: false, reasons: ["raw_retention_boundary"], canonical: [{ entry_ref: "entry:day", version: 3 }], raw: [{ report_id: "fixture", first_received_at: null }] };
+  const { client, close } = await connectedPair(calls, { status: 200, body });
+  try {
+    const tool = (await client.listTools()).tools.find((item) => item.name === "location.evidence");
+    assert.ok(tool);
+    assert.equal(tool.annotations?.readOnlyHint, true);
+    assert.equal(tool.annotations?.idempotentHint, true);
+    assert.deepEqual(tool.inputSchema.required?.slice().sort(), ["from", "timezone", "to"]);
+    assert.match(tool.description ?? "", /Requires Save/);
+    const input = { from: "2025-11-02T00:00:00-07:00", to: "2025-11-03T00:00:00-08:00", timezone: "America/Los_Angeles" };
+    const result = await client.callTool({ name: "location.evidence", arguments: input });
+    assert.notEqual(result.isError, true);
+    assert.deepEqual(parseToolText(result.content), body);
+    assert.deepEqual(calls, [{ url: `https://api.invalid/v1/location/evidence?${new URLSearchParams(input).toString()}`, method: "GET", body: undefined }]);
+  } finally { await close(); }
+});
+
+test("location.evidence rejects open, oversized, and malformed historical windows before HTTP", async () => {
+  const calls: RecordedCall[] = [];
+  const { client, close } = await connectedPair(calls);
+  try {
+    for (const input of [
+      { from: "2025-09-07T00:00:00Z", to: "2025-09-07T00:00:00Z" },
+      { from: "2025-09-07T00:00:00Z", to: "2025-09-06T00:00:00Z" },
+      { from: "2025-09-07T00:00:00Z", to: "2025-09-09T00:00:00Z" },
+      { from: "2099-09-07T00:00:00Z", to: "2099-09-08T00:00:00Z" },
+      { from: "2025-09-07T00:00:00", to: "2025-09-08T00:00:00Z" },
+    ]) {
+      const result = await client.callTool({ name: "location.evidence", arguments: { ...input, timezone: "America/Los_Angeles" } });
+      assert.equal(result.isError, true);
+    }
+    assert.deepEqual(calls, []);
+  } finally { await close(); }
 });

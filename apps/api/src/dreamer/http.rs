@@ -30,7 +30,7 @@ pub struct DreamerApp {
     pub internal_token: String,
     /// Held for the duration of a run; the scheduler and /run both skip when
     /// a run is already in flight.
-    run_lock: Mutex<()>,
+    run_lock: Arc<Mutex<()>>,
     last_report: Mutex<Option<RunReport>>,
 }
 
@@ -40,7 +40,7 @@ impl DreamerApp {
             dreamer,
             connect: ConnectFlow::new(),
             internal_token,
-            run_lock: Mutex::new(()),
+            run_lock: Arc::new(Mutex::new(())),
             last_report: Mutex::new(None),
         })
     }
@@ -71,8 +71,23 @@ impl DreamerApp {
         Some(report)
     }
 
-    /// Sleep until the next 03:00 America/Los_Angeles, run, repeat.
+    /// One bounded startup catch-up for the latest due slot, then nightly.
+    /// Durable server admission deduplicates completed slots across restarts.
     pub async fn nightly_loop(self: Arc<Self>) {
+        let now = Utc::now().with_timezone(&Los_Angeles);
+        let today = now.date_naive();
+        let due = if now.time() >= NaiveTime::from_hms_opt(3, 0, 0).unwrap() {
+            today
+        } else {
+            today.pred_opt().unwrap_or(today)
+        };
+        let runtime = self.dreamer.runtime_status().await;
+        if runtime.last_run_date.as_deref() != Some(&due.format("%Y-%m-%d").to_string()) {
+            if let Ok(_guard) = self.run_lock.try_lock() {
+                let report = self.dreamer.run_once(due, RunKind::Nightly).await;
+                *self.last_report.lock().await = Some(report);
+            }
+        }
         loop {
             let now = Utc::now().with_timezone(&Los_Angeles);
             let three_am = NaiveTime::from_hms_opt(3, 0, 0).expect("03:00");
@@ -166,9 +181,9 @@ async fn disconnect(State(app): State<Arc<DreamerApp>>, headers: HeaderMap) -> R
 
 async fn verify(State(app): State<Arc<DreamerApp>>, headers: HeaderMap) -> Response {
     require_auth!(app, headers);
-    // Re-check the vaulted auth end to end without running a dream.
+    // Read recorded verification; this endpoint does not run a model probe.
     let runtime = app.dreamer.runtime_status().await;
-    Json(json!({"runtime": runtime})).into_response()
+    Json(json!({"runtime": runtime,"verification":"recorded","live_probe":false})).into_response()
 }
 
 #[derive(Deserialize)]
@@ -185,15 +200,23 @@ async fn run_now(
     require_auth!(app, headers);
     let kind = match body.and_then(|Json(request)| request.kind).as_deref() {
         Some("backfill") => RunKind::Backfill,
-        _ => RunKind::Nightly,
+        _ => RunKind::Manual,
+    };
+    let Ok(guard) = app.run_lock.clone().try_lock_owned() else {
+        return (StatusCode::CONFLICT, Json(json!({"status":"busy"}))).into_response();
     };
     let app_for_run = app.clone();
     tokio::spawn(async move {
-        if app_for_run.execute(kind).await.is_none() {
-            tracing::warn!("manual run rejected: another run is in flight");
-        }
+        let _guard = guard;
+        let report = app_for_run
+            .dreamer
+            .run_once(DreamerApp::today(), kind)
+            .await;
+        *app_for_run.last_report.lock().await = Some(report);
     });
-    (StatusCode::ACCEPTED, Json(json!({"status": "started"}))).into_response()
+    // Admission is asynchronous and authoritative at the API. Never tell the
+    // caller an attempt started before its server lease has been accepted.
+    (StatusCode::ACCEPTED, Json(json!({"status": "queued"}))).into_response()
 }
 
 #[cfg(test)]
@@ -205,6 +228,7 @@ mod tests {
         let app = DreamerApp {
             dreamer: Dreamer::new(super::super::run::DreamerConfig {
                 api_url: "http://localhost".into(),
+                model_token: "test-model-read-only".into(),
                 workspace_token: "w".into(),
                 runner_token: "r".into(),
                 codex_path: "/usr/bin/true".into(),
@@ -216,7 +240,7 @@ mod tests {
             }),
             connect: ConnectFlow::new(),
             internal_token: "secret-token".into(),
-            run_lock: Mutex::new(()),
+            run_lock: Arc::new(Mutex::new(())),
             last_report: Mutex::new(None),
         };
         let mut headers = HeaderMap::new();

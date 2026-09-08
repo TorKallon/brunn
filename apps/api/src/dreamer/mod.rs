@@ -14,6 +14,7 @@ pub mod control;
 pub mod decisions;
 pub mod http;
 pub mod prompt;
+pub mod receipt;
 pub mod run;
 pub mod runfile;
 
@@ -30,6 +31,7 @@ pub fn config_from_env() -> Result<DreamerConfig, String> {
     Ok(DreamerConfig {
         api_url: require("BRUNN_API_URL")?,
         workspace_token: require("DREAMER_WORKSPACE_TOKEN")?,
+        model_token: require("DREAMER_MODEL_TOKEN")?,
         runner_token: require("DREAMER_RUNNER_TOKEN")?,
         codex_path: std::env::var("DREAMER_CODEX_PATH")
             .unwrap_or_else(|_| "codex".to_owned())

@@ -162,6 +162,9 @@ impl AppState {
         let mut transaction = result?;
         set_context(&mut transaction, auth).await?;
         set_statement_timeout(&mut transaction, timeout).await?;
+        // All ordinary writes acquire this before entry/location locks. The
+        // workspace-change trigger supplies the same fence to other writers.
+        lock_workspace_commit(&mut transaction, auth.user_id.0).await?;
         let status =
             sqlx::query_scalar::<_, String>("SELECT account_status FROM brunn.users WHERE id=$1")
                 .bind(auth.user_id.0)
@@ -177,6 +180,17 @@ impl AppState {
         }
         Ok(transaction)
     }
+}
+
+pub(crate) async fn lock_workspace_commit(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+) -> ApiResult<()> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(format!("brunn-workspace-commit:{user_id}"))
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
 }
 
 async fn set_statement_timeout(

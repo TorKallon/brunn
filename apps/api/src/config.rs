@@ -14,6 +14,7 @@ pub struct Config {
     pub deployment_environment: String,
     pub evaluation_api_enabled: bool,
     pub supersession_demotion: bool,
+    pub dreamer_summary_reads_enabled: bool,
     pub supersession_demotion_weight: f64,
     pub intention_ledger: bool,
     pub read_path_roundtrip_v1: bool,
@@ -153,6 +154,10 @@ impl Config {
                 non_production_default,
             )?,
             supersession_demotion: env_parse("BRUNN_SUPERSESSION_DEMOTION", "false")?,
+            dreamer_summary_reads_enabled: env_parse(
+                "BRUNN_DREAMER_SUMMARY_READS_ENABLED",
+                "false",
+            )?,
             supersession_demotion_weight: env_parse("BRUNN_SUPERSESSION_DEMOTION_WEIGHT", "1.5")?,
             intention_ledger: env_parse("BRUNN_INTENTION_LEDGER", "false")?,
             read_path_roundtrip_v1: env_parse("BRUNN_READ_PATH_ROUNDTRIP_V1", "false")?,

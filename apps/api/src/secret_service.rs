@@ -99,6 +99,11 @@ pub(crate) async fn todoist_token_for_worker(
 pub struct PutRequest {
     pub name: String,
     pub value: String,
+    /// Optional compare-and-swap; zero creates only.
+    #[serde(default)]
+    pub expected_version: Option<i32>,
+    #[serde(default)]
+    pub expected_secret_ref: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
 }
@@ -160,6 +165,18 @@ pub struct DeleteResponse {
     pub status: &'static str,
 }
 
+async fn lock_secret_name(
+    tx: &mut Transaction<'_, Postgres>,
+    owner: Uuid,
+    name: &str,
+) -> ApiResult<()> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(format!("brunn:secret:{owner}:{name}"))
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
 pub async fn put(
     State(state): State<AppState>,
     Extension(auth): Extension<AuthContext>,
@@ -187,8 +204,14 @@ async fn put_inner(
             "secret value is limited to {MAX_SECRET_VALUE_BYTES} bytes"
         )));
     }
+    if request.expected_version.is_some_and(|version| version < 0) {
+        return Err(ApiError::invalid("expected_version must be nonnegative"));
+    }
     let key = encryption_key(state)?;
     let mut tx = state.begin_write(auth).await?;
+    // Include absent rows in the lock domain so expected_version=0 has one
+    // winner, and delete/recreate cannot race a checked credential refresh.
+    lock_secret_name(&mut tx, auth.user_id.0, &name).await?;
     let existing = sqlx::query(
         r#"
         SELECT id,version FROM brunn.secrets
@@ -200,6 +223,34 @@ async fn put_inner(
     .bind(&name)
     .fetch_optional(&mut *tx)
     .await?;
+    let actual = existing
+        .as_ref()
+        .map(|row| row.try_get::<i32, _>("version"))
+        .transpose()?
+        .unwrap_or(0);
+    if let Some(expected) = request.expected_version
+        && expected != actual
+    {
+        return Err(ApiError::conflict(
+            "secret_version_conflict",
+            "secret changed since it was read",
+            serde_json::json!({"actual_version": actual}),
+        ));
+    }
+    if let Some(expected_ref) = request.expected_secret_ref.as_deref() {
+        let current_ref = existing
+            .as_ref()
+            .map(|row| row.try_get::<Uuid, _>("id"))
+            .transpose()?
+            .map(format_ref);
+        if current_ref.as_deref() != Some(expected_ref) {
+            return Err(ApiError::conflict(
+                "secret_identity_conflict",
+                "secret was replaced since it was read",
+                serde_json::json!({"actual_version": actual}),
+            ));
+        }
+    }
     let (secret_id, version, updated_at) = match existing {
         Some(row) => {
             let secret_id: Uuid = row.try_get("id")?;
@@ -461,6 +512,7 @@ async fn delete_inner(
     require_write(auth)?;
     let name = normalize_name(&request.name)?;
     let mut tx = state.begin_write(auth).await?;
+    lock_secret_name(&mut tx, auth.user_id.0, &name).await?;
     let secret_id = sqlx::query_scalar::<_, Uuid>(
         r#"
         DELETE FROM brunn.secrets

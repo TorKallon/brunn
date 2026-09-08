@@ -6,6 +6,7 @@ import {
   Bot,
   ChevronDown,
   CircleUserRound,
+  ClipboardCheck,
   LogOut,
   LayoutDashboard,
   Menu,
@@ -26,6 +27,7 @@ const navItems = [
   { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { to: "/alerts", label: "Alerts", icon: Bell },
   { to: "/briefings", label: "Briefings", icon: Sunrise },
+  { to: "/dreams", label: "Review", icon: ClipboardCheck },
   { to: "/explore", label: "Search", icon: Search },
   { to: "/control", label: "Detailed Activity", icon: Activity },
 ] as const;

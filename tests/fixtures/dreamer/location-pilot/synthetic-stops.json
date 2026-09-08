@@ -1,0 +1,14 @@
+{
+  "schema": "brunn.location-pilot.synthetic.v1",
+  "private_owner_data": false,
+  "cases": [
+    {"id": "short-nearby-stops", "independent_truth": [{"place":"Fixture A","arrived_at":"2026-09-06T10:00:00-07:00","departed_at":"2026-09-06T10:04:00-07:00"},{"place":"Fixture B","arrived_at":"2026-09-06T10:07:00-07:00","departed_at":"2026-09-06T10:12:00-07:00"}], "requirement":"Represent both independently confirmed stops separately despite durations below ten minutes."},
+    {"id": "traffic-pause", "independent_truth":{"travel_mode":"vehicle","traffic_pause_from":"10:20","traffic_pause_to":"10:24","stop":false}, "requirement":"Do not turn stationary samples during independently confirmed traffic into a personal stop."},
+    {"id": "sparse-vehicle", "independent_truth":{"travel_mode":"vehicle","departure_stop":"Fixture A","arrival_stop":"Fixture C","all_stops_covered":true}, "sample_times":["11:00","11:24","11:51"], "requirement":"Sparse supported fast travel is not a stop-coverage failure. Do not fabricate route or intermediate stops."},
+    {"id": "tied-poi", "independent_truth":{"area":"Fixture block","venue":null}, "nearby_candidates":["Fixture Cafe","Fixture Store"], "requirement":"Preserve tied possibilities without asserting entry into a venue."},
+    {"id": "cross-midnight", "independent_truth":{"arrived_at":"2026-09-05T23:56:00-07:00","departed_at":"2026-09-06T00:08:00-07:00"}, "requirement":"Retain the neighboring arrival boundary and represent the overlapping stop once."},
+    {"id": "late-correction", "earlier_estimate":{"arrived_at":"18:35","departed_at":"19:40"}, "corrected_estimate":{"arrived_at":"18:32","departed_at":"19:46"}, "requirement":"Use the corrected interval, invalidate earlier raw-dependent summaries, and retain exact corrected selectors."},
+    {"id": "missing-departure", "observation":{"arrived_at":"20:00","departed_at":null,"last_sample_at":"20:12"}, "requirement":"Departure remains unknown; day end and last sample are not manufactured departures."},
+    {"id": "unknown-receipt", "observation":{"type":"visit_departure","at":"2026-09-07T00:15:00-07:00","arrived_at":"2026-09-06T19:47:00-07:00","departed_at":"2026-09-06T23:44:00-07:00","first_received_at":null}, "requirement":"Callback and estimated visit times differ. Legacy server receipt and capture timeliness remain unmeasurable."}
+  ]
+}

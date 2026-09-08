@@ -180,6 +180,7 @@ pub fn router(state: AppState) -> Router {
         .route("/workspace/jobs", get(simple_core::list_jobs))
         .route("/location/reports", post(location::routes::reports))
         .route("/location/presence", get(location::routes::presence))
+        .route("/location/evidence", get(location::routes::evidence))
         .route("/location/rederive", post(location::routes::rederive))
         .route("/location/live", delete(location::routes::delete_live))
         .route(
@@ -226,6 +227,7 @@ pub fn router(state: AppState) -> Router {
     );
     let mut ordinary = workspace_ordinary
         .merge(dreaming_service::router())
+        .merge(crate::dreamer_review::router())
         .merge(account_ordinary);
     if state.config.messaging_enabled {
         ordinary = ordinary.merge(messaging_service::router());

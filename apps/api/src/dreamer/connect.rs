@@ -62,6 +62,13 @@ impl ConnectFlow {
     /// visit. A connect already in flight is returned as-is.
     pub async fn start(&self, dreamer: &Dreamer) -> ConnectState {
         let mut inner = self.state.lock().await;
+        let Ok(_custody) = dreamer.auth_lock.try_lock() else {
+            return ConnectState::Failed {
+                detail:
+                    "A Dreamer run is using the connected account. Retry Connect after it finishes."
+                        .into(),
+            };
+        };
         if let ConnectState::Pending { .. } = inner.public {
             return inner.public.clone();
         }
@@ -156,12 +163,14 @@ impl ConnectFlow {
         match child.try_wait() {
             Ok(None) => inner.public.clone(),
             Ok(Some(status)) if status.success() => {
+                let Ok(_custody) = dreamer.auth_lock.try_lock() else {
+                    inner.public = ConnectState::Verifying;
+                    return inner.public.clone();
+                };
                 let codex_home = inner.codex_home.clone();
                 inner.child = None;
                 inner.public = ConnectState::Verifying;
-                drop(inner);
                 let outcome = self.complete(dreamer, codex_home).await;
-                let mut inner = self.state.lock().await;
                 inner.public = outcome;
                 inner.public.clone()
             }
@@ -185,68 +194,97 @@ impl ConnectFlow {
     async fn complete(&self, dreamer: &Dreamer, codex_home: Option<PathBuf>) -> ConnectState {
         let Some(codex_home) = codex_home else {
             return ConnectState::Failed {
-                detail: "the login home vanished".to_owned(),
+                detail: "the login home vanished".into(),
             };
         };
-        let auth_json = match std::fs::read_to_string(codex_home.join("auth.json")) {
-            Ok(auth) => auth,
-            Err(error) => {
-                return ConnectState::Failed {
-                    detail: format!("codex login finished but wrote no auth.json: {error}"),
-                };
-            }
-        };
-        // Vault first, then verification: the tokens must never exist only on
-        // this container's disk.
-        if let Err(error) = dreamer
-            .runner
-            .secret_put(AUTH_SECRET, &auth_json, "Codex auth.json for the dreamer")
-            .await
-        {
-            return ConnectState::Failed {
-                detail: format!("could not store the tokens in the vault: {error}"),
-            };
+        let result = self.verify_and_store(dreamer, &codex_home).await;
+        if let Some(root) = codex_home.parent() {
+            let _ = std::fs::remove_dir_all(root);
         }
-        let home = codex_home.parent().map(PathBuf::from).unwrap_or_default();
-        let env = codex::codex_environment(&dreamer.config.host_env, &home, &codex_home);
-        let verification = codex::verify_subscription(&dreamer.config.codex_path, &env).await;
-        let (account, plan) = auth_identity(&auth_json);
-        let _ = std::fs::remove_dir_all(home);
-        match verification {
-            AuthCheck::ChatGpt(identity) => {
-                let now = chrono::Utc::now().to_rfc3339();
-                let mut status = dreamer.runtime_status().await;
-                status.account = account.clone();
-                status.plan = plan.clone();
-                status.connected_at = Some(now.clone());
-                status.verified_at = Some(now);
-                status.codex_version = Some(identity.version);
-                if let Ok(raw) = serde_json::to_string(&status) {
-                    let _ = dreamer
-                        .runner
-                        .secret_put(
-                            RUNTIME_SECRET,
-                            &raw,
-                            "Dreamer connection and last-run status (no token material)",
-                        )
-                        .await;
-                }
-                ConnectState::Connected { account, plan }
-            }
-            AuthCheck::Refused { detail } => ConnectState::Failed {
-                detail: format!("the login completed but verification refused it: {detail}"),
-            },
+        match result {
+            Ok(state) => state,
+            Err(detail) => ConnectState::Failed { detail },
         }
     }
 
-    /// Disconnect: delete both vault records and reset.
+    async fn verify_and_store(
+        &self,
+        dreamer: &Dreamer,
+        codex_home: &std::path::Path,
+    ) -> Result<ConnectState, String> {
+        let auth_json = std::fs::read_to_string(codex_home.join("auth.json"))
+            .map_err(|_| "login produced no auth file")?;
+        let previous = dreamer
+            .runner
+            .secret_get_version(AUTH_SECRET)
+            .await
+            .map_err(|_| "could not read current vault identity")?;
+        dreamer
+            .runner
+            .secret_put_checked(
+                AUTH_SECRET,
+                &auth_json,
+                previous.as_ref().map_or(0, |v| v.version),
+                previous.as_ref().map(|v| v.secret_ref.as_str()),
+            )
+            .await
+            .map_err(|_| "could not store connected account in the vault")?;
+        let stored = dreamer
+            .runner
+            .secret_get_version(AUTH_SECRET)
+            .await
+            .map_err(|_| "connected account custody read-back failed")?
+            .ok_or("connected account disappeared")?;
+        if stored.value != auth_json {
+            return Err("connected account custody did not match".into());
+        }
+        let home = codex_home.parent().ok_or("login home missing")?;
+        let env = codex::codex_environment(&dreamer.config.host_env, home, codex_home);
+        let verification = codex::verify_subscription(&dreamer.config.codex_path, &env).await;
+        // Verification may refresh even when it refuses login. Persist and
+        // re-read refreshed bytes before erasing the ephemeral home.
+        dreamer.finalize_auth(codex_home, &stored).await?;
+        let identity = match verification {
+            AuthCheck::ChatGpt(identity) => identity,
+            AuthCheck::Refused { .. } => {
+                return Err("the account was stored but ChatGPT verification refused it".into());
+            }
+        };
+        let (account, plan) = auth_identity(&auth_json);
+        let now = chrono::Utc::now().to_rfc3339();
+        let mut status = dreamer.runtime_status().await;
+        status.account = account.clone();
+        status.plan = plan.clone();
+        status.connected_at = Some(now.clone());
+        status.verified_at = Some(now);
+        status.codex_version = Some(identity.version);
+        dreamer.store_runtime_status(&status).await?;
+        Ok(ConnectState::Connected { account, plan })
+    }
+
+    /// Both deletes are checked. The name lock and auth CAS prevent an old
+    /// process from restoring a disconnected or replaced account.
     pub async fn disconnect(&self, dreamer: &Dreamer) -> ConnectState {
         let mut inner = self.state.lock().await;
+        let _custody = dreamer.auth_lock.lock().await;
         if let Some(mut child) = inner.child.take() {
             let _ = child.kill().await;
         }
-        let _ = dreamer.runner.secret_delete(AUTH_SECRET).await;
-        let _ = dreamer.runner.secret_delete(RUNTIME_SECRET).await;
+        for name in [AUTH_SECRET, RUNTIME_SECRET] {
+            if dreamer.runner.secret_delete(name).await.is_err() {
+                inner.public = ConnectState::Failed {
+                    detail: "vault disconnect could not be confirmed".into(),
+                };
+                return inner.public.clone();
+            }
+        }
+        if let Some(home) = inner
+            .codex_home
+            .take()
+            .and_then(|p| p.parent().map(PathBuf::from))
+        {
+            let _ = std::fs::remove_dir_all(home);
+        }
         inner.public = ConnectState::Disconnected;
         inner.public.clone()
     }
@@ -360,6 +398,7 @@ printf 'Successfully logged in\n' >&2
         std::fs::set_permissions(&codex_path, std::fs::Permissions::from_mode(0o700)).unwrap();
         let dreamer = Dreamer::new(DreamerConfig {
             api_url: "http://127.0.0.1:1".into(),
+            model_token: "test-model-read-only".into(),
             workspace_token: "test-workspace".into(),
             runner_token: "test-runner".into(),
             codex_path,

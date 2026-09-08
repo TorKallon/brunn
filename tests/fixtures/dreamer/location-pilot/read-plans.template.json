@@ -1,0 +1,10 @@
+{
+  "A": [
+    {"label":"Existing baseline retrieval; qualify returned source versions against the frozen packet", "path":"/v1/workspace/search", "body":{"queries":[{"id":"day-location","query":"Location Visits September 6 2026","limit":4}],"token_budget":4000}},
+    {"label":"Exact canonical source discovered by baseline retrieval", "path":"/v1/workspace/read", "body":{"requests":[{"ref":"entry:REPLACE_WITH_FROZEN_CANONICAL_REF","version":1,"view":"range","start":1,"end":8}]}}
+  ],
+  "B": [
+    {"label":"Accepted cached summary; require a validated-summary response, not fallback", "path":"/v1/workspace/read", "body":{"requests":[{"path":"derived/location/2026-09-06.md","view":"current_state"}]}},
+    {"label":"Exact follow-up evidence from accepted summary citations", "path":"/v1/workspace/read", "body":{"requests":[{"ref":"entry:REPLACE_WITH_FROZEN_CANONICAL_REF","version":1,"view":"range","start":1,"end":8}]}}
+  ]
+}

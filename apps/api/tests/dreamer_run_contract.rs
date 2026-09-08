@@ -1,741 +1,499 @@
-//! The dreamer run contract, end to end against a mock Brunn API and a
-//! stub codex binary: CONTROL fail-closed, auth fail-closed with env
-//! stripping, skipped(limits), the advance flip and hold-advance, CAS
-//! conflict re-read-once-retry-once, the kill timer, the run-file fallback,
-//! decisions reaching the prompt, and the confinement cross-check.
-
+//! End-to-end wrapper contract against a fake HTTP API and Codex process.
+//! Real transaction/fence validation lives in dreamer_review database tests.
+use axum::{
+    Json, Router,
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+};
+use brunn::dreamer::{
+    receipt,
+    run::{AUTH_SECRET, CONTROL_PATH, Dreamer, DreamerConfig, RunKind, RunOutcome},
+};
+use chrono::NaiveDate;
+use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
-    io::Write as _,
-    os::unix::fs::PermissionsExt as _,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
 };
 
-use axum::{
-    Json, Router,
-    extract::{Query, State},
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing::{get, post},
-};
-use brunn::dreamer::run::{
-    AUTH_SECRET, CONTROL_PATH, DECISIONS_PATH, Dreamer, DreamerConfig, RUNTIME_SECRET, RunKind,
-    RunOutcome,
-};
-use chrono::NaiveDate;
-use serde_json::{Value, json};
-
+const SOURCE: &str = "entry:019fba27-687b-7582-8b99-e9371dbe2ce5";
+const RUN: &str = "entry:01a07b52-2bf0-7d62-8969-9ea0b3c49399";
+const SECRET_REF: &str = "secret:01a07b52-2bf0-7d62-8969-9ea0b3c49388";
 #[derive(Default)]
-struct MockState {
-    files: BTreeMap<String, (String, i64)>,
-    changes: Vec<Value>,
-    generation: i64,
-    secrets: BTreeMap<String, String>,
+struct Mock {
+    control: Option<String>,
+    secrets: BTreeMap<String, (String, i64)>,
+    writes: usize,
+    run_version: i64,
+    state_version: i64,
+    admissions: usize,
+    submissions: usize,
+    runs: Vec<Value>,
+    latest: Option<Value>,
     notifications: Vec<Value>,
-    /// Paths that 409 this many more times before accepting a write.
-    conflicts: BTreeMap<String, usize>,
-    write_count: usize,
+    reject_candidates: bool,
+    fail_finish: bool,
+    fail_auth_put: bool,
+    fail_notify: bool,
+    retained_location_work: bool,
+    model_read_only: bool,
+    pending: Vec<Value>,
+    prior_pending_notification: Option<Value>,
 }
-
-type Shared = Arc<Mutex<MockState>>;
-
-fn record_write(state: &mut MockState, path: &str, content: &str) -> (i64, i64) {
-    let version = state.files.get(path).map_or(0, |(_, v)| *v) + 1;
-    state
-        .files
-        .insert(path.to_owned(), (content.to_owned(), version));
-    state.generation += 1;
-    let operation = if version == 1 { "create" } else { "update" };
-    let change = json!({
-        "generation": state.generation,
-        "operation": operation,
-        "path": path,
-        "version": version,
-    });
-    state.changes.push(change);
-    state.write_count += 1;
-    (version, state.generation)
+type Shared = Arc<Mutex<Mock>>;
+fn error(code: StatusCode, message: &str) -> Response {
+    (code, Json(json!({"error":{"message":message}}))).into_response()
 }
-
-async fn mock_read(State(shared): State<Shared>, Json(request): Json<Value>) -> Json<Value> {
-    let state = shared.lock().expect("mock state");
-    let items: Vec<Value> = request["requests"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default()
-        .iter()
-        .map(|item| {
-            let path = item["path"].as_str().unwrap_or_default();
-            match state.files.get(path) {
-                Some((content, version)) => json!({
-                    "path": path,
-                    "text": content,
-                    "version": version,
-                }),
-                None => json!({"status": "not_found", "path": path}),
-            }
-        })
-        .collect();
-    Json(json!({"data": {"items": items}}))
-}
-
-async fn mock_write(State(shared): State<Shared>, Json(request): Json<Value>) -> Response {
-    let mut state = shared.lock().expect("mock state");
-    let path = request["path"].as_str().unwrap_or_default().to_owned();
-    if let Some(remaining) = state.conflicts.get_mut(&path)
-        && *remaining > 0
-    {
-        *remaining -= 1;
-        let actual = state.files.get(&path).map_or(0, |(_, v)| *v);
-        return (
-            StatusCode::CONFLICT,
-            Json(json!({
-                "error": {
-                    "code": "entry_version_conflict",
-                    "message": "the entry changed since it was read",
-                    "details": {"path": path, "actual_version": actual}
-                }
-            })),
-        )
-            .into_response();
-    }
-    if let Some(expected) = request["expected_version"].as_i64() {
-        let actual = state.files.get(&path).map_or(0, |(_, v)| *v);
-        if expected != actual {
-            return (
-                StatusCode::CONFLICT,
-                Json(json!({
-                    "error": {
-                        "code": "entry_version_conflict",
-                        "message": "the entry changed since it was read",
-                        "details": {"path": path, "actual_version": actual}
-                    }
-                })),
-            )
-                .into_response();
-        }
-    }
-    let content = request["content"].as_str().unwrap_or_default().to_owned();
-    let (version, generation) = record_write(&mut state, &path, &content);
-    Json(json!({
-        "data": {"version": version, "workspace_generation": generation, "no_op": false}
-    }))
-    .into_response()
-}
-
-async fn mock_changes(
-    State(shared): State<Shared>,
-    Query(query): Query<BTreeMap<String, String>>,
-) -> Json<Value> {
-    let state = shared.lock().expect("mock state");
-    let since: i64 = query
-        .get("since_generation")
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(0);
-    let changes: Vec<Value> = state
-        .changes
-        .iter()
-        .filter(|change| change["generation"].as_i64().unwrap_or(0) > since)
-        .cloned()
-        .collect();
-    Json(json!({
-        "data": {
-            "since_generation": since,
-            "workspace_generation": state.generation,
-            "changes": changes,
-            "truncated": false,
-            "next_generation": state.generation,
-        }
-    }))
-}
-
-async fn mock_secret_get(State(shared): State<Shared>, Json(request): Json<Value>) -> Response {
-    let state = shared.lock().expect("mock state");
-    let name = request["name"].as_str().unwrap_or_default();
-    match state.secrets.get(name) {
-        Some(value) => Json(json!({"data": {"name": name, "value": value}})).into_response(),
-        None => (
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": {"code": "not_found", "message": "no such secret"}})),
-        )
-            .into_response(),
-    }
-}
-
-async fn mock_secret_put(State(shared): State<Shared>, Json(request): Json<Value>) -> Json<Value> {
-    let mut state = shared.lock().expect("mock state");
-    let name = request["name"].as_str().unwrap_or_default().to_owned();
-    let value = request["value"].as_str().unwrap_or_default().to_owned();
-    state.secrets.insert(name.clone(), value);
-    Json(json!({"data": {"name": name, "status": "committed"}}))
-}
-
-async fn mock_secret_delete(
-    State(shared): State<Shared>,
-    Json(request): Json<Value>,
-) -> Json<Value> {
-    let mut state = shared.lock().expect("mock state");
-    let name = request["name"].as_str().unwrap_or_default().to_owned();
-    state.secrets.remove(&name);
-    Json(json!({"data": {"name": name, "status": "deleted"}}))
-}
-
-async fn mock_notify(State(shared): State<Shared>, Json(request): Json<Value>) -> Json<Value> {
-    let mut state = shared.lock().expect("mock state");
-    state.notifications.push(request);
-    Json(json!({"data": {"status": "committed"}}))
-}
-
-async fn start_mock() -> (Shared, String) {
-    let shared: Shared = Arc::new(Mutex::new(MockState::default()));
-    let app = Router::new()
-        .route("/v1/workspace/read", post(mock_read))
-        .route("/v1/workspace/write", post(mock_write))
-        .route("/v1/workspace/changes", get(mock_changes))
-        .route("/v1/workspace/secrets/get", post(mock_secret_get))
-        .route("/v1/workspace/secrets/put", post(mock_secret_put))
-        .route("/v1/workspace/secrets/delete", post(mock_secret_delete))
-        .route("/v1/workspace/notifications/publish", post(mock_notify))
-        .with_state(shared.clone());
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("mock listener");
-    let address = listener.local_addr().expect("mock address");
-    tokio::spawn(async move {
-        axum::serve(listener, app).await.expect("mock server");
-    });
-    (shared, format!("http://{address}"))
-}
-
-/// A stub codex: `login status` and `--version` behave; `exec` records its
-/// stdin and environment, then runs the per-test behavior script.
-fn write_stub(dir: &Path, behavior: &str, chatgpt_login: bool) -> PathBuf {
-    let login_line = if chatgpt_login {
-        "Logged in using ChatGPT"
+async fn read(State(shared): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
+    let s = shared.lock().unwrap();
+    let path = body["requests"][0]["path"].as_str().unwrap();
+    let item = if path == CONTROL_PATH {
+        s.control.as_ref().map(|c| json!({"text":c,"version":1}))
     } else {
-        "Logged in using an API key"
+        None
     };
-    let stub_path = dir.join("codex");
-    let behavior_path = dir.join("behavior.sh");
-    std::fs::write(&behavior_path, behavior).expect("behavior script");
-    let script = format!(
-        r#"#!/bin/sh
-DIR="{dir}"
-case "$1" in
-  login) echo "{login_line}"; exit 0 ;;
-  --version) echo "codex-cli 0.0.0-test"; exit 0 ;;
-  exec)
-    N=$(ls "$DIR"/exec-*.stdin 2>/dev/null | wc -l | tr -d ' ')
-    cat > "$DIR/exec-$N.stdin"
-    env > "$DIR/exec-$N.env"
-    export N DIR
-    exec /bin/sh "$DIR/behavior.sh"
-    ;;
-  *) exit 0 ;;
-esac
-"#,
-        dir = dir.display(),
-        login_line = login_line,
-    );
-    let mut file = std::fs::File::create(&stub_path).expect("stub file");
-    file.write_all(script.as_bytes()).expect("stub body");
-    drop(file);
-    std::fs::set_permissions(&stub_path, std::fs::Permissions::from_mode(0o755))
-        .expect("stub permissions");
-    stub_path
+    Json(json!({"data":{"items":[item.unwrap_or(json!({"status":"not_found"}))]}}))
 }
-
-/// Behavior: probe (N=0) answers READY; the main exec (N=1) writes a run
-/// file through the API with curl, exactly like real codex through MCP.
-const HAPPY_BEHAVIOR: &str = r#"
-if [ "$N" = "0" ]; then echo READY; exit 0; fi
-RUN_PATH=$(grep -o 'dreams/runs/[0-9-]*\.md' "$DIR/exec-$N.stdin" | tail -1)
-BODY=$(cat <<'EOF'
-Linked 2 notes.
-Recompiled 1 entity view.
-Nothing needs your call tonight.
-No contradictions were found.
-Budget: 3 of 40 writes used.
-
-## Applied
-
-## Proposed
-
-## Needs your call
-
-## Findings
-
-## Watermark
-
-generation: 1
-EOF
-)
-curl -sf -X POST "$BRUNN_API_URL/v1/workspace/write" \
-  -H "Authorization: Bearer $BRUNN_API_TOKEN" \
-  -H 'Content-Type: application/json' \
-  --data "$(printf '%s' "$BODY" | python3 -c 'import json,sys;print(json.dumps({"path":sys.argv[1],"content":sys.stdin.read(),"expected_version":0}))' "$RUN_PATH")" \
-  > /dev/null
-exit 0
-"#;
-
-fn test_config(stub: PathBuf, work_root: PathBuf, api_url: &str) -> DreamerConfig {
-    let mut host_env: BTreeMap<String, String> = BTreeMap::new();
-    host_env.insert("PATH".into(), std::env::var("PATH").unwrap_or_default());
-    // Must never reach codex: the env-strip gate is part of this contract.
-    host_env.insert("OPENAI_API_KEY".into(), "sk-forbidden".into());
-    DreamerConfig {
-        api_url: api_url.to_owned(),
-        workspace_token: "sl_workspace_test".into(),
-        runner_token: "sl_runner_test".into(),
+async fn me(State(shared): State<Shared>) -> Json<Value> {
+    let s = shared.lock().unwrap();
+    Json(
+        json!({"read_only":s.model_read_only,"capabilities":if s.model_read_only {vec!["read","open","query","compute","verify","status","task.read","message.read"]}else{vec!["read","save"]}}),
+    )
+}
+async fn secret_get(State(shared): State<Shared>, Json(body): Json<Value>) -> Response {
+    let s = shared.lock().unwrap();
+    let name = body["name"].as_str().unwrap();
+    match s.secrets.get(name) {
+        Some((value, version)) => {
+            Json(json!({"secret_ref":SECRET_REF,"value":value,"version":version})).into_response()
+        }
+        None => error(StatusCode::NOT_FOUND, "missing"),
+    }
+}
+async fn secret_put(State(shared): State<Shared>, Json(body): Json<Value>) -> Response {
+    let mut s = shared.lock().unwrap();
+    let name = body["name"].as_str().unwrap();
+    if name == AUTH_SECRET && s.fail_auth_put {
+        return error(StatusCode::CONFLICT, "secret changed");
+    }
+    let actual = s.secrets.get(name).map_or(0, |(_, v)| *v);
+    if body["expected_version"]
+        .as_i64()
+        .is_some_and(|v| v != actual)
+    {
+        return error(StatusCode::CONFLICT, "secret changed");
+    }
+    s.secrets.insert(
+        name.into(),
+        (body["value"].as_str().unwrap().into(), actual + 1),
+    );
+    Json(json!({"version":actual+1})).into_response()
+}
+async fn write(State(shared): State<Shared>, headers: HeaderMap) -> Response {
+    if headers.get("authorization").unwrap() == "Bearer model" {
+        return error(StatusCode::FORBIDDEN, "read only");
+    }
+    shared.lock().unwrap().writes += 1;
+    Json(json!({})).into_response()
+}
+async fn admit(State(shared): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
+    let mut s = shared.lock().unwrap();
+    if body["kind"] == "nightly"
+        && s.latest
+            .as_ref()
+            .is_some_and(|v| v["status"] == "completed")
+    {
+        return Json(json!({"admitted":false,"reason":"scheduled date already completed"}));
+    }
+    s.admissions += 1;
+    s.state_version += 1;
+    s.writes += 2;
+    Json(
+        json!({"admitted":true,"attempt_id":body["attempt_id"],"fence":s.admissions,"state_version":s.state_version,"mode":"report-only","frozen_generation":17,"scanned_generation":17,"processed_generation":0,
+      "inputs":[{"entry_ref":SOURCE,"path":"sources/Project.md","version":2,"generation":17,"operation":"update","content_hash":"sha256:source"}],
+      "pending":s.pending,"pending_notifications":s.prior_pending_notification.iter().collect::<Vec<_>>()}),
+    )
+}
+async fn checkpoint(State(shared): State<Shared>, Json(body): Json<Value>) -> Response {
+    let mut s = shared.lock().unwrap();
+    if body["expected_state_version"] != s.state_version {
+        return error(StatusCode::CONFLICT, "state changed");
+    }
+    s.state_version += 1;
+    Json(json!({"state_version":s.state_version})).into_response()
+}
+async fn candidates(State(shared): State<Shared>, Json(body): Json<Value>) -> Response {
+    let mut s = shared.lock().unwrap();
+    s.submissions += 1;
+    if s.reject_candidates {
+        return error(StatusCode::CONFLICT, "source changed");
+    }
+    s.pending
+        .extend(body["candidates"].as_array().unwrap().iter().cloned());
+    let ids: Vec<_> = body["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .map(|(n, _)| format!("{}/{}", body["attempt_id"].as_str().unwrap(), n))
+        .collect();
+    s.state_version += 1;
+    s.run_version += 1;
+    s.writes += 2;
+    Json(json!({"state_version":s.state_version,"run_entry_ref":RUN,"run_version":s.run_version,"accepted_candidate_ids":ids,"pending_count":s.pending.len()})).into_response()
+}
+async fn finish(State(shared): State<Shared>, Json(body): Json<Value>) -> Response {
+    let mut s = shared.lock().unwrap();
+    if s.fail_finish {
+        return error(StatusCode::INTERNAL_SERVER_ERROR, "storage unavailable");
+    }
+    s.run_version += 1;
+    s.writes += 3;
+    let terminal_outcome = if s.retained_location_work && body["outcome"] == "completed" {
+        json!("partial")
+    } else {
+        body["outcome"].clone()
+    };
+    let latest = json!({"schema":receipt::SCHEMA,"run_id":"2026-09-07","receipt_ref":RUN,"receipt_version":s.run_version,"receipt_path":"dreams/runs/2026-09-07.md","status":terminal_outcome,"completed_at":receipt::format_timestamp(chrono::DateTime::parse_from_rfc3339(body["completed_at"].as_str().unwrap()).unwrap().with_timezone(&chrono::Utc)),"mode":"report-only","runner":"brunn-rust-dreamer","mode_flip":false,"probe_monitoring":null,"applied_writes":[],"entering_veto_window_today":[],"pending_owner":[],"pending_review_surfaces":[],"next_run_at":"2030-01-01T10:00:00Z"});
+    s.latest = Some(latest.clone());
+    s.runs.push(body.clone());
+    if body["notification"]["status"] == "failed" {
+        s.prior_pending_notification = Some(body["notification"].clone());
+    } else if body["notification"]["status"] == "accepted" {
+        s.prior_pending_notification = None;
+    }
+    Json(json!({"state_version":s.state_version,"run_entry_ref":RUN,"run_version":s.run_version,"latest_receipt":latest,"counts":{"pending":s.pending.len(),"published":0}})).into_response()
+}
+async fn notify(State(shared): State<Shared>, Json(body): Json<Value>) -> Response {
+    let mut s = shared.lock().unwrap();
+    s.notifications.push(body.clone());
+    if s.fail_notify {
+        return error(StatusCode::FORBIDDEN, "notification denied");
+    }
+    assert_eq!(body["importance"], "important");
+    Json(json!({"notification_ref":"notification:one","replayed":false,"delivery_count":0,"delivery_status":"no_installations"})).into_response()
+}
+async fn build(behavior: &str) -> (Shared, Dreamer, tempfile::TempDir) {
+    let shared = Arc::new(Mutex::new(Mock {
+        model_read_only: true,
+        ..Mock::default()
+    }));
+    let app = Router::new()
+        .route("/v1/me", get(me))
+        .route("/v1/workspace/read", post(read))
+        .route("/v1/workspace/write", post(write))
+        .route("/v1/workspace/secrets/get", post(secret_get))
+        .route("/v1/workspace/secrets/put", post(secret_put))
+        .route("/v1/workspace/dreamer/admit", post(admit))
+        .route("/v1/workspace/dreamer/checkpoint", post(checkpoint))
+        .route("/v1/workspace/dreamer/candidates", post(candidates))
+        .route("/v1/workspace/dreamer/finish", post(finish))
+        .route("/v1/workspace/notifications/publish", post(notify))
+        .with_state(shared.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let stub = stub(dir.path(), behavior);
+    let dreamer = Dreamer::new(DreamerConfig {
+        api_url: format!("http://{address}"),
+        workspace_token: "workspace".into(),
+        model_token: "model".into(),
+        runner_token: "runner".into(),
         codex_path: stub,
         codex_model: "test-model".into(),
         mcp_server_entry: PathBuf::from("/dev/null"),
-        work_root,
-        host_env,
-        time_budget_override: Some(Duration::from_secs(30)),
-    }
+        work_root: dir.path().join("work"),
+        host_env: BTreeMap::from([
+            ("PATH".into(), std::env::var("PATH").unwrap()),
+            ("OPENAI_API_KEY".into(), "must-not-escape".into()),
+        ]),
+        time_budget_override: Some(Duration::from_secs(2)),
+    });
+    (shared, dreamer, dir)
 }
-
+fn stub(dir: &Path, behavior: &str) -> PathBuf {
+    let path = dir.join("codex");
+    std::fs::write(dir.join("behavior.sh"), behavior).unwrap();
+    let script = format!(
+        r#"#!/bin/sh
+case "$1" in
+ login) echo 'Logged in using ChatGPT'; exit 0;;
+ --version) echo 'codex-cli 0.153.4'; exit 0;;
+esac
+DIR='{dir}'
+export DIR
+while [ "$#" -gt 0 ]; do
+ if [ "$1" = '--output-last-message' ]; then shift; OUTPUT_PATH="$1"; fi
+ shift
+done
+export OUTPUT_PATH
+cat > "$DIR/prompt"
+env > "$DIR/model-env"
+exec /bin/sh "$DIR/behavior.sh"
+"#,
+        dir = dir.display()
+    );
+    std::fs::write(&path, script).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+    path
+}
+const HAPPY: &str = r#"
+if grep -q 'single word READY' "$DIR/prompt"; then echo READY; exit 0; fi
+cat > "$OUTPUT_PATH" <<'JSON'
+{"schema":"dream.candidates.v1","candidates":[{"kind":"summary","title":"Project summary","summary":"Current project status","reason":"Consolidate the project evidence","path":"derived/entities/project.md","content":"Observed: project is active.[^s1]","expected_version":0,"sources":[{"entry_ref":"entry:019fba27-687b-7582-8b99-e9371dbe2ce5","version":2,"start_line":1,"end_line":2}],"uncertainty":"No uncertainty identified"}],"processed_inputs":[{"entry_ref":"entry:019fba27-687b-7582-8b99-e9371dbe2ce5","version":2,"generation":17}],"findings":[]}
+JSON
+"#;
 fn today() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 8, 30).expect("date")
+    NaiveDate::from_ymd_opt(2026, 9, 7).unwrap()
 }
-
-fn seed_control(shared: &Shared, mode: &str, advance_after: &str) {
-    let mut state = shared.lock().expect("mock state");
-    let content = format!("enabled: true\nmode: {mode}\nadvance_after: {advance_after}\n");
-    record_write(&mut state, CONTROL_PATH, &content);
-}
-
-fn seed_auth(shared: &Shared) {
-    shared.lock().expect("mock state").secrets.insert(
-        AUTH_SECRET.to_owned(),
-        r#"{"tokens":{"account_id":"acct_test","access_token":"tok"}}"#.to_owned(),
+fn enable(s: &Shared) {
+    let mut s = s.lock().unwrap();
+    s.control = Some("enabled: true\nmode: report-only\nadvance_after: 2020-01-01\n".into());
+    s.secrets.insert(
+        AUTH_SECRET.into(),
+        ("{\"tokens\":{\"access_token\":\"old\"}}".into(), 1),
     );
 }
 
-fn workspace_write_count(shared: &Shared) -> usize {
-    shared.lock().expect("mock state").write_count
-}
-
-fn notification_titles(shared: &Shared) -> Vec<String> {
-    shared
-        .lock()
-        .expect("mock state")
-        .notifications
-        .iter()
-        .filter_map(|n| n["title"].as_str().map(str::to_owned))
-        .collect()
-}
-
-async fn build(behavior: &str, chatgpt_login: bool) -> (Shared, Dreamer, tempfile::TempDir) {
-    let (shared, api_url) = start_mock().await;
-    let dir = tempfile::tempdir().expect("test dir");
-    let stub = write_stub(dir.path(), behavior, chatgpt_login);
-    let config = test_config(stub, dir.path().join("work"), &api_url);
-    (shared.clone(), Dreamer::new(config), dir)
-}
-
 #[tokio::test]
-async fn control_fail_closed_means_zero_writes() {
-    let (shared, dreamer, _dir) = build(HAPPY_BEHAVIOR, true).await;
-    // Missing file, malformed line, unknown mode, disabled — all identical.
+async fn control_off_is_zero_workspace_writes() {
+    let (s, d, _dir) = build(HAPPY).await;
     for control in [
         None,
-        Some("enabled true\nmode: full\nadvance_after: 2026-09-05\n"),
-        Some("enabled: true\nmode: aggressive\nadvance_after: 2026-09-05\n"),
-        Some("enabled: false\nmode: full\nadvance_after: 2026-09-05\n"),
+        Some("enabled: false\nmode: report-only\nadvance_after: 2020-01-01\n"),
+        Some("garbage"),
     ] {
-        {
-            let mut state = shared.lock().expect("mock state");
-            state.files.remove(CONTROL_PATH);
-            if let Some(content) = control {
-                let version = 1;
-                state
-                    .files
-                    .insert(CONTROL_PATH.to_owned(), (content.to_owned(), version));
-            }
-            state.write_count = 0;
-        }
-        seed_auth(&shared);
-        let report = dreamer.run_once(today(), RunKind::Nightly).await;
-        assert!(
-            matches!(report.outcome, RunOutcome::Disabled { .. }),
-            "expected disabled for {control:?}, got {:?}",
-            report.outcome
-        );
-        assert_eq!(workspace_write_count(&shared), 0, "for {control:?}");
+        s.lock().unwrap().control = control.map(str::to_owned);
+        let report = d.run_once(today(), RunKind::Nightly).await;
+        assert!(matches!(report.outcome, RunOutcome::Disabled { .. }));
+        assert_eq!(s.lock().unwrap().writes, 0);
     }
 }
-
 #[tokio::test]
-async fn missing_vault_auth_skips_before_any_write() {
-    let (shared, dreamer, _dir) = build(HAPPY_BEHAVIOR, true).await;
-    seed_control(&shared, "report-only", "2026-12-01");
-    shared.lock().expect("mock state").write_count = 0;
-    let report = dreamer.run_once(today(), RunKind::Nightly).await;
-    assert!(matches!(report.outcome, RunOutcome::SkippedAuth { .. }));
-    assert_eq!(workspace_write_count(&shared), 0);
-    assert!(
-        notification_titles(&shared)
-            .iter()
-            .any(|title| title.contains("not connected"))
-    );
-}
-
-#[tokio::test]
-async fn api_key_login_skips_and_env_is_stripped() {
-    let (shared, dreamer, dir) = build(HAPPY_BEHAVIOR, false).await;
-    seed_control(&shared, "report-only", "2026-12-01");
-    seed_auth(&shared);
-    shared.lock().expect("mock state").write_count = 0;
-    let report = dreamer.run_once(today(), RunKind::Nightly).await;
-    assert!(matches!(report.outcome, RunOutcome::SkippedAuth { .. }));
-    assert_eq!(workspace_write_count(&shared), 0);
-    assert!(
-        notification_titles(&shared)
-            .iter()
-            .any(|title| title.contains("auth failed"))
-    );
-    // No exec ever ran, so no env files exist — the strip check runs in the
-    // happy-path test below.
-    assert!(!dir.path().join("exec-0.env").exists());
-}
-
-#[tokio::test]
-async fn rate_limited_probe_skips_before_any_write() {
-    let behavior = "echo 'You have hit your usage limit for the plan.'; exit 1\n";
-    let (shared, dreamer, _dir) = build(behavior, true).await;
-    seed_control(&shared, "report-only", "2026-12-01");
-    seed_auth(&shared);
-    shared.lock().expect("mock state").write_count = 0;
-    let report = dreamer.run_once(today(), RunKind::Nightly).await;
-    assert_eq!(report.outcome, RunOutcome::SkippedLimits);
-    assert_eq!(workspace_write_count(&shared), 0);
-    assert!(
-        notification_titles(&shared)
-            .iter()
-            .any(|title| title.contains("plan limits"))
-    );
-}
-
-#[tokio::test]
-async fn happy_path_completes_and_strips_the_environment() {
-    let (shared, dreamer, dir) = build(HAPPY_BEHAVIOR, true).await;
-    seed_control(&shared, "report-only", "2026-12-01");
-    seed_auth(&shared);
-    {
-        let mut state = shared.lock().expect("mock state");
-        let decisions = "- 2026-08-29 veto 2026-08-28/2 — wrong person\n";
-        record_write(&mut state, DECISIONS_PATH, decisions);
-    }
-    let report = dreamer.run_once(today(), RunKind::Nightly).await;
+async fn accepted_candidates_have_exact_receipt_and_read_only_model() {
+    let (s, d, dir) = build(HAPPY).await;
+    enable(&s);
+    let report = d.run_once(today(), RunKind::Nightly).await;
     assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
-    assert!(report.confinement_violations.is_empty());
-    // The run file exists in the workspace.
-    let state = shared.lock().expect("mock state");
-    assert!(state.files.contains_key("dreams/runs/2026-08-30.md"));
-    drop(state);
-    // Decisions reached the prompt verbatim.
-    let main_prompt =
-        std::fs::read_to_string(dir.path().join("exec-1.stdin")).expect("main exec prompt");
-    assert!(main_prompt.contains("veto 2026-08-28/2"));
-    assert!(main_prompt.contains("VERBATIM"));
-    assert!(main_prompt.contains("Needs your call"));
-    // The environment reaching codex was stripped of the API key and carried
-    // the ephemeral home.
-    let exec_env = std::fs::read_to_string(dir.path().join("exec-1.env")).expect("exec env");
-    assert!(!exec_env.contains("OPENAI_API_KEY"));
-    assert!(exec_env.contains("CODEX_HOME="));
-}
-
-#[tokio::test]
-async fn advance_flips_control_and_notifies() {
-    let (shared, dreamer, dir) = build(HAPPY_BEHAVIOR, true).await;
-    seed_control(&shared, "report-only", "2026-08-30");
-    seed_auth(&shared);
-    let report = dreamer.run_once(today(), RunKind::Nightly).await;
-    assert!(report.mode_flipped);
-    let state = shared.lock().expect("mock state");
-    let (control, _) = state.files.get(CONTROL_PATH).expect("control");
-    assert!(control.contains("mode: full"));
-    drop(state);
+    assert_eq!(report.receipt_persistence, "accepted");
+    assert_eq!(report.auth_persistence, "verified");
+    assert!(!report.mode_flipped);
+    let env = std::fs::read_to_string(dir.path().join("model-env")).unwrap();
+    assert!(env.contains("BRUNN_API_TOKEN=model"));
+    assert!(!env.contains("workspace"));
+    assert!(!env.contains("runner"));
+    assert!(!env.contains("OPENAI_API_KEY"));
+    let s = s.lock().unwrap();
+    assert_eq!(s.pending.len(), 1);
+    assert_eq!(s.notifications.len(), 1);
     assert!(
-        notification_titles(&shared)
-            .iter()
-            .any(|title| title.contains("advanced to full mode"))
+        s.notifications[0]["body"]
+            .as_str()
+            .unwrap()
+            .contains("[Open Review](https://brunn.ai/dreams)")
     );
-    let main_prompt =
-        std::fs::read_to_string(dir.path().join("exec-1.stdin")).expect("main exec prompt");
-    assert!(main_prompt.contains("Apply last run's unvetoed Proposed items first"));
+    assert_eq!(s.latest.as_ref().unwrap()["applied_writes"], json!([]));
+    assert_eq!(
+        receipt::parse_latest(&receipt::render_latest(s.latest.as_ref().unwrap()).unwrap())
+            .unwrap(),
+        s.latest.clone().unwrap()
+    );
+    assert_eq!(
+        s.control.as_deref(),
+        Some("enabled: true\nmode: report-only\nadvance_after: 2020-01-01\n")
+    );
 }
-
 #[tokio::test]
-async fn hold_advance_blocks_the_flip() {
-    let (shared, dreamer, _dir) = build(HAPPY_BEHAVIOR, true).await;
-    seed_control(&shared, "report-only", "2026-08-30");
-    seed_auth(&shared);
+async fn enabled_auth_skip_has_durable_receipt_and_no_model_work() {
+    let (s, d, dir) = build(HAPPY).await;
+    enable(&s);
+    s.lock().unwrap().secrets.remove(AUTH_SECRET);
+    let report = d.run_once(today(), RunKind::Nightly).await;
+    assert!(matches!(report.outcome, RunOutcome::SkippedAuth { .. }));
+    assert_eq!(report.receipt_persistence, "accepted");
+    assert!(!dir.path().join("prompt").exists());
+    assert_eq!(s.lock().unwrap().submissions, 0);
+}
+#[tokio::test]
+async fn retained_location_work_does_not_report_a_complete_attempt() {
+    let (s, d, _dir) = build(HAPPY).await;
+    enable(&s);
+    s.lock().unwrap().retained_location_work = true;
+    let report = d.run_once(today(), RunKind::Nightly).await;
+    assert!(matches!(report.outcome, RunOutcome::Partial { .. }));
+    assert_eq!(report.receipt_persistence, "accepted");
+    assert_eq!(d.runtime_status().await.last_run_date, None);
+    assert_eq!(
+        s.lock().unwrap().latest.as_ref().unwrap()["status"],
+        "partial"
+    );
+}
+#[tokio::test]
+async fn same_day_attempts_use_new_identity_and_exact_report_versions() {
+    let (s, d, _dir) = build(HAPPY).await;
+    enable(&s);
+    s.lock().unwrap().run_version = 8;
+    let a = d.run_once(today(), RunKind::Nightly).await;
+    let b = d.run_once(today(), RunKind::Manual).await;
+    assert_eq!(a.outcome, RunOutcome::Completed);
+    assert_eq!(b.outcome, RunOutcome::Completed);
+    assert_ne!(a.attempt_id, b.attempt_id);
+    assert!(b.run_version > a.run_version);
+    assert_eq!(s.lock().unwrap().runs.len(), 2);
+}
+#[tokio::test]
+async fn zero_exit_without_candidate_file_is_failed_even_with_old_run() {
+    let (s, d, _dir) = build("echo READY; exit 0").await;
+    enable(&s);
+    s.lock().unwrap().run_version = 4;
+    let report = d.run_once(today(), RunKind::Nightly).await;
+    assert!(matches!(report.outcome, RunOutcome::Failed { .. }));
+    assert_eq!(report.run_version, Some(5));
+    assert_eq!(s.lock().unwrap().submissions, 0);
+}
+#[tokio::test]
+async fn malformed_candidate_cannot_advance_processed_work() {
+    let(s,d,_dir)=build("if grep -q 'single word READY' \"$DIR/prompt\"; then echo READY; exit 0; fi\necho '{bad' > \"$OUTPUT_PATH\"").await;
+    enable(&s);
+    let report = d.run_once(today(), RunKind::Nightly).await;
+    assert!(matches!(report.outcome, RunOutcome::Failed { .. }));
+    assert_eq!(s.lock().unwrap().submissions, 0);
+}
+#[tokio::test]
+async fn timeout_and_refresh_are_both_reported() {
+    let(s,d,_dir)=build("if grep -q 'single word READY' \"$DIR/prompt\"; then echo READY; exit 0; fi\necho '{\"refreshed\":true}' > \"$CODEX_HOME/auth.json\"\nexec sleep 20").await;
+    enable(&s);
+    let report = d.run_once(today(), RunKind::Nightly).await;
+    assert!(matches!(report.outcome, RunOutcome::Partial { .. }));
+    assert_eq!(report.auth_persistence, "verified");
+    assert!(
+        s.lock().unwrap().secrets[AUTH_SECRET]
+            .0
+            .contains("refreshed")
+    );
+}
+#[tokio::test]
+async fn failed_limits_probe_still_preserves_refresh() {
+    let (s, d, _dir) = build(
+        "echo '{\"refreshed\":true}' > \"$CODEX_HOME/auth.json\"\necho 'usage limit'; exit 1",
+    )
+    .await;
+    enable(&s);
+    let report = d.run_once(today(), RunKind::Nightly).await;
+    assert_eq!(report.outcome, RunOutcome::SkippedLimits);
+    assert_eq!(report.auth_persistence, "verified");
+    assert_eq!(report.receipt_persistence, "accepted");
+}
+#[tokio::test]
+async fn auth_cas_failure_cannot_claim_clean_readiness() {
+    let (s, d, _dir) = build(
+        "echo '{\"refreshed\":true}' > \"$CODEX_HOME/auth.json\"\necho 'usage limit'; exit 1",
+    )
+    .await;
+    enable(&s);
+    s.lock().unwrap().fail_auth_put = true;
+    let report = d.run_once(today(), RunKind::Nightly).await;
+    assert!(matches!(report.outcome, RunOutcome::Failed { .. }));
+    assert_eq!(report.auth_persistence, "failed");
+    assert!(
+        !s.lock().unwrap().secrets[AUTH_SECRET]
+            .0
+            .contains("refreshed")
+    );
+}
+#[tokio::test]
+async fn writable_model_credential_is_refused_before_probe() {
+    let (s, d, dir) = build(HAPPY).await;
+    enable(&s);
+    s.lock().unwrap().model_read_only = false;
+    let report = d.run_once(today(), RunKind::Nightly).await;
+    assert!(matches!(report.outcome, RunOutcome::Failed { .. }));
+    assert!(!dir.path().join("prompt").exists());
+}
+#[tokio::test]
+async fn terminal_persistence_failure_is_visible() {
+    let (s, d, _dir) = build(HAPPY).await;
+    enable(&s);
+    s.lock().unwrap().fail_finish = true;
+    let report = d.run_once(today(), RunKind::Nightly).await;
+    assert_eq!(report.receipt_persistence, "failed");
+    assert!(report.persistence_error.is_some());
+    assert!(report.run_version.is_none());
+}
+#[tokio::test]
+async fn source_conflict_retains_work_without_false_completion() {
+    let (s, d, _dir) = build(HAPPY).await;
+    enable(&s);
+    s.lock().unwrap().reject_candidates = true;
+    let report = d.run_once(today(), RunKind::Nightly).await;
+    assert!(matches!(report.outcome, RunOutcome::Failed { .. }));
+    assert_eq!(s.lock().unwrap().admissions, 1);
+    assert!(s.lock().unwrap().notifications.is_empty());
+}
+#[tokio::test]
+async fn notification_failure_preserves_candidates_and_retries_original_key() {
+    let (s, d, _dir) = build(HAPPY).await;
+    enable(&s);
+    s.lock().unwrap().fail_notify = true;
+    let a = d.run_once(today(), RunKind::Nightly).await;
+    assert_eq!(a.outcome, RunOutcome::Completed);
+    assert_eq!(a.notification["status"], "failed");
     {
-        let mut state = shared.lock().expect("mock state");
-        record_write(&mut state, DECISIONS_PATH, "- 2026-08-29 hold-advance\n");
+        let mut s = s.lock().unwrap();
+        assert_eq!(s.pending.len(), 1);
+        s.fail_notify = false;
     }
-    let report = dreamer.run_once(today(), RunKind::Nightly).await;
-    assert!(!report.mode_flipped);
-    let state = shared.lock().expect("mock state");
-    let (control, _) = state.files.get(CONTROL_PATH).expect("control");
-    assert!(control.contains("mode: report-only"));
-}
-
-#[tokio::test]
-async fn cas_conflict_retries_once_then_defers() {
-    // One conflict: the flip retries and succeeds.
-    let (shared, dreamer, _dir) = build(HAPPY_BEHAVIOR, true).await;
-    seed_control(&shared, "report-only", "2026-08-30");
-    seed_auth(&shared);
-    shared
-        .lock()
-        .expect("mock state")
-        .conflicts
-        .insert(CONTROL_PATH.to_owned(), 1);
-    let report = dreamer.run_once(today(), RunKind::Nightly).await;
-    assert!(report.mode_flipped, "one conflict must be retried");
-
-    // Persistent conflicts: the flip is deferred and the run proceeds
-    // report-only.
-    let (shared, dreamer, _dir) = build(HAPPY_BEHAVIOR, true).await;
-    seed_control(&shared, "report-only", "2026-08-30");
-    seed_auth(&shared);
-    shared
-        .lock()
-        .expect("mock state")
-        .conflicts
-        .insert(CONTROL_PATH.to_owned(), 99);
-    let report = dreamer.run_once(today(), RunKind::Nightly).await;
-    assert!(!report.mode_flipped);
-    assert!(matches!(
-        report.outcome,
-        RunOutcome::Completed | RunOutcome::Partial { .. }
-    ));
-}
-
-#[tokio::test]
-async fn kill_timer_yields_partial_with_fallback_run_file() {
-    let behavior = r#"
-if [ "$N" = "0" ]; then echo READY; exit 0; fi
-sleep 20
-exit 0
-"#;
-    let (shared, dreamer, dir) = build(behavior, true).await;
-    let config = test_config(
-        dir.path().join("codex"),
-        dir.path().join("work"),
-        dreamer.workspace.base_url(),
+    let _ = d.run_once(today(), RunKind::Manual).await;
+    let s = s.lock().unwrap();
+    assert_eq!(
+        s.notifications[0]["event_key"],
+        s.notifications[1]["event_key"]
     );
-    let dreamer = Dreamer::new(DreamerConfig {
-        time_budget_override: Some(Duration::from_secs(2)),
-        ..config
-    });
-    seed_control(&shared, "report-only", "2026-12-01");
-    seed_auth(&shared);
-    let report = dreamer.run_once(today(), RunKind::Nightly).await;
+}
+#[tokio::test]
+async fn model_cannot_mutate_workspace_even_if_prompt_is_ignored() {
+    let behavior = format!(
+        "if grep -q 'single word READY' \"$DIR/prompt\"; then echo READY; exit 0; fi\ncode=$(curl -s -o /dev/null -w '%{{http_code}}' -X POST \"$BRUNN_API_URL/v1/workspace/write\" -H \"Authorization: Bearer $BRUNN_API_TOKEN\"); test \"$code\" = 403 || exit 1\n{HAPPY}"
+    );
+    let (s, d, _dir) = build(&behavior).await;
+    enable(&s);
+    let report = d.run_once(today(), RunKind::Nightly).await;
+    assert_eq!(report.outcome, RunOutcome::Completed);
+    assert!(report.confinement_violations.is_empty());
+}
+
+#[tokio::test]
+async fn terminal_tail_recovers_before_any_new_model_work() {
+    let (s, d, _dir) = build(HAPPY).await;
+    enable(&s);
+    s.lock().unwrap().fail_finish = true;
+    let first = d.run_once(today(), RunKind::Nightly).await;
+    assert_eq!(first.receipt_persistence, "failed");
+    s.lock().unwrap().fail_finish = false;
+    let recovered = d.run_once(today(), RunKind::Nightly).await;
+    assert_eq!(recovered.outcome, RunOutcome::SkippedAlreadyRan);
+    let state = s.lock().unwrap();
+    assert_eq!(state.submissions, 1, "recovery must not rerun the model");
+    assert_eq!(state.runs[0]["attempt_id"], first.attempt_id);
+}
+
+#[tokio::test]
+async fn valid_partial_output_reports_retained_work() {
+    let behavior = HAPPY.replace("\"processed_inputs\":[{\"entry_ref\":\"entry:019fba27-687b-7582-8b99-e9371dbe2ce5\",\"version\":2,\"generation\":17}]", "\"processed_inputs\":[]");
+    let (s, d, _dir) = build(&behavior).await;
+    enable(&s);
+    let report = d.run_once(today(), RunKind::Nightly).await;
     assert!(
         matches!(report.outcome, RunOutcome::Partial { .. }),
         "{report:?}"
     );
-    let state = shared.lock().expect("mock state");
-    let (run_file, _) = state
-        .files
-        .get("dreams/runs/2026-08-30.md")
-        .expect("fallback run file");
-    assert!(run_file.contains("Status: partial."));
-}
-
-#[tokio::test]
-async fn codex_death_yields_failed_with_fallback_run_file() {
-    let behavior = r#"
-if [ "$N" = "0" ]; then echo READY; exit 0; fi
-echo 'boom' >&2
-exit 1
-"#;
-    let (shared, dreamer, _dir) = build(behavior, true).await;
-    seed_control(&shared, "report-only", "2026-12-01");
-    seed_auth(&shared);
-    let report = dreamer.run_once(today(), RunKind::Nightly).await;
-    assert!(
-        matches!(report.outcome, RunOutcome::Failed { .. }),
-        "{report:?}"
-    );
-    let state = shared.lock().expect("mock state");
-    let (run_file, _) = state
-        .files
-        .get("dreams/runs/2026-08-30.md")
-        .expect("fallback run file");
-    assert!(run_file.contains("Status: failed."));
-}
-
-#[tokio::test]
-async fn confinement_cross_check_reports_stray_writes() {
-    // The exec writes its run file AND a file outside the allowed surfaces
-    // that the run file does not enumerate.
-    let behavior = r#"
-if [ "$N" = "0" ]; then echo READY; exit 0; fi
-write() {
-  curl -sf -X POST "$BRUNN_API_URL/v1/workspace/write" \
-    -H "Authorization: Bearer $BRUNN_API_TOKEN" \
-    -H 'Content-Type: application/json' \
-    --data "{\"path\":\"$1\",\"content\":\"$2\"}" > /dev/null
-}
-write "sources/Projects/Sneaky.md" "should not happen"
-RUN_PATH=$(grep -o 'dreams/runs/[0-9-]*\.md' "$DIR/exec-$N.stdin" | tail -1)
-write "$RUN_PATH" "A run happened.\nLine two.\nLine three.\nLine four.\nLine five.\n\n## Watermark\n\ngeneration: 5\n"
-exit 0
-"#;
-    let (shared, dreamer, _dir) = build(behavior, true).await;
-    seed_control(&shared, "report-only", "2026-12-01");
-    seed_auth(&shared);
-    let report = dreamer.run_once(today(), RunKind::Nightly).await;
-    assert_eq!(
-        report.confinement_violations,
-        vec!["sources/Projects/Sneaky.md".to_owned()]
-    );
-    assert!(
-        notification_titles(&shared)
-            .iter()
-            .any(|title| title.contains("outside its surfaces"))
-    );
-}
-
-#[tokio::test]
-async fn refreshed_tokens_are_persisted_back_to_the_vault() {
-    // The stub rewrites auth.json during the run, as codex does on refresh.
-    let behavior = r#"
-if [ "$N" = "0" ]; then echo READY; exit 0; fi
-echo '{"tokens":{"account_id":"acct_test","access_token":"refreshed"}}' > "$CODEX_HOME/auth.json"
-RUN_PATH=$(grep -o 'dreams/runs/[0-9-]*\.md' "$DIR/exec-$N.stdin" | tail -1)
-curl -sf -X POST "$BRUNN_API_URL/v1/workspace/write" \
-  -H "Authorization: Bearer $BRUNN_API_TOKEN" \
-  -H 'Content-Type: application/json' \
-  --data "{\"path\":\"$RUN_PATH\",\"content\":\"Done.\n\n## Watermark\n\ngeneration: 2\n\",\"expected_version\":0}" > /dev/null
-exit 0
-"#;
-    let (shared, dreamer, _dir) = build(behavior, true).await;
-    seed_control(&shared, "report-only", "2026-12-01");
-    seed_auth(&shared);
-    let report = dreamer.run_once(today(), RunKind::Nightly).await;
-    assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
-    let state = shared.lock().expect("mock state");
-    assert!(
-        state
-            .secrets
-            .get(AUTH_SECRET)
-            .expect("auth secret")
-            .contains("refreshed")
-    );
-}
-
-/// Location × dreaming coherence contract (2026-09-03): structured evidence
-/// never enters the change set, so it never reaches LINKS, VIEWS, FRESHNESS,
-/// or neighborhood selection.
-#[tokio::test]
-async fn structured_evidence_never_reaches_the_change_set() {
-    let (shared, dreamer, dir) = build(HAPPY_BEHAVIOR, true).await;
-    seed_control(&shared, "report-only", "2026-12-01");
-    seed_auth(&shared);
-    {
-        let mut state = shared.lock().expect("mock state");
-        // Previous run file whose watermark is its own generation (2, after
-        // CONTROL at 1): everything written below is newer than it.
-        record_write(
-            &mut state,
-            "dreams/runs/2026-08-29.md",
-            "Done.\n\n## Watermark\n\ngeneration: 2\n",
-        );
-        record_write(
-            &mut state,
-            "Location/Visits/2026-09.md",
-            "---\nkind: location-visits\nmonth: 2026-09\n---\n\
-             | Arrived | Departed | Dwell | Place | Kind | City | Conf | Coord |\n\
-             | --- | --- | --- | --- | --- | --- | --- | --- |\n\
-             | 2026-09-02T08:30-07:00 | 2026-09-02T13:30-07:00 | 5h00m | Crystal Mountain | resort | Enumclaw, WA, US | high | 46.9350,-121.4740 |\n",
-        );
-        record_write(
-            &mut state,
-            "Location/Places.md",
-            "---\nkind: location-places\n---\n| Label | Kind | Lat | Lon | Radius m |\n| --- | --- | --- | --- | --- |\n",
-        );
-        record_write(
-            &mut state,
-            "sources/Projects/Crystal Mountain season.md",
-            "# Crystal Mountain season\n\nSki notes mentioning Crystal Mountain and Home.\n",
-        );
-        // A second month-file version, as every ping-driven transition produces.
-        record_write(
-            &mut state,
-            "Location/Visits/2026-09.md",
-            "---\nkind: location-visits\nmonth: 2026-09\n---\n\
-             | Arrived | Departed | Dwell | Place | Kind | City | Conf | Coord |\n\
-             | --- | --- | --- | --- | --- | --- | --- | --- |\n",
-        );
-        state.secrets.insert(
-            RUNTIME_SECRET.to_owned(),
-            r#"{"last_run_date":"2026-08-29"}"#.to_owned(),
-        );
-    }
-    let report = dreamer.run_once(today(), RunKind::Nightly).await;
-    assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
-
-    let main_prompt =
-        std::fs::read_to_string(dir.path().join("exec-1.stdin")).expect("main exec prompt");
-    let change_set_section = main_prompt
-        .split("# CHANGE SET")
-        .nth(1)
-        .and_then(|rest| rest.split("# WORK").next())
-        .expect("prompt has a change set section");
-    assert!(
-        change_set_section.contains("- sources/Projects/Crystal Mountain season.md"),
-        "{change_set_section}"
-    );
-    assert!(change_set_section.contains("exactly the 1 paths listed below"));
-    assert!(!change_set_section.contains("Location/Visits/2026-09.md"));
-    assert!(!change_set_section.contains("Location/Places.md"));
-    assert!(!change_set_section.contains("dreams/runs/2026-08-29.md\n- "));
-    assert!(!main_prompt.contains("since_generation="));
-}
-
-/// The write gate: the dreamer's location paths are confinement violations
-/// even when the run file enumerates them as applied.
-#[tokio::test]
-async fn write_gate_rejects_location_paths_even_when_enumerated() {
-    let behavior = r#"
-if [ "$N" = "0" ]; then echo READY; exit 0; fi
-write() {
-  curl -sf -X POST "$BRUNN_API_URL/v1/workspace/write" \
-    -H "Authorization: Bearer $BRUNN_API_TOKEN" \
-    -H 'Content-Type: application/json' \
-    --data "{\"path\":\"$1\",\"content\":\"$2\"}" > /dev/null
-}
-write "Location/Visits/2026-09.md" "rewritten history"
-write "Location/Places.md" "rewritten places"
-write "derived/entities/crystal-mountain.md" "Visit history: Location/Visits/"
-RUN_PATH=$(grep -o 'dreams/runs/[0-9-]*\.md' "$DIR/exec-$N.stdin" | tail -1)
-write "$RUN_PATH" "A run happened.\nLine two.\nLine three.\nLine four.\nLine five.\n\n## Applied\n- Location/Visits/2026-09.md@2 — tidied\n- Location/Places.md@2 — radius\n\n## Watermark\n\ngeneration: 5\n"
-exit 0
-"#;
-    let (shared, dreamer, _dir) = build(behavior, true).await;
-    seed_control(&shared, "full", "2026-08-01");
-    seed_auth(&shared);
-    let report = dreamer.run_once(today(), RunKind::Nightly).await;
-    assert_eq!(
-        report.confinement_violations,
-        vec![
-            "Location/Visits/2026-09.md".to_owned(),
-            "Location/Places.md".to_owned(),
-        ]
-    );
-    assert!(
-        notification_titles(&shared)
-            .iter()
-            .any(|title| title.contains("outside its surfaces"))
-    );
+    assert_eq!(report.receipt_persistence, "accepted");
 }

@@ -4,6 +4,27 @@ import { describe, expect, it } from "vitest";
 import { installApiMock, renderApp } from "./renderApp";
 
 describe("workspace search and exact read", () => {
+  it("finishes an exact version link when StrictMode replays mount effects", async () => {
+    const requests: unknown[] = [];
+    installApiMock({
+      "POST /api/v1/workspace/read": async (request: Request) => {
+        requests.push(await request.json());
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return { status: "complete", data: { items: [{
+          reference: "entry:strict-source", path: "Sources/Strict.md",
+          title: "Strict source", version: 3, view: "full",
+          content_hash: "sha256:fixture", media_type: "text/markdown", status: "complete",
+          text: "# Strict source\n\nThe exact historical evidence is visible.",
+          metadata: {},
+        }] } };
+      },
+    });
+    renderApp("/explore?entryRef=entry%3Astrict-source&version=3", undefined, { strict: true });
+    expect(await screen.findByText("The exact historical evidence is visible.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Read$/ })).toBeEnabled();
+    expect(requests).toEqual([{ requests: [{ ref: "entry:strict-source", version: 3, view: "full" }] }]);
+  });
+
   it("renders merged current entries and reads the selected exact reference", async () => {
     let searchPayload: Record<string, unknown> | undefined;
     let readPayload: Record<string, unknown> | undefined;

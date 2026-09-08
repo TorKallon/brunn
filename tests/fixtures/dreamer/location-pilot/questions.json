@@ -1,0 +1,14 @@
+{
+  "schema": "brunn.location-pilot.questions.v1",
+  "date": "2026-09-06",
+  "timezone": "America/Los_Angeles",
+  "questions": [
+    {"id": "day-stops", "text": "Which stops are supported across September 6, including short stops? Separate observations and visit estimates from unknown physical stop coverage."},
+    {"id": "home-1819", "text": "What does the evidence establish about location around 18:19 Pacific, and what does it leave unknown about departure?"},
+    {"id": "main-street", "text": "What arrival and departure interval is supported for the Main Street area, and does it establish a visit to 520 Bar & Grill?"},
+    {"id": "lincoln-square", "text": "What interval is supported for Lincoln Square South? Does it prove uninterrupted presence or a specific activity?"},
+    {"id": "home-2353", "text": "What does the late-evening Home evidence establish around 23:53 Pacific, and can it answer where the owner is now?"},
+    {"id": "gaps", "text": "Do the day's sampling gaps establish driving, missed stops, or continuous presence? Identify the limits of that inference."},
+    {"id": "timeliness", "text": "Can the evidence measure physical arrival-to-first-usable-evidence and server-receipt-to-readable-presence delay? Keep sample, callback, visit estimate, and server receipt times separate."}
+  ]
+}

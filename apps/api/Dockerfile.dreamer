@@ -33,7 +33,7 @@ LABEL org.opencontainers.image.title="Brunn Dreamer" \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-RUN npm install -g @openai/codex && npm cache clean --force
+RUN npm install -g @openai/codex@0.153.4 && npm cache clean --force
 COPY --from=builder /build/brunn /usr/local/bin/brunn
 COPY --from=mcp-build /mcp/dist /srv/mcp/dist
 COPY --from=mcp-build /mcp/node_modules /srv/mcp/node_modules
@@ -43,6 +43,7 @@ RUN mkdir -p /srv/dreamer && chown node:node /srv/dreamer
 
 ENV DREAMER_MCP_ENTRY=/srv/mcp/dist/index.js \
     DREAMER_CODEX_PATH=/usr/local/bin/codex \
+    DREAMER_CODEX_VERSION="codex-cli 0.153.4" \
     DREAMER_WORK_ROOT=/srv/dreamer
 
 USER node:node

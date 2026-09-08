@@ -124,6 +124,8 @@ pub enum Capability {
     NotificationManage,
     SecretRead,
     SecretWrite,
+    #[serde(rename = "dreamer:run")]
+    DreamerRun,
     #[serde(rename = "task.read")]
     TaskRead,
     #[serde(rename = "task.write")]
@@ -159,6 +161,7 @@ impl Capability {
             Self::NotificationManage => "notification:manage",
             Self::SecretRead => "secret:read",
             Self::SecretWrite => "secret:write",
+            Self::DreamerRun => "dreamer:run",
             Self::TaskRead => "task.read",
             Self::TaskWrite => "task.write",
             Self::LocationWrite => "location.write",
@@ -192,6 +195,7 @@ impl FromStr for Capability {
             "notification:manage" => Ok(Self::NotificationManage),
             "secret:read" => Ok(Self::SecretRead),
             "secret:write" => Ok(Self::SecretWrite),
+            "dreamer:run" => Ok(Self::DreamerRun),
             "task.read" => Ok(Self::TaskRead),
             "task.write" => Ok(Self::TaskWrite),
             "location.write" => Ok(Self::LocationWrite),

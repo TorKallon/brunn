@@ -76,10 +76,12 @@ function compactOpenData(data: JsonObject): JsonObject {
           "heading",
           "why_selected",
           "superseded_by",
+          "representation",
+          "freshness",
         ]),
         content: typeof item.text === "string" ? item.text : "",
-        content_scope: item.representation === "complete_source"
-          ? "complete_source"
+        content_scope: typeof item.representation === "string"
+          ? item.representation
           : "selected_source_sections",
       }));
     if (Array.isArray(data.evidence_leads) && data.evidence_leads.length > 0) {
@@ -279,9 +281,11 @@ function compactReadItem(item: JsonObject): JsonObject {
       "supersession_chain",
       "supersession_warning",
       "current_truth_notice",
+      "representation",
+      "freshness",
     ]);
   }
-  const compact = pick(item, ["reference", "view", "status"]);
+  const compact = pick(item, ["reference", "view", "status", "representation", "freshness"]);
   const error = asObject(item.error);
   if (error && hasKeys(error)) compact.error = error;
   const data = asObject(item.data);
@@ -296,6 +300,7 @@ function compactReadItem(item: JsonObject): JsonObject {
       version: metadata.source_version ?? metadata.version,
       media_type: metadata.media_type,
       representation: metadata.representation,
+      freshness: metadata.freshness,
     };
     for (const [key, value] of Object.entries(sourceValues)) {
       if (isPresent(value)) source[key] = value;
@@ -416,6 +421,7 @@ function compactSimpleCandidate(candidate: JsonObject): JsonObject {
     "version",
     "heading",
     "representation",
+    "freshness",
     "excerpt",
     "text",
     "additional_sections",

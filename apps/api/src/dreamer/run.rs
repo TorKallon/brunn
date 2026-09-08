@@ -1,25 +1,21 @@
 //! The nightly run: a deterministic wrapper around one `codex exec`.
 //!
-//! Order is the contract: CONTROL fail-closed → vault auth → subscription
-//! check → limits probe → advance check → codex exec → run-file fallback →
-//! confinement cross-check → token persist-back → runtime status. Every skip
-//! happens before any workspace write.
+//! CONTROL fail-closed → server admission/frozen intake → read-only reasoning
+//! → checked auth custody → server-validated terminal run and v2 projection.
+//! CONTROL-off performs no workspace writes; enabled skips have audit receipts.
 
 use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::{io::AsyncWriteExt as _, process::Command};
 
 use super::{
-    change_set,
-    client::{ApiClient, FileVersion},
+    client::{ApiClient, ClientError, SecretVersion},
     codex::{self, AuthCheck, ExecSpec},
-    control::{self, ControlState, Mode},
-    decisions,
-    prompt::{self, ChangeSet, PromptParams},
-    runfile,
+    control::{self, ControlState},
+    prompt, receipt, runfile,
 };
 
 pub const CONTROL_PATH: &str = "dreams/CONTROL.md";
@@ -30,9 +26,10 @@ pub const RUNTIME_SECRET: &str = "dreamer-runtime";
 #[derive(Debug, Clone)]
 pub struct DreamerConfig {
     pub api_url: String,
-    /// The `dreamer` credential (read_write): wrapper workspace ops and the
-    /// MCP server codex talks to.
+    /// Existing wrapper workspace read credential, never handed to the model.
     pub workspace_token: String,
+    /// Dedicated read-only model identity; it must differ from wrapper credentials.
+    pub model_token: String,
     /// The `dreamer_runner` credential: vault custody and notifications.
     pub runner_token: String,
     pub codex_path: PathBuf,
@@ -49,6 +46,8 @@ pub struct DreamerConfig {
 pub enum RunKind {
     /// The scheduled or manually triggered normal run: 40 writes, 30 minutes.
     Nightly,
+    /// Explicit same-day retry, independent of the scheduled-slot dedupe.
+    Manual,
     /// The one supervised backfill: 300 writes, 120 minutes, owner present.
     Backfill,
 }
@@ -56,14 +55,14 @@ pub enum RunKind {
 impl RunKind {
     pub fn write_budget(self) -> usize {
         match self {
-            RunKind::Nightly => 40,
+            RunKind::Nightly | RunKind::Manual => 40,
             RunKind::Backfill => 300,
         }
     }
 
     pub fn time_budget(self) -> Duration {
         match self {
-            RunKind::Nightly => Duration::from_secs(30 * 60),
+            RunKind::Nightly | RunKind::Manual => Duration::from_secs(30 * 60),
             RunKind::Backfill => Duration::from_secs(120 * 60),
         }
     }
@@ -104,6 +103,17 @@ pub struct RunReport {
     /// post-run cross-check. Report-only.
     pub confinement_violations: Vec<String>,
     pub run_file_path: Option<String>,
+    pub attempt_id: String,
+    pub stage: String,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+    pub run_entry_ref: Option<String>,
+    pub run_version: Option<i64>,
+    pub auth_persistence: String,
+    pub receipt_persistence: String,
+    pub notification: Value,
+    pub persistence_error: Option<String>,
+    pub counts: Value,
 }
 
 /// `dreamer-runtime` vault record: connection identity and last-attempt
@@ -111,6 +121,10 @@ pub struct RunReport {
 /// material.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RuntimeStatus {
+    #[serde(skip)]
+    pub custody_version: Option<i64>,
+    #[serde(skip)]
+    pub custody_ref: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -127,15 +141,22 @@ pub struct RuntimeStatus {
     pub last_attempt_result: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_attempt_detail: Option<String>,
-    /// Date of the most recent run that produced a run file.
+    /// Date of the most recent completed attempt with an accepted exact receipt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_run_date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_attempt: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_terminal: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub persistence_error: Option<String>,
 }
 
 pub struct Dreamer {
     pub config: DreamerConfig,
     pub workspace: ApiClient,
     pub runner: ApiClient,
+    pub(crate) auth_lock: tokio::sync::Mutex<()>,
 }
 
 impl Dreamer {
@@ -146,444 +167,578 @@ impl Dreamer {
             config,
             workspace,
             runner,
+            auth_lock: tokio::sync::Mutex::new(()),
         }
     }
 
     pub async fn runtime_status(&self) -> RuntimeStatus {
-        match self.runner.secret_get(RUNTIME_SECRET).await {
-            Ok(Some(raw)) => serde_json::from_str(&raw).unwrap_or_default(),
-            _ => RuntimeStatus::default(),
+        match self.runner.secret_get_version(RUNTIME_SECRET).await {
+            Ok(Some(secret)) => {
+                let mut status = serde_json::from_str::<RuntimeStatus>(&secret.value)
+                    .unwrap_or_else(|_| RuntimeStatus {
+                        persistence_error: Some("runtime vault record is malformed".into()),
+                        ..RuntimeStatus::default()
+                    });
+                status.custody_version = Some(secret.version);
+                status.custody_ref = Some(secret.secret_ref);
+                status
+            }
+            Err(_) => RuntimeStatus {
+                persistence_error: Some("runtime vault read unavailable".into()),
+                ..RuntimeStatus::default()
+            },
+            Ok(None) => RuntimeStatus::default(),
         }
     }
 
-    async fn store_runtime_status(&self, status: &RuntimeStatus) {
-        if let Ok(raw) = serde_json::to_string(status) {
-            let _ = self
-                .runner
-                .secret_put(
-                    RUNTIME_SECRET,
-                    &raw,
-                    "Dreamer connection and last-run status (no token material)",
-                )
-                .await;
+    pub(crate) async fn store_runtime_status(&self, status: &RuntimeStatus) -> Result<(), String> {
+        let raw = serde_json::to_string(status).map_err(|_| "runtime serialization failed")?;
+        let version = self
+            .runner
+            .secret_put_checked(
+                RUNTIME_SECRET,
+                &raw,
+                status.custody_version.unwrap_or(0),
+                status.custody_ref.as_deref(),
+            )
+            .await
+            .map_err(|_| "runtime custody CAS failed")?;
+        let saved = self
+            .runner
+            .secret_get_version(RUNTIME_SECRET)
+            .await
+            .map_err(|_| "runtime custody read-back failed")?
+            .ok_or("runtime record disappeared")?;
+        if saved.version != version || saved.value != raw {
+            return Err("runtime custody read-back mismatch".into());
         }
+        Ok(())
     }
 
-    async fn notify_once(&self, date: NaiveDate, event: &str, title: &str, body: &str) {
-        let event_key = format!("dreaming-{}-{event}", date.format("%Y-%m-%d"));
-        if let Err(error) = self.runner.notify(&event_key, title, body).await {
-            tracing::warn!(%error, event_key, "dreaming notification failed");
-        }
-    }
-
-    /// Execute one run. `today` is the run date in America/Los_Angeles.
+    /// All paths after an enabled admission reach one terminal persistence path.
+    /// A process killed before it does is recovered by the server lease/fence.
     pub async fn run_once(&self, today: NaiveDate, kind: RunKind) -> RunReport {
+        let _auth_guard = self.auth_lock.lock().await;
         let mut report = RunReport {
             date: today.format("%Y-%m-%d").to_string(),
             outcome: RunOutcome::Failed {
                 detail: "not started".into(),
             },
             mode_flipped: false,
-            confinement_violations: Vec::new(),
+            confinement_violations: vec![],
             run_file_path: None,
+            attempt_id: uuid::Uuid::now_v7().to_string(),
+            stage: "control".into(),
+            started_at: Utc::now().to_rfc3339(),
+            completed_at: None,
+            run_entry_ref: None,
+            run_version: None,
+            auth_persistence: "not_used".into(),
+            receipt_persistence: "not_attempted".into(),
+            notification: json!({"status":"not_needed"}),
+            persistence_error: None,
+            counts: json!({}),
         };
-        let mut status = self.runtime_status().await;
-        status.last_attempt_date = Some(report.date.clone());
-
-        // 1. CONTROL — fail closed, zero writes when not enabled.
+        let mut runtime = self.runtime_status().await;
         let control_file = match self.workspace.read_markdown(CONTROL_PATH).await {
             Ok(file) => file,
             Err(error) => {
                 report.outcome = RunOutcome::Failed {
                     detail: format!("could not read CONTROL: {error}"),
                 };
-                self.finish(&mut status, &report).await;
+                self.finish_runtime(&mut runtime, &mut report).await;
                 return report;
             }
         };
-        let control = match control::parse(control_file.as_ref().map(|f| f.content.as_str())) {
-            ControlState::Disabled { reason } => {
-                report.outcome = RunOutcome::Disabled { reason };
-                self.finish(&mut status, &report).await;
-                return report;
-            }
-            ControlState::Enabled(control) => control,
-        };
-
-        // 2. One run file per date: a nightly never replaces a report that a
-        // manual or backfill run already wrote today (the overwrite clobbered
-        // a backfill's proposals with a no-change stub). Manual runs may
-        // deliberately rewrite today's record.
-        if kind == RunKind::Nightly {
-            match self
-                .workspace
-                .read_markdown(&runfile::run_path(today))
-                .await
-            {
-                Ok(Some(_)) => {
-                    report.outcome = RunOutcome::SkippedAlreadyRan;
-                    self.finish(&mut status, &report).await;
-                    return report;
-                }
-                Ok(None) => {}
-                Err(error) => {
-                    report.outcome = RunOutcome::Failed {
-                        detail: format!("could not check today's run file: {error}"),
-                    };
-                    self.finish(&mut status, &report).await;
-                    return report;
-                }
-            }
+        if let ControlState::Disabled { reason } =
+            control::parse(control_file.as_ref().map(|file| file.content.as_str()))
+        {
+            report.outcome = RunOutcome::Disabled { reason };
+            self.finish_runtime(&mut runtime, &mut report).await;
+            return report;
         }
-
-        // 3. Owner decisions.
-        let decisions_raw = match self.workspace.read_markdown(DECISIONS_PATH).await {
-            Ok(file) => file.map(|f| f.content).unwrap_or_default(),
-            Err(error) => {
-                report.outcome = RunOutcome::Failed {
-                    detail: format!("could not read decisions.md: {error}"),
-                };
-                self.finish(&mut status, &report).await;
-                return report;
-            }
-        };
-        let decisions = decisions::parse(&decisions_raw);
-
-        // 3. Vault auth → ephemeral CODEX_HOME.
-        let auth_json = match self.runner.secret_get(AUTH_SECRET).await {
-            Ok(Some(value)) => value,
-            Ok(None) => {
-                report.outcome = RunOutcome::SkippedAuth {
-                    detail: "no codex auth in the vault; Connect has not completed".into(),
-                };
-                self.notify_once(
-                    today,
-                    "auth",
-                    "Dreaming skipped: not connected",
-                    "The nightly dreaming run was skipped because no Codex account is \
-                     connected. Open Settings → Dreaming to connect.",
-                )
-                .await;
-                self.finish(&mut status, &report).await;
-                return report;
-            }
-            Err(error) => {
-                report.outcome = RunOutcome::Failed {
-                    detail: format!("vault read failed: {error}"),
-                };
-                self.finish(&mut status, &report).await;
-                return report;
-            }
-        };
-        let run_home = match RunHome::create(&self.config.work_root, &report.date, &auth_json) {
-            Ok(home) => home,
-            Err(detail) => {
-                report.outcome = RunOutcome::Failed { detail };
-                self.finish(&mut status, &report).await;
-                return report;
-            }
-        };
-        let env =
-            codex::codex_environment(&self.config.host_env, &run_home.home, &run_home.codex_home);
-
-        // 4. Subscription check — fail closed.
-        match codex::verify_subscription(&self.config.codex_path, &env).await {
-            AuthCheck::ChatGpt(identity) => {
-                status.codex_version = Some(identity.version);
-            }
-            AuthCheck::Refused { detail } => {
-                report.outcome = RunOutcome::SkippedAuth {
-                    detail: detail.clone(),
-                };
-                self.notify_once(
-                    today,
-                    "auth",
-                    "Dreaming skipped: Codex auth failed",
-                    &format!(
-                        "The nightly dreaming run was skipped before any write: {detail}. \
-                         Open Settings → Dreaming to reconnect."
-                    ),
-                )
-                .await;
-                self.finish(&mut status, &report).await;
-                return report;
-            }
-        }
-
-        // 5. Limits probe — before any write.
-        match self.probe(&run_home, &env).await {
-            ProbeResult::Ready => {}
-            ProbeResult::RateLimited => {
-                report.outcome = RunOutcome::SkippedLimits;
-                self.notify_once(
-                    today,
-                    "limits",
-                    "Dreaming skipped: plan limits",
-                    "The nightly dreaming run was skipped before any write because the \
-                     Codex plan is out of capacity. It will retry tomorrow night.",
-                )
-                .await;
-                self.finish(&mut status, &report).await;
-                return report;
-            }
-            ProbeResult::Failed(detail) => {
-                report.outcome = RunOutcome::Failed {
-                    detail: format!("codex probe failed: {detail}"),
-                };
-                self.finish(&mut status, &report).await;
-                return report;
-            }
-        }
-
-        // 6. Advance check.
-        let mut mode = control.mode;
-        if mode == Mode::ReportOnly && today >= control.advance_after && !decisions.hold_advance {
-            match self
-                .workspace
-                .write_with_conflict_retry(CONTROL_PATH, |_| {
-                    control::render(true, Mode::Full, control.advance_after)
-                })
-                .await
-            {
-                Ok(_) => {
-                    mode = Mode::Full;
-                    report.mode_flipped = true;
-                    self.notify_once(
-                        today,
-                        "advance",
-                        "Dreaming advanced to full mode",
-                        "The seven-day report-only window ended with no hold recorded, so \
-                         dreaming now applies unvetoed proposals. Say \"hold-advance\" to \
-                         any agent to pause it.",
-                    )
-                    .await;
-                }
-                Err(error) => {
-                    tracing::warn!(%error, "advance flip deferred: CONTROL write conflict");
-                }
-            }
-        }
-
-        // 7. Last run watermark (via the runtime record; first run has none).
-        // A backfill deliberately ignores it: its whole purpose is a
-        // full-corpus supervised pass, not the incremental changed-neighborhood
-        // scope, and budget alone does not change what the prompt asks for.
-        let last_run = match &status.last_run_date {
-            _ if kind == RunKind::Backfill => None,
-            Some(date_text) => {
-                let path = NaiveDate::parse_from_str(date_text, "%Y-%m-%d")
-                    .ok()
-                    .map(runfile::run_path);
-                match path {
-                    Some(path) => match self.workspace.read_markdown(&path).await {
-                        Ok(Some(file)) => runfile::watermark(&file.content)
-                            .map(|watermark| (path.clone(), watermark)),
-                        _ => None,
-                    },
-                    None => None,
-                }
-            }
-            None => None,
-        };
-
-        // 7b. The change set: enumerated once here, before any work fans out,
-        // with structured evidence removed. Failing to enumerate fails the run
-        // rather than handing codex an unfiltered scope.
-        let change_set = match last_run {
-            Some((path, watermark)) => match self.change_set(path, watermark).await {
-                Ok(change_set) => Some(change_set),
-                Err(detail) => {
-                    report.outcome = RunOutcome::Failed { detail };
-                    self.finish(&mut status, &report).await;
-                    return report;
-                }
-            },
-            None => None,
-        };
-
-        // 8. Pre-run generation for the confinement cross-check.
-        let pre_generation = match self.workspace.current_generation().await {
-            Ok(generation) => generation,
-            Err(error) => {
-                report.outcome = RunOutcome::Failed {
-                    detail: format!("could not read the workspace generation: {error}"),
-                };
-                self.finish(&mut status, &report).await;
-                return report;
-            }
-        };
-
-        // 9. The dream itself.
-        let run_file_path = runfile::run_path(today);
-        report.run_file_path = Some(run_file_path.clone());
-        let dream_prompt = prompt::run_prompt(&PromptParams {
-            today,
-            mode,
-            mode_flipped_tonight: report.mode_flipped,
-            change_set: change_set.as_ref(),
-            decisions_raw: &decisions_raw,
-            write_budget: kind.write_budget(),
-            run_file_path: &run_file_path,
-        });
-        let time_budget = self
-            .config
-            .time_budget_override
-            .unwrap_or_else(|| kind.time_budget());
-        let exec = self
-            .exec_codex(&run_home, &env, &dream_prompt, time_budget)
-            .await;
-
-        // 10. Run-file fallback: the audit trail must exist even when codex
-        // died without writing it.
-        let run_file = self
-            .workspace
-            .read_markdown(&run_file_path)
-            .await
-            .unwrap_or_default();
-        if run_file.is_none() {
-            let (status_label, detail) = match &exec {
-                ExecResult::Finished => ("failed", "codex finished without writing a run file."),
-                ExecResult::TimedOut => (
-                    "partial",
-                    "the 30-minute budget elapsed and the run was stopped.",
-                ),
-                ExecResult::Failed(_) => ("failed", "codex exited before writing a run file."),
-            };
-            let fallback = runfile::fallback_run_file(today, status_label, detail, pre_generation);
-            let _ = self
-                .workspace
-                .write_markdown(&run_file_path, &fallback, Some(0), None)
-                .await;
-        }
-
-        // 11. Confinement cross-check: creates confined to dreams/ + derived/;
-        // updates must be enumerated in the run file; denied paths are
-        // violations even when enumerated. Report-only.
-        let applied = run_file
-            .as_ref()
-            .map(|file: &FileVersion| runfile::applied_paths(&file.content))
-            .unwrap_or_default();
-        match self.workspace.changes_since(pre_generation, 2_000).await {
-            Ok(page) => {
-                for change in &page.changes {
-                    let path = change.path.as_str();
-                    let inside_surface =
-                        path.starts_with("dreams/") || path.starts_with("derived/");
-                    let enumerated = applied.iter().any(|(applied_path, _)| applied_path == path);
-                    if change_set::write_denied(path) || (!inside_surface && !enumerated) {
-                        report.confinement_violations.push(path.to_owned());
+        // Retry an ambiguous terminal commit with its original identity before
+        // starting more model work. No candidate or model output is recreated.
+        if let Some(request) = runtime.pending_terminal.clone() {
+            match self.runner.dreamer("finish", request).await {
+                Ok(value) if receipt::validate(&value["latest_receipt"]).is_ok() => {
+                    runtime.pending_terminal = None;
+                    if value["latest_receipt"]["status"] == "completed" {
+                        runtime.last_run_date = value["latest_receipt"]["run_id"]
+                            .as_str()
+                            .map(str::to_owned);
                     }
                 }
-            }
-            Err(error) => {
-                tracing::warn!(%error, "confinement cross-check could not list changes");
+                Err(ClientError::Conflict { .. }) => {
+                    // A newer server fence or expired lease owns recovery now.
+                    // Re-admission retains the old inputs and candidates.
+                    runtime.pending_terminal = None;
+                }
+                _ => {
+                    report.outcome = RunOutcome::Failed { detail: "pending terminal receipt could not be recovered; no new model work started".into() };
+                    self.finish_runtime(&mut runtime, &mut report).await;
+                    return report;
+                }
             }
         }
-        if !report.confinement_violations.is_empty() {
-            let listed = report.confinement_violations.join(", ");
-            self.notify_once(
-                today,
-                "confinement",
-                "Dreaming wrote outside its surfaces",
-                &format!(
-                    "The run recorded changes not enumerated in the run file: {listed}. \
-                     Nothing was deleted; review the run file."
-                ),
+        // A daily file is evidence, not an admission decision. The server owns
+        // scheduled-slot dedupe, same-day attempt identity and the frozen input.
+        report.stage = "admission".into();
+        let admission = match self.runner.dreamer("admit", json!({
+            "attempt_id":report.attempt_id, "date":report.date,
+            "kind":match kind { RunKind::Nightly=>"nightly", RunKind::Manual=>"manual", RunKind::Backfill=>"backfill" },
+            "lease_seconds": kind.time_budget().as_secs()+600
+        })).await {
+            Ok(value) if value["admitted"] == true => value,
+            Ok(value) => {
+                report.outcome = if value["reason"].as_str().is_some_and(|s| s.contains("completed")) {
+                    RunOutcome::SkippedAlreadyRan
+                } else { RunOutcome::Failed { detail: value["reason"].as_str().unwrap_or("attempt not admitted").into() } };
+                self.finish_runtime(&mut runtime, &mut report).await; return report;
+            }
+            Err(error) => {
+                report.outcome = RunOutcome::Failed { detail: format!("attempt admission failed: {error}") };
+                self.finish_runtime(&mut runtime, &mut report).await; return report;
+            }
+        };
+        let mut state_version = admission["state_version"].as_i64().unwrap_or(0);
+        let fence = admission["fence"].clone();
+        report.run_file_path = Some(runfile::run_path(today));
+        let result = self
+            .execute_admitted(
+                &admission,
+                &mut state_version,
+                &mut runtime,
+                &mut report,
+                kind,
             )
             .await;
+        report.outcome = result;
+        if matches!(
+            report.outcome,
+            RunOutcome::SkippedAuth { .. } | RunOutcome::SkippedLimits
+        ) {
+            let event = if matches!(report.outcome, RunOutcome::SkippedLimits) {
+                "limits"
+            } else {
+                "auth"
+            };
+            let key = format!("dreaming-{}-{event}", report.date);
+            let title = if event == "limits" {
+                "Dreaming skipped: plan limits"
+            } else {
+                "Dreaming skipped: account verification"
+            };
+            let body = "The enabled attempt was recorded and pending work retained. Open Settings → Dreaming to inspect the account and run status.";
+            let retries = report
+                .notification
+                .get("retry_results")
+                .cloned()
+                .unwrap_or(json!([]));
+            report.notification = match self.runner.notify(&key, title, body).await {
+                Ok(ack) => {
+                    json!({"status":"accepted","event_key":key,"target_kind":"operational","title":title,"body":body,"ack":ack,"retry_results":retries})
+                }
+                Err(_) => {
+                    json!({"status":"failed","event_key":key,"target_kind":"operational","title":title,"body":body,"retry_results":retries})
+                }
+            };
         }
-
-        // 12. Persist refreshed tokens back to the vault.
-        if let Some(refreshed) = run_home.read_auth()
-            && refreshed != auth_json
-        {
-            let _ = self
-                .runner
-                .secret_put(AUTH_SECRET, &refreshed, "Codex auth.json for the dreamer")
-                .await;
-        }
-
-        report.outcome = match exec {
-            ExecResult::Finished => {
-                let is_partial = run_file
-                    .as_ref()
-                    .map(|file| {
-                        runfile::summary_lines(&file.content)
-                            .join(" ")
-                            .to_lowercase()
-                            .contains("partial")
-                    })
-                    .unwrap_or(false);
-                if is_partial {
-                    RunOutcome::Partial {
-                        detail: "the run stopped at its write budget".into(),
+        report.completed_at = Some(Utc::now().to_rfc3339());
+        report.stage = "terminal_commit".into();
+        let terminal_request = json!({
+            "attempt_id": report.attempt_id,"fence":fence,"expected_state_version":state_version,
+            "outcome":match &report.outcome { RunOutcome::Completed=>"completed",RunOutcome::Partial{..}=>"partial",RunOutcome::SkippedAuth{..}|RunOutcome::SkippedLimits|RunOutcome::SkippedAlreadyRan=>"skipped",_=>"failed" },
+            "detail": outcome_detail(&report.outcome), "execution_outcome":report.outcome,
+            "auth_persistence":report.auth_persistence,"notification":report.notification,
+            "completed_at":report.completed_at,"model":self.config.codex_model,
+            "codex_version":runtime.codex_version
+        });
+        let terminal = self
+            .runner
+            .dreamer("finish", terminal_request.clone())
+            .await;
+        match terminal {
+            Ok(value) => {
+                runtime.pending_terminal = None;
+                report.run_entry_ref = value["run_entry_ref"].as_str().map(str::to_owned);
+                report.run_version = value["run_version"].as_i64();
+                report.counts = value.get("counts").cloned().unwrap_or(json!({}));
+                let latest = &value["latest_receipt"];
+                match receipt::validate(latest) {
+                    Ok(())
+                        if latest["receipt_ref"] == value["run_entry_ref"]
+                            && latest["receipt_version"] == value["run_version"] =>
+                    {
+                        report.receipt_persistence = "accepted".into();
+                        if report.outcome == RunOutcome::Completed && latest["status"] == "partial"
+                        {
+                            report.outcome = RunOutcome::Partial {
+                                detail:
+                                    "server retained unfinished admitted work for a later attempt"
+                                        .into(),
+                            };
+                        }
+                        if report.outcome == RunOutcome::Completed
+                            && latest["status"] == "completed"
+                        {
+                            runtime.last_run_date = Some(report.date.clone());
+                        }
                     }
-                } else if run_file.is_some() {
-                    RunOutcome::Completed
-                } else {
-                    RunOutcome::Failed {
-                        detail: "codex finished without writing a run file".into(),
+                    _ => {
+                        report.receipt_persistence = "failed".into();
+                        report.persistence_error = Some(
+                            "terminal response has no valid receipt bound to its exact run version"
+                                .into(),
+                        );
                     }
                 }
             }
-            ExecResult::TimedOut => RunOutcome::Partial {
-                detail: "the time budget elapsed".into(),
-            },
-            ExecResult::Failed(detail) => RunOutcome::Failed { detail },
-        };
-        status.last_run_date = Some(report.date.clone());
-        self.finish(&mut status, &report).await;
-        run_home.cleanup();
+            Err(error) => {
+                runtime.pending_terminal = Some(terminal_request);
+                report.receipt_persistence = "failed".into();
+                report.persistence_error = Some(format!("terminal persistence failed: {error}"));
+            }
+        }
+        report.stage = "finished".into();
+        self.finish_runtime(&mut runtime, &mut report).await;
         report
     }
 
-    /// The distinct paths changed since the watermark, minus structured
-    /// evidence. This is the one call site of the predicate: nothing removed
-    /// here can reach LINKS, VIEWS, FRESHNESS, or neighborhood selection.
-    async fn change_set(
+    async fn execute_admitted(
         &self,
-        previous_run_path: String,
-        watermark: i64,
-    ) -> Result<ChangeSet, String> {
-        let page = self
-            .workspace
-            .changes_since(watermark, 2_000)
-            .await
-            .map_err(|error| format!("could not enumerate the change set: {error}"))?;
-        let mut paths = Vec::<String>::new();
-        for change in &page.changes {
-            if !paths.contains(&change.path) {
-                paths.push(change.path.clone());
+        admission: &Value,
+        state_version: &mut i64,
+        runtime: &mut RuntimeStatus,
+        report: &mut RunReport,
+        kind: RunKind,
+    ) -> RunOutcome {
+        let mut retry_results = vec![];
+        if let Some(retries) = admission["pending_notifications"].as_array() {
+            for retry in retries.iter().take(8) {
+                let Some(key) = retry["event_key"].as_str() else {
+                    continue;
+                };
+                let outcome = if retry["target_kind"] == "operational" {
+                    self.runner
+                        .notify(
+                            key,
+                            retry["title"]
+                                .as_str()
+                                .unwrap_or("Dreaming operational update"),
+                            retry["body"]
+                                .as_str()
+                                .unwrap_or("Open Dreaming status for details."),
+                        )
+                        .await
+                } else if let (Some(run_ref), Some(version), Some(count)) = (
+                    retry["run_entry_ref"].as_str(),
+                    retry["run_version"].as_i64(),
+                    retry["count"].as_u64(),
+                ) {
+                    self.runner
+                        .review_ready(key, run_ref, version, count as usize)
+                        .await
+                } else {
+                    continue;
+                };
+                let mut result = retry.clone();
+                if let Ok(ack) = outcome {
+                    result["status"] = json!("accepted");
+                    result["ack"] = ack;
+                }
+                retry_results.push(result);
             }
         }
-        let kinds = self
-            .workspace
-            .frontmatter_kinds(&paths)
-            .await
-            .map_err(|error| format!("could not classify the change set: {error}"))?;
-        paths.retain(|path| {
-            !change_set::is_structured_evidence(kinds.get(path).and_then(|kind| kind.as_deref()))
-        });
-        Ok(ChangeSet {
-            previous_run_path,
-            watermark,
-            paths,
-            truncated_at: page.truncated.then_some(page.next_generation),
-        })
-    }
-
-    async fn finish(&self, status: &mut RuntimeStatus, report: &RunReport) {
-        status.last_attempt_result = Some(report.outcome.label().to_owned());
-        status.last_attempt_detail = match &report.outcome {
-            RunOutcome::Disabled { reason } => Some(reason.clone()),
-            RunOutcome::SkippedAuth { detail }
-            | RunOutcome::Partial { detail }
-            | RunOutcome::Failed { detail } => Some(detail.clone()),
-            RunOutcome::SkippedLimits | RunOutcome::SkippedAlreadyRan | RunOutcome::Completed => {
-                None
+        report.notification["retry_results"] = json!(retry_results);
+        report.stage = "auth".into();
+        let original = match self.runner.secret_get_version(AUTH_SECRET).await {
+            Ok(Some(auth)) => auth,
+            Ok(None) => {
+                return RunOutcome::SkippedAuth {
+                    detail: "no Codex account connected".into(),
+                };
+            }
+            Err(_) => {
+                return RunOutcome::Failed {
+                    detail: "vault auth read failed".into(),
+                };
             }
         };
-        self.store_runtime_status(status).await;
+        let run_home =
+            match RunHome::create(&self.config.work_root, &report.attempt_id, &original.value) {
+                Ok(home) => home,
+                Err(detail) => return RunOutcome::Failed { detail },
+            };
+        let env =
+            codex::codex_environment(&self.config.host_env, &run_home.home, &run_home.codex_home);
+        let outcome = self
+            .reason_and_submit(
+                admission,
+                state_version,
+                runtime,
+                report,
+                kind,
+                &run_home,
+                &env,
+            )
+            .await;
+        // One checked finalizer after subscription, probe and execution, even
+        // on timeout/failure. Raw output and tokens never enter the report.
+        report.auth_persistence = match self.finalize_auth(&run_home.codex_home, &original).await {
+            Ok(()) => "verified".into(),
+            Err(_) => "failed".into(),
+        };
+        if report.auth_persistence == "failed" {
+            return RunOutcome::Failed {
+                detail: format!(
+                    "auth custody failed after {}; refreshed credentials were not verified in the vault",
+                    outcome.label()
+                ),
+            };
+        }
+        outcome
+    }
+
+    async fn reason_and_submit(
+        &self,
+        admission: &Value,
+        state_version: &mut i64,
+        runtime: &mut RuntimeStatus,
+        report: &mut RunReport,
+        kind: RunKind,
+        run_home: &RunHome,
+        env: &BTreeMap<String, String>,
+    ) -> RunOutcome {
+        match codex::verify_subscription(&self.config.codex_path, env).await {
+            AuthCheck::ChatGpt(identity) => {
+                if self
+                    .config
+                    .host_env
+                    .get("DREAMER_CODEX_VERSION")
+                    .is_some_and(|v| v != &identity.version)
+                {
+                    return RunOutcome::SkippedAuth {
+                        detail: "Codex build differs from the qualified production pin".into(),
+                    };
+                }
+                runtime.codex_version = Some(identity.version);
+            }
+            AuthCheck::Refused { .. } => {
+                return RunOutcome::SkippedAuth {
+                    detail: "Codex does not have a verified ChatGPT-plan login".into(),
+                };
+            }
+        }
+        if let Err(detail) = self.verify_model_identity().await {
+            return RunOutcome::Failed { detail };
+        }
+        report.stage = "probe".into();
+        match self.probe(run_home, env).await {
+            ProbeResult::Ready => {}
+            ProbeResult::RateLimited => return RunOutcome::SkippedLimits,
+            ProbeResult::Failed(detail) => {
+                return RunOutcome::Failed {
+                    detail: if detail.contains("timed out") {
+                        "Codex capacity probe timed out"
+                    } else {
+                        "Codex capacity probe failed"
+                    }
+                    .into(),
+                };
+            }
+        }
+        let checkpoint = self.runner.dreamer("checkpoint", json!({"attempt_id":report.attempt_id,"fence":admission["fence"],"expected_state_version":state_version,"lease_seconds":kind.time_budget().as_secs()+600})).await;
+        match checkpoint {
+            Ok(value) => *state_version = value["state_version"].as_i64().unwrap_or(*state_version),
+            Err(_) => {
+                return RunOutcome::Failed {
+                    detail: "attempt lease renewal rejected".into(),
+                };
+            }
+        }
+        report.stage = "reasoning".into();
+        let input = prompt::candidate_prompt(
+            &report.attempt_id,
+            admission,
+            kind.write_budget().saturating_sub(8).min(16),
+        );
+        let budget = self
+            .config
+            .time_budget_override
+            .unwrap_or_else(|| kind.time_budget());
+        match self.exec_codex(run_home, env, &input, budget).await {
+            ExecResult::TimedOut => {
+                return RunOutcome::Partial {
+                    detail: "model time budget elapsed; admitted inputs remain pending".into(),
+                };
+            }
+            ExecResult::Failed(detail) => {
+                return RunOutcome::Failed {
+                    detail: if detail.starts_with("plan limits mid-run") {
+                        "model plan capacity exhausted mid-run; admitted inputs remain pending"
+                    } else if detail.starts_with("could not spawn") {
+                        "model process could not start; admitted inputs remain pending"
+                    } else {
+                        "model execution failed; admitted inputs remain pending"
+                    }
+                    .into(),
+                };
+            }
+            ExecResult::Finished => {}
+        }
+        let raw = match std::fs::read_to_string(run_home.work_dir.join("answer.md")) {
+            Ok(raw) if raw.len() <= 1024 * 1024 => raw,
+            _ => {
+                return RunOutcome::Failed {
+                    detail: "model produced no bounded candidate file".into(),
+                };
+            }
+        };
+        let output = match prompt::parse_candidate_output(&raw, admission) {
+            Ok(output) => output,
+            Err(detail) => return RunOutcome::Failed { detail },
+        };
+        report.stage = "candidate_validation".into();
+        let candidates = self.runner.dreamer("candidates", json!({
+            "attempt_id":report.attempt_id,"fence":admission["fence"],"expected_state_version":state_version,
+            "candidates":output["candidates"],"processed_inputs":output["processed_inputs"],"findings":output["findings"]
+        })).await;
+        match candidates {
+            Ok(value) => {
+                *state_version = value["state_version"].as_i64().unwrap_or(*state_version);
+                let accepted = value["accepted_candidate_ids"]
+                    .as_array()
+                    .map_or(0, Vec::len);
+                if accepted > 0 {
+                    if let (Some(run_ref), Some(version)) = (
+                        value["run_entry_ref"].as_str(),
+                        value["run_version"].as_i64(),
+                    ) {
+                        let event_key = format!("dreaming-review-{}", report.attempt_id);
+                        let retry_results = report
+                            .notification
+                            .get("retry_results")
+                            .cloned()
+                            .unwrap_or(json!([]));
+                        report.notification = match self
+                            .runner
+                            .review_ready(&event_key, run_ref, version, accepted)
+                            .await
+                        {
+                            Ok(ack) => {
+                                json!({"status":"accepted","event_key":event_key,"run_entry_ref":run_ref,"run_version":version,"count":accepted,"ack":ack})
+                            }
+                            Err(_) => {
+                                json!({"status":"failed","event_key":event_key,"run_entry_ref":run_ref,"run_version":version,"count":accepted,"detail":"review-ready notification publication failed; pending work retained"})
+                            }
+                        };
+                        report.notification["retry_results"] = retry_results;
+                        report.notification["target_kind"] = json!("review");
+                    }
+                }
+                if output["processed_inputs"].as_array().map_or(0, Vec::len)
+                    < admission["inputs"].as_array().map_or(0, Vec::len)
+                {
+                    RunOutcome::Partial { detail: "bounded model work completed; unprocessed admitted inputs remain pending".into() }
+                } else {
+                    RunOutcome::Completed
+                }
+            }
+            Err(_) => RunOutcome::Failed {
+                detail: "candidate validation/publication rejected; admitted work retained".into(),
+            },
+        }
+    }
+
+    async fn verify_model_identity(&self) -> Result<(), String> {
+        if self.config.model_token.is_empty()
+            || self.config.model_token == self.config.workspace_token
+            || self.config.model_token == self.config.runner_token
+        {
+            return Err("a dedicated read-only model credential is required".into());
+        }
+        let value = ApiClient::new(&self.config.api_url, &self.config.model_token)
+            .get("/v1/me")
+            .await
+            .map_err(|_| "model credential inspection failed")?;
+        let identity = value.get("data").unwrap_or(&value);
+        let caps = identity["capabilities"]
+            .as_array()
+            .ok_or("model capabilities missing")?;
+        let allowed = [
+            "read",
+            "open",
+            "query",
+            "status",
+            "changes",
+            "asset:read",
+            "message:receive",
+            "receive",
+            "list",
+            "compute",
+            "verify",
+            "task.read",
+            "message.read",
+        ];
+        if identity["read_only"] != true
+            || !caps.iter().any(|v| v == "read")
+            || caps
+                .iter()
+                .any(|v| !v.as_str().is_some_and(|cap| allowed.contains(&cap)))
+        {
+            return Err("model credential is not strictly read-only".into());
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn finalize_auth(
+        &self,
+        codex_home: &std::path::Path,
+        original: &SecretVersion,
+    ) -> Result<(), String> {
+        let refreshed = std::fs::read_to_string(codex_home.join("auth.json"))
+            .map_err(|_| "auth file unavailable after execution")?;
+        serde_json::from_str::<Value>(&refreshed).map_err(|_| "refreshed auth is malformed")?;
+        let expected_version = if refreshed != original.value {
+            self.runner
+                .secret_put_checked(
+                    AUTH_SECRET,
+                    &refreshed,
+                    original.version,
+                    Some(&original.secret_ref),
+                )
+                .await
+                .map_err(|_| "vault auth CAS failed")?
+        } else {
+            original.version
+        };
+        let stored = self
+            .runner
+            .secret_get_version(AUTH_SECRET)
+            .await
+            .map_err(|_| "vault custody read-back failed")?
+            .ok_or("auth was disconnected")?;
+        if stored.secret_ref != original.secret_ref
+            || stored.version != expected_version
+            || stored.value != refreshed
+        {
+            return Err("auth custody read-back mismatch".into());
+        }
+        Ok(())
+    }
+
+    async fn finish_runtime(&self, status: &mut RuntimeStatus, report: &mut RunReport) {
+        report
+            .completed_at
+            .get_or_insert_with(|| Utc::now().to_rfc3339());
+        status.last_attempt_date = Some(report.date.clone());
+        status.last_attempt_result = Some(report.outcome.label().into());
+        status.last_attempt_detail = outcome_detail(&report.outcome);
+        status.last_attempt = serde_json::to_value(&report).ok();
+        if let Err(error) = self.store_runtime_status(status).await {
+            report.persistence_error = Some(format!("runtime persistence failed: {error}"));
+        }
     }
 
     async fn probe(&self, run_home: &RunHome, env: &BTreeMap<String, String>) -> ProbeResult {
@@ -648,13 +803,10 @@ impl Dreamer {
         answer_name: &str,
     ) -> RawExec {
         let mut env = env.clone();
-        // The MCP server codex spawns needs the workspace credential; it is
+        // The MCP server codex spawns needs the model credential; it is
         // forwarded by name through the codex MCP config.
         env.insert("BRUNN_API_URL".into(), self.config.api_url.clone());
-        env.insert(
-            "BRUNN_API_TOKEN".into(),
-            self.config.workspace_token.clone(),
-        );
+        env.insert("BRUNN_API_TOKEN".into(), self.config.model_token.clone());
         let argv = codex::exec_command(&ExecSpec {
             codex: &self.config.codex_path,
             model: &self.config.codex_model,
@@ -671,15 +823,30 @@ impl Dreamer {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
+        // A timeout ends the whole model/MCP process group before custody is
+        // finalized, so a surviving child cannot refresh credentials later.
+        #[cfg(unix)]
+        command.process_group(0);
         let mut child = match command.spawn() {
             Ok(child) => child,
             Err(error) => return RawExec::SpawnFailed(format!("could not spawn codex: {error}")),
         };
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(input.as_bytes()).await;
-            drop(stdin);
-        }
-        match tokio::time::timeout(budget, child.wait_with_output()).await {
+        #[cfg(unix)]
+        let _process_group = ProcessGroup(child.id().map(|id| id as i32));
+        let stdin = child.stdin.take();
+        let execution = async {
+            // Start draining output while feeding input: either pipe can fill.
+            // Both directions are inside the deadline, including a child which
+            // never reads its prompt at all.
+            let feed = async {
+                if let Some(mut stdin) = stdin {
+                    let _ = stdin.write_all(input.as_bytes()).await;
+                }
+            };
+            let (_, result) = tokio::join!(feed, child.wait_with_output());
+            result
+        };
+        match tokio::time::timeout(budget, execution).await {
             Ok(Ok(output)) => RawExec::Finished {
                 success: output.status.success(),
                 rendered: format!(
@@ -690,6 +857,21 @@ impl Dreamer {
             },
             Ok(Err(error)) => RawExec::SpawnFailed(format!("codex did not finish: {error}")),
             Err(_) => RawExec::TimedOut,
+        }
+    }
+}
+
+#[cfg(unix)]
+struct ProcessGroup(Option<i32>);
+#[cfg(unix)]
+impl Drop for ProcessGroup {
+    fn drop(&mut self) {
+        if let Some(pid) = self.0 {
+            // SAFETY: the child was created in a new group with this positive
+            // pid. A negative pid targets only that model process group.
+            unsafe {
+                libc::kill(-pid, libc::SIGKILL);
+            }
         }
     }
 }
@@ -727,32 +909,50 @@ impl RunHome {
         let home = root.join(".home");
         let codex_home = home.join(".codex");
         let work_dir = root.join("work");
-        for dir in [&root, &home, &codex_home, &work_dir] {
-            std::fs::create_dir_all(dir)
-                .map_err(|error| format!("could not create {}: {error}", dir.display()))?;
-            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
-                .map_err(|error| format!("could not chmod {}: {error}", dir.display()))?;
+        let result = (|| {
+            for dir in [&root, &home, &codex_home, &work_dir] {
+                std::fs::create_dir_all(dir)
+                    .map_err(|error| format!("could not create {}: {error}", dir.display()))?;
+                std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+                    .map_err(|error| format!("could not chmod {}: {error}", dir.display()))?;
+            }
+            let auth_path = codex_home.join("auth.json");
+            std::fs::write(&auth_path, auth_json)
+                .map_err(|error| format!("could not write auth.json: {error}"))?;
+            std::fs::set_permissions(&auth_path, std::fs::Permissions::from_mode(0o600))
+                .map_err(|error| format!("could not chmod auth.json: {error}"))?;
+            Ok(Self {
+                home,
+                codex_home,
+                work_dir,
+            })
+        })();
+        if result.is_err() {
+            let _ = std::fs::remove_dir_all(&root);
         }
-        let auth_path = codex_home.join("auth.json");
-        std::fs::write(&auth_path, auth_json)
-            .map_err(|error| format!("could not write auth.json: {error}"))?;
-        std::fs::set_permissions(&auth_path, std::fs::Permissions::from_mode(0o600))
-            .map_err(|error| format!("could not chmod auth.json: {error}"))?;
-        Ok(Self {
-            home,
-            codex_home,
-            work_dir,
-        })
-    }
-
-    fn read_auth(&self) -> Option<String> {
-        std::fs::read_to_string(self.codex_home.join("auth.json")).ok()
+        result
     }
 
     fn cleanup(&self) {
         if let Some(root) = self.home.parent() {
             let _ = std::fs::remove_dir_all(root);
         }
+    }
+}
+
+fn outcome_detail(outcome: &RunOutcome) -> Option<String> {
+    match outcome {
+        RunOutcome::Disabled { reason } => Some(reason.clone()),
+        RunOutcome::SkippedAuth { detail }
+        | RunOutcome::Partial { detail }
+        | RunOutcome::Failed { detail } => Some(detail.clone()),
+        _ => None,
+    }
+}
+
+impl Drop for RunHome {
+    fn drop(&mut self) {
+        self.cleanup();
     }
 }
 
@@ -797,6 +997,41 @@ pub fn auth_identity(auth_json: &str) -> (Option<String>, Option<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn nonreading_child_cannot_block_the_prompt_deadline() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let codex = dir.path().join("codex");
+        std::fs::write(&codex, "#!/bin/sh\nexec /bin/sleep 60\n").unwrap();
+        std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let dreamer = Dreamer::new(DreamerConfig {
+            api_url: "http://127.0.0.1:1".into(),
+            workspace_token: "wrapper".into(),
+            model_token: "model".into(),
+            runner_token: "runner".into(),
+            codex_path: codex,
+            codex_model: "fixture".into(),
+            mcp_server_entry: "/dev/null".into(),
+            work_root: dir.path().join("work"),
+            host_env: BTreeMap::new(),
+            time_budget_override: None,
+        });
+        let home = RunHome::create(&dreamer.config.work_root, "fixture", "{}").unwrap();
+        let result = tokio::time::timeout(
+            Duration::from_secs(2),
+            dreamer.exec_codex_raw(
+                &home,
+                &BTreeMap::new(),
+                &"x".repeat(2 * 1024 * 1024),
+                Duration::from_millis(50),
+                "answer.md",
+            ),
+        )
+        .await
+        .expect("prompt feed escaped the execution deadline");
+        assert!(matches!(result, RawExec::TimedOut));
+    }
 
     #[test]
     fn run_kind_budgets_are_locked() {
