@@ -14,6 +14,7 @@ pub mod control;
 pub mod decisions;
 pub mod discovery;
 pub mod http;
+pub mod narrative;
 pub mod prompt;
 pub mod receipt;
 pub mod run;

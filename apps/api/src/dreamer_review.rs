@@ -26,6 +26,7 @@ use uuid::Uuid;
 
 const STATE_PATH: &str = "dreams/state.md";
 mod location_discovery;
+mod narrative_discovery;
 const MAX_INPUTS: usize = 128;
 const MAX_ITEMS: usize = 96;
 const MAX_LEGACY_ITEMS: usize = 96;
@@ -127,6 +128,10 @@ struct Attempt {
     admission_version: i64,
     #[serde(default)]
     location_work: Option<Value>,
+    #[serde(default)]
+    narrative_context: Vec<Input>,
+    #[serde(default)]
+    narrative_discovery: Option<Value>,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct RunState {
@@ -196,6 +201,10 @@ pub fn router() -> Router<AppState> {
             post(location_discovery::discover),
         )
         .route("/workspace/dreamer/candidates", post(candidates))
+        .route(
+            "/workspace/dreamer/narrative-discover",
+            post(narrative_discovery::discover),
+        )
         .route("/workspace/dreamer/finish", post(finish))
 }
 
@@ -1388,6 +1397,8 @@ pub async fn admit(
         admission_hash: digest(&body),
         admission_version: version + 1,
         location_work: None,
+        narrative_context: Vec::new(),
+        narrative_discovery: None,
     });
     if data.location_work.is_empty() && !data.location_scopes.is_empty() {
         let mut internal = auth.clone();
@@ -1619,7 +1630,7 @@ async fn admission_response(
         .bind(user).fetch_all(&mut **tx).await?;
     let outputs=rows.iter().map(|r|json!({"path":r.get::<String,_>("path"),"version":r.get::<i64,_>("current_version")})).collect::<Vec<_>>();
     Ok(
-        json!({"admitted":true,"session_id":format!("session:{}",a.attempt_id),"attempt_id":a.attempt_id,"fence":a.fence,"state_version":version,"mode":a.mode,"frozen_generation":a.frozen_generation,"scanned_generation":data.scanned_generation,"processed_generation":data.processed_generation,"inputs":data.inputs,"outputs":outputs,"location_work":a.location_work,"location_evidence":location_evidence,"location_context":a.location_work.as_ref().and_then(|work|work.get("context_sources")).cloned().unwrap_or_else(||json!([])),"pending":pending_items,"pending_notifications":data.pending_notifications,"decisions":decisions.as_ref().map(|e|e.content.as_str()).unwrap_or(""),"decisions_version":decisions.map_or(0,|e|e.version)}),
+        json!({"admitted":true,"session_id":format!("session:{}",a.attempt_id),"attempt_id":a.attempt_id,"fence":a.fence,"state_version":version,"mode":a.mode,"frozen_generation":a.frozen_generation,"scanned_generation":data.scanned_generation,"processed_generation":data.processed_generation,"inputs":data.inputs,"outputs":outputs,"location_work":a.location_work,"location_evidence":location_evidence,"location_context":a.location_work.as_ref().and_then(|work|work.get("context_sources")).cloned().unwrap_or_else(||json!([])),"narrative_context":a.narrative_context,"narrative_discovery":a.narrative_discovery,"pending":pending_items,"pending_notifications":data.pending_notifications,"decisions":decisions.as_ref().map(|e|e.content.as_str()).unwrap_or(""),"decisions_version":decisions.map_or(0,|e|e.version)}),
     )
 }
 pub async fn checkpoint(
@@ -1982,6 +1993,7 @@ pub async fn candidates(
         ));
     }
     let mut revisions = std::collections::BTreeSet::new();
+    let mut destinations = std::collections::BTreeMap::new();
     for candidate in &list {
         if let Some(id) = &candidate.revises_item_id {
             if !revisions.insert(id) {
@@ -1999,6 +2011,59 @@ pub async fn candidates(
                 return Err(ApiError::invalid(
                     "location revision must preserve the original destination, kind and evidence window",
                 ));
+            }
+            if let Some(old) = data.items.iter().find(|item| &item.id == id) {
+                if old.candidate.kind != "question"
+                    && !is_location(&old.candidate)
+                    && !is_location(candidate)
+                    && (old.candidate.kind != candidate.kind
+                        || old.candidate.path != candidate.path)
+                {
+                    return Err(ApiError::invalid(
+                        "a revision must preserve its original destination and kind",
+                    ));
+                }
+            }
+        }
+        if let Some(path) = &candidate.path {
+            let hash = digest(candidate);
+            if let Some(previous) = destinations.insert(path, hash.clone()) {
+                if previous == hash {
+                    // Identical new candidates are deduplicated after validation;
+                    // repeated revisions still fail the identity check above.
+                    continue;
+                }
+                return Err(ApiError::invalid(
+                    "a destination can have only one distinct candidate per submission",
+                ));
+            }
+        }
+        if !is_location(candidate) && candidate.kind != "question" {
+            let same_target: Vec<_> = data
+                .items
+                .iter()
+                .filter(|item| {
+                    pending(item)
+                        && item.candidate.path.is_some()
+                        && item.candidate.path == candidate.path
+                })
+                .collect();
+            if same_target.len() > 1 {
+                return Err(ApiError::invalid(
+                    "multiple retained candidates share this destination; owner resolution is required",
+                ));
+            }
+            if let Some(old) = same_target.first() {
+                if old.status == "deferred" || old.status == "approved_held" {
+                    return Err(ApiError::invalid(
+                        "a deferred or approved destination cannot be duplicated",
+                    ));
+                }
+                if candidate.revises_item_id.as_deref() != Some(old.id.as_str()) {
+                    return Err(ApiError::invalid(
+                        "candidate must revise the existing item for this destination",
+                    ));
+                }
             }
         }
         if is_location(candidate) {
@@ -2080,6 +2145,10 @@ pub async fn candidates(
                     .inputs
                     .iter()
                     .any(|i| i.entry_ref == s.entry_ref && i.version == s.version)
+                    && !a
+                        .narrative_context
+                        .iter()
+                        .any(|i| i.entry_ref == s.entry_ref && i.version == s.version)
                     && !data
                         .items
                         .iter()
@@ -3242,6 +3311,8 @@ pub async fn decide(
                     admission_hash: String::new(),
                     admission_version: 0,
                     location_work: None,
+                    narrative_context: Vec::new(),
+                    narrative_discovery: None,
                 };
                 latest["pending_owner"] =
                     projection(&data, &a, &json!({}), "completed", now)["pending_owner"].clone();

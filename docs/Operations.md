@@ -341,6 +341,25 @@ Codex receives the frozen input list and returns a bounded `dream.candidates.v1`
 JSON file. The server validates sources, citations, permissions, and target
 versions before publishing candidate records or approved summaries.
 
+Before ordinary consolidation, the same ChatGPT-backed model can plan up to six
+subject searches in `dream.narrative.discovery.v1`. The fenced
+`/v1/workspace/dreamer/narrative-discover` endpoint runs existing lexical search
+with relevant and recent result lanes, then retains at most 64 accessible exact
+source headers inside the attempt's generation boundary. Generated, evaluation,
+location and sensitive records are excluded. The model reads those exact
+versions as `narrative_context`; context discovery never consumes pending input
+or advances progress. An exact discovery replay returns the frozen admission;
+changed queries cannot replace it within the attempt. Failed planning retains
+work and still completes the authentication and receipt finalizers.
+
+Ordinary proposals prioritize useful person, project and topic views and
+source-backed corrections. Explicit corrections or supported later outcomes
+replace obsolete current facts in the managed view; source notes and immutable
+versions remain intact. Recency alone cannot resolve conflicting claims. Use
+the existing managed path/version and original pending review identity when
+updating a view. Distinct candidates for one destination and replacement of
+held approvals are rejected. Publication mode and owner decisions still apply.
+
 The server atomically publishes the accepted terminal run and the deterministic
 `dreams/latest-receipt.md` projection using `dream.latest-receipt.v2`. The latter
 contains the exact immutable run reference and version consumed by briefings.

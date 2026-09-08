@@ -44,7 +44,7 @@ pub struct DreamerConfig {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunKind {
-    /// The scheduled or manually triggered normal run: 40 writes, 30 minutes.
+    /// The scheduled or manually triggered normal run: 40 writes, 60 minutes.
     Nightly,
     /// Explicit same-day retry, independent of the scheduled-slot dedupe.
     Manual,
@@ -569,7 +569,7 @@ impl Dreamer {
                 .as_array()
                 .is_some_and(|inputs| !inputs.is_empty())
         {
-            Duration::from_secs(600).min(usable / 3)
+            Duration::from_secs(1200).min(usable / 3)
         } else {
             Duration::ZERO
         };
@@ -591,6 +591,24 @@ impl Dreamer {
                         detail: "location discovery timed out; day retained for retry".into(),
                     };
                 }
+            }
+        } else if admission["inputs"]
+            .as_array()
+            .is_some_and(|inputs| !inputs.is_empty())
+        {
+            report.stage = "narrative_discovery".into();
+            match self
+                .discover_narrative(
+                    admission,
+                    state_version,
+                    run_home,
+                    env,
+                    Duration::from_secs(600).min(usable / 3),
+                )
+                .await
+            {
+                Ok(value) => enriched = value,
+                Err(detail) => return RunOutcome::Partial { detail },
             }
         }
         let admission = &enriched;
@@ -827,25 +845,45 @@ impl Dreamer {
             report.stage = "narrative_reasoning".into();
             // The accepted location artifact survives any narrative failure.
             // This pass has no location packet, candidate body or authority.
-            let narrative = prompt::narrative_admission(admission);
-            let remaining = total_deadline.saturating_duration_since(tokio::time::Instant::now());
-            let input = prompt::candidate_prompt(&report.attempt_id, &narrative, 15);
-            let result = tokio::time::timeout_at(
-                total_deadline,
-                self.exec_codex(run_home, env, &input, remaining, "narrative-answer.md"),
-            )
-            .await;
-            let parsed = match result {
-                Ok(ExecResult::Finished) => {
-                    std::fs::read_to_string(run_home.work_dir.join("narrative-answer.md"))
-                        .ok()
-                        .filter(|raw| raw.len() <= 1024 * 1024)
-                        .and_then(|raw| prompt::parse_candidate_output(&raw, &narrative).ok())
-                        .filter(|output| !prompt::has_location_candidate(output))
+            let parsed = async {
+                let remaining =
+                    total_deadline.saturating_duration_since(tokio::time::Instant::now());
+                let discovered = self
+                    .discover_narrative(
+                        admission,
+                        state_version,
+                        run_home,
+                        env,
+                        Duration::from_secs(600).min(remaining / 3),
+                    )
+                    .await?;
+                let narrative = prompt::narrative_admission(&discovered);
+                let input = prompt::candidate_prompt(&report.attempt_id, &narrative, 15);
+                let remaining =
+                    total_deadline.saturating_duration_since(tokio::time::Instant::now());
+                if !matches!(
+                    tokio::time::timeout_at(
+                        total_deadline,
+                        self.exec_codex(run_home, env, &input, remaining, "narrative-answer.md")
+                    )
+                    .await,
+                    Ok(ExecResult::Finished)
+                ) {
+                    return Err("narrative model did not finish; inputs remain pending".to_owned());
                 }
-                _ => None,
-            };
-            if let Some(narrative_output) = parsed {
+                let raw = std::fs::read_to_string(run_home.work_dir.join("narrative-answer.md"))
+                    .map_err(|_| "narrative output missing".to_owned())?;
+                if raw.len() > 1024 * 1024 {
+                    return Err("narrative output exceeded its bound".to_owned());
+                }
+                let output = prompt::parse_candidate_output(&raw, &narrative)?;
+                if prompt::has_location_candidate(&output) {
+                    return Err("ordinary memory pass returned forbidden location work".to_owned());
+                }
+                Ok(output)
+            }
+            .await;
+            if let Ok(narrative_output) = parsed {
                 report.stage = "narrative_validation".into();
                 match self.runner.dreamer("candidates",json!({
                     "attempt_id":report.attempt_id,"fence":admission["fence"],"expected_state_version":state_version,
@@ -860,9 +898,10 @@ impl Dreamer {
                     Err(error) => partial=Some(format!("checked location work retained; narrative submission rejected: {error}; inputs remain pending")),
                 }
             } else {
-                partial = Some(
-                    "checked location work retained; narrative pass did not finish valid output and its inputs remain pending".into(),
-                );
+                partial = Some(format!(
+                    "checked location work retained; {}",
+                    parsed.unwrap_err()
+                ));
             }
         }
         if accepted > 0 {
@@ -906,6 +945,55 @@ impl Dreamer {
         } else {
             RunOutcome::Completed
         }
+    }
+
+    async fn discover_narrative(
+        &self,
+        admission: &Value,
+        state_version: &mut i64,
+        run_home: &RunHome,
+        env: &BTreeMap<String, String>,
+        budget: Duration,
+    ) -> Result<Value, String> {
+        if admission["narrative_discovery"].is_object() {
+            return Ok(admission.clone());
+        }
+        if budget.is_zero() {
+            return Err("narrative discovery has no remaining time; inputs retained".into());
+        }
+        let narrative = prompt::narrative_admission(admission);
+        let input = super::narrative::prompt(&narrative);
+        let answer_name = "narrative-discovery-answer.md";
+        if !matches!(
+            tokio::time::timeout(
+                budget,
+                self.exec_codex(run_home, env, &input, budget, answer_name)
+            )
+            .await,
+            Ok(ExecResult::Finished)
+        ) {
+            return Err("narrative discovery did not finish; inputs retained".into());
+        }
+        let raw = std::fs::read_to_string(run_home.work_dir.join(answer_name))
+            .map_err(|_| "narrative discovery output missing")?;
+        let plan = super::narrative::parse(&raw)?;
+        let next = self
+            .runner
+            .dreamer(
+                "narrative-discover",
+                json!({
+                    "attempt_id":admission["attempt_id"],"fence":admission["fence"],
+                    "expected_state_version":state_version,"queries":plan.queries
+                }),
+            )
+            .await
+            .map_err(|error| {
+                format!("narrative source admission failed: {error}; inputs retained")
+            })?;
+        *state_version = next["state_version"]
+            .as_i64()
+            .ok_or("narrative discovery receipt missing")?;
+        Ok(next)
     }
 
     async fn discover_location(

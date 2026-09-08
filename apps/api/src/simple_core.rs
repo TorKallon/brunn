@@ -4668,6 +4668,57 @@ async fn lexical_candidates(
     Ok((merged.into_values().collect(), workspace_generation))
 }
 
+/// Reuse the normal lexical index for the narrow Dreamer context endpoint.
+/// Validate the stored credential before adding server-owned read authority;
+/// never pass augmented capabilities back through public authentication.
+pub(crate) async fn search_headers_for_dreamer(
+    state: &AppState,
+    auth: &AuthContext,
+    queries: &[String],
+) -> ApiResult<Vec<Value>> {
+    if !auth.can(Capability::DreamerRun) && !auth.can(Capability::CredentialManage) {
+        return Err(ApiError::capability("dreamer:run"));
+    }
+    if queries.len() > 6 {
+        return Err(ApiError::invalid("at most six Dreamer context queries"));
+    }
+    let mut tx = state.begin_read(auth).await?;
+    let mut internal = auth.clone();
+    internal.capabilities.insert("read".into());
+    internal.capabilities.insert("query".into());
+    sqlx::query("SELECT set_config('app.capabilities',$1,true)")
+        .bind(internal.capability_guc())
+        .execute(&mut *tx)
+        .await?;
+    let mut results = Vec::new();
+    for (n, query) in queries.iter().enumerate() {
+        for sort in [SearchSort::BestMatch, SearchSort::LastModified] {
+            let (mut candidates, _) = fetch_lexical_candidates(
+                &mut tx,
+                query,
+                query,
+                sort,
+                None,
+                false,
+                0.0,
+                false,
+                auth.user_id.0,
+            )
+            .await?;
+            sort_candidates(&mut candidates, sort);
+            let mut seen = std::collections::BTreeSet::new();
+            candidates.retain(|candidate| seen.insert(candidate.entry_id));
+            let candidates: Vec<_> = candidates.into_iter().take(8).map(|candidate|
+                json!({"reference":format!("entry:{}",candidate.entry_id),"path":candidate.path,"version":candidate.version})
+            ).collect();
+            results
+                .push(json!({"id":format!("scope-{n}-{}",sort.as_str()),"candidates":candidates}));
+        }
+    }
+    tx.commit().await?;
+    Ok(results)
+}
+
 async fn fetch_lexical_candidates(
     tx: &mut Transaction<'_, Postgres>,
     retrieval_query: &str,

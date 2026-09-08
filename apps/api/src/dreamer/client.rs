@@ -407,8 +407,10 @@ impl ApiClient {
             Err(ClientError::Conflict {
                 actual_version: Some(version),
                 detail,
-            }) if matches!(operation, "candidates" | "checkpoint" | "location-discover")
-                && detail == "Review or run state changed; reload before retrying"
+            }) if matches!(
+                operation,
+                "candidates" | "checkpoint" | "location-discover" | "narrative-discover"
+            ) && detail == "Review or run state changed; reload before retrying"
                 && body["expected_state_version"]
                     .as_i64()
                     .is_some_and(|expected| version > expected) =>

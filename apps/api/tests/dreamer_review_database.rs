@@ -250,6 +250,420 @@ async fn current(f: &Fixture, path: &str) -> Option<(i64, String, Value)> {
         .bind(f.owner.user).bind(path).fetch_optional(&f.pool).await.unwrap().map(|r|(r.get("current_version"),r.get("content"),r.get("metadata")))
 }
 
+#[tokio::test]
+async fn narrative_context_is_scoped_frozen_replayable_and_does_not_consume_inputs() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let canonical = write(
+        &f,
+        "sources/Projects/Orchid/Orchid.md",
+        "# Orchid\n\nOrchid is a garden planning project.\n",
+        0,
+    )
+    .await;
+    let changed = write(
+        &f,
+        "sources/Projects/Orchid/Decision.md",
+        "# Orchid decision\n\nEarlier decision.\n",
+        0,
+    )
+    .await;
+    let unrequested = write(
+        &f,
+        "sources/Projects/Unrelated/Note.md",
+        "# Other\n\nUnrelated source.\n",
+        0,
+    )
+    .await;
+    write(
+        &f,
+        "sources/Orchid/credentials.md",
+        "# Orchid\n\nSENSITIVE_BODY_CANARY\n",
+        0,
+    )
+    .await;
+    ok(post(&f,&f.owner,"/v1/workspace/write",json!({"path":"sources/Orchid/Evaluation.md","content":"# Orchid\n\nGENERATED_ANSWER_CANARY\n","expected_version":0,"metadata":{"evaluation_output":true}})).await);
+    let first = admit(&f).await;
+    let (_, disposed) = submit(&f, &first, first["state_version"].as_i64().unwrap(), vec![]).await;
+    finish(
+        &f,
+        &first,
+        disposed["state_version"].as_i64().unwrap(),
+        "completed",
+    )
+    .await;
+    let seed = write(
+        &f,
+        "sources/Projects/Orchid/Inbox.md",
+        "# Orchid update\n\nThe next review needs the canonical project context.\n",
+        0,
+    )
+    .await;
+    let a = admit(&f).await;
+    assert_eq!(a["inputs"].as_array().unwrap().len(), 1);
+    assert_eq!(a["inputs"][0]["entry_ref"], seed["entry_ref"]);
+    write(
+        &f,
+        "sources/Projects/Orchid/Decision.md",
+        "# Orchid decision\n\nAFTER_FENCE_CANARY\n",
+        1,
+    )
+    .await;
+    let future = write(
+        &f,
+        "sources/Projects/Orchid/Future.md",
+        "# Orchid\n\nNEW_AFTER_FENCE_CANARY\n",
+        0,
+    )
+    .await;
+    let other = actor(&f.pool, None, OWNER_CAPS).await;
+    ok(post(&f,&other,"/v1/workspace/write",json!({"path":"sources/Orchid.md","content":"# Orchid\n\nOTHER_OWNER_CANARY\n","expected_version":0,"metadata":{}})).await);
+    let mut request = attempt(&a, a["state_version"].as_i64().unwrap());
+    request["queries"] = json!(["Orchid"]);
+    assert_eq!(
+        post(
+            &f,
+            &f.model,
+            "/v1/workspace/dreamer/narrative-discover",
+            request.clone()
+        )
+        .await
+        .status,
+        StatusCode::FORBIDDEN
+    );
+    let mut wrong = request.clone();
+    wrong["fence"] = json!(Uuid::now_v7());
+    assert_eq!(
+        post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/narrative-discover",
+            wrong
+        )
+        .await
+        .status,
+        StatusCode::CONFLICT
+    );
+    let discovered = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/narrative-discover",
+        request.clone(),
+    )
+    .await)["data"]
+        .clone();
+    assert_eq!(discovered["inputs"], a["inputs"]);
+    assert_eq!(discovered["scanned_generation"], a["scanned_generation"]);
+    assert_eq!(
+        discovered["processed_generation"],
+        a["processed_generation"]
+    );
+    let context = discovered["narrative_context"].as_array().unwrap();
+    assert!(
+        context
+            .iter()
+            .any(|source| source["entry_ref"] == canonical["entry_ref"] && source["version"] == 1),
+        "{discovered}"
+    );
+    assert!(
+        !context
+            .iter()
+            .any(|source| source["entry_ref"] == changed["entry_ref"]
+                || source["entry_ref"] == future["entry_ref"])
+    );
+    for source in context {
+        assert!(source["generation"].as_i64().unwrap() <= a["frozen_generation"].as_i64().unwrap());
+    }
+    let visible = discovered.to_string();
+    for canary in [
+        "SENSITIVE_BODY_CANARY",
+        "GENERATED_ANSWER_CANARY",
+        "AFTER_FENCE_CANARY",
+        "OTHER_OWNER_CANARY",
+        "credentials.md",
+        "Evaluation.md",
+    ] {
+        assert!(
+            !serde_json::to_string(context).unwrap().contains(canary),
+            "{canary} entered context"
+        );
+    }
+    assert!(!visible.contains("NEW_AFTER_FENCE_CANARY"));
+    let replay = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/narrative-discover",
+        request.clone(),
+    )
+    .await);
+    assert_eq!(replay["no_op"], true);
+    assert_eq!(replay["data"]["state_version"], discovered["state_version"]);
+    assert_eq!(
+        replay["data"]["narrative_context"],
+        discovered["narrative_context"]
+    );
+    let version = discovered["state_version"].as_i64().unwrap();
+    let mut broaden = attempt(&a, version);
+    broaden["queries"] = json!(["Unrelated"]);
+    assert_eq!(
+        post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/narrative-discover",
+            broaden
+        )
+        .await
+        .status,
+        StatusCode::BAD_REQUEST
+    );
+    let mut invalid = attempt(&a, version);
+    invalid["candidates"] = json!([candidate(&unrequested, "unadmitted")]);
+    invalid["processed_inputs"] = json!([]);
+    invalid["findings"] = json!([]);
+    assert_eq!(
+        post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/candidates",
+            invalid.clone()
+        )
+        .await
+        .status,
+        StatusCode::BAD_REQUEST
+    );
+    invalid["candidates"] = json!([]);
+    let source = context
+        .iter()
+        .find(|s| s["entry_ref"] == canonical["entry_ref"])
+        .unwrap();
+    invalid["processed_inputs"] = json!([{"entry_ref":source["entry_ref"],"version":source["version"],"generation":source["generation"]}]);
+    invalid["findings"] = json!(["Discovery is not input processing."]);
+    assert_eq!(
+        post(&f, &f.runner, "/v1/workspace/dreamer/candidates", invalid)
+            .await
+            .status,
+        StatusCode::BAD_REQUEST
+    );
+    let mut item = candidate(&canonical, "orchid");
+    item["content"] = json!("# Orchid\n\nOrchid is a garden planning project.[^s1]\n");
+    let (_, accepted) = submit(&f, &discovered, version, vec![item]).await;
+    assert_eq!(
+        accepted["accepted_candidate_ids"].as_array().unwrap().len(),
+        1
+    );
+    // New relevant notes after the frozen boundary already make the preview stale.
+    let view = review(&f).await;
+    assert_eq!(view["items"][0]["stale"], true);
+    write(
+        &f,
+        "sources/Projects/Orchid/Orchid.md",
+        "# Orchid\n\nOrchid has been retired.\n",
+        1,
+    )
+    .await;
+    let view = review(&f).await;
+    assert_eq!(view["items"][0]["stale"], true);
+    let approval = decision(&view, &view["items"][0], "approve");
+    assert_eq!(
+        post(&f, &f.owner, "/v1/dreamer/review/decisions", approval)
+            .await
+            .status,
+        StatusCode::CONFLICT
+    );
+    assert!(current(&f, "derived/entities/orchid.md").await.is_none());
+}
+
+#[tokio::test]
+async fn entity_revisions_preserve_identity_and_cannot_duplicate_held_views() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let source = write(
+        &f,
+        "sources/Projects/Orchid.md",
+        "# Orchid\n\nCurrent garden plan.\n",
+        0,
+    )
+    .await;
+    let a = admit(&f).await;
+    let item = candidate(&source, "orchid");
+    let (_, receipt) = submit(
+        &f,
+        &a,
+        a["state_version"].as_i64().unwrap(),
+        vec![item.clone()],
+    )
+    .await;
+    let id = receipt["accepted_candidate_ids"][0].clone();
+    let mut duplicate = attempt(&a, receipt["state_version"].as_i64().unwrap());
+    let mut revised = item.clone();
+    revised["title"] = json!("A clearer Orchid view");
+    duplicate["candidates"] = json!([revised.clone()]);
+    duplicate["processed_inputs"] = json!([]);
+    duplicate["findings"] = json!([]);
+    assert_eq!(
+        post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/candidates",
+            duplicate.clone()
+        )
+        .await
+        .status,
+        StatusCode::BAD_REQUEST
+    );
+    revised["revises_item_id"] = id.clone();
+    let mut wrong = revised.clone();
+    wrong["path"] = json!("derived/entities/someone-else.md");
+    duplicate["candidates"] = json!([wrong]);
+    assert_eq!(
+        post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/candidates",
+            duplicate.clone()
+        )
+        .await
+        .status,
+        StatusCode::BAD_REQUEST
+    );
+    let mut competing = revised.clone();
+    competing["title"] = json!("A competing view");
+    duplicate["candidates"] = json!([revised.clone(), competing]);
+    assert_eq!(
+        post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/candidates",
+            duplicate.clone()
+        )
+        .await
+        .status,
+        StatusCode::BAD_REQUEST
+    );
+    duplicate["candidates"] = json!([revised]);
+    let changed = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/candidates",
+        duplicate.clone(),
+    )
+    .await);
+    assert_eq!(changed["accepted_candidate_ids"], json!([id]));
+    let view = review(&f).await;
+    assert_eq!(view["items"].as_array().unwrap().len(), 1);
+    let approval = decision(&view, &view["items"][0], "approve");
+    let held =
+        ok(post(&f, &f.owner, "/v1/dreamer/review/decisions", approval).await)["data"].clone();
+    duplicate["expected_state_version"] = held["state_version"].clone();
+    duplicate["candidates"][0]["title"] = json!("Do not replace an approval");
+    assert_eq!(
+        post(&f, &f.runner, "/v1/workspace/dreamer/candidates", duplicate)
+            .await
+            .status,
+        StatusCode::BAD_REQUEST
+    );
+    let view = review(&f).await;
+    assert_eq!(view["items"][0]["status"], "approved_held");
+    assert!(current(&f, "derived/entities/orchid.md").await.is_none());
+}
+
+#[tokio::test]
+async fn corrected_entity_replaces_current_facts_and_preserves_immutable_history() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "full", 0).await;
+    let path = "sources/Projects/Orchid/Plan.md";
+    let original = write(&f, path, "# Orchid\n\nThe launch is June 10.\n", 0).await;
+    let a = admit(&f).await;
+    let mut first = candidate(&original, "orchid-current");
+    first["content"] = json!("# Orchid\n\nThe planned launch is June 10.[^s1]\n");
+    let (_, accepted) = submit(&f, &a, a["state_version"].as_i64().unwrap(), vec![first]).await;
+    finish(
+        &f,
+        &a,
+        accepted["state_version"].as_i64().unwrap(),
+        "completed",
+    )
+    .await;
+    let view = review(&f).await;
+    ok(post(
+        &f,
+        &f.owner,
+        "/v1/dreamer/review/decisions",
+        decision(&view, &view["items"][0], "approve"),
+    )
+    .await);
+    let target = "derived/entities/orchid-current.md";
+    let (version, old_body, _) = current(&f, target).await.unwrap();
+    assert_eq!(version, 1);
+    let read = json!({"requests":[{"path":target,"view":"current_state","max_chars":12000}]});
+    let initial = ok(post(&f, &f.owner, "/v1/workspace/read", read.clone()).await);
+    assert_eq!(initial["data"]["items"][0]["freshness"]["status"], "fresh");
+    let correction = write(
+        &f,
+        path,
+        "# Orchid\n\nCorrection: the launch is June 17, replacing the June 10 plan.\n",
+        1,
+    )
+    .await;
+    let stale = ok(post(&f, &f.owner, "/v1/workspace/read", read.clone()).await);
+    assert_ne!(stale["data"]["items"][0]["freshness"]["status"], "fresh");
+    assert!(
+        !stale["data"]["items"][0]["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("The planned launch is June 10.")
+    );
+    let next = admit(&f).await;
+    let mut updated = candidate(&correction, "orchid-current");
+    updated["expected_version"] = json!(1);
+    updated["content"] = json!(
+        "# Orchid\n\nCurrent launch: June 17.[^s1]\n\nThe June 10 plan was replaced by the explicit correction.[^s1]\n"
+    );
+    let (_, accepted) = submit(
+        &f,
+        &next,
+        next["state_version"].as_i64().unwrap(),
+        vec![updated],
+    )
+    .await;
+    finish(
+        &f,
+        &next,
+        accepted["state_version"].as_i64().unwrap(),
+        "completed",
+    )
+    .await;
+    let view = review(&f).await;
+    let item = view["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["candidate"]["target_path"] == target)
+        .unwrap();
+    ok(post(
+        &f,
+        &f.owner,
+        "/v1/dreamer/review/decisions",
+        decision(&view, item, "approve"),
+    )
+    .await);
+    let (version, body, metadata) = current(&f, target).await.unwrap();
+    assert_eq!(version, 2);
+    assert!(body.contains("Current launch: June 17."));
+    assert_eq!(metadata["dreamer_summary"]["sources"][0]["version"], 2);
+    let fresh = ok(post(&f, &f.owner, "/v1/workspace/read", read).await);
+    assert_eq!(fresh["data"]["items"][0]["freshness"]["status"], "fresh");
+    assert!(
+        fresh["data"]["items"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Current launch: June 17.")
+    );
+    let saved_old:String=sqlx::query_scalar("SELECT v.content FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id WHERE e.user_id=$1 AND e.path=$2 AND v.version=1")
+        .bind(f.owner.user).bind(target).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(saved_old, old_body);
+}
+
 // Historical runs predate the server-only Dreamer writer. Seed those versions
 // only for this isolated fixture user, without weakening the live write guard.
 async fn historical_run(f: &Fixture, path: &str, content: &str, version: i64) -> Value {
@@ -1287,9 +1701,16 @@ async fn full_review_publishes_exact_candidate_and_rejects_foreign_or_stale_auth
         0,
     )
     .await;
+    // Competing proposals for one destination are rejected at submission. An
+    // owner edit to a Related destination exercises the independent output CAS.
+    let target_path = "sources/Projects/Related target.md";
+    let target_source = write(&f, target_path, "# Target\n\nOwner text.\n", 0).await;
     let a = admit(&f).await;
-    let mut competing_target = candidate(&source, "stale-target");
-    competing_target["path"] = json!("derived/entities/publish.md");
+    let competing_target = json!({"kind":"related","title":"stale-target summary",
+        "summary":"Connect the target to its source.","reason":"An evidenced relationship.",
+        "path":target_path,"expected_version":target_source["version"],"content":"- [[sources/Projects/Fixture.md]]",
+        "sources":[{"entry_ref":target_source["entry_ref"],"version":target_source["version"],"start_line":1,"end_line":3},
+            {"entry_ref":source["entry_ref"],"version":source["version"],"start_line":1,"end_line":3}]});
     let (_, submitted) = submit(
         &f,
         &a,
@@ -1350,6 +1771,7 @@ async fn full_review_publishes_exact_candidate_and_rejects_foreign_or_stale_auth
         StatusCode::BAD_REQUEST,
         "published summary paths require server validation"
     );
+    write(&f, target_path, "# Target\n\nUpdated owner text.\n", 1).await;
     let view = review(&f).await;
     let target = view["items"]
         .as_array()

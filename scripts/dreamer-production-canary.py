@@ -258,6 +258,18 @@ def run_cycle(owner, runner, reader, source, text, target_version, report, enabl
     require(not admitted.get("location_work"), "synthetic canary must not admit personal location work")
     require(len(admitted["inputs"]) == 1, "disposable fixture admission must contain only its synthetic source")
     fence = {key: admitted[key] for key in ("attempt_id", "fence")}
+    discovery_body = {**fence, "expected_state_version": admitted["state_version"], "queries": ["Canary source"]}
+    reader.request("POST", "/v1/workspace/dreamer/narrative-discover", discovery_body, expected=(403,))
+    discovered = unwrap(runner.request("POST", "/v1/workspace/dreamer/narrative-discover", discovery_body))
+    require(discovered["inputs"] == admitted["inputs"]
+            and discovered["processed_generation"] == admitted["processed_generation"],
+            "context discovery consumed pending work")
+    context = discovered.get("narrative_context", [])
+    require(len(context) == 1 and context[0]["entry_ref"] == source["entry_ref"]
+            and context[0]["version"] == source["version"], "context discovery escaped the exact synthetic source")
+    replay = unwrap(runner.request("POST", "/v1/workspace/dreamer/narrative-discover", discovery_body))
+    require(replay == discovered, "context replay changed its frozen admission")
+    admitted = discovered
     submitted_body = {**fence, "expected_state_version": admitted["state_version"],
         "candidates": [{"kind": "summary", "title": "Canary summary", "summary": "Synthetic release canary.",
             "reason": "Verify exact-source summary publication.", "path": SUMMARY_PATH,
@@ -329,6 +341,7 @@ def run_cycle(owner, runner, reader, source, text, target_version, report, enabl
     report["cycles"].append({"source_version": source["version"], "run_entry_ref": run_ref,
         "run_version": run_version, "candidate_run_version": item["run_version"], "item_id": item["id"],
         "notification_ref": published["notification_ref"], "delivery_count": 0,
+        "narrative_context_count": len(context), "narrative_discovery_replayed": True,
         "summary_version": current["version"], "source_chars": len(exact["text"]),
         "summary_chars": len(current["text"]), "freshness": current["freshness"]["status"]})
     return current

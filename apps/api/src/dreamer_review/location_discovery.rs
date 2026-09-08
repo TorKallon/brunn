@@ -16,7 +16,7 @@ fn query_pattern(query: &str) -> String {
     )
 }
 
-fn excluded(path: &str, metadata: &Value) -> bool {
+pub(super) fn excluded(path: &str, metadata: &Value) -> bool {
     input_excluded(path, metadata["kind"].as_str())
         || path.starts_with("memory/evidence/")
         || path.starts_with("artifacts/")

@@ -50,6 +50,9 @@ struct Mock {
     pending: Vec<Value>,
     prior_pending_notification: Option<Value>,
     discoveries: Vec<Value>,
+    narrative_discoveries: Vec<Value>,
+    narrative_context: Vec<Value>,
+    current_admission: Option<Value>,
 }
 type Shared = Arc<Mutex<Mock>>;
 fn error(code: StatusCode, message: &str) -> Response {
@@ -122,6 +125,17 @@ async fn secret_put(State(shared): State<Shared>, Json(body): Json<Value>) -> Re
     );
     Json(json!({"version":actual+1})).into_response()
 }
+async fn narrative_discover(State(shared): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
+    let mut s = shared.lock().unwrap();
+    s.narrative_discoveries.push(body.clone());
+    s.state_version += 1;
+    let mut value = s.current_admission.clone().unwrap();
+    value["state_version"] = json!(s.state_version);
+    value["narrative_context"] = json!(s.narrative_context);
+    value["narrative_discovery"] =
+        json!({"request_hash":"narrative-fixture","queries":body["queries"]});
+    Json(json!({"data":value}))
+}
 async fn write(State(shared): State<Shared>, headers: HeaderMap) -> Response {
     if headers.get("authorization").unwrap() == "Bearer model" {
         return error(StatusCode::FORBIDDEN, "read only");
@@ -150,6 +164,7 @@ async fn admit(State(shared): State<Shared>, Json(body): Json<Value>) -> Json<Va
             .unwrap()
             .extend(location.as_object().unwrap().clone());
     }
+    s.current_admission = Some(response.clone());
     Json(response)
 }
 async fn checkpoint(State(shared): State<Shared>, Json(body): Json<Value>) -> Response {
@@ -259,6 +274,10 @@ async fn build_with_budget(
             post(location_discover),
         )
         .route("/v1/workspace/dreamer/candidates", post(candidates))
+        .route(
+            "/v1/workspace/dreamer/narrative-discover",
+            post(narrative_discover),
+        )
         .route("/v1/workspace/dreamer/finish", post(finish))
         .route("/v1/workspace/notifications/publish", post(notify))
         .with_state(shared.clone());
@@ -309,6 +328,10 @@ cat > "$DIR/prompt"
 cp "$DIR/prompt" "$DIR/prompt-$OUTPUT_NAME"
 env > "$DIR/model-env"
 cp "$DIR/model-env" "$DIR/env-$OUTPUT_NAME"
+if [ "$OUTPUT_NAME" = 'narrative-discovery-answer.md' ] && [ ! -f "$DIR/custom-narrative-discovery" ]; then
+ echo '{{"schema":"dream.narrative.discovery.v1","queries":[]}}' > "$OUTPUT_PATH"
+ exit 0
+fi
 exec /bin/sh "$DIR/behavior.sh"
 "#,
         dir = dir.display()
@@ -399,6 +422,67 @@ async fn owner_review_race_retries_the_same_evidence_without_rerunning_the_model
     assert_eq!(state.pending.len(), 1);
     let calls = std::fs::read_to_string(dir.path().join("calls")).unwrap();
     assert_eq!(calls.lines().filter(|line| *line == "answer.md").count(), 1);
+}
+
+#[tokio::test]
+async fn ordinary_consolidation_uses_frozen_context_without_consuming_it() {
+    let behavior = format!(
+        r#"
+if [ "$OUTPUT_NAME" = 'narrative-discovery-answer.md' ]; then
+ echo '{{"schema":"dream.narrative.discovery.v1","queries":["Project Orchid"]}}' > "$OUTPUT_PATH"
+ exit 0
+fi
+{HAPPY}
+"#
+    );
+    let (s, d, dir) = build(&behavior).await;
+    enable(&s);
+    std::fs::write(dir.path().join("custom-narrative-discovery"), "").unwrap();
+    s.lock().unwrap().narrative_context = vec![
+        json!({"entry_ref":"entry:019fba27-687b-7582-8b99-e9371dbe2cf0","path":"sources/Projects/Orchid/Canonical.md","version":4,"generation":12,"operation":"context","content_hash":"sha256:context"}),
+    ];
+    let report = d.run_once(today(), RunKind::Manual).await;
+    assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
+    let prompt = std::fs::read_to_string(dir.path().join("prompt-answer.md")).unwrap();
+    assert!(prompt.contains("sources/Projects/Orchid/Canonical.md"));
+    let state = s.lock().unwrap();
+    assert_eq!(state.narrative_discoveries.len(), 1);
+    assert_eq!(
+        state.narrative_discoveries[0]["queries"],
+        json!(["Project Orchid"])
+    );
+    assert_eq!(
+        state.submitted[0]["processed_inputs"],
+        json!([{"entry_ref":SOURCE,"version":2,"generation":17}])
+    );
+    let calls = std::fs::read_to_string(dir.path().join("calls")).unwrap();
+    assert!(
+        calls.find("narrative-discovery-answer.md").unwrap() < calls.find("\nanswer.md").unwrap()
+    );
+}
+
+#[tokio::test]
+async fn invalid_narrative_discovery_retains_work_and_finishes_auth() {
+    let behavior = format!(
+        r#"
+if [ "$OUTPUT_NAME" = 'narrative-discovery-answer.md' ]; then
+ echo '{{"schema":"dream.narrative.discovery.v1","queries":[],"write":"not allowed"}}' > "$OUTPUT_PATH"
+ exit 0
+fi
+{HAPPY}
+"#
+    );
+    let (s, d, dir) = build(&behavior).await;
+    enable(&s);
+    std::fs::write(dir.path().join("custom-narrative-discovery"), "").unwrap();
+    let report = d.run_once(today(), RunKind::Manual).await;
+    assert!(
+        matches!(report.outcome, RunOutcome::Partial { .. }),
+        "{report:?}"
+    );
+    assert_eq!(report.auth_persistence, "verified");
+    assert_eq!(report.receipt_persistence, "accepted");
+    assert_eq!(s.lock().unwrap().submissions, 0);
 }
 
 #[tokio::test]
@@ -951,13 +1035,16 @@ fi
             assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
         }
         let calls = model_calls(dir.path());
-        assert_eq!(calls.len(), 2, "{calls:?}");
         assert_eq!(
-            calls[1],
+            calls,
             if location_queued {
-                "location-answer.md"
+                vec!["probe-answer.md", "location-answer.md"]
             } else {
-                "answer.md"
+                vec![
+                    "probe-answer.md",
+                    "narrative-discovery-answer.md",
+                    "answer.md",
+                ]
             }
         );
         assert!(!dir.path().join("prompt-location-audit-answer.md").exists());
