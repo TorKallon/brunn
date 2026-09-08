@@ -30,6 +30,10 @@ final class BrunnUITests: XCTestCase {
         XCTAssertTrue(finalDetail.isHittable)
         keepScreenshot(named: "review-complete-question-end", from: app)
         let evidence = app.buttons["Evidence for the review · v12"]
+        XCTAssertFalse(evidence.exists)
+        let evidenceDisclosure = element("review-evidence-toggle", in: app)
+        scroll(evidenceDisclosure, intoViewIn: app)
+        evidenceDisclosure.tap()
         scroll(evidence, intoViewIn: app)
         evidence.tap()
         XCTAssertTrue(app.navigationBars["Entry"].waitForExistence(timeout: 3))
@@ -37,12 +41,81 @@ final class BrunnUITests: XCTestCase {
         keepScreenshot(named: "review-exact-evidence", from: app)
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Review item"].waitForExistence(timeout: 3))
-        let approve = app.buttons["Approve"]
-        scroll(approve, intoViewIn: app)
-        XCTAssertFalse(approve.isEnabled)
+        let saveAnswer = app.buttons["Save answer"]
+        scroll(saveAnswer, intoViewIn: app)
+        XCTAssertFalse(saveAnswer.isEnabled)
+        XCTAssertFalse(app.buttons["Approve"].exists)
+        XCTAssertFalse(app.staticTexts["Candidate"].exists)
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Review"].waitForExistence(timeout: 3))
         XCTAssertTrue(item.exists)
+    }
+
+    @MainActor
+    func testManagedLocationSummaryShowsSevenReadableStopsAndHidesAuditDetails() {
+        let app = launchDemo(extraArguments: ["--ui-test-review-fixture", "--ui-test-review-location"])
+        app.tabBars.buttons["Review"].tap()
+        let item = app.buttons["review-item-demo-review-location"]
+        XCTAssertTrue(item.waitForExistence(timeout: 4))
+        item.tap()
+        XCTAssertTrue(app.navigationBars["Review item"].waitForExistence(timeout: 3))
+        for value in ["About 06:11–08:16", "Library", "About 10:41–10:44", "Cafe, brief stop",
+                      "About 11:08–16:32", "Community center", "Market", "About 21:27–21:28", "Station entrance"] {
+            let text = app.staticTexts[value]
+            scroll(text, intoViewIn: app)
+            XCTAssertTrue(text.isHittable, "Missing readable stop: \(value)")
+            if value == "Cafe, brief stop" { keepScreenshot(named: "review-location-readable-stops", from: app) }
+        }
+        XCTAssertFalse(app.staticTexts["Before"].exists)
+        XCTAssertFalse(app.staticTexts["After"].exists)
+        XCTAssertFalse(app.staticTexts["Why it is proposed"].exists)
+        XCTAssertFalse(app.staticTexts["Uncertainty"].exists)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "| When | Where |")).firstMatch.exists)
+        XCTAssertFalse(app.buttons["Location evidence 1 · v12"].exists)
+        let approve = app.buttons["Approve"]
+        scroll(approve, intoViewIn: app)
+        XCTAssertTrue(approve.isHittable)
+        XCTAssertFalse(approve.isEnabled)
+        keepScreenshot(named: "review-location-decision-with-collapsed-evidence", from: app)
+        let changes = element("review-exact-changes-toggle", in: app)
+        scroll(changes, intoViewIn: app)
+        changes.tap()
+        XCTAssertTrue(app.staticTexts["Before"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Previous location summary."].exists)
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "| When | Where |")).firstMatch.exists)
+    }
+
+    @MainActor
+    func testOlderReportsAreCollapsedReadOnlyAndSeparateFromReview() {
+        let app = launchDemo(extraArguments: ["--ui-test-review-fixture"])
+        app.tabBars.buttons["Review"].tap()
+        XCTAssertTrue(app.buttons["review-item-demo-review-question"].waitForExistence(timeout: 4))
+        XCTAssertTrue(caseInsensitiveText("1 for review", in: app).exists)
+        XCTAssertFalse(app.buttons["review-item-demo-review-legacy"].exists)
+        XCTAssertFalse(app.buttons["review-older-demo-review-legacy"].exists)
+        let disclosure = element("review-older-reports", in: app)
+        scroll(disclosure, intoViewIn: app)
+        disclosure.tap()
+        let note = app.buttons["review-older-demo-review-legacy"]
+        scroll(note, intoViewIn: app)
+        note.tap()
+        XCTAssertTrue(app.navigationBars["Older report"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Kept for reference. This note is not awaiting a decision and will not be applied."].exists)
+        XCTAssertTrue(app.staticTexts["Original note"].exists)
+        XCTAssertTrue(app.staticTexts["Old promise from an earlier run"].exists)
+        XCTAssertFalse(app.staticTexts["Applies next run unless vetoed: Old promise from an earlier run"].exists)
+        XCTAssertFalse(app.staticTexts["Candidate"].exists)
+        XCTAssertFalse(app.staticTexts["Before"].exists)
+        XCTAssertFalse(app.staticTexts["After"].exists)
+        XCTAssertFalse(app.buttons["Approve"].exists)
+        XCTAssertFalse(app.buttons["Reject"].exists)
+        XCTAssertFalse(app.buttons["Defer"].exists)
+        XCTAssertFalse(app.buttons["Save correction"].exists)
+        XCTAssertFalse(app.buttons["Save answer"].exists)
+        keepScreenshot(named: "review-readonly-older-report", from: app)
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Review"].waitForExistence(timeout: 3))
+        XCTAssertTrue(caseInsensitiveText("1 for review", in: app).exists)
     }
 
     @MainActor

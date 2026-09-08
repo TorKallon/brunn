@@ -49,7 +49,16 @@
 .review-diff > div { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 .review-diff h4 { padding: 9px 12px; margin: 0; font-size: .7rem; color: var(--ink-3); background: var(--surface-subtle); font-weight: 500; }
 .review-diff pre { padding: 12px; margin: 0; min-height: 90px; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: .73rem; line-height: 1.7; color: var(--code-ink); background: var(--code-bg); }
+.review-exact-changes { margin-top: 16px; }
+.review-exact-changes > summary { padding-block: 12px; color: var(--link); font-size: .8rem; cursor: pointer; }
+.review-exact-changes[open] > summary { margin-bottom: 8px; }
 .review-count { padding: 2px 6px; margin-left: 5px; color: var(--ink-3); background: var(--surface-subtle); border-radius: var(--radius); font-size: .68rem; }
+.review-evidence { padding: 0; }
+.review-evidence > summary { display: flex; align-items: center; gap: 6px; min-height: 56px; padding: 18px 24px; font-size: .85rem; font-weight: 600; cursor: pointer; list-style: none; }
+.review-evidence > summary::-webkit-details-marker { display: none; }
+.review-evidence > summary > svg { margin-left: auto; color: var(--muted); }
+.review-evidence[open] > summary > svg { transform: rotate(90deg); }
+.review-evidence > .review-sources, .review-evidence > .review-muted { padding: 0 24px 20px; }
 .review-sources { list-style: none; padding: 0; margin: 0; }
 .review-sources li + li { margin-top: 14px; }
 .review-sources li > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: .78rem; }
@@ -78,6 +87,15 @@
 .review-history time { margin-left: auto; color: var(--muted); font-size: .76rem; }
 .review-history code { font-size: .72rem; color: var(--muted); overflow-wrap: anywhere; }
 .review-history p { font-size: .82rem; color: var(--ink-2); line-height: 1.65; margin: 8px 0 0; white-space: pre-wrap; }
+.review-older-reports { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface); }
+.review-older-reports > summary { display: flex; align-items: center; gap: 10px; padding: 18px; min-height: 56px; color: var(--ink); cursor: pointer; list-style: none; }
+.review-older-reports > summary::-webkit-details-marker { display: none; }
+.review-older-reports > summary strong { font-size: .9rem; font-weight: 500; }
+.review-older-reports > summary span { margin-left: auto; color: var(--muted); font-size: .78rem; }
+.review-older-reports[open] > summary > svg:last-child { transform: rotate(90deg); }
+.review-older-reports > p { margin: 0; padding: 0 18px 18px; border-bottom: 1px solid var(--line); }
+.review-original-text { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; font-size: .94rem; line-height: 1.75; color: var(--ink-2); margin: 16px 0 0; }
+.review-older-detail > .review-detail-section:last-child { border-bottom: 0; }
 @media (max-width: 1100px) { .review-workspace { grid-template-columns: minmax(250px, .8fr) minmax(0, 1.5fr); } .review-diff { grid-template-columns: 1fr; } }
 @media (max-width: 800px) {
   .review-workspace, .review-run-status { grid-template-columns: 1fr; }
@@ -92,12 +110,16 @@
   .review-reading > .page-header,
   .review-reading > .review-run-status,
   .review-reading > .review-metrics,
+  .review-reading > .review-older-reports,
   .review-reading > .review-history-section { display: none; }
   .review-navigation .review-back { display: inline-flex; }
   .review-navigation { position: sticky; top: 58px; z-index: 5; padding-block: 8px; background: var(--bg); }
   .review-step-buttons .button { width: 44px; padding: 0; }
   .review-step-buttons .button > span { display: none; }
   .review-detail-header, .review-detail-section, .review-decision { padding: 18px; }
+  .review-evidence { padding: 0; }
+  .review-evidence > summary { padding: 18px; }
+  .review-evidence > .review-sources, .review-evidence > .review-muted { padding: 0 18px 18px; }
   .review-detail-header h2 { font-size: 1.2rem; line-height: 1.5; }
   .review-detail > .review-notice { margin-inline: 18px; }
   .review-history time { margin-left: 0; }

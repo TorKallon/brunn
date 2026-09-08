@@ -51,6 +51,7 @@ public struct DreamerReviewItem: Codable, Sendable, Equatable, Identifiable {
     public let reviewable: Bool
     public let stale: Bool
     public let blockedReason: String?
+    public var legacy: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -69,6 +70,7 @@ public struct DreamerReviewItem: Codable, Sendable, Equatable, Identifiable {
         case reviewable
         case stale
         case blockedReason = "blocked_reason"
+        case legacy
     }
 }
 
@@ -128,6 +130,7 @@ public struct DreamerReviewCounts: Codable, Sendable, Equatable {
     public let questions: Int
     public let approvedHeld: Int
     public let applied: Int
+    public var legacy: Int? = nil
 
     enum CodingKeys: String, CodingKey {
         case pending
@@ -135,6 +138,7 @@ public struct DreamerReviewCounts: Codable, Sendable, Equatable {
         case questions
         case approvedHeld = "approved_held"
         case applied
+        case legacy
     }
 }
 
@@ -149,6 +153,7 @@ public struct DreamerReviewData: Codable, Sendable, Equatable {
     public let items: [DreamerReviewItem]
     public let history: [DreamerReviewDecision]
     public let decisionVersion: Int
+    public var legacyItems: [DreamerReviewItem]? = nil
 
     enum CodingKeys: String, CodingKey {
         case available
@@ -161,6 +166,7 @@ public struct DreamerReviewData: Codable, Sendable, Equatable {
         case items
         case history
         case decisionVersion = "decision_version"
+        case legacyItems = "legacy_items"
     }
 }
 
@@ -204,16 +210,61 @@ public struct DreamerDecisionResult: Codable, Sendable, Equatable {
     }
 }
 
+extension DreamerReviewCandidate {
+    public var isManagedSummary: Bool {
+        guard let targetPath else { return false }
+        return targetPath.hasPrefix("derived/location/") || targetPath.hasPrefix("derived/entities/")
+    }
+
+    public var summaryMD: String? {
+        [afterMD, bodyMD].compactMap { $0 }.first {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    public var hasContent: Bool {
+        [bodyMD, afterMD].compactMap { $0 }.contains {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+}
+
+extension DreamerReviewData {
+    public var reviewItems: [DreamerReviewItem] {
+        let historicalIDs = Set((legacyItems ?? []).map(\.id))
+        return items.filter { !$0.isLegacyNote && !historicalIDs.contains($0.id) }
+    }
+
+    public var olderReports: [DreamerReviewItem] {
+        var seen = Set<String>()
+        return ((legacyItems ?? []) + items.filter(\.isLegacyNote)).filter { seen.insert($0.id).inserted }
+    }
+
+    public var allItems: [DreamerReviewItem] { reviewItems + olderReports }
+}
+
 extension DreamerReviewItem {
+    public var isLegacyNote: Bool {
+        if let legacy { return legacy }
+        return kind == "legacy"
+            || whyMD == "Retained from an earlier run; a concrete candidate is required before application."
+    }
+
+    public var historicalTitle: String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefix = "Applies next run unless vetoed:"
+        guard let range = trimmed.range(of: prefix, options: [.anchored, .caseInsensitive]) else { return title }
+        let remainder = String(trimmed[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return remainder.isEmpty ? "Earlier run note" : remainder
+    }
+
     public var approvalBlock: String? {
+        if isLegacyNote { return "This older report is kept for reference and is not awaiting a decision." }
         if stale { return "The supporting evidence has changed. A fresh candidate needs another review." }
         if status == "approved_held" { return "This candidate is already approved and held for authorized application." }
         if status == "needs_changes" { return "Your correction is awaiting a fresh candidate and another review." }
         if !reviewable { return blockedReason ?? "A concrete candidate and its evidence are needed before approval." }
-        guard let candidate,
-              [candidate.bodyMD, candidate.afterMD].compactMap({ $0 }).contains(where: {
-                  !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-              }) else { return "There is no concrete candidate to approve yet." }
+        guard candidate?.hasContent == true else { return "There is no concrete candidate to approve yet." }
         if sources.isEmpty { return "Supporting sources are needed before approval." }
         return nil
     }

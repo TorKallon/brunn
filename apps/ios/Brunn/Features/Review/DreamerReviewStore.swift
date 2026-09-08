@@ -10,6 +10,7 @@ final class DreamerReviewStore: ObservableObject {
     @Published private(set) var data: DreamerReviewData?
     @Published private(set) var selected: DreamerReviewItem?
     @Published private(set) var selectedDecisionVersion = 0
+    @Published private(set) var selectedFromOlderReports = false
     @Published private(set) var canDecide = false
     @Published private(set) var isRefreshing = false
     @Published private(set) var isSubmitting = false
@@ -40,6 +41,10 @@ final class DreamerReviewStore: ObservableObject {
 
 #if DEBUG
     func loadUITestFixture() {
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-review-location") {
+            loadUITestLocationFixture()
+            return
+        }
         let paragraphs = (1...6).map { number in
             "Detail \(number): The complete proposal keeps its original context. Read the supporting evidence and the uncertainty before recording an owner decision. This longer paragraph deliberately wraps across the phone screen."
         }
@@ -47,7 +52,7 @@ final class DreamerReviewStore: ObservableObject {
         data = DreamerReviewData(
             available: true, mode: "report-only", paused: false, unavailableReason: nil,
             lastAttempt: nil, lastSuccessfulRun: nil,
-            counts: .init(pending: 1, proposals: 0, questions: 1, approvedHeld: 0, applied: 0),
+            counts: .init(pending: 1, proposals: 0, questions: 1, approvedHeld: 0, applied: 0, legacy: 1),
             items: [.init(id: "demo-review-question", kind: "question",
                           title: "Should we keep this plan in review?", bodyMD: body,
                           whyMD: "The proposal needs a deliberate owner decision.",
@@ -58,17 +63,68 @@ final class DreamerReviewStore: ObservableObject {
                                           label: "Evidence for the review", excerpt: "This evidence is pinned to version twelve.")],
                           status: "pending", reviewable: false, stale: false,
                           blockedReason: "This question needs your answer before a candidate can be prepared.")],
-            history: [], decisionVersion: 0
+            history: [], decisionVersion: 0,
+            legacyItems: [.init(id: "demo-review-legacy", kind: "proposal",
+                                title: "Applies next run unless vetoed: Old promise from an earlier run", bodyMD: "I will prepare something useful next time. Applies next run unless vetoed.",
+                                whyMD: "Retained from an earlier run; a concrete candidate is required before application.",
+                                uncertaintyMD: nil, runID: "Earlier demo run", runEntryRef: "entry:demo-legacy-run", runVersion: 1,
+                                candidateHash: "sha256:demo-legacy", candidate: .init(bodyMD: "", beforeMD: "", afterMD: "", targetPath: nil),
+                                sources: [], status: "pending", reviewable: false, stale: false, blockedReason: nil, legacy: true)]
+        )
+        canDecide = false
+        ownerID = nil
+    }
+
+    // Entirely fictional places, date, and observation windows.
+    static let uiTestLocationSummary = """
+    # February 3 · UTC
+
+    | When | Where |
+    | --- | --- |
+    | About 06:11–08:16 | Station |
+    | About 09:02–10:23 | Library |
+    | About 10:41–10:44 | Cafe, brief stop |
+    | About 11:08–16:32 | Park |
+    | About 16:57–17:46 | Community center |
+    | About 18:14–21:09 | Market |
+    | About 21:27–21:28 | Station entrance |
+
+    Ranges bracket observations; arrival and departure remain approximate.
+    """
+
+    private func loadUITestLocationFixture() {
+        data = DreamerReviewData(
+            available: true, mode: "report-only", paused: false, unavailableReason: nil,
+            lastAttempt: nil, lastSuccessfulRun: nil,
+            counts: .init(pending: 1, proposals: 1, questions: 0, approvedHeld: 0, applied: 0, legacy: 0),
+            items: [.init(id: "demo-review-location", kind: "proposal",
+                          title: "Where you were on February 3", bodyMD: "A summary of the day's observed places.",
+                          whyMD: "", uncertaintyMD: "Ranges bracket observations; arrival and departure remain approximate.",
+                          runID: "Demo run", runEntryRef: "entry:demo-review-run", runVersion: 2,
+                          candidateHash: "sha256:demo-location",
+                          candidate: .init(bodyMD: Self.uiTestLocationSummary, beforeMD: "Previous location summary.",
+                                           afterMD: Self.uiTestLocationSummary, targetPath: "derived/location/days/2040-02-03.md"),
+                          sources: (1...30).map { number in
+                              .init(entryRef: "entry:demo-location-evidence-\(number)", path: nil, version: 12,
+                                    label: "Location evidence \(number)", excerpt: "Raw observation details \(number)")
+                          },
+                          status: "pending", reviewable: true, stale: false, blockedReason: nil, legacy: false)],
+            history: [], decisionVersion: 0, legacyItems: []
         )
         canDecide = false
         ownerID = nil
     }
 #endif
 
+    var selectionIsHistorical: Bool {
+        selectedFromOlderReports || selected?.isLegacyNote == true
+            || data?.olderReports.contains(where: { $0.id == selected?.id }) == true
+    }
+
     var displayedItem: DreamerReviewItem? {
         if let selected,
-           let current = data?.items.first(where: { $0.id == selected.id }),
-           current.stale, !current.reviewable, current.sources.isEmpty {
+           let current = data?.allItems.first(where: { $0.id == selected.id }),
+           selectionIsHistorical || (current.stale && !current.reviewable && current.sources.isEmpty) {
             return current
         }
         return selected
@@ -78,16 +134,17 @@ final class DreamerReviewStore: ObservableObject {
     var changed: Bool {
         guard let selected, let data else { return false }
         return data.decisionVersion != selectedDecisionVersion
-            || data.items.first(where: { $0.id == selected.id }) != selected
+            || data.allItems.first(where: { $0.id == selected.id }) != selected
     }
     var decisionsDisabled: Bool {
-        !canDecide || data?.available != true || loadError != nil || changed
+        selectionIsHistorical || !canDecide || data?.available != true || loadError != nil || changed
             || conflict || selectionLocked || decisionMessage != nil
     }
 
-    func select(_ item: DreamerReviewItem) {
+    func select(_ item: DreamerReviewItem, historical: Bool = false) {
         guard !selectionLocked, let data else { return }
         selected = item
+        selectedFromOlderReports = historical || item.isLegacyNote
         selectedDecisionVersion = data.decisionVersion
         decisionMessage = nil
         decisionError = nil
@@ -95,7 +152,7 @@ final class DreamerReviewStore: ObservableObject {
     }
 
     func selectUpdated() {
-        guard let selected, let latest = data?.items.first(where: { $0.id == selected.id }) else { return }
+        guard let selected, let latest = data?.allItems.first(where: { $0.id == selected.id }) else { return }
         select(latest)
     }
 

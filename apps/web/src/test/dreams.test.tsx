@@ -113,6 +113,7 @@ describe("Dreamer Review inbox", () => {
     expect(screen.getByText("Old milestone.")).toBeInTheDocument();
     expect(screen.getByText("Reviewed milestone.")).toBeInTheDocument();
     expect(screen.getByText(candidate.uncertainty_md!)).toBeInTheDocument();
+    await user.click(screen.getByText("Supporting evidence", { exact: true }));
     expect(screen.getByRole("link", { name: "Projects/Status.md" })).toHaveAttribute("href", expect.stringContaining("version=4"));
     await user.type(screen.getByRole("textbox", { name: "Comment (optional)" }), "The source is correct.");
     await user.click(screen.getByRole("button", { name: "Approve" }));
@@ -123,21 +124,65 @@ describe("Dreamer Review inbox", () => {
     expect(fetchMock.mock.calls.some(([input]) => /\/api\/v1\/dreams(?:\/|$)/.test(String(input)))).toBe(false);
   });
 
-  it("shows legacy prose honestly and records a rejection without inventing a candidate", async () => {
-    const legacy = { ...candidate, candidate: null, reviewable: false, blocked_reason: "This legacy report contains a description, not an exact candidate." };
-    let submitted: Record<string, unknown> | undefined;
-    installApiMock({
-      "GET /api/v1/dreamer/review": envelope(reviewData({ items: [legacy] })),
-      "POST /api/v1/dreamer/review/decisions": async (request: Request) => { submitted = await request.json(); return { status: "committed", data: { application_status: "rejected", message: "Rejected. The proposal will not be applied." } }; },
-    });
+  it("keeps full older reports collapsed separately from real candidates and owner questions, without decisions", async () => {
+    const original = `Applies next run unless vetoed: Rewrite the project history.\n\n${"Original historical context. ".repeat(60)}\n\nFinal historical caveat.`;
+    const legacy = { ...candidate, id: "older-prose", legacy: true, title: "Applies next run unless vetoed: Rewrite the project history.", body_md: original, candidate: { before_md: null, after_md: null, body_md: null }, reviewable: false };
+    const fetchMock = installApiMock({ "GET /api/v1/dreamer/review": envelope(reviewData({ legacy_items: [legacy], counts: { ...reviewData().counts, legacy: 1 } })) });
     const user = userEvent.setup();
     renderApp("/dreams");
-    await user.click(await screen.findByRole("button", { name: `Review ${candidate.title}` }));
-    expect(screen.getByText(legacy.blocked_reason)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Reject" }));
-    expect(await screen.findByText("Rejected. The proposal will not be applied.")).toBeInTheDocument();
-    expect(submitted).toMatchObject({ item_id: candidate.id, decision: "reject" });
+    expect(await screen.findByRole("button", { name: "All 2" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: `Review ${question.title}` })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: `Review ${legacy.title}` })).not.toBeInTheDocument();
+    expect(screen.getByText("2 items")).toBeInTheDocument();
+    const disclosure = screen.getByText("Older reports").closest("details")!;
+    expect(disclosure).not.toHaveAttribute("open");
+    expect(within(disclosure).getByText("1 note")).toBeInTheDocument();
+    await user.click(screen.getByText("Older reports"));
+    await user.click(screen.getByRole("button", { name: "Read older report Rewrite the project history." }));
+    const detail = within(screen.getByRole("article", { name: "Older report Rewrite the project history." }));
+    expect(detail.getByText(/Final historical caveat/, { selector: "pre" }).textContent).toBe(original);
+    expect(detail.getByRole("link", { name: "2026-09-07 · v3" })).toHaveAttribute("href", expect.stringContaining("version=3"));
+    expect(detail.getByText(/No decision is needed, and it is not scheduled to apply/)).toBeInTheDocument();
+    expect(detail.queryByRole("heading", { name: "Candidate" })).not.toBeInTheDocument();
+    expect(detail.queryByText("Pending", { exact: true })).not.toBeInTheDocument();
+    for (const action of ["Approve", "Reject", "Defer", "Save correction"]) expect(screen.queryByRole("button", { name: action })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes("/review/decisions") || (input instanceof Request && input.method === "POST") || init?.method === "POST")).toBe(false);
+  });
+
+  it.each(["kind", "import reason", "explicit marker"])("recognizes only the known %s legacy marker during an older API rollout", async (marker) => {
+    const legacy: DreamerReviewItem = { ...question, id: "old-question", title: "An old report question?", ...(marker === "kind" ? { kind: "legacy" as const } : marker === "explicit marker" ? { legacy: true } : { why_md: "Retained from an earlier run; a concrete candidate is required before application." }) };
+    installApiMock({ "GET /api/v1/dreamer/review": envelope(reviewData({ items: [legacy, candidate, question], counts: { pending: 3, proposals: 1, questions: 2, approved_held: 0, applied: 0 } })) });
+    renderApp("/dreams");
+    expect(await screen.findByRole("button", { name: "All 2" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Needs your call 1" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: `Review ${legacy.title}` })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: `Review ${question.title}` })).toBeInTheDocument();
+    expect(screen.getByText("Older reports")).toBeInTheDocument();
+  });
+
+  it("shows an empty active inbox when only historical notes exist", async () => {
+    installApiMock({ "GET /api/v1/dreamer/review": envelope(reviewData({ items: [], legacy_items: [{ ...candidate, legacy: true }], counts: { pending: 0, proposals: 0, questions: 0, approved_held: 0, applied: 0, legacy: 1 } })) });
+    renderApp("/dreams");
+    expect(await screen.findByText("Nothing waiting for review")).toBeInTheDocument();
+    expect(screen.getByText("0 items")).toBeInTheDocument();
+    expect(screen.getByText("Older reports")).toBeInTheDocument();
+  });
+
+  it("honors an explicit current classification instead of an older import fallback", async () => {
+    installApiMock({ "GET /api/v1/dreamer/review": envelope(reviewData({ items: [{ ...question, legacy: false, why_md: "Retained from an earlier run; a concrete candidate is required before application." }] })) });
+    renderApp("/dreams");
+    expect(await screen.findByRole("button", { name: `Review ${question.title}` })).toBeInTheDocument();
+    expect(screen.queryByText("Older reports")).not.toBeInTheDocument();
+  });
+
+  it("does not show an empty Candidate section for an active question", async () => {
+    installApiMock({ "GET /api/v1/dreamer/review": envelope(reviewData({ items: [{ ...question, candidate: { target_path: "", body_md: " ", before_md: null, after_md: null } }] })) });
+    const user = userEvent.setup();
+    renderApp("/dreams");
+    await user.click(await screen.findByRole("button", { name: `Review ${question.title}` }));
+    expect(screen.queryByRole("heading", { name: "Candidate" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Answer or correction" })).toBeVisible();
   });
 
   it("records a question correction and a deferral through the durable decision endpoint", async () => {
@@ -149,7 +194,6 @@ describe("Dreamer Review inbox", () => {
     const user = userEvent.setup();
     renderApp("/dreams");
     await user.click(await screen.findByRole("button", { name: `Review ${question.title}` }));
-    await user.click(screen.getByText("Answer or correct this item"));
     const save = screen.getByRole("button", { name: "Save correction" });
     expect(save).toBeDisabled();
     await user.type(screen.getByRole("textbox", { name: "Answer or correction" }), "Use the date in the approved plan.");
@@ -159,6 +203,32 @@ describe("Dreamer Review inbox", () => {
     await user.click(screen.getByRole("button", { name: `Review ${candidate.title}` }));
     await user.click(screen.getByRole("button", { name: "Defer" }));
     await waitFor(() => expect(submitted[1]).toMatchObject({ item_id: candidate.id, decision: "defer" }));
+  });
+
+  it("removes decisions immediately when a selected item moves to history, preserving only an uncertain exact retry", async () => {
+    let state = reviewData();
+    const submitted: unknown[] = [];
+    installApiMock({
+      "GET /api/v1/dreamer/review": () => envelope(state),
+      "POST /api/v1/dreamer/review/decisions": async (request: Request) => {
+        submitted.push(await request.json());
+        return submitted.length === 1 ? { status: 503, body: { error: { code: "unavailable", message: "Response was interrupted." } } } : { status: 409, body: { error: { code: "conflict", message: "This note belongs to older reports." } } };
+      },
+    });
+    const user = userEvent.setup();
+    renderApp("/dreams");
+    await user.click(await screen.findByRole("button", { name: `Review ${candidate.title}` }));
+    await user.click(screen.getByRole("button", { name: "Defer" }));
+    await screen.findByRole("button", { name: "Retry" });
+    state = reviewData({ items: [question], legacy_items: [{ ...candidate, legacy: true, candidate: null, reviewable: false }] });
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(await screen.findByRole("article", { name: `Older report ${candidate.title}` })).toBeInTheDocument();
+    for (const action of ["Approve", "Reject", "Defer", "Save correction"]) expect(screen.queryByRole("button", { name: action })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(submitted).toHaveLength(2));
+    expect(submitted[1]).toEqual(submitted[0]);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: `Review ${question.title}` })).toBeEnabled();
   });
 
   it("pins the selected candidate across refresh and requires reviewing the changed version", async () => {
@@ -265,6 +335,7 @@ describe("Dreamer Review inbox", () => {
     const user = userEvent.setup();
     renderApp("/dreams");
     await user.click(await screen.findByRole("button", { name: `Review ${candidate.title}` }));
+    await user.click(screen.getByText("Supporting evidence", { exact: true }));
     await user.click(screen.getByRole("link", { name: "Projects/Status.md" }));
     expect(await screen.findByText("Exact evidence at version four.")).toBeInTheDocument();
     expect(readPayload).toEqual({ requests: [{ ref: "entry:source-one", version: 4, view: "full" }] });
@@ -276,10 +347,62 @@ describe("Dreamer Review inbox", () => {
     const user = userEvent.setup();
     renderApp("/dreams");
     await user.click(await screen.findByRole("button", { name: `Review ${candidate.title}` }));
+    await user.click(screen.getByText("Supporting evidence", { exact: true }));
     expect(screen.getByText(label)).toBeInTheDocument();
     expect(screen.getByText("Observed fields and original report key.")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: label })).not.toBeInTheDocument();
     expect(screen.queryByText("v0")).not.toBeInTheDocument();
+  });
+
+  it("keeps thirty complete source previews collapsed until requested while decisions remain available", async () => {
+    const sources = Array.from({ length: 30 }, (_, index) => ({ entry_ref: `entry:source-${index}`, version: index + 1, label: `Source ${index + 1}`, excerpt: `Full source ${index + 1}. ${"Original audit fields. ".repeat(50)}` }));
+    installApiMock({ "GET /api/v1/dreamer/review": envelope(reviewData({ items: [{ ...candidate, sources }] })) });
+    const user = userEvent.setup();
+    renderApp("/dreams");
+    await user.click(await screen.findByRole("button", { name: `Review ${candidate.title}` }));
+    const evidence = screen.getByText("Supporting evidence", { exact: true }).closest("details")!;
+    expect(evidence).not.toHaveAttribute("open");
+    expect(within(evidence).getByText("30", { exact: true })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Source 30" })).not.toBeVisible();
+    expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
+    await user.click(screen.getByText("Supporting evidence", { exact: true }));
+    expect(evidence).toHaveAttribute("open");
+    expect(within(evidence).getAllByRole("link")).toHaveLength(30);
+    expect(screen.getByRole("link", { name: "Source 30" })).toHaveAttribute("href", expect.stringContaining("version=30"));
+    const lastExcerpt = within(evidence).getByText(/^Full source 30\./);
+    expect(lastExcerpt).toBeVisible();
+    expect(lastExcerpt.textContent).toBe(sources[29].excerpt);
+  });
+
+  it.each(["empty", "already displayed"])("omits %s rationale and uncertainty sections without adding placeholders", async (reason) => {
+    const item = { ...candidate, why_md: reason === "empty" ? " \n" : candidate.body_md, uncertainty_md: reason === "empty" ? "\n\t" : candidate.candidate!.after_md };
+    installApiMock({ "GET /api/v1/dreamer/review": envelope(reviewData({ items: [item] })) });
+    const user = userEvent.setup();
+    renderApp("/dreams");
+    await user.click(await screen.findByRole("button", { name: `Review ${candidate.title}` }));
+    expect(screen.queryByRole("heading", { name: "Why it is proposed" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Uncertainty" })).not.toBeInTheDocument();
+    expect(screen.queryByText("(Empty content)")).not.toBeInTheDocument();
+    expect(screen.getAllByText(candidate.body_md)).toHaveLength(1);
+    expect(screen.getAllByText("Reviewed milestone.")).toHaveLength(1);
+  });
+
+  it.each(["derived/location/day.md", "derived/entities/project.md"])("renders the managed summary at %s and keeps exact changes collapsed", async (targetPath) => {
+    const after = "| When | Where |\n| --- | --- |\n| 08:00–10:00 | Home |\n| 10:00–17:00 | Office |";
+    const before = "The exact earlier summary.";
+    installApiMock({ "GET /api/v1/dreamer/review": envelope(reviewData({ items: [{ ...candidate, candidate: { target_path: targetPath, before_md: before, after_md: after, body_md: after } }] })) });
+    const user = userEvent.setup();
+    renderApp("/dreams");
+    await user.click(await screen.findByRole("button", { name: `Review ${candidate.title}` }));
+    const table = screen.getByRole("table");
+    expect(within(table).getByRole("columnheader", { name: "When" })).toBeVisible();
+    expect(within(table).getByRole("cell", { name: "Office" })).toBeVisible();
+    const exact = screen.getByText("View exact changes").closest("details")!;
+    expect(exact).not.toHaveAttribute("open");
+    expect(screen.getByText(before)).not.toBeVisible();
+    await user.click(screen.getByText("View exact changes"));
+    expect(screen.getByText(before)).toBeVisible();
+    expect(exact.querySelectorAll("pre")[1].textContent).toBe(after);
   });
 
   it("requires another review after a server conflict and never retries the stale decision", async () => {

@@ -5,6 +5,10 @@ Alerts inbox for hosted Brunn.
 
 ## Implemented MVP
 
+- actionable Review inbox with historical prose separated into read-only Older
+  reports; questions offer a direct answer field and empty candidates stay hidden
+- managed summaries show readable time-and-place rows; exact changes and supporting
+  evidence are collapsed until requested
 - visible Review tab and Home shortcut for Dreamer proposals, questions, complete
   candidate previews, pinned evidence, uncertainty, and decision history
 - owner Review decisions through the existing authenticated session, with exact

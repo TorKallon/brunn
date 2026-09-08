@@ -10,7 +10,8 @@ export interface DreamerReviewSource {
 
 export interface DreamerReviewItem {
   id: string;
-  kind: "proposal" | "question";
+  kind: "proposal" | "question" | "legacy";
+  legacy?: boolean;
   title: string;
   body_md: string;
   why_md?: string | null;
@@ -66,8 +67,10 @@ export interface DreamerReviewData {
     questions: number;
     approved_held: number;
     applied: number;
+    legacy?: number;
   };
   items: DreamerReviewItem[];
+  legacy_items?: DreamerReviewItem[];
   history: DreamerReviewDecision[];
   decision_version: number;
 }
@@ -94,6 +97,18 @@ export interface DreamerDecisionData {
 
 export function reviewIdentity(item: DreamerReviewItem): string {
   return JSON.stringify([item.id, item.run_entry_ref, item.run_version, item.candidate_hash]);
+}
+
+export function isLegacyReviewItem(item: DreamerReviewItem): boolean {
+  if (item.legacy !== undefined) return item.legacy;
+  // During a staggered rollout, only recognize the old importer's exact marker.
+  // A question without a candidate can still require a real owner decision.
+  return item.kind === "legacy"
+    || item.why_md === "Retained from an earlier run; a concrete candidate is required before application.";
+}
+
+export function legacyReportTitle(item: DreamerReviewItem): string {
+  return item.title.replace(/^Applies next run unless vetoed:\s*/i, "") || "Older report note";
 }
 
 export function approvalBlock(item: DreamerReviewItem): string | undefined {
