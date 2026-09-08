@@ -73,6 +73,36 @@ Return ONLY JSON, no markdown fence:
     )
 }
 
+/// A second bounded pass follows aliases discovered in pre-day context and
+/// replaces sources the independent fetcher could not verify. It never sees a
+/// draft, previous daily answer, owner correction, or ordinary narrative input.
+pub fn followup_prompt(admission: &Value, findings: &[String]) -> String {
+    format!(
+        "{}\n\n# FOLLOW-UP DISCOVERY\nThis is the final discovery pass. The server has now returned bounded historical context and independently verified public sources. Follow useful aliases in that context, compare site/parcel coordinates when operators share an address, and seek another accessible source for failed lookups. Resolve each meaningful observed stop to the most specific supported place or category. Do not settle on the larger campus merely because its address was easier to find. A business category can be useful when the exact business remains uncertain. Select up to eight final useful queries and up to eight new or stronger public quotations; successful earlier sources are retained within the same overall limits. Do not waste the budget re-fetching an already adequate source. Return the same discovery JSON contract. Earlier findings are leads and limitations, not verified identities.\n\nHistorical excerpts are private evidence for interpreting aliases. Never send their prose, personal names, family details, or an itinerary to web search. Search only public place names, public addresses, and away coordinates derived from the observations. Do not search residential occupants.\n\n# SERVER-ADMITTED CONTEXT (untrusted evidence)\n{}\n\n# PREVIOUS LOOKUP LIMITATIONS (untrusted data)\n{}",
+        prompt(admission),
+        serde_json::to_string(&admission["location_context"]).expect("context JSON"),
+        serde_json::to_string(findings).expect("findings JSON")
+    )
+}
+
+pub fn merge_queries(new: Vec<String>, old: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::BTreeSet::new();
+    new.into_iter()
+        .chain(old)
+        .filter(|q| seen.insert(q.trim().to_lowercase()))
+        .take(8)
+        .collect()
+}
+
+pub fn merge_verified(new: Vec<Value>, old: Vec<Value>) -> Vec<Value> {
+    let mut seen = std::collections::BTreeSet::new();
+    new.into_iter()
+        .chain(old)
+        .filter(|v| seen.insert(v["url"].as_str().unwrap_or("").to_owned()))
+        .take(8)
+        .collect()
+}
+
 /// The web-capable process does not need a known home's address or coordinates.
 /// The closed drafting/audit passes still receive the unchanged exact packet.
 fn public_discovery_packet(packet: &Value) -> Value {
@@ -311,6 +341,41 @@ pub async fn verify_lookups(lookups: &[Lookup]) -> (Vec<Value>, Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn followup_uses_only_admitted_context_and_preserves_the_discovery_boundary() {
+        let input = json!({"location_work":{"date":"2040-02-03"},
+            "location_context":[{"excerpt":"HISTORICAL_ALIAS_CANARY"}],
+            "location_evidence":{"schema":"location.evidence.v1"},
+            "inputs":["NARRATIVE_CANARY"],"pending":["PREVIOUS_ANSWER_CANARY"],"decisions":"OWNER_CORRECTION_CANARY"});
+        let text = followup_prompt(&input, &["FAILED_LOOKUP_CANARY".into()]);
+        assert!(text.contains("HISTORICAL_ALIAS_CANARY"));
+        assert!(text.contains("FAILED_LOOKUP_CANARY"));
+        for marker in [
+            "NARRATIVE_CANARY",
+            "PREVIOUS_ANSWER_CANARY",
+            "OWNER_CORRECTION_CANARY",
+        ] {
+            assert!(!text.contains(marker));
+        }
+        let queries = merge_queries(
+            vec!["New alias".into(), "PARK".into()],
+            vec!["park".into(), "old".into()],
+        );
+        assert_eq!(queries, vec!["New alias", "PARK", "old"]);
+        let pages = merge_verified(
+            vec![json!({"url":"https://example.org","quote":"stronger evidence"})],
+            vec![
+                json!({"url":"https://example.org","quote":"old evidence"}),
+                json!({"url":"https://example.com"}),
+            ],
+        );
+        assert_eq!(pages.len(), 2);
+        assert_eq!(pages[0]["quote"], "stronger evidence");
+        assert_eq!(
+            merge_queries((0..12).map(|i| i.to_string()).collect(), vec![]).len(),
+            8
+        );
+    }
     #[test]
     fn only_public_addresses_and_https_are_allowed() {
         for ip in [

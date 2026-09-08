@@ -171,8 +171,10 @@ pub(super) async fn discover(
         .location_work
         .clone()
         .ok_or_else(|| ApiError::invalid("no historical day admitted"))?;
-    let request_hash = digest(&json!({"queries":queries,"web_sources":web}));
-    let replay = work["discovery"]["request_hash"] == request_hash;
+    let parent = body.get("refines_request_hash").and_then(Value::as_str);
+    let request_hash = digest(&json!({"queries":queries,"web_sources":web,"parent":parent}));
+    let replay = work["discovery"]["request_hash"] == request_hash
+        || work["discovery"]["initial_request_hash"] == request_hash;
     let mut checked = body.clone();
     if replay {
         checked["expected_state_version"] = json!(version);
@@ -182,9 +184,14 @@ pub(super) async fn discover(
         let response = admission_response(&mut tx, &auth, &data, version).await?;
         return Ok(Json(json!({"data":response,"no_op":true})));
     }
-    if work.get("discovery").is_some() {
+    let prior = work.get("discovery").cloned();
+    if (prior.is_none() && parent.is_some())
+        || prior.as_ref().is_some_and(|prior| {
+            prior["round"].as_u64().unwrap_or(1) != 1 || parent != prior["request_hash"].as_str()
+        })
+    {
         return Err(ApiError::invalid(
-            "discovery already sealed for this attempt",
+            "discovery permits one fenced refinement of its initial request",
         ));
     }
     let mut sources = context(&mut tx, &auth, &work, a.frozen_generation, &queries).await?;
@@ -246,6 +253,7 @@ pub(super) async fn discover(
     }
     work["context_sources"] = json!(sources);
     work["discovery"] = json!({"schema":"location.discovery.v1","request_hash":request_hash,
+        "round":if prior.is_some(){2}else{1},"initial_request_hash":prior.as_ref().map(|v|v["request_hash"].clone()).unwrap_or(Value::Null),
         "context_before":work["from"],"queries":queries,"verified_web_count":web.len(),"context_count":sources.len()-web.len(),"completed_at":Utc::now()});
     let generation: i64 = sqlx::query_scalar(
         "SELECT coalesce(max(generation),0) FROM brunn.workspace_changes WHERE user_id=$1",

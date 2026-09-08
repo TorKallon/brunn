@@ -395,8 +395,24 @@ before triggering a manual run; preserve the pending item identity and mode.
 
 Each admitted run also queues the previous closed Pacific day when it has raw
 observations and no retained or already dispositioned work for that day.
-Location reasoning has three separate model passes: autonomous discovery,
-drafting, and an independent audit (with one bounded correction when needed).
+Location reasoning separates autonomous discovery, drafting, and an independent
+audit (with one bounded correction when needed). Discovery has an initial pass
+and one fenced follow-up when it finds leads. The follow-up can investigate
+aliases from pre-day Brunn context and replace web pages that failed independent
+verification. Both discovery requests have stable replay identities; a third
+request cannot broaden the evidence. The final admission still has at most
+eight web sources, eight context queries, four historical excerpts and 12 KiB
+of excerpt text. Neither discovery pass receives a previous daily answer or
+owner correction. Historical excerpts stay private; web searches use public
+place identities and away observations only.
+
+Nightly and manual runs have a shared one-hour ceiling. Discovery receives at
+most twenty minutes across its two passes; the independent audit and its one
+correction share at most fifteen minutes. Stage setup, verification and retries
+cannot reset these deadlines. The narrative pass retains its separate allowance.
+The primary timeline normally uses one first-to-last approximate observation
+window per place, with material gaps stated once rather than a list of every
+sampling segment. This does not assert continuous presence.
 Discovery sees raw observations with known Home coordinates/addresses removed;
 it can search the public web, but has no shell or Brunn tools. The wrapper
 independently fetches at most eight public HTTPS pages and verifies short exact

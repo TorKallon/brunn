@@ -62,7 +62,7 @@ impl RunKind {
 
     pub fn time_budget(self) -> Duration {
         match self {
-            RunKind::Nightly | RunKind::Manual => Duration::from_secs(30 * 60),
+            RunKind::Nightly | RunKind::Manual => Duration::from_secs(60 * 60),
             RunKind::Backfill => Duration::from_secs(120 * 60),
         }
     }
@@ -577,7 +577,7 @@ impl Dreamer {
         let mut enriched = admission.clone();
         if admission["location_work"].is_object() {
             report.stage = "location_discovery".into();
-            let discovery_budget = Duration::from_secs(600).min(usable / 2);
+            let discovery_budget = Duration::from_secs(1200).min(usable / 2);
             match tokio::time::timeout(
                 discovery_budget,
                 self.discover_location(admission, state_version, run_home, env, discovery_budget),
@@ -602,7 +602,7 @@ impl Dreamer {
         );
         let remaining = reasoning_deadline.saturating_duration_since(tokio::time::Instant::now());
         let audit_allowance = if admission["location_work"].is_object() {
-            Duration::from_secs(360).min(remaining / 3)
+            Duration::from_secs(900).min(remaining / 3)
         } else {
             Duration::ZERO
         };
@@ -910,40 +910,73 @@ impl Dreamer {
         env: &BTreeMap<String, String>,
         budget: Duration,
     ) -> Result<Value, String> {
-        let input = super::discovery::prompt(admission);
-        match self
-            .exec_codex(
-                run_home,
-                env,
-                &input,
-                budget,
-                "location-discovery-answer.md",
-            )
-            .await
-        {
-            ExecResult::Finished => {}
-            ExecResult::TimedOut => return Err("location discovery timed out; day retained".into()),
-            ExecResult::Failed(_) => {
-                return Err("location discovery model failed; day retained".into());
+        let deadline = tokio::time::Instant::now() + budget;
+        let mut next = admission.clone();
+        let mut queries = Vec::new();
+        let mut verified = Vec::new();
+        let mut findings = Vec::new();
+        for round in 0..2 {
+            let input = if round == 0 {
+                super::discovery::prompt(&next)
+            } else {
+                super::discovery::followup_prompt(&next, &findings)
+            };
+            let answer_name = if round == 0 {
+                "location-discovery-answer.md"
+            } else {
+                "location-discovery-followup-answer.md"
+            };
+            let remaining = deadline
+                .saturating_duration_since(tokio::time::Instant::now())
+                .min(Duration::from_secs(600));
+            if remaining.is_zero() {
+                return Err("location discovery budget exhausted; day retained".into());
+            }
+            match self
+                .exec_codex(run_home, env, &input, remaining, answer_name)
+                .await
+            {
+                ExecResult::Finished => {}
+                ExecResult::TimedOut => {
+                    return Err("location discovery timed out; day retained".into());
+                }
+                ExecResult::Failed(_) => {
+                    return Err("location discovery model failed; day retained".into());
+                }
+            }
+            let raw = std::fs::read_to_string(run_home.work_dir.join(answer_name))
+                .map_err(|_| "location discovery output missing")?;
+            if raw.len() > 64 * 1024 {
+                return Err("location discovery output exceeded bound".into());
+            }
+            let discovered = super::discovery::parse(&raw)?;
+            let has_leads =
+                !discovered.lookups.is_empty() || !discovered.context_queries.is_empty();
+            let (pages, failures) = super::discovery::verify_lookups(&discovered.lookups).await;
+            verified = super::discovery::merge_verified(pages, verified);
+            queries = super::discovery::merge_queries(discovered.context_queries, queries);
+            let mut request = json!({
+                "attempt_id":admission["attempt_id"],"fence":admission["fence"],
+                "expected_state_version":state_version,"context_queries":queries,"web_sources":verified
+            });
+            if round == 1 {
+                request["refines_request_hash"] =
+                    next["location_work"]["discovery"]["request_hash"].clone();
+            }
+            next = self
+                .runner
+                .dreamer("location-discover", request)
+                .await
+                .map_err(|_| "location discovery source admission failed; day retained")?;
+            *state_version = next["state_version"]
+                .as_i64()
+                .ok_or("discovery state receipt missing")?;
+            findings.extend(discovered.findings);
+            findings.extend(failures);
+            if !has_leads {
+                break;
             }
         }
-        let raw = std::fs::read_to_string(run_home.work_dir.join("location-discovery-answer.md"))
-            .map_err(|_| "location discovery output missing")?;
-        if raw.len() > 64 * 1024 {
-            return Err("location discovery output exceeded bound".into());
-        }
-        let discovered = super::discovery::parse(&raw)?;
-        let (verified, failures) = super::discovery::verify_lookups(&discovered.lookups).await;
-        let mut next=self.runner.dreamer("location-discover",json!({
-            "attempt_id":admission["attempt_id"],"fence":admission["fence"],
-            "expected_state_version":state_version,"context_queries":discovered.context_queries,
-            "web_sources":verified
-        })).await.map_err(|_|"location discovery source admission failed; day retained")?;
-        *state_version = next["state_version"]
-            .as_i64()
-            .ok_or("discovery state receipt missing")?;
-        let mut findings = discovered.findings;
-        findings.extend(failures);
         next["location_discovery_findings"] = json!(findings);
         Ok(next)
     }
@@ -1122,7 +1155,7 @@ impl Dreamer {
         if answer_name.starts_with("location-") {
             codex::restrict_to_location_evidence(
                 &mut argv,
-                answer_name == "location-discovery-answer.md",
+                answer_name.starts_with("location-discovery"),
             );
             env.remove("BRUNN_API_TOKEN");
             env.remove("BRUNN_API_URL");
@@ -1361,7 +1394,7 @@ mod tests {
     #[test]
     fn run_kind_budgets_are_locked() {
         assert_eq!(RunKind::Nightly.write_budget(), 40);
-        assert_eq!(RunKind::Nightly.time_budget(), Duration::from_secs(1_800));
+        assert_eq!(RunKind::Nightly.time_budget(), Duration::from_secs(3_600));
         assert_eq!(RunKind::Backfill.write_budget(), 300);
         assert_eq!(RunKind::Backfill.time_budget(), Duration::from_secs(7_200));
     }

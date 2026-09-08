@@ -48,6 +48,7 @@ struct Mock {
     model_read_only: bool,
     pending: Vec<Value>,
     prior_pending_notification: Option<Value>,
+    discoveries: Vec<Value>,
 }
 type Shared = Arc<Mutex<Mock>>;
 fn error(code: StatusCode, message: &str) -> Response {
@@ -82,6 +83,7 @@ async fn secret_get(State(shared): State<Shared>, Json(body): Json<Value>) -> Re
 async fn location_discover(State(shared): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
     let mut s = shared.lock().unwrap();
     s.state_version += 1;
+    s.discoveries.push(body.clone());
     let mut value = s.location_admission.clone().unwrap();
     value["attempt_id"] = body["attempt_id"].clone();
     value["session_id"] = json!(format!("session:{}", body["attempt_id"].as_str().unwrap()));
@@ -90,7 +92,11 @@ async fn location_discover(State(shared): State<Shared>, Json(body): Json<Value>
     value["frozen_generation"] = json!(17);
     value["pending"] = json!(s.pending);
     value["mode"] = json!("report-only");
-    value["location_context"] = json!([]);
+    value["location_work"]["discovery"] =
+        json!({"request_hash":format!("discovery-{}",s.discoveries.len())});
+    if value.get("location_context").is_none() {
+        value["location_context"] = json!([]);
+    }
     Json(json!({"data":value}))
 }
 async fn secret_put(State(shared): State<Shared>, Json(body): Json<Value>) -> Response {
@@ -733,6 +739,53 @@ async fn location_audit_submits_only_the_corrected_artifact_under_the_original_i
         "one finalizer owns auth persistence across both calls"
     );
     assert!(s.secrets[AUTH_SECRET].0.contains("audit_refreshed"));
+}
+
+#[tokio::test]
+async fn location_discovery_follows_historical_aliases_before_drafting() {
+    let (shared, d, dir, _) = build_location_audit(
+        "cat \"$DIR/audited.json\" > \"$OUTPUT_PATH\"",
+        "",
+        Duration::from_secs(8),
+    )
+    .await;
+    let behavior=std::fs::read_to_string(dir.path().join("behavior.sh")).unwrap()
+        .replace("\"context_queries\":[]","\"context_queries\":[\"Public Park\"]")
+        .replace(" location-answer.md)"," location-discovery-followup-answer.md)\n echo '{\"schema\":\"dream.location.discovery.v1\",\"context_queries\":[\"New alias\"],\"lookups\":[],\"findings\":[]}' > \"$OUTPUT_PATH\"\n ;;\n location-answer.md)");
+    std::fs::write(dir.path().join("behavior.sh"), behavior).unwrap();
+    shared.lock().unwrap().location_admission.as_mut().unwrap()["location_context"] =
+        json!([{"excerpt":"HISTORICAL_ALIAS_CANARY"}]);
+    let report = d.run_once(today(), RunKind::Manual).await;
+    assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
+    let state = shared.lock().unwrap();
+    assert_eq!(state.discoveries.len(), 2);
+    assert_eq!(state.discoveries[1]["refines_request_hash"], "discovery-1");
+    assert_eq!(
+        state.discoveries[1]["context_queries"],
+        json!(["New alias", "Public Park"])
+    );
+    assert!(
+        state.discoveries[1]["expected_state_version"]
+            .as_i64()
+            .unwrap()
+            > state.discoveries[0]["expected_state_version"]
+                .as_i64()
+                .unwrap()
+    );
+    let initial =
+        std::fs::read_to_string(dir.path().join("prompt-location-discovery-answer.md")).unwrap();
+    let followup = std::fs::read_to_string(
+        dir.path()
+            .join("prompt-location-discovery-followup-answer.md"),
+    )
+    .unwrap();
+    assert!(!initial.contains("HISTORICAL_ALIAS_CANARY"));
+    assert!(followup.contains("HISTORICAL_ALIAS_CANARY"));
+    assert!(!followup.contains("Original pending observation."));
+    let env = std::fs::read_to_string(dir.path().join("env-location-discovery-followup-answer.md"))
+        .unwrap();
+    assert!(!env.contains("BRUNN_API_TOKEN="));
+    assert!(!env.contains("BRUNN_API_URL="));
 }
 
 #[tokio::test]

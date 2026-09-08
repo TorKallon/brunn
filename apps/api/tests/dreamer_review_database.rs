@@ -2142,6 +2142,125 @@ async fn latest_closed_day_is_automatically_admitted_and_retained_across_failure
 }
 
 #[tokio::test]
+async fn discovery_refinement_is_bounded_fenced_and_replay_safe() {
+    let Some(f) = fixture().await else {
+        return;
+    };
+    control(&f, "report-only", 0).await;
+    let (from, _, _) = seed_location_pilot(&f).await;
+    historical_context(
+        &f,
+        from,
+        "sources/Context/Park.md",
+        "# Park\n\nPublic Park hosts the Observatory.\n",
+    )
+    .await;
+    let alias = historical_context(
+        &f,
+        from,
+        "sources/Context/Observatory.md",
+        "# Observatory\n\nThe Observatory is a distinct public venue.\n",
+    )
+    .await;
+    queue_pilot(&f, from).await;
+    let admitted = admit(&f).await;
+    let first = discover_context(&f, &admitted, "Public Park").await;
+    assert_eq!(first["location_work"]["discovery"]["round"], 1);
+    let mut request = attempt(&first, first["state_version"].as_i64().unwrap());
+    request["context_queries"] = json!(["Observatory", "Public Park"]);
+    request["web_sources"] = json!([]);
+    request["refines_request_hash"] = json!("wrong-parent");
+    assert!(
+        post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/location-discover",
+            request.clone()
+        )
+        .await
+        .status
+        .is_client_error()
+    );
+    request["refines_request_hash"] = first["location_work"]["discovery"]["request_hash"].clone();
+    let mut stale = request.clone();
+    stale["expected_state_version"] = admitted["state_version"].clone();
+    assert_eq!(
+        post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/location-discover",
+            stale
+        )
+        .await
+        .status,
+        StatusCode::CONFLICT
+    );
+    let refined = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/location-discover",
+        request.clone(),
+    )
+    .await)["data"]
+        .clone();
+    assert_eq!(refined["location_work"]["discovery"]["round"], 2);
+    assert_eq!(
+        refined["location_work"]["fingerprint"],
+        first["location_work"]["fingerprint"]
+    );
+    assert!(
+        refined["location_context"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v["entry_ref"] == alias["entry_ref"])
+    );
+    assert_eq!(refined["inputs"], admitted["inputs"]);
+    let replay = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/location-discover",
+        request.clone(),
+    )
+    .await)["data"]
+        .clone();
+    assert_eq!(replay["state_version"], refined["state_version"]);
+    let first_replay = discover_context(&f, &admitted, "Public Park").await;
+    assert_eq!(first_replay["state_version"], refined["state_version"]);
+    request["expected_state_version"] = refined["state_version"].clone();
+    request["refines_request_hash"] = refined["location_work"]["discovery"]["request_hash"].clone();
+    request["context_queries"] = json!(["third pass"]);
+    assert!(
+        post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/location-discover",
+            request
+        )
+        .await
+        .status
+        .is_client_error()
+    );
+    finish(
+        &f,
+        &refined,
+        refined["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
+    let next = admit(&f).await;
+    assert!(next["location_work"]["discovery"].is_null());
+    assert_eq!(next["location_context"], json!([]));
+    finish(
+        &f,
+        &next,
+        next["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn place_discovery_excludes_substring_hits_credentials_and_secret_adjacent_excerpts() {
     let Some(f) = fixture().await else {
         return;
