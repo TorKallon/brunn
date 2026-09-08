@@ -493,7 +493,9 @@ async fn source_conflict_retains_work_without_false_completion() {
     enable(&s);
     s.lock().unwrap().reject_candidates = true;
     let report = d.run_once(today(), RunKind::Nightly).await;
-    assert!(matches!(report.outcome, RunOutcome::Failed { .. }));
+    assert!(
+        matches!(&report.outcome, RunOutcome::Failed { detail } if detail.contains("source changed"))
+    );
     assert_eq!(s.lock().unwrap().admissions, 1);
     assert!(s.lock().unwrap().notifications.is_empty());
 }
@@ -739,6 +741,28 @@ async fn location_audit_submits_only_the_corrected_artifact_under_the_original_i
         "one finalizer owns auth persistence across both calls"
     );
     assert!(s.secrets[AUTH_SECRET].0.contains("audit_refreshed"));
+}
+
+#[tokio::test]
+async fn server_structural_contract_enters_the_bounded_location_correction_pass() {
+    let (s, d, dir, audited) = build_location_audit(
+        "if [ \"$OUTPUT_NAME\" = \"location-audit-answer.md\" ]; then cat \"$DIR/invalid.json\" > \"$OUTPUT_PATH\"; else cat \"$DIR/audited.json\" > \"$OUTPUT_PATH\"; fi",
+        "",
+        Duration::from_secs(6),
+    ).await;
+    let mut invalid = audited.clone();
+    invalid["candidates"][0]["title"] = json!("x".repeat(301));
+    std::fs::write(dir.path().join("invalid.json"), invalid.to_string()).unwrap();
+    let report = d.run_once(today(), RunKind::Manual).await;
+    assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
+    let correction =
+        std::fs::read_to_string(dir.path().join("prompt-location-correction-answer.md")).unwrap();
+    assert!(correction.contains("candidate title, summary or explanation exceeds its bound"));
+    assert_eq!(s.lock().unwrap().submissions, 1);
+    assert_eq!(
+        s.lock().unwrap().submitted[0]["candidates"][0]["title"],
+        audited["candidates"][0]["title"]
+    );
 }
 
 #[tokio::test]

@@ -422,6 +422,21 @@ discovered aliases against at most four historical Brunn source excerpts.
 Historical version selection and generated/evaluation-output exclusions happen
 before matching. The source cutoff is the beginning of the day being summarized,
 so later answers and corrections cannot become a replay's answer key.
+Public PDF lookups use `poppler-utils` in the Dreamer image to verify quotations
+against extracted text from at most the first twenty pages. Downloads remain
+bounded to 2 MiB; conversion is serialized, has an eight-second wall deadline,
+one-MiB text limit and Linux CPU/address-space limits, and inherits no account
+credentials. The stored receipt records the PDF response hash and extraction
+method. Image-only, malformed, inaccessible or nonmatching sources are withheld.
+Nyx tests can set `BRUNN_PDFTOTEXT` to the bundled converter's absolute path.
+
+Before submission, the correction gate attaches the exact frozen source excerpts
+in memory and runs the shared candidate contract, including hydrated byte limits,
+inline citations and allowed raw fields. The API repeats validation under current
+evidence locks. Rejected submissions retain the bounded public API error in the
+attempt outcome so source conflicts and contract failures remain diagnosable.
+The wrapper attaches the frozen context manifest after auditing; the model does
+not recopy it. A supplied manifest that differs from admission is rejected.
 Place aliases match complete words/phrases, never substrings inside opaque
 strings. Credential documents are excluded before matching and from narrative
 admission; excerpts containing token-like strings are withheld. Narrative reads

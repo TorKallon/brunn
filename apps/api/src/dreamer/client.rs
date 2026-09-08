@@ -13,7 +13,10 @@ use serde_json::{Value, json};
 #[derive(Debug)]
 pub enum ClientError {
     /// The API rejected a CAS write because the entry moved.
-    Conflict { actual_version: Option<i64> },
+    Conflict {
+        actual_version: Option<i64>,
+        detail: String,
+    },
     /// Anything else: transport, auth, or server failure.
     Failed(String),
 }
@@ -21,8 +24,11 @@ pub enum ClientError {
 impl std::fmt::Display for ClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ClientError::Conflict { actual_version } => {
-                write!(f, "entry version conflict (actual {actual_version:?})")
+            ClientError::Conflict {
+                actual_version,
+                detail,
+            } => {
+                write!(f, "conflict (actual {actual_version:?}): {detail}")
             }
             ClientError::Failed(detail) => write!(f, "{detail}"),
         }
@@ -123,17 +129,24 @@ impl ApiClient {
     async fn decode(path: &str, response: reqwest::Response) -> ClientResult<Value> {
         let status = response.status();
         let body: Value = response.json().await.unwrap_or(Value::Null);
+        // Retain only the bounded public error, never response details or bodies.
+        let message: String = body
+            .pointer("/error/message")
+            .and_then(Value::as_str)
+            .unwrap_or("request failed")
+            .chars()
+            .take(1024)
+            .collect();
         if status == StatusCode::CONFLICT {
             let actual_version = body
                 .pointer("/error/details/actual_version")
                 .and_then(Value::as_i64);
-            return Err(ClientError::Conflict { actual_version });
+            return Err(ClientError::Conflict {
+                actual_version,
+                detail: message,
+            });
         }
         if !status.is_success() {
-            let message = body
-                .pointer("/error/message")
-                .and_then(Value::as_str)
-                .unwrap_or("request failed");
             return Err(ClientError::Failed(format!("{path}: {status} {message}")));
         }
         Ok(body)
@@ -439,6 +452,7 @@ mod tests {
     fn conflict_error_renders() {
         let error = ClientError::Conflict {
             actual_version: Some(4),
+            detail: "source changed".into(),
         };
         assert!(error.to_string().contains('4'));
     }

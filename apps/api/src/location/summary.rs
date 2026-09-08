@@ -403,7 +403,7 @@ async fn validate_canonical(
     ))
 }
 
-fn validate_raw<'a>(citation: &RawCitation, packet: &'a Value) -> ApiResult<&'a Value> {
+pub(crate) fn validate_raw<'a>(citation: &RawCitation, packet: &'a Value) -> ApiResult<&'a Value> {
     let key = citation
         .natural_key
         .as_object()

@@ -2397,6 +2397,28 @@ async fn autonomous_context_uses_historical_versions_before_matching_and_preserv
     let replay = discover_context(&f, &admitted, "Example Garden").await;
     assert_eq!(replay["state_version"], first["state_version"]);
     let valid = context_pilot_candidate(&first);
+    let envelope = json!({"schema":"dream.candidates.v1","candidates":[valid.clone()],"processed_inputs":[],"findings":[]});
+    assert_eq!(
+        brunn::dreamer::prompt::location_submission_issues(&envelope, &first),
+        Vec::<String>::new()
+    );
+    let mut lean = envelope.clone();
+    lean["candidates"][0]["evidence_scope"]
+        .as_object_mut()
+        .unwrap()
+        .remove("context_sources");
+    let rebound =
+        brunn::dreamer::prompt::compile_location_evidence_inventory(&lean, &first).unwrap();
+    assert_eq!(
+        rebound["candidates"][0]["evidence_scope"],
+        valid["evidence_scope"]
+    );
+    lean["candidates"][0]["evidence_scope"]["context_sources"] = json!([]);
+    assert!(
+        brunn::dreamer::prompt::compile_location_evidence_inventory(&lean, &first)
+            .unwrap_err()
+            .contains("changed the frozen")
+    );
     for invalid in [
         {
             let mut c = valid.clone();

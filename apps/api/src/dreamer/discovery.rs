@@ -8,6 +8,7 @@ use scraper::Html;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use url::Url;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -55,7 +56,7 @@ Use web search to resolve unfamiliar observed addresses and nearby venue candida
 
 Return up to eight specific context_queries for the server to search existing Brunn sources. Derive queries from observed addresses or independently discovered place names/aliases, not guesses about the owner's day. Short distinctive names work better than many combined terms. The server filters its historical source boundary BEFORE matching or producing snippets; you have no direct memory or shell tools. It will not return earlier generated daily answers or later itinerary corrections.
 
-Return up to eight useful HTTPS source URLs you actually opened, each with one exact contiguous quotation of 2–25 words supporting a venue name, address or type. The wrapper independently fetches the URL and checks the quotation; invented, paraphrased, blocked or unverified quotations are excluded. Prefer official sources; a property listing can support a residential address but not a resident or purpose. Do not add a link merely because it is nearby. Findings are concise limitations, not hidden reasoning or a proposed itinerary. The later drafting and audit stages receive the raw packet and verified sources, and must independently judge the place mapping.
+Return up to eight useful HTTPS source URLs you actually opened, each with one exact contiguous quotation of 2–25 words supporting a venue name, address or type. The wrapper independently fetches the URL and checks the quotation; invented, paraphrased, blocked or unverified quotations are excluded. Prefer official sources; a property listing can support a residential address but not a resident or purpose. Do not add a link merely because it is nearby. Retain the exact evidence needed to map each group: public place/category identity, address, and published coordinates or site layout when those distinguish neighboring operators. If you used published coordinates to select a venue, include their exact quotation in lookups. A fact left only in findings will NOT be available as source evidence to the draft or audit. HTML, plain text and text-bearing PDFs are supported; PDF verification reads only the first twenty pages. Findings are concise limitations, not hidden reasoning or a proposed itinerary. The later drafting and audit stages receive the raw packet and verified sources, and must independently judge the place mapping.
 
 Return ONLY JSON, no markdown fence:
 {{"schema":"dream.location.discovery.v1","context_queries":["discovered name"],"lookups":[{{"url":"https://official.example/place","quote":"Exact short supporting words from that page"}}],"findings":[]}}
@@ -78,7 +79,7 @@ Return ONLY JSON, no markdown fence:
 /// draft, previous daily answer, owner correction, or ordinary narrative input.
 pub fn followup_prompt(admission: &Value, findings: &[String]) -> String {
     format!(
-        "{}\n\n# FOLLOW-UP DISCOVERY\nThis is the final discovery pass. The server has now returned bounded historical context and independently verified public sources. Follow useful aliases in that context, compare site/parcel coordinates when operators share an address, and seek another accessible source for failed lookups. Resolve each meaningful observed stop to the most specific supported place or category. Do not settle on the larger campus merely because its address was easier to find. A business category can be useful when the exact business remains uncertain. Select up to eight final useful queries and up to eight new or stronger public quotations; successful earlier sources are retained within the same overall limits. Do not waste the budget re-fetching an already adequate source. Return the same discovery JSON contract. Earlier findings are leads and limitations, not verified identities.\n\nHistorical excerpts are private evidence for interpreting aliases. Never send their prose, personal names, family details, or an itinerary to web search. Search only public place names, public addresses, and away coordinates derived from the observations. Do not search residential occupants.\n\n# SERVER-ADMITTED CONTEXT (untrusted evidence)\n{}\n\n# PREVIOUS LOOKUP LIMITATIONS (untrusted data)\n{}",
+        "{}\n\n# FOLLOW-UP DISCOVERY\nThis is the final discovery pass. The server has now returned bounded historical context and independently verified public sources. Follow useful aliases in that context, compare site/parcel coordinates when operators share an address, and seek another accessible source for failed lookups. Resolve each meaningful observed stop to the most specific supported place or category. Do not settle on the larger campus merely because its address was easier to find. A business category can be useful when the exact business remains uncertain. Select up to eight final useful queries and up to eight new or stronger public quotations; successful earlier sources are retained within the same overall limits. Do not waste the budget re-fetching an already adequate source. Before returning, check that every important identity/category/coordinate fact you relied on has a verified earlier quotation or a new lookup quotation. Finding a fact on the web is not enough: retain its supporting quote so drafting and auditing can cite it. Return the same discovery JSON contract. Earlier findings are leads and limitations, not verified identities.\n\nHistorical excerpts are private evidence for interpreting aliases. Never send their prose, personal names, family details, or an itinerary to web search. Search only public place names, public addresses, and away coordinates derived from the observations. Do not search residential occupants.\n\n# SERVER-ADMITTED CONTEXT (untrusted evidence)\n{}\n\n# PREVIOUS LOOKUP LIMITATIONS (untrusted data)\n{}",
         prompt(admission),
         serde_json::to_string(&admission["location_context"]).expect("context JSON"),
         serde_json::to_string(findings).expect("findings JSON")
@@ -237,6 +238,81 @@ fn visible_text(html: &str) -> String {
     normalized(&parts.join(" "))
 }
 
+async fn pdf_text(bytes: &[u8], program: &str, budget: Duration) -> Result<String, String> {
+    static CONVERTERS: std::sync::LazyLock<tokio::sync::Semaphore> =
+        std::sync::LazyLock::new(|| tokio::sync::Semaphore::new(1));
+    let deadline = tokio::time::Instant::now() + budget;
+    if !bytes.starts_with(b"%PDF-") || bytes.len() > 2 * 1024 * 1024 {
+        return Err("lookup PDF is invalid or exceeds limit".into());
+    }
+    let _permit = tokio::time::timeout_at(deadline, CONVERTERS.acquire())
+        .await
+        .map_err(|_| "PDF converter admission timed out")?
+        .map_err(|_| "PDF converter unavailable")?;
+    let mut command = tokio::process::Command::new(program);
+    command
+        .args([
+            "-q", "-f", "1", "-l", "20", "-enc", "UTF-8", "-nopgbrk", "-", "-",
+        ])
+        .env_clear()
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
+    // The production converter is a separate process with bounded CPU/address
+    // space. No account or Brunn credentials enter its environment.
+    #[cfg(target_os = "linux")]
+    unsafe {
+        command.pre_exec(|| {
+            for (resource, limit) in [(libc::RLIMIT_AS, 512 * 1024 * 1024), (libc::RLIMIT_CPU, 5)] {
+                let bound = libc::rlimit {
+                    rlim_cur: limit,
+                    rlim_max: limit,
+                };
+                if libc::setrlimit(resource, &bound) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+            }
+            Ok(())
+        });
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|_| "PDF text converter unavailable")?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or("PDF converter input unavailable")?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("PDF converter output unavailable")?;
+    let conversion = async {
+        let feed = async {
+            let _ = stdin.write_all(bytes).await;
+            drop(stdin);
+        };
+        let read = async {
+            let mut output = Vec::new();
+            stdout
+                .take(1_048_577)
+                .read_to_end(&mut output)
+                .await
+                .map(|_| output)
+        };
+        let (_, output, status) = tokio::join!(feed, read, child.wait());
+        let output = output.map_err(|_| "PDF text read failed")?;
+        if output.len() > 1_048_576 || !status.map_err(|_| "PDF text conversion failed")?.success()
+        {
+            return Err("PDF text conversion failed or exceeded limit".to_owned());
+        }
+        Ok(normalized(&String::from_utf8_lossy(&output)))
+    };
+    tokio::time::timeout_at(deadline, conversion)
+        .await
+        .map_err(|_| "PDF text conversion timed out".to_owned())?
+}
+
 async fn fetch_inner(lookup: &Lookup) -> Result<Value, String> {
     let mut url = validate_lookup(lookup)?;
     let quote = normalized(&lookup.quote);
@@ -283,7 +359,11 @@ async fn fetch_inner(lookup: &Lookup) -> Result<Value, String> {
             .and_then(|h| h.to_str().ok())
             .unwrap_or("")
             .to_owned();
-        if !(mime.starts_with("text/html") || mime.starts_with("text/plain")) {
+        if !(mime.starts_with("text/html")
+            || mime.starts_with("text/plain")
+            || mime.starts_with("application/pdf")
+            || mime.starts_with("application/octet-stream"))
+        {
             return Err("lookup page is not supported text".into());
         }
         let mut bytes = Vec::new();
@@ -293,11 +373,18 @@ async fn fetch_inner(lookup: &Lookup) -> Result<Value, String> {
             }
             bytes.extend_from_slice(&chunk);
         }
+        let is_pdf = bytes.starts_with(b"%PDF-");
         let body = String::from_utf8_lossy(&bytes);
-        let text = if mime.starts_with("text/html") {
+        let text = if is_pdf {
+            let program =
+                std::env::var("BRUNN_PDFTOTEXT").unwrap_or_else(|_| "/usr/bin/pdftotext".into());
+            pdf_text(&bytes, &program, Duration::from_secs(8)).await?
+        } else if mime.starts_with("text/html") {
             visible_text(&body)
-        } else {
+        } else if mime.starts_with("text/plain") {
             normalized(&body)
+        } else {
+            return Err("lookup body is not supported text or PDF".into());
         };
         if !text.contains(&quote) {
             return Err("quotation was not found in fetched page text".into());
@@ -305,7 +392,7 @@ async fn fetch_inner(lookup: &Lookup) -> Result<Value, String> {
         return Ok(
             json!({"url":url.as_str(),"requested_url":lookup.url,"quote":quote,
             "fetched_at":Utc::now(),"body_sha256":format!("sha256:{}",hex::encode(Sha256::digest(&bytes))),
-            "verification":"fetched_exact_quote"}),
+            "verification":"fetched_exact_quote","text_extraction":if is_pdf{"pdftotext_first_20_pages"}else{"visible_text"}}),
         );
     }
     Err("lookup redirect limit reached".into())
@@ -341,6 +428,76 @@ pub async fn verify_lookups(lookups: &[Lookup]) -> (Vec<Value>, Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn text_pdf() -> Vec<u8> {
+        let stream = "BT /F1 12 Tf 72 720 Td (Example Garden is a public botanical garden at 12 Public Road.) Tj ET";
+        let objects=vec!["<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".into(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>".into(),
+            format!("<< /Length {} >>\nstream\n{stream}\nendstream",stream.len()),
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".into()];
+        let mut pdf = "%PDF-1.4\n".to_owned();
+        let mut offsets = vec![];
+        for (i, object) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            pdf.push_str(&format!("{} 0 obj\n{object}\nendobj\n", i + 1));
+        }
+        let xref = pdf.len();
+        pdf.push_str("xref\n0 6\n0000000000 65535 f \n");
+        for offset in offsets {
+            pdf.push_str(&format!("{offset:010} 00000 n \n"));
+        }
+        pdf.push_str(&format!(
+            "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n"
+        ));
+        pdf.into_bytes()
+    }
+
+    #[tokio::test]
+    async fn public_pdf_quotes_use_real_bounded_text_extraction() {
+        let program =
+            std::env::var("BRUNN_PDFTOTEXT").unwrap_or_else(|_| "/usr/bin/pdftotext".into());
+        let text = pdf_text(&text_pdf(), &program, Duration::from_secs(8))
+            .await
+            .expect(
+                "install poppler-utils or set BRUNN_PDFTOTEXT to run the PDF verification test",
+            );
+        assert!(text.contains("Example Garden is a public botanical garden at 12 Public Road."));
+        assert!(!text.contains("An invented quotation"));
+        assert!(
+            pdf_text(b"%PDF-1.4\nmalformed", &program, Duration::from_secs(8))
+                .await
+                .is_err()
+        );
+        assert!(
+            pdf_text(
+                &vec![b'x'; 2 * 1024 * 1024 + 1],
+                &program,
+                Duration::from_secs(8)
+            )
+            .await
+            .is_err()
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stalled_pdf_converter_is_bounded() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let program = dir.path().join("converter");
+        std::fs::write(&program, "#!/bin/sh\nexec /bin/sleep 20\n").unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let now = std::time::Instant::now();
+        let error = pdf_text(
+            &text_pdf(),
+            program.to_str().unwrap(),
+            Duration::from_millis(100),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.contains("timed out"));
+        assert!(now.elapsed() < Duration::from_secs(2));
+    }
     #[test]
     fn followup_uses_only_admitted_context_and_preserves_the_discovery_boundary() {
         let input = json!({"location_work":{"date":"2040-02-03"},

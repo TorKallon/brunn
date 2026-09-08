@@ -561,7 +561,7 @@ fn related_without_block(text: &str) -> String {
     }
     out.join("\n").trim_end().to_owned()
 }
-fn validate_candidate(candidate: &Candidate, before: &str) -> ApiResult<()> {
+pub(crate) fn validate_candidate(candidate: &Candidate, before: &str) -> ApiResult<()> {
     if candidate.title.is_empty()
         || candidate.title.len() > 300
         || candidate.summary.len() > 1000

@@ -723,7 +723,7 @@ impl Dreamer {
                     };
                 }
             };
-            let issues = prompt::location_content_issues(&output, admission);
+            let issues = prompt::location_submission_issues(&output, admission);
             if !issues.is_empty() {
                 report.stage = "location_correction".into();
                 let correction_prompt = prompt::location_correction_prompt(
@@ -778,9 +778,12 @@ impl Dreamer {
                         };
                     }
                 };
-                if !prompt::location_content_issues(&output, admission).is_empty() {
+                if let Some(issue) = prompt::location_submission_issues(&output, admission).first()
+                {
                     return RunOutcome::Failed {
-                        detail: "location content validation failed after one correction; unchecked output not submitted and admitted work retained".into(),
+                        detail: format!(
+                            "location validation failed after one correction: {issue}; unchecked output not submitted and admitted work retained"
+                        ),
                     };
                 }
             }
@@ -802,10 +805,11 @@ impl Dreamer {
         })).await;
         let mut value = match candidates {
             Ok(value) => value,
-            Err(_) => {
+            Err(error) => {
                 return RunOutcome::Failed {
-                    detail: "candidate validation/publication rejected; admitted work retained"
-                        .into(),
+                    detail: format!(
+                        "candidate validation/publication rejected: {error}; admitted work retained"
+                    ),
                 };
             }
         };
