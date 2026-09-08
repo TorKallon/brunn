@@ -248,7 +248,7 @@ exec /bin/sh "$DIR/behavior.sh"
 const HAPPY: &str = r#"
 if grep -q 'single word READY' "$DIR/prompt"; then echo READY; exit 0; fi
 cat > "$OUTPUT_PATH" <<'JSON'
-{"schema":"dream.candidates.v1","candidates":[{"kind":"summary","title":"Project summary","summary":"Current project status","reason":"Consolidate the project evidence","path":"derived/entities/project.md","content":"Observed: project is active.[^s1]","expected_version":0,"sources":[{"entry_ref":"entry:019fba27-687b-7582-8b99-e9371dbe2ce5","version":2,"start_line":1,"end_line":2}],"uncertainty":"No uncertainty identified"}],"processed_inputs":[{"entry_ref":"entry:019fba27-687b-7582-8b99-e9371dbe2ce5","version":2,"generation":17}],"findings":[]}
+{"schema":"dream.candidates.v1","candidates":[{"kind":"summary","title":"Project summary","summary":"Current project status","reason":"Consolidate the project evidence","path":"derived/entities/project.md","content":"Observed: project is active.[^s1]\nNo uncertainty identified.[^s1]","expected_version":0,"sources":[{"entry_ref":"entry:019fba27-687b-7582-8b99-e9371dbe2ce5","version":2,"start_line":1,"end_line":2}],"uncertainty":"No uncertainty identified"}],"processed_inputs":[{"entry_ref":"entry:019fba27-687b-7582-8b99-e9371dbe2ce5","version":2,"generation":17}],"findings":[]}
 JSON
 "#;
 fn today() -> NaiveDate {

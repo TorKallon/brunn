@@ -1562,6 +1562,9 @@ async fn queue_pilot(f: &Fixture, from: chrono::DateTime<Utc>) -> Value {
     response
 }
 
+const PILOT_UNCERTAINTY: &str =
+    "Point samples do not establish continuous presence or movement between observations.";
+
 fn pilot_candidate(admission: &Value) -> Value {
     let work = &admission["location_work"];
     let packet = &admission["location_evidence"];
@@ -1571,10 +1574,472 @@ fn pilot_candidate(admission: &Value) -> Value {
     let selector = &document["selectors"][0];
     json!({"kind":"summary","title":"Historical location evidence","summary":"A bounded historical day with exact sources.","reason":"Review a sourced reconstruction with explicit coverage uncertainty.",
         "path":format!("derived/location/{}.md",work["date"].as_str().unwrap()),"expected_version":0,
-        "content":"# Historical location evidence\n\nA bounded stop is recorded in canonical history.[^s1]\nThe retained sample has five-meter reported accuracy and does not establish continuous presence.[^r1]\n",
+        "content":format!("# Historical location evidence\n\nA bounded stop is recorded in canonical history.[^s1]\nThe retained sample has five-meter reported accuracy.[^r1]\n\n{PILOT_UNCERTAINTY}[^r1]\n"),
+        "uncertainty":PILOT_UNCERTAINTY,
         "sources":[{"entry_ref":document["ref"],"version":document["version"],"start_line":selector["start_line"],"end_line":selector["end_line"]}],
         "raw_sources":[{"natural_key":packet["reports"][0]["natural_key"],"fields":["at","lat","lon","accuracy_m","first_received_at"]}],
         "evidence_scope":{"from":work["from"],"to":work["to"],"timezone":work["timezone"],"fingerprint":work["fingerprint"]}})
+}
+
+#[tokio::test]
+async fn location_candidate_guards_retain_work_and_revision_preserves_published_uncertainty() {
+    let Some(f) = fixture().await else {
+        return;
+    };
+    control(&f, "full", 0).await;
+    let narrative = write(
+        &f,
+        "sources/Other/Note.md",
+        "# Other\n\nA source-backed observation.\n",
+        0,
+    )
+    .await;
+    let (from, _, _) = seed_location_pilot(&f).await;
+    queue_pilot(&f, from).await;
+    let first = admit(&f).await;
+    let valid = pilot_candidate(&first);
+    let target = valid["path"].as_str().unwrap();
+    let invalid_variants = |valid: &Value| {
+        let mut raw_omitted = valid.clone();
+        raw_omitted["raw_sources"] = json!([]);
+        raw_omitted["content"] = json!(format!(
+            "# Canonical only\n\nA bounded stop is recorded.[^s1]\n{PILOT_UNCERTAINTY}[^s1]\n"
+        ));
+        let mut canonical_omitted = valid.clone();
+        canonical_omitted["sources"] = json!([]);
+        canonical_omitted["content"] = json!(format!(
+            "# Raw only\n\nA point sample has five-meter reported accuracy.[^r1]\n{PILOT_UNCERTAINTY}[^r1]\n"
+        ));
+        let mut unused_raw = valid.clone();
+        unused_raw["content"] = json!(valid["content"].as_str().unwrap().replace("[^r1]", "[^s1]"));
+        let mut unused_canonical = valid.clone();
+        unused_canonical["content"] =
+            json!(valid["content"].as_str().unwrap().replace("[^s1]", "[^r1]"));
+        let mut sidebar_only = valid.clone();
+        sidebar_only["uncertainty"] =
+            json!("Material gaps remain unresolved; the day may contain unobserved stops.");
+        let mut heading_only_raw = unused_raw.clone();
+        heading_only_raw["content"] = json!(format!(
+            "# Raw sources [^r1]\n\n{}",
+            unused_raw["content"].as_str().unwrap()
+        ));
+        vec![
+            ("must cite retained raw observations", raw_omitted),
+            (
+                "must reconcile the relevant canonical visit rows",
+                canonical_omitted,
+            ),
+            ("every declared raw source must be cited", unused_raw),
+            ("every declared raw source must be cited", heading_only_raw),
+            (
+                "every declared canonical location source must be cited",
+                unused_canonical,
+            ),
+            ("summary uncertainty must appear verbatim", sidebar_only),
+        ]
+    };
+    let initial_state = current(&f, "dreams/state.md").await.unwrap();
+    for (message, invalid) in invalid_variants(&valid) {
+        let mut body = attempt(&first, first["state_version"].as_i64().unwrap());
+        body["candidates"] = json!([invalid]);
+        body["processed_inputs"] = json!([]);
+        let rejected = post(&f, &f.runner, "/v1/workspace/dreamer/candidates", body).await;
+        assert_eq!(
+            rejected.status,
+            StatusCode::BAD_REQUEST,
+            "{}",
+            rejected.body
+        );
+        assert!(
+            rejected.body.to_string().contains(message),
+            "{}",
+            rejected.body
+        );
+        assert_eq!(current(&f, "dreams/state.md").await.unwrap(), initial_state);
+        assert!(current(&f, target).await.is_none());
+    }
+    let (_, accepted) = submit(
+        &f,
+        &first,
+        first["state_version"].as_i64().unwrap(),
+        vec![valid.clone(), candidate(&narrative, "unrelated-review")],
+    )
+    .await;
+    finish(
+        &f,
+        &first,
+        accepted["state_version"].as_i64().unwrap(),
+        "completed",
+    )
+    .await;
+    let initial_view = review(&f).await;
+    let original = initial_view["items"][0].clone();
+    let unrelated = initial_view["items"][1].clone();
+    let old_run_id = Uuid::parse_str(
+        original["run_entry_ref"]
+            .as_str()
+            .unwrap()
+            .strip_prefix("entry:")
+            .unwrap(),
+    )
+    .unwrap();
+    let old_version = original["run_version"].as_i64().unwrap();
+    let old_audit: (String, Value) = sqlx::query_as("SELECT content,metadata FROM brunn.entry_versions WHERE user_id=$1 AND entry_id=$2 AND version=$3")
+        .bind(f.owner.user).bind(old_run_id).bind(old_version).fetch_one(&f.pool).await.unwrap();
+    queue_pilot(&f, from).await;
+    let next = admit(&f).await;
+    let mut revision = pilot_candidate(&next);
+    revision["revises_item_id"] = original["id"].clone();
+    revision["content"] = json!(revision["content"].as_str().unwrap().replace(
+        "# Historical location evidence",
+        "# Reviewed historical location evidence"
+    ));
+    let pending_state = current(&f, "dreams/state.md").await.unwrap();
+    let mut invalid_revisions = invalid_variants(&revision);
+    let mut omitted_id = revision.clone();
+    omitted_id
+        .as_object_mut()
+        .unwrap()
+        .remove("revises_item_id");
+    invalid_revisions.push((
+        "must revise the existing item for this destination",
+        omitted_id,
+    ));
+    let mut unrelated_id = revision.clone();
+    unrelated_id["revises_item_id"] = unrelated["id"].clone();
+    invalid_revisions.push((
+        "must preserve the original destination, kind and evidence window",
+        unrelated_id,
+    ));
+    let mut wrong_kind = candidate(&narrative, "unrelated-review");
+    wrong_kind["revises_item_id"] = original["id"].clone();
+    invalid_revisions.push((
+        "must preserve the original destination, kind and evidence window",
+        wrong_kind,
+    ));
+    for (message, invalid) in invalid_revisions {
+        let mut body = attempt(&next, next["state_version"].as_i64().unwrap());
+        body["candidates"] = json!([invalid]);
+        body["processed_inputs"] = json!([]);
+        let rejected = post(&f, &f.runner, "/v1/workspace/dreamer/candidates", body).await;
+        assert_eq!(
+            rejected.status,
+            StatusCode::BAD_REQUEST,
+            "{}",
+            rejected.body
+        );
+        assert!(
+            rejected.body.to_string().contains(message),
+            "{}",
+            rejected.body
+        );
+        assert_eq!(current(&f, "dreams/state.md").await.unwrap(), pending_state);
+        let unchanged = review(&f).await;
+        assert_eq!(unchanged["items"].as_array().unwrap().len(), 2);
+        for key in ["id", "candidate_hash", "run_entry_ref", "run_version"] {
+            assert_eq!(unchanged["items"][0][key], original[key]);
+            assert_eq!(unchanged["items"][1][key], unrelated[key]);
+        }
+        assert!(current(&f, target).await.is_none());
+    }
+    let mut two_locations = attempt(&next, next["state_version"].as_i64().unwrap());
+    two_locations["candidates"] = json!([revision.clone(), pilot_candidate(&next)]);
+    two_locations["processed_inputs"] = json!([]);
+    let rejected = post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/candidates",
+        two_locations,
+    )
+    .await;
+    assert_eq!(rejected.status, StatusCode::BAD_REQUEST);
+    assert!(
+        rejected
+            .body
+            .to_string()
+            .contains("at most one location candidate is allowed per submission")
+    );
+    assert_eq!(current(&f, "dreams/state.md").await.unwrap(), pending_state);
+    let (_, recompiled) = submit(
+        &f,
+        &next,
+        next["state_version"].as_i64().unwrap(),
+        vec![revision],
+    )
+    .await;
+    assert_eq!(
+        recompiled["accepted_candidate_ids"],
+        json!([original["id"].clone()])
+    );
+    finish(
+        &f,
+        &next,
+        recompiled["state_version"].as_i64().unwrap(),
+        "completed",
+    )
+    .await;
+    let updated = review(&f).await;
+    assert_eq!(updated["items"].as_array().unwrap().len(), 2);
+    let item = &updated["items"][0];
+    assert_eq!(item["id"], original["id"]);
+    assert_ne!(item["candidate_hash"], original["candidate_hash"]);
+    assert_eq!(item["uncertainty_md"], PILOT_UNCERTAINTY);
+    let exact_preview = item["candidate"]["after_md"].as_str().unwrap();
+    assert_eq!(exact_preview.matches(PILOT_UNCERTAINTY).count(), 1);
+    assert!(exact_preview.contains("[^s1]:"));
+    assert!(exact_preview.contains("[^r1]:"));
+    let applied = ok(post(
+        &f,
+        &f.owner,
+        "/v1/dreamer/review/decisions",
+        decision(&updated, item, "approve"),
+    )
+    .await);
+    assert_eq!(applied["data"]["application_status"], "applied");
+    let published = current(&f, target).await.unwrap();
+    assert_eq!(
+        published.1, exact_preview,
+        "publication must preserve exact reviewed bytes, including uncertainty"
+    );
+    let still_historical: (String, Value) = sqlx::query_as("SELECT content,metadata FROM brunn.entry_versions WHERE user_id=$1 AND entry_id=$2 AND version=$3")
+        .bind(f.owner.user).bind(old_run_id).bind(old_version).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(
+        still_historical, old_audit,
+        "a rejected or successful revision cannot mutate its prior immutable run"
+    );
+}
+
+async fn seed_obsolete_location_candidate(
+    f: &Fixture,
+    missing_raw: bool,
+    status: &str,
+) -> (chrono::DateTime<Utc>, Value, &'static str) {
+    let (from, _, _) = seed_location_pilot(&f).await;
+    queue_pilot(&f, from).await;
+    let admitted = admit(&f).await;
+    let (_, accepted) = submit(
+        &f,
+        &admitted,
+        admitted["state_version"].as_i64().unwrap(),
+        vec![pilot_candidate(&admitted)],
+    )
+    .await;
+
+    // Simulate a candidate accepted before these validation rules existed.
+    // Copy its exact submitted source data back into an unfinalized
+    // fixture candidate. Normal finish creates a new immutable audit;
+    // the already-written valid audit version is never rewritten.
+    let mut stored = current(&f, "dreams/state.md").await.unwrap();
+    let item = &mut stored.2["dreamer_state"]["items"][0];
+    let run_id = Uuid::parse_str(
+        item["run_entry_ref"]
+            .as_str()
+            .unwrap()
+            .strip_prefix("entry:")
+            .unwrap(),
+    )
+    .unwrap();
+    let audit: Value = sqlx::query_scalar("SELECT metadata->'dreamer_run' FROM brunn.entry_versions WHERE user_id=$1 AND entry_id=$2 AND version=$3")
+            .bind(f.owner.user).bind(run_id).bind(item["run_version"].as_i64().unwrap()).fetch_one(&f.pool).await.unwrap();
+    let original_candidate = audit["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|old| old["id"] == item["id"])
+        .unwrap();
+    item["candidate"] = original_candidate["candidate"].clone();
+    item["before_md"] = original_candidate["before_md"].clone();
+    item["run_entry_ref"] = json!("");
+    item["run_version"] = json!(0);
+    item["status"] = json!(status);
+    let candidate = &mut item["candidate"];
+    let expected_error = if missing_raw {
+        candidate["raw_sources"] = json!([]);
+        candidate["content"] = json!(
+            candidate["content"]
+                .as_str()
+                .unwrap()
+                .replace("[^r1]", "[^s1]")
+        );
+        "must cite retained raw observations"
+    } else {
+        candidate["uncertainty"] =
+            json!("A material historical caveat appears only outside the publishable body.");
+        "summary uncertainty must appear verbatim"
+    };
+    let historical: brunn::dreamer_review::Candidate =
+        serde_json::from_value(candidate.clone()).unwrap();
+    item["candidate_hash"] = json!(hash_token(&serde_json::to_string(&historical).unwrap()));
+    let changed = sqlx::query("UPDATE brunn.entry_versions v SET metadata=$2 FROM brunn.entries e WHERE e.user_id=$1 AND e.path='dreams/state.md' AND v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version AND v.version=$3")
+            .bind(f.owner.user).bind(&stored.2).bind(stored.0).execute(&f.pool).await.unwrap();
+    assert_eq!(changed.rows_affected(), 1);
+    finish(
+        &f,
+        &admitted,
+        accepted["state_version"].as_i64().unwrap(),
+        "completed",
+    )
+    .await;
+    let view = review(&f).await;
+    (from, view, expected_error)
+}
+
+#[tokio::test]
+async fn report_only_approval_revalidates_obsolete_candidates_without_holding_them() {
+    for missing_raw in [false, true] {
+        let Some(f) = fixture().await else {
+            return;
+        };
+        control(&f, "report-only", 0).await;
+        let (from, view, expected_error) =
+            seed_obsolete_location_candidate(&f, missing_raw, "pending").await;
+        let original = &view["items"][0];
+        assert_eq!(view["mode"], "report-only");
+        assert_eq!(original["status"], "pending");
+        assert_eq!(original["reviewable"], true);
+        assert_eq!(original["stale"], false);
+        assert!(original["run_version"].as_i64().unwrap() > 0);
+        let before = current(&f, "dreams/state.md").await.unwrap();
+        let refused = post(
+            &f,
+            &f.owner,
+            "/v1/dreamer/review/decisions",
+            decision(&view, original, "approve"),
+        )
+        .await;
+        assert_eq!(refused.status, StatusCode::BAD_REQUEST, "{}", refused.body);
+        assert!(
+            refused.body.to_string().contains(expected_error),
+            "{}",
+            refused.body
+        );
+        assert_eq!(current(&f, "dreams/state.md").await.unwrap(), before);
+        assert_eq!(review(&f).await["items"], view["items"]);
+        assert!(
+            current(&f, &format!("derived/location/{}.md", from.date_naive()))
+                .await
+                .is_none()
+        );
+        assert!(current(&f, "dreams/decisions.md").await.is_none());
+        let review_audits: i64 = sqlx::query_scalar("SELECT count(*) FROM brunn.entries WHERE user_id=$1 AND starts_with(path,'dreams/reviews/')")
+            .bind(f.owner.user).fetch_one(&f.pool).await.unwrap();
+        assert_eq!(
+            review_audits, 0,
+            "rejected approval must not create a durable held decision"
+        );
+    }
+}
+
+#[tokio::test]
+async fn obsolete_held_location_candidates_requeue_without_blocking_full_admission() {
+    for missing_raw in [false, true] {
+        let Some(f) = fixture().await else {
+            return;
+        };
+        control(&f, "report-only", 0).await;
+        let (from, view, expected_error) =
+            seed_obsolete_location_candidate(&f, missing_raw, "approved_held").await;
+        let original = &view["items"][0];
+        assert_eq!(original["status"], "approved_held");
+        let old_run_id = Uuid::parse_str(
+            original["run_entry_ref"]
+                .as_str()
+                .unwrap()
+                .strip_prefix("entry:")
+                .unwrap(),
+        )
+        .unwrap();
+        let old_version = original["run_version"].as_i64().unwrap();
+        let old_audit: (String, Value) = sqlx::query_as("SELECT content,metadata FROM brunn.entry_versions WHERE user_id=$1 AND entry_id=$2 AND version=$3")
+            .bind(f.owner.user).bind(old_run_id).bind(old_version).fetch_one(&f.pool).await.unwrap();
+        control(&f, "full", 1).await;
+        let recovered = admit(&f).await;
+        assert_eq!(recovered["admitted"], true);
+        assert_eq!(recovered["mode"], "full");
+        assert!(
+            recovered["location_work"].is_null(),
+            "recovery queues the day after this attempt's location snapshot is set"
+        );
+        let pending = &recovered["pending"][0];
+        assert_eq!(pending["status"], "needs_changes");
+        for key in ["id", "candidate_hash", "run_entry_ref", "run_version"] {
+            assert_eq!(pending[key], original[key]);
+        }
+        let state = current(&f, "dreams/state.md").await.unwrap();
+        assert_eq!(
+            state.2["dreamer_state"]["location_work"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            state.2["dreamer_state"]["location_work"][0]["date"],
+            json!(from.date_naive())
+        );
+        let dispositions = &state.2["dreamer_state"]["candidate_dispositions"];
+        assert_eq!(dispositions.as_array().unwrap().len(), 1);
+        let disposition = &dispositions[0];
+        assert_eq!(disposition["disposition"], "held_approval_invalidated");
+        assert_eq!(disposition["item_id"], original["id"]);
+        for key in ["candidate_hash", "run_entry_ref", "run_version"] {
+            assert_eq!(disposition[key], original[key]);
+        }
+        assert!(
+            disposition["code"]
+                .as_str()
+                .is_some_and(|code| !code.is_empty())
+        );
+        assert!(
+            disposition["reason"]
+                .as_str()
+                .unwrap()
+                .contains(expected_error)
+        );
+        let target = format!("derived/location/{}.md", from.date_naive());
+        assert!(current(&f, &target).await.is_none());
+        let (_, finished) = finish(
+            &f,
+            &recovered,
+            recovered["state_version"].as_i64().unwrap(),
+            "partial",
+        )
+        .await;
+        let recovery_run_id = Uuid::parse_str(
+            finished["run_entry_ref"]
+                .as_str()
+                .unwrap()
+                .strip_prefix("entry:")
+                .unwrap(),
+        )
+        .unwrap();
+        let recorded: Value = sqlx::query_scalar("SELECT metadata->'dreamer_run'->'candidate_dispositions' FROM brunn.entry_versions WHERE user_id=$1 AND entry_id=$2 AND version=$3")
+            .bind(f.owner.user).bind(recovery_run_id).bind(finished["run_version"].as_i64().unwrap()).fetch_one(&f.pool).await.unwrap();
+        assert_eq!(
+            &recorded, dispositions,
+            "recovery must retain its exact invalidation in immutable run audit"
+        );
+        let historical: (String, Value) = sqlx::query_as("SELECT content,metadata FROM brunn.entry_versions WHERE user_id=$1 AND entry_id=$2 AND version=$3")
+            .bind(f.owner.user).bind(old_run_id).bind(old_version).fetch_one(&f.pool).await.unwrap();
+        assert_eq!(historical, old_audit);
+        let next = admit(&f).await;
+        assert_eq!(next["location_work"]["date"], json!(from.date_naive()));
+        assert_eq!(next["location_evidence"]["fingerprint_complete"], true);
+        assert_eq!(next["pending"][0]["id"], original["id"]);
+        assert_eq!(next["pending"][0]["status"], "needs_changes");
+        assert_eq!(
+            current(&f, "dreams/state.md").await.unwrap().2["dreamer_state"]["candidate_dispositions"],
+            json!([])
+        );
+        assert!(current(&f, &target).await.is_none());
+        finish(
+            &f,
+            &next,
+            next["state_version"].as_i64().unwrap(),
+            "partial",
+        )
+        .await;
+    }
 }
 
 async fn age_fixture_location_work(f: &Fixture) -> Value {

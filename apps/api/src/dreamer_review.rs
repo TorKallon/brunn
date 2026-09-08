@@ -150,6 +150,8 @@ struct RunState {
     #[serde(default)]
     source_dispositions: Vec<Value>,
     #[serde(default)]
+    candidate_dispositions: Vec<Value>,
+    #[serde(default)]
     location_work: Vec<Value>,
     #[serde(default)]
     location_scopes: Vec<Value>,
@@ -537,6 +539,42 @@ fn validate_candidate(candidate: &Candidate, before: &str) -> ApiResult<()> {
     }
     match candidate.kind.as_str() {
         "summary" => {
+            let cited_inline = |marker: &str| {
+                content.lines().map(str::trim).any(|line| {
+                    !line.starts_with('#')
+                        && !line.starts_with("[^s")
+                        && !line.starts_with("[^r")
+                        && line.contains(marker)
+                })
+            };
+            if !candidate.uncertainty.trim().is_empty()
+                && !content.contains(candidate.uncertainty.trim())
+            {
+                return Err(ApiError::invalid(
+                    "summary uncertainty must appear verbatim in the proposed content so publication preserves its caveats",
+                ));
+            }
+            if candidate
+                .raw_sources
+                .iter()
+                .enumerate()
+                .any(|(index, _)| !cited_inline(&format!("[^r{}]", index + 1)))
+            {
+                return Err(ApiError::invalid(
+                    "every declared raw source must be cited in the proposed summary content",
+                ));
+            }
+            if candidate.evidence_scope.is_some()
+                && candidate
+                    .sources
+                    .iter()
+                    .enumerate()
+                    .any(|(index, _)| !cited_inline(&format!("[^s{}]", index + 1)))
+            {
+                return Err(ApiError::invalid(
+                    "every declared canonical location source must be cited in the proposed summary content",
+                ));
+            }
             if path.starts_with("derived/location/") && candidate.evidence_scope.is_none() {
                 return Err(ApiError::invalid(
                     "historical location summaries require a validated closed-day evidence scope",
@@ -987,6 +1025,7 @@ pub async fn admit(
         import_legacy(&mut tx, user, &mut data).await?;
     }
     data.source_dispositions.clear();
+    data.candidate_dispositions.clear();
     retain_inputs(&mut tx, user, &mut data, upper).await?;
     let lease = body
         .get("lease_seconds")
@@ -1098,14 +1137,65 @@ pub async fn admit(
             if item_stale(&mut tx, &auth, &item).await? {
                 item.status = "needs_changes".into();
             } else {
-                publish_item(&state, &mut tx, &auth, &mut item, Some(&attempt_id)).await?;
+                let validation = async {
+                    validate_candidate(&item.candidate, &item.before_md)?;
+                    if item.candidate.evidence_scope.is_some() {
+                        validate_location_candidate(&mut tx, &auth, &item.candidate).await?;
+                    }
+                    Ok::<(), ApiError>(())
+                }
+                .await;
+                match validation {
+                    Ok(()) => {
+                        publish_item(&state, &mut tx, &auth, &mut item, Some(&attempt_id)).await?;
+                    }
+                    Err(ApiError::Public {
+                        status,
+                        code,
+                        message,
+                        ..
+                    }) if status == axum::http::StatusCode::BAD_REQUEST
+                        || status == axum::http::StatusCode::CONFLICT =>
+                    {
+                        // A prior approval is for immutable bytes. A changed
+                        // contract requires a new proposal and owner decision;
+                        // it must not wedge unrelated work on every admission.
+                        item.status = "needs_changes".into();
+                        data.candidate_dispositions.push(json!({
+                            "disposition":"held_approval_invalidated",
+                            "item_id":item.id,"candidate_hash":item.candidate_hash,
+                            "run_entry_ref":item.run_entry_ref,"run_version":item.run_version,
+                            "code":code,"reason":message,
+                        }));
+                        if let Some(scope) = &item.candidate.evidence_scope {
+                            if !data
+                                .location_work
+                                .iter()
+                                .any(|work| same_location_window(scope, work))
+                            {
+                                if let Some(known) = data
+                                    .location_scopes
+                                    .iter()
+                                    .find(|known| same_location_window(scope, known))
+                                {
+                                    let mut work = known.clone();
+                                    work.as_object_mut()
+                                        .expect("retained location scope")
+                                        .remove("fingerprint");
+                                    data.location_work.push(work);
+                                }
+                            }
+                        }
+                    }
+                    Err(error) => return Err(error),
+                }
             }
             data.items[index] = item;
             changed = true;
         }
         if changed {
             let attempt = data.active.clone().expect("active");
-            write_run(&state,&mut tx,&auth,&mut data,&attempt,"running","Previously approved candidates validated for publication; model execution has not completed.").await?;
+            write_run(&state,&mut tx,&auth,&mut data,&attempt,"running","Previously approved candidates were checked for publication. Invalid candidates require changes and a new owner decision; model execution has not completed.").await?;
         }
     }
     let version = save_state(&state, &mut tx, &auth, &data, version).await?;
@@ -1368,7 +1458,7 @@ async fn write_run(
 ) -> ApiResult<Value> {
     let path = format!("dreams/runs/{}.md", a.date);
     let existing = load_entry(tx, auth.user_id.0, &path).await?;
-    let metadata = json!({"kind":"dreamer_run","dreamer_run":{"schema":"dream.run.v1","accepted":true,"attempt_id":a.attempt_id,"date":a.date,"producer_credential_id":auth.credential_id.0,"frozen_generation":a.frozen_generation,"outcome":outcome,"items":data.items.iter().filter(|i|i.run_version==0).collect::<Vec<_>>(),"pending_refs":data.items.iter().filter(|i|pending(i)&&i.run_version>0).map(|i|json!({"id":i.id,"entry_ref":i.run_entry_ref,"version":i.run_version,"candidate_hash":i.candidate_hash,"status":i.status})).collect::<Vec<_>>(),"attempt":data.last_attempt,"history":data.history,"source_dispositions":data.source_dispositions,"location_dispositions":data.location_dispositions}});
+    let metadata = json!({"kind":"dreamer_run","dreamer_run":{"schema":"dream.run.v1","accepted":true,"attempt_id":a.attempt_id,"date":a.date,"producer_credential_id":auth.credential_id.0,"frozen_generation":a.frozen_generation,"outcome":outcome,"items":data.items.iter().filter(|i|i.run_version==0).collect::<Vec<_>>(),"pending_refs":data.items.iter().filter(|i|pending(i)&&i.run_version>0).map(|i|json!({"id":i.id,"entry_ref":i.run_entry_ref,"version":i.run_version,"candidate_hash":i.candidate_hash,"status":i.status})).collect::<Vec<_>>(),"attempt":data.last_attempt,"history":data.history,"source_dispositions":data.source_dispositions,"candidate_dispositions":data.candidate_dispositions,"location_dispositions":data.location_dispositions}});
     let receipt = put_entry(
         state,
         tx,
@@ -1462,12 +1552,106 @@ pub async fn candidates(
             "review inbox is full; admitted input and existing proposals remain retained",
         ));
     }
+    let is_location = |candidate: &Candidate| {
+        candidate.evidence_scope.is_some()
+            || candidate
+                .path
+                .as_deref()
+                .is_some_and(|path| path.starts_with("derived/location/"))
+    };
+    if list
+        .iter()
+        .filter(|candidate| is_location(candidate))
+        .count()
+        > 1
+    {
+        return Err(ApiError::invalid(
+            "at most one location candidate is allowed per submission",
+        ));
+    }
     let mut revisions = std::collections::BTreeSet::new();
     for candidate in &list {
         if let Some(id) = &candidate.revises_item_id {
             if !revisions.insert(id) {
                 return Err(ApiError::invalid(
                     "a retained item can be revised only once per submission",
+                ));
+            }
+            if data
+                .items
+                .iter()
+                .find(|item| &item.id == id)
+                .is_some_and(|item| is_location(&item.candidate))
+                && !is_location(candidate)
+            {
+                return Err(ApiError::invalid(
+                    "location revision must preserve the original destination, kind and evidence window",
+                ));
+            }
+        }
+        if is_location(candidate) {
+            if candidate.kind != "summary" {
+                return Err(ApiError::invalid(
+                    "location candidates must have kind summary",
+                ));
+            }
+            let scope = candidate
+                .evidence_scope
+                .as_ref()
+                .ok_or_else(|| ApiError::invalid("location evidence scope required"))?;
+            let path = candidate
+                .path
+                .as_deref()
+                .ok_or_else(|| ApiError::invalid("location candidate destination required"))?;
+            if let Some(id) = &candidate.revises_item_id {
+                let old = data
+                    .items
+                    .iter()
+                    .find(|item| &item.id == id)
+                    .ok_or_else(|| {
+                        ApiError::invalid("revised item is not in the retained inbox")
+                    })?;
+                if !pending(old) || old.status == "deferred" || old.status == "approved_held" {
+                    return Err(ApiError::invalid(
+                        "a rejected, deferred or approved candidate cannot be silently replaced",
+                    ));
+                }
+                if old.candidate.kind != candidate.kind
+                    || old.candidate.path.as_deref() != Some(path)
+                    || !old
+                        .candidate
+                        .evidence_scope
+                        .as_ref()
+                        .is_some_and(|old_scope| same_location_window(old_scope, scope))
+                {
+                    return Err(ApiError::invalid(
+                        "location revision must preserve the original destination, kind and evidence window",
+                    ));
+                }
+            }
+            let same_target: Vec<_> = data
+                .items
+                .iter()
+                .filter(|item| pending(item) && item.candidate.path.as_deref() == Some(path))
+                .collect();
+            if same_target
+                .iter()
+                .any(|item| item.status == "deferred" || item.status == "approved_held")
+            {
+                return Err(ApiError::invalid(
+                    "a deferred or approved location destination cannot be duplicated",
+                ));
+            }
+            if same_target.len() > 1 {
+                return Err(ApiError::invalid(
+                    "multiple retained location candidates share this destination; owner resolution is required",
+                ));
+            }
+            if let Some(old) = same_target.first()
+                && candidate.revises_item_id.as_deref() != Some(old.id.as_str())
+            {
+                return Err(ApiError::invalid(
+                    "location candidate must revise the existing item for this destination",
                 ));
             }
         }
@@ -2283,6 +2467,12 @@ pub async fn decide(
                 "This item is held or requires a new candidate",
                 version,
             ));
+        }
+        // Report-only approval is durable too: old candidates must satisfy the
+        // current contract before they can be held for later publication.
+        validate_candidate(&item.candidate, &item.before_md)?;
+        if item.candidate.evidence_scope.is_some() {
+            validate_location_candidate(&mut tx, &auth, &item.candidate).await?;
         }
         if current_mode.as_deref() == Some("full") {
             publish_item(&state, &mut tx, &auth, &mut item, None).await?;

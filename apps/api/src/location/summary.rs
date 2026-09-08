@@ -107,6 +107,25 @@ pub async fn validate_candidate_in_tx(
             "location evidence changed; recompile before publication",
         ));
     }
+    if packet["reports"].as_array().is_some_and(|r| !r.is_empty()) && raw_sources.is_empty() {
+        return Err(ApiError::invalid(
+            "location summaries must cite retained raw observations when the packet contains reports",
+        ));
+    }
+    let canonical_months = packet["canonical_months"].as_array();
+    if canonical_months.is_some_and(|months| {
+        months.iter().any(|month| {
+            month["selectors"]
+                .as_array()
+                .is_some_and(|rows| !rows.is_empty())
+        }) && !canonical_sources
+            .iter()
+            .any(|source| months.iter().any(|month| month["ref"] == source.entry_ref))
+    }) {
+        return Err(ApiError::invalid(
+            "location summaries must reconcile the relevant canonical visit rows with raw observations",
+        ));
+    }
     for source in canonical_sources {
         validate_canonical(tx, auth, source, &packet).await?;
     }

@@ -1948,9 +1948,15 @@ async fn location_summary_publication_rechecks_raw_and_selected_canonical_rows()
     outside.end_line = outside.start_line;
     outside.excerpt = appended.lines().last().unwrap().to_owned();
     assert!(
-        validate_location_summary(&f, &f.query, fingerprint, &[outside], &[])
-            .await
-            .is_err(),
+        validate_location_summary(
+            &f,
+            &f.query,
+            fingerprint,
+            &[outside],
+            std::slice::from_ref(&f.raw)
+        )
+        .await
+        .is_err(),
         "an exact next-day canonical row is not evidence for the requested day"
     );
     let edited = appended.replace("A bounded stop", "A corrected bounded stop");
@@ -1962,7 +1968,7 @@ async fn location_summary_publication_rechecks_raw_and_selected_canonical_rows()
             &f.query,
             fingerprint,
             std::slice::from_ref(&f.canonical),
-            &[]
+            std::slice::from_ref(&f.raw)
         )
         .await
         .is_err()
@@ -1976,7 +1982,7 @@ async fn location_summary_publication_rechecks_raw_and_selected_canonical_rows()
             &f.query,
             edited_packet["evidence_fingerprint"].as_str().unwrap(),
             std::slice::from_ref(&f.canonical),
-            &[]
+            std::slice::from_ref(&f.raw)
         )
         .await
         .is_err(),
@@ -2001,7 +2007,7 @@ async fn location_summary_publication_rechecks_raw_and_selected_canonical_rows()
             &f,
             &f.query,
             edited_packet["evidence_fingerprint"].as_str().unwrap(),
-            &[],
+            std::slice::from_ref(&f.canonical),
             std::slice::from_ref(&f.raw)
         )
         .await
@@ -2024,23 +2030,41 @@ async fn location_summary_citations_reject_unavailable_scope_fields_and_partial_
     let mut forged = f.canonical.clone();
     forged.excerpt = "Invented canonical evidence".into();
     assert!(
-        validate_location_summary(&f, &f.query, fingerprint, &[forged], &[])
-            .await
-            .is_err()
+        validate_location_summary(
+            &f,
+            &f.query,
+            fingerprint,
+            &[forged],
+            std::slice::from_ref(&f.raw)
+        )
+        .await
+        .is_err()
     );
     let mut forbidden = f.raw.clone();
     forbidden.fields = vec!["user_id".into()];
     assert!(
-        validate_location_summary(&f, &f.query, fingerprint, &[], &[forbidden])
-            .await
-            .is_err()
+        validate_location_summary(
+            &f,
+            &f.query,
+            fingerprint,
+            std::slice::from_ref(&f.canonical),
+            &[forbidden]
+        )
+        .await
+        .is_err()
     );
     let mut missing = f.raw.clone();
     missing.fields = vec!["poi.99.name".into()];
     assert!(
-        validate_location_summary(&f, &f.query, fingerprint, &[], &[missing])
-            .await
-            .is_err()
+        validate_location_summary(
+            &f,
+            &f.query,
+            fingerprint,
+            std::slice::from_ref(&f.canonical),
+            &[missing]
+        )
+        .await
+        .is_err()
     );
     let outside:Value=sqlx::query_scalar("SELECT jsonb_build_object('at',at,'type',type) FROM brunn.location_reports WHERE user_id=$1 ORDER BY at LIMIT 1").bind(f.owner.user_id).fetch_one(&f.pool).await.unwrap();
     let outside = brunn::location::summary::RawCitation {
@@ -2048,9 +2072,15 @@ async fn location_summary_citations_reject_unavailable_scope_fields_and_partial_
         fields: vec!["at".into()],
     };
     assert!(
-        validate_location_summary(&f, &f.query, fingerprint, &[], &[outside])
-            .await
-            .is_err(),
+        validate_location_summary(
+            &f,
+            &f.query,
+            fingerprint,
+            std::slice::from_ref(&f.canonical),
+            &[outside]
+        )
+        .await
+        .is_err(),
         "outside non-boundary raw record is not packet evidence"
     );
     let old = brunn::location::evidence::EvidenceQuery {
@@ -2059,9 +2089,15 @@ async fn location_summary_citations_reject_unavailable_scope_fields_and_partial_
         timezone: "UTC".into(),
     };
     assert!(
-        validate_location_summary(&f, &old, fingerprint, &[], std::slice::from_ref(&f.raw))
-            .await
-            .is_err()
+        validate_location_summary(
+            &f,
+            &old,
+            fingerprint,
+            std::slice::from_ref(&f.canonical),
+            std::slice::from_ref(&f.raw)
+        )
+        .await
+        .is_err()
     );
     let mut pinned = f.state.rw_pool.begin().await.unwrap();
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
@@ -2075,7 +2111,7 @@ async fn location_summary_citations_reject_unavailable_scope_fields_and_partial_
             &f.auth,
             &f.query,
             fingerprint,
-            &[],
+            std::slice::from_ref(&f.canonical),
             std::slice::from_ref(&f.raw)
         )
         .await
@@ -2111,7 +2147,7 @@ async fn location_summary_citations_reject_unavailable_scope_fields_and_partial_
             &reader,
             &f.query,
             fingerprint,
-            &[],
+            std::slice::from_ref(&f.canonical),
             std::slice::from_ref(&f.raw)
         )
         .await
@@ -2124,9 +2160,15 @@ async fn location_summary_citations_reject_unavailable_scope_fields_and_partial_
         .unwrap();
     assert_eq!(partial["fingerprint_complete"], false);
     assert!(
-        validate_location_summary(&f, &f.query, fingerprint, &[], std::slice::from_ref(&f.raw))
-            .await
-            .is_err()
+        validate_location_summary(
+            &f,
+            &f.query,
+            fingerprint,
+            std::slice::from_ref(&f.canonical),
+            std::slice::from_ref(&f.raw)
+        )
+        .await
+        .is_err()
     );
 }
 
@@ -2205,12 +2247,27 @@ async fn location_summary_places_citations_require_the_exact_current_definition_
         end_line: text.lines().count(),
         excerpt: text.lines().collect::<Vec<_>>().join("\n"),
     };
-    validate_location_summary(
+    let missing_reconciliation = validate_location_summary(
         &f,
         &f.query,
         packet["evidence_fingerprint"].as_str().unwrap(),
         std::slice::from_ref(&source),
-        &[],
+        std::slice::from_ref(&f.raw),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        missing_reconciliation
+            .to_string()
+            .contains("must reconcile the relevant canonical visit rows"),
+        "Places alone cannot stand in for relevant canonical history"
+    );
+    validate_location_summary(
+        &f,
+        &f.query,
+        packet["evidence_fingerprint"].as_str().unwrap(),
+        &[f.canonical.clone(), source.clone()],
+        std::slice::from_ref(&f.raw),
     )
     .await
     .unwrap();
@@ -2223,8 +2280,8 @@ async fn location_summary_places_citations_require_the_exact_current_definition_
             &f,
             &f.query,
             packet["evidence_fingerprint"].as_str().unwrap(),
-            std::slice::from_ref(&source),
-            &[]
+            &[f.canonical.clone(), source.clone()],
+            std::slice::from_ref(&f.raw)
         )
         .await
         .is_err()
@@ -2234,13 +2291,70 @@ async fn location_summary_places_citations_require_the_exact_current_definition_
             &f,
             &f.query,
             changed["evidence_fingerprint"].as_str().unwrap(),
-            std::slice::from_ref(&source),
-            &[]
+            &[f.canonical.clone(), source.clone()],
+            std::slice::from_ref(&f.raw)
         )
         .await
         .is_err(),
         "even a refreshed packet cannot validate the superseded Places definition version"
     );
+}
+
+#[tokio::test]
+async fn location_summary_requires_available_evidence_without_inventing_canonical_support() {
+    let Some(f) = summary_fixture().await else {
+        return;
+    };
+    let missing_raw = validate_location_summary(
+        &f,
+        &f.query,
+        f.packet["evidence_fingerprint"].as_str().unwrap(),
+        std::slice::from_ref(&f.canonical),
+        &[],
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        missing_raw
+            .to_string()
+            .contains("must cite retained raw observations")
+    );
+
+    // The next closed day has a raw observation and no relevant canonical
+    // rows. Requiring reconciliation must not force invented canonical cites.
+    let query = brunn::location::evidence::EvidenceQuery {
+        from: f.query.to,
+        to: f.query.to + Duration::days(1),
+        timezone: "UTC".into(),
+    };
+    sqlx::query("INSERT INTO brunn.location_reports(user_id,at,type,offset_min,lat,lon,accuracy_m) VALUES($1,$2,'ping',0,47.1,-122.1,8)")
+        .bind(f.owner.user_id).bind(query.from.to_utc()+Duration::hours(4)).execute(&f.pool).await.unwrap();
+    let packet = brunn::location::evidence::read_evidence(&f.state, &f.auth, &query)
+        .await
+        .unwrap();
+    assert_eq!(packet["fingerprint_complete"], true);
+    assert_eq!(packet["reports"].as_array().unwrap().len(), 1);
+    assert!(
+        packet["canonical_months"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|month| month["selectors"].as_array().unwrap().is_empty())
+    );
+    let raw = brunn::location::summary::RawCitation {
+        natural_key: packet["reports"][0]["natural_key"].clone(),
+        fields: vec!["at".into(), "accuracy_m".into()],
+    };
+    let valid = validate_location_summary(
+        &f,
+        &query,
+        packet["evidence_fingerprint"].as_str().unwrap(),
+        &[],
+        &[raw],
+    )
+    .await
+    .unwrap();
+    assert_eq!(valid["sources_validated"], true);
 }
 
 async fn preview_location_citations(f: &SummaryFixture, scope: &Value) -> Vec<Value> {
