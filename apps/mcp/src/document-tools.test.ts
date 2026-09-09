@@ -31,14 +31,14 @@ function recordingFetch(
   };
 }
 
-async function connectedPair(fetchImpl: typeof fetch): Promise<{
+async function connectedPair(fetchImpl: typeof fetch, includeStructuredContent = false): Promise<{
   client: Client;
   close: () => Promise<void>;
 }> {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const server = createBrunnMcpServer(
     new BrunnApiClient("https://api.invalid", "test-token", fetchImpl),
-    { includeStructuredContent: false },
+    { includeStructuredContent },
   );
   const client = new Client({ name: "document-tools-test", version: "0.1.0" });
   await server.connect(serverTransport);
@@ -74,6 +74,8 @@ test("document.publish posts curated Markdown verbatim and preserves direct link
       version: 2,
       url: "https://brunn.example/documents/europe-summer-plan",
       version_url: "https://brunn.example/documents/europe-summer-plan?version=2",
+      app_url: "brunn://document/europe-summer-plan",
+      app_version_url: "brunn://document/europe-summer-plan?version=2",
     },
   };
   const { client, close } = await connectedPair(recordingFetch(calls, 200, envelope));
@@ -114,9 +116,12 @@ test("document.get issues bodyless current and historical GET requests", async (
       slug: "feature-specification",
       url: "https://brunn.example/documents/feature-specification",
       version_url: "https://brunn.example/documents/feature-specification?version=3",
+      app_url: "brunn://document/feature-specification",
+      app_version_url: "brunn://document/feature-specification?version=3",
+      versions: [{ version: 3, app_version_url: "brunn://document/feature-specification?version=3" }],
     },
   };
-  const { client, close } = await connectedPair(recordingFetch(calls, 200, envelope));
+  const { client, close } = await connectedPair(recordingFetch(calls, 200, envelope), true);
 
   try {
     const current = await client.callTool({
@@ -144,6 +149,8 @@ test("document.get issues bodyless current and historical GET requests", async (
     ]);
     assert.deepEqual(parseToolText(current.content), envelope);
     assert.deepEqual(parseToolText(historical.content), envelope);
+    assert.deepEqual(current.structuredContent, envelope);
+    assert.deepEqual(historical.structuredContent, envelope);
   } finally {
     await close();
   }
@@ -160,6 +167,9 @@ test("document tools expose the request-directed publication boundary and safe a
     assert.match(publish.description ?? "", /Do not use it for routine replies, raw imports/);
     assert.match(publish.description ?? "", /stable latest-document link/);
     assert.match(publish.description ?? "", /stable `url` field/);
+    assert.match(publish.description ?? "", /stable `app_url`/);
+    assert.match(publish.description ?? "", /`app_version_url` only/);
+    assert.match(publish.description ?? "", /require authentication/);
     assert.deepEqual(
       [...(publish.inputSchema.required ?? [])].sort(),
       ["body_md", "slug", "title"],
@@ -180,6 +190,9 @@ test("document tools expose the request-directed publication boundary and safe a
     assert.ok(get);
     assert.match(get.description ?? "", /Omit version for the stable latest document/);
     assert.match(get.description ?? "", /`version_url` only/);
+    assert.match(get.description ?? "", /stable `app_url`/);
+    assert.match(get.description ?? "", /`app_version_url` only/);
+    assert.match(get.description ?? "", /document-link-capable installed iOS build/);
     assert.deepEqual([...(get.inputSchema.required ?? [])], ["slug"]);
     assert.equal(get.annotations?.readOnlyHint, true);
     assert.equal(get.annotations?.destructiveHint, false);

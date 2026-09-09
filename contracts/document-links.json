@@ -1,0 +1,31 @@
+{
+  "valid": [
+    {"slug":"chief-of-staff-brief","url":"brunn://document/chief-of-staff-brief"},
+    {"slug":"brunn-ios-document-deep-links-handoff","version":1,"url":"brunn://document/brunn-ios-document-deep-links-handoff?version=1"},
+    {"slug":"a0","version":2147483648,"url":"brunn://document/a0?version=2147483648"},
+    {"slug":"a--b","version":42,"url":"brunn://document/a--b?version=42"}
+  ],
+  "invalid": [
+    "brunn://document", "brunn://document/", "brunn://document/x",
+    "brunn://document/Upper", "brunn://document/-plan", "brunn://document/plan-",
+    "brunn://document/trip_plan", "brunn://document/trip.plan", "brunn://document/café",
+    "brunn://document/trip-plan/", "brunn://document/trip/plan", "brunn://document//trip-plan",
+    "brunn://document/../trip-plan", "brunn://document/./trip-plan",
+    "brunn://document/trip%2fplan", "brunn://document/trip%5cplan", "brunn://document/%2e%2e",
+    "brunn://document/%252e%252e", "brunn://document/trip%252fplan", "brunn://document/%74rip-plan",
+    "brunn://document/trip-plan?", "brunn://document/trip-plan?version", "brunn://document/trip-plan?version=",
+    "brunn://document/trip-plan?version=0", "brunn://document/trip-plan?version=-1",
+    "brunn://document/trip-plan?version=01", "brunn://document/trip-plan?version=+1",
+    "brunn://document/trip-plan?version=1.0", "brunn://document/trip-plan?version=1e1",
+    "brunn://document/trip-plan?version=9223372036854775808",
+    "brunn://document/trip-plan?version=%31", "brunn://document/trip-plan?%76ersion=1",
+    "brunn://document/trip-plan?version=1&version=2", "brunn://document/trip-plan?version=1&",
+    "brunn://document/trip-plan?other=1", "brunn://document/trip-plan?version=1&other=2",
+    "brunn://document/trip-plan#", "brunn://document/trip-plan#heading",
+    "brunn://owner@document/trip-plan", "brunn://@document/trip-plan",
+    "brunn://owner:password@document/trip-plan", "brunn://document:443/trip-plan", "brunn://document:/trip-plan",
+    "brunn://%64ocument/trip-plan", "https://document/trip-plan",
+    "brunn://documents/trip-plan", "brunn:document/trip-plan",
+    "brunn://document/entry:01a08731-b88f-7711-93e2-5b3e1b33baa3"
+  ]
+}

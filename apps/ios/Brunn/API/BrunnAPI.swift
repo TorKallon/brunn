@@ -648,6 +648,33 @@ public actor BrunnAPI {
         )
     }
 
+    public func document(_ link: DocumentLink) async throws -> PublishedDocument {
+        // Freeze the read to the current interactive session, just as review decisions do.
+        // Do not let URLSession attach a newly signed-in account's ambient cookies later.
+        let cookies = cookiesForServer()
+        guard let fingerprint = sessionFingerprint(from: cookies) else {
+            throw BrunnAPIError.notConnected
+        }
+        let url = try makeURL(path: "workspace/documents/\(link.slug)", queryItems: link.queryItems)
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+        request.httpMethod = "GET"
+        request.httpShouldHandleCookies = false
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        for (name, value) in HTTPCookie.requestHeaderFields(with: cookies) {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
+        let (data, response) = try await session.data(for: request)
+        try Task.checkCancellation()
+        guard sessionFingerprint(from: cookiesForServer()) == fingerprint else {
+            throw BrunnAPIError.notConnected
+        }
+        let envelope: WorkspaceEnvelope<PublishedDocument> = try decodeResponse(data: data, response: response)
+        guard envelope.status == "complete", envelope.data.matches(link) else {
+            throw BrunnAPIError.invalidResponse
+        }
+        return envelope.data
+    }
+
     public func search(
         _ text: String,
         sort: WorkspaceSearchSort = .bestMatch

@@ -28,6 +28,11 @@ struct ConnectionView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 10) {
+                        if let link = model.pendingDocumentLink {
+                            Text("Sign in to open \(link.slug)\(link.version.map { " · version \($0)" } ?? ""). Your document link will be kept.")
+                                .font(.callout)
+                                .accessibilityIdentifier("document-sign-in-destination")
+                        }
                         TextField("Email", text: $email)
                             .textContentType(.username)
                             .keyboardType(.emailAddress)

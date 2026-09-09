@@ -670,7 +670,10 @@ registerJsonTool(
   "publication trigger. Do not use it for routine replies, raw imports, internal evidence, or uncurated " +
   "files. Republishing the same slug revises the stable latest-document link. Return the response's stable " +
   "`url` field to the user instead of an entry reference; use `version_url` only when the user explicitly " +
-  "asked for a pinned historical revision.",
+  "asked for a pinned historical revision. For the native iPhone reader, return the response's " +
+  "stable `app_url` (brunn://document/<slug>), or `app_version_url` only for explicit pinned sharing. " +
+  "These require a document-link-capable installed iOS build. Never invent app links, derive a slug " +
+  "from a title, or republish a document as a briefing to create a link. Both readers require authentication.",
   {
     slug: documentSlug,
     title: z.string().min(1).max(240),
@@ -695,7 +698,10 @@ registerJsonTool(
   "Retrieve one intentionally published human-facing Markdown document and its direct Brunn links. " +
   "Omit version for the stable latest document; request a positive version only for an explicit historical " +
   "revision. Return the response's stable `url` field by default instead of an entry reference; return " +
-  "`version_url` only for an explicitly requested historical revision.",
+  "`version_url` only for an explicitly requested historical revision. For the native iPhone reader, " +
+  "return the response's stable `app_url` (brunn://document/<slug>), or `app_version_url` only for " +
+  "explicit pinned sharing. These require a document-link-capable installed iOS build. Never invent " +
+  "app links or substitute a briefing or raw entry link; document reads remain authenticated.",
   {
     slug: documentSlug,
     version: z.number().int().positive().optional().describe(

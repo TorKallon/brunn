@@ -225,6 +225,16 @@ pub fn document_url(public_url: &str, slug: &str, version: Option<i64>) -> Strin
     }
 }
 
+/// Canonical native serializer. Call only with a validated published slug/version.
+/// Shared vectors live in contracts/document-links.json and are also tested by iOS.
+pub fn document_app_url(slug: &str, version: Option<i64>) -> String {
+    let stable = format!("brunn://document/{slug}");
+    match version {
+        Some(version) => format!("{stable}?version={version}"),
+        None => stable,
+    }
+}
+
 fn document_metadata(request: &DocumentPublishRequest) -> ApiResult<Value> {
     Ok(json!({
         "kind": "human_document",
@@ -324,6 +334,8 @@ pub async fn publish(
         "content_hash": format!("sha256:{content_sha256}"),
         "url": stable_url,
         "version_url": version_url,
+        "app_url": document_app_url(&request.slug, None),
+        "app_version_url": document_app_url(&request.slug, Some(result.version)),
     }));
     envelope.status = if result.no_op {
         ResponseStatus::NoOp
@@ -477,6 +489,7 @@ pub async fn get_document_in_tx(
                 "version": version,
                 "created_at": row.get::<DateTime<Utc>, _>("created_at"),
                 "version_url": document_url(public_url, slug, Some(version)),
+                "app_version_url": document_app_url(slug, Some(version)),
             })
         })
         .collect::<Vec<_>>();
@@ -497,6 +510,8 @@ pub async fn get_document_in_tx(
         "versions": versions,
         "url": stable_url,
         "version_url": document_url(public_url, slug, Some(selected_version)),
+        "app_url": document_app_url(slug, None),
+        "app_version_url": document_app_url(slug, Some(selected_version)),
     }))
 }
 
@@ -586,6 +601,25 @@ mod tests {
     #[test]
     fn validates_a_curated_document_request() {
         validate_publish_request(&fixture()).expect("fixture validates");
+    }
+
+    #[test]
+    fn native_document_links_match_the_shared_ios_contract() {
+        let contract: Value =
+            serde_json::from_str(include_str!("../../../contracts/document-links.json"))
+                .expect("shared link contract");
+        for case in contract["valid"].as_array().unwrap() {
+            let slug = case["slug"].as_str().unwrap();
+            validate_slug(slug).unwrap();
+            assert_eq!(
+                document_app_url(slug, case["version"].as_i64()),
+                case["url"]
+            );
+        }
+        assert_eq!(
+            document_app_url("trip-plan", Some(i64::MAX)),
+            "brunn://document/trip-plan?version=9223372036854775807"
+        );
     }
 
     #[test]

@@ -209,6 +209,29 @@ struct SafeMarkdownText: View {
 }
 
 enum SafeMarkdown {
+    static func externalURL(_ url: URL) -> Bool {
+        guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let host = parts.host, !host.isEmpty,
+              parts.user == nil, parts.password == nil else { return false }
+        return parts.scheme?.lowercased() == "https" || parts.scheme?.lowercased() == "http"
+    }
+
+    static func documentURL(_ url: URL) -> Bool {
+        if externalURL(url) { return true }
+        guard url.user == nil, url.password == nil, url.port == nil else { return false }
+        return AppRoute(url: url) != nil
+    }
+
+    static func documentAttributedString(_ markdown: String) -> AttributedString {
+        var value = (try? AttributedString(markdown: markdown, options: .init(interpretedSyntax: .full)))
+            ?? AttributedString(markdown)
+        let links = value.runs.compactMap { run in run.link.map { (run.range, $0) } }
+        for (range, url) in links where !documentURL(url) {
+            value[range].link = nil
+        }
+        return value
+    }
+
     static func attributedString(_ markdown: String) -> AttributedString {
         var value = (try? AttributedString(
             markdown: markdown,

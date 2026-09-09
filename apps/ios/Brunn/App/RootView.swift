@@ -43,6 +43,15 @@ struct RootView: View {
         ) {
             LocationPrimerView(onFinish: markLocationPermissionPromptHandled)
         }
+        .sheet(isPresented: Binding(
+            get: { model.phase == .ready && model.documentRequest != nil && !showingLocationPermissionPrimer },
+            set: { if !$0, model.phase == .ready { model.dismissDocument() } }
+        )) {
+            DocumentReaderView()
+        }
+        .onChange(of: model.documentRequest) { _, request in
+            if request == nil { evaluateLocationPermissionPrompt() }
+        }
         .onAppear(perform: evaluateLocationPermissionPrompt)
         .onChange(of: model.phase) { _, _ in
             evaluateLocationPermissionPrompt()
@@ -75,6 +84,8 @@ struct RootView: View {
     }
 
     private func evaluateLocationPermissionPrompt() {
+        // Serialize existing setup and reader sheets; no permission-policy changes.
+        guard model.documentRequest == nil else { return }
         let decision = LocationPermissionPromptPolicy.decision(
             isReady: model.phase == .ready,
             connectionValidated: model.connectionValidated,

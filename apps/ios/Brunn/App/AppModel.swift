@@ -12,6 +12,15 @@ typealias BootstrapIdentityLoader = @Sendable (BrunnAPI) async throws -> MeData
 typealias StoredSessionChecker = @Sendable (BrunnAPI) async -> Bool
 typealias LoginLoader = @Sendable (BrunnAPI, String, String) async throws -> MeData
 typealias DashboardLoader = @Sendable (BrunnAPI, String) async throws -> WorkspaceDashboardData
+typealias DocumentLoader = @Sendable (BrunnAPI, DocumentLink) async throws -> PublishedDocument
+
+enum DocumentReaderState: Equatable {
+    case loading
+    case loaded(PublishedDocument)
+    case authenticationRequired
+    case unavailable
+    case failed(String)
+}
 typealias NotificationListLoader = @Sendable (BrunnAPI, String?) async throws -> NotificationListResponse
 typealias NotificationDetailLoader = @Sendable (BrunnAPI, String) async throws -> BrunnNotification
 typealias NotificationReceiptWriter = @Sendable (
@@ -113,6 +122,13 @@ final class AppModel: ObservableObject {
     @Published private(set) var alerts: [AlertItem] = []
     @Published var selectedTab: AppTab = .dashboard
     @Published var focusedBriefingItemID: String?
+    @Published private(set) var documentRequest: DocumentLink?
+    @Published private(set) var documentState: DocumentReaderState = .loading
+
+    var pendingDocumentLink: DocumentLink? {
+        if case let .document(link) = pendingRoute { return link }
+        return nil
+    }
 
     var newsItems: [BriefingNewsItem] {
         if !briefingActivity.isEmpty { return briefingActivity }
@@ -136,10 +152,13 @@ final class AppModel: ObservableObject {
     private let bootstrapIdentityLoader: BootstrapIdentityLoader
     private let loginLoader: LoginLoader
     private let dashboardLoader: DashboardLoader
+    private let documentLoader: DocumentLoader
+    private var documentLoadTask: Task<PublishedDocument, Error>?
+    private var documentGeneration: UInt64 = 0
     private let notificationListLoader: NotificationListLoader
     private let notificationDetailLoader: NotificationDetailLoader
     private let notificationReceiptWriter: NotificationReceiptWriter
-    private var pendingRoute: AppRoute?
+    @Published private var pendingRoute: AppRoute?
     private var nextBriefingHistoryPath: String?
     private var nextNotificationCursor: String?
     private var dashboardContextGeneration: UInt64 = 0
@@ -170,6 +189,9 @@ final class AppModel: ObservableObject {
         dashboardLoader: @escaping DashboardLoader = { api, timezone in
             try await api.dashboard(timezone: timezone).data
         },
+        documentLoader: @escaping DocumentLoader = { api, link in
+            try await api.document(link)
+        },
         notificationListLoader: @escaping NotificationListLoader = { api, cursor in
             try await api.notifications(cursor: cursor)
         },
@@ -197,6 +219,7 @@ final class AppModel: ObservableObject {
         self.bootstrapIdentityLoader = bootstrapIdentityLoader
         self.loginLoader = loginLoader
         self.dashboardLoader = dashboardLoader
+        self.documentLoader = documentLoader
         self.notificationListLoader = notificationListLoader
         self.notificationDetailLoader = notificationDetailLoader
         self.notificationReceiptWriter = notificationReceiptWriter
@@ -499,10 +522,14 @@ final class AppModel: ObservableObject {
             if case let .task(reference) = pendingRoute {
                 presentedTask = SampleData.agentTaskDetail(reference: reference)
             }
+            if case .document = pendingRoute {
+                Task { await self.handle(pendingRoute) }
+            }
         }
     }
 
     func disconnect() async {
+        clearDocumentReader(preservePendingRoute: false)
         if !isDemo {
             let pendingCredentialRef = Self.pendingDeviceCredentialRef()
             let credential: DeviceTaskCredential?
@@ -1977,6 +2004,9 @@ final class AppModel: ObservableObject {
     }
 
     func handle(_ route: AppRoute) async {
+        if case .document = route {} else {
+            clearDocumentReader(preservePendingRoute: false)
+        }
         guard phase == .ready else {
             pendingRoute = route
             return
@@ -1984,6 +2014,14 @@ final class AppModel: ObservableObject {
 
         applyLocalRoute(route)
         switch route {
+        case let .document(link):
+            guard isDemo || connectionValidated else {
+                pendingRoute = route
+                documentState = .authenticationRequired
+                return
+            }
+            pendingRoute = nil
+            await loadDocument(link)
         case .today, .review:
             return
         case let .task(reference):
@@ -2058,6 +2096,7 @@ final class AppModel: ObservableObject {
     }
 
     private func invalidateDashboardContext() {
+        clearDocumentReader(preservePendingRoute: true)
         dashboardContextGeneration &+= 1
         dashboard = nil
         dashboardMessage = nil
@@ -2094,6 +2133,13 @@ final class AppModel: ObservableObject {
 
     private func applyLocalRoute(_ route: AppRoute) {
         switch route {
+        case let .document(link):
+            clearDocumentReader(preservePendingRoute: true)
+            presentedNotification = nil
+            presentedTask = nil
+            selectedProjectState = nil
+            documentRequest = link
+            documentState = isDemo || connectionValidated ? .loading : .authenticationRequired
         case .review:
             selectedTab = .review
         case .today:
@@ -2111,6 +2157,77 @@ final class AppModel: ObservableObject {
             focusedMessagingConversationID = conversationID
             focusedMessagingSequence = sequence
             try? messagingController?.selectConversation(conversationID)
+        }
+    }
+
+    func dismissDocument() {
+        clearDocumentReader(preservePendingRoute: false)
+    }
+
+    func signInForDocument() {
+        guard let documentRequest else { return }
+        pendingRoute = .document(documentRequest)
+        clearDocumentReader(preservePendingRoute: true)
+        phase = .connectionRequired
+    }
+
+    func retryDocument() async {
+        guard let documentRequest else { return }
+        await handle(.document(documentRequest))
+    }
+
+    private func clearDocumentReader(preservePendingRoute: Bool) {
+        documentGeneration &+= 1
+        documentLoadTask?.cancel()
+        documentLoadTask = nil
+        documentRequest = nil
+        documentState = .loading
+        if !preservePendingRoute, case .document = pendingRoute {
+            pendingRoute = nil
+        }
+    }
+
+    private func loadDocument(_ link: DocumentLink) async {
+        let generation = documentGeneration
+        let owner = user?.id
+        let demo = isDemo
+        let loader = documentLoader
+        let api = api
+        let request = Task {
+            if demo { return try SampleData.document(link) }
+            return try await loader(api, link)
+        }
+        documentLoadTask = request
+        do {
+            let document = try await withTaskCancellationHandler {
+                try await request.value
+            } onCancel: {
+                request.cancel()
+            }
+            guard documentGeneration == generation, documentRequest == link,
+                  user?.id == owner, isDemo == demo else { return }
+            try Task.checkCancellation()
+            guard !request.isCancelled else { throw CancellationError() }
+            guard document.matches(link) else { throw BrunnAPIError.invalidResponse }
+            documentLoadTask = nil
+            documentState = .loaded(document)
+        } catch {
+            guard documentGeneration == generation, documentRequest == link,
+                  user?.id == owner, isDemo == demo else { return }
+            documentLoadTask = nil
+            if let error = error as? BrunnAPIError,
+               error.isUnauthorized || error == .notConnected {
+                pendingRoute = .document(link)
+                connectionValidated = false
+                documentState = .authenticationRequired
+            } else if case BrunnAPIError.server(let status, _, _) = error,
+                      status == 404 || status == 403 {
+                documentState = .unavailable
+            } else {
+                documentState = .failed(error is CancellationError || request.isCancelled
+                    ? "Loading was cancelled. Try again."
+                    : "The requested document could not be loaded. Check your connection and try again.")
+            }
         }
     }
 

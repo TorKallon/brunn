@@ -330,6 +330,15 @@ normal versioned Markdown pipeline and returns the absolute authenticated
 an explicitly requested historical revision. Equal content and metadata are a
 no-op; changing the body or human-facing metadata appends a revision.
 
+Publish and get results also include additive native `app_url`
+(`brunn://document/<slug>`) and `app_version_url`
+(`brunn://document/<slug>?version=<n>`) fields. Get history descriptors include
+`app_version_url` alongside their existing `version_url`. Native URLs come from
+one backend serializer; web fields and their meaning are unchanged. For an
+iPhone app link, agents return the supplied stable `app_url`, with pinned
+sharing explicit. These links require a document-link-capable installed iOS
+build; returning the field does not prove that a recipient has that build.
+
 `GET /v1/workspace/documents/<slug>?version=<n>`
 
 Returns the current published version by default, or one exact historical
@@ -339,6 +348,9 @@ Only versions marked `kind: human_document` are eligible. A raw import,
 capture, generic Markdown entry, or unmarked historical predecessor is never
 served through this route. Documents are private and require normal read
 authorization. There is intentionally no list endpoint or navigation library.
+
+The native parser/serializer contract, authentication lifecycle, safe content
+links, and release checks are documented in [iOS document links](ios/Documents.md).
 
 ### Changes
 

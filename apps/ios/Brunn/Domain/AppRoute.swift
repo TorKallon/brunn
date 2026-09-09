@@ -3,6 +3,7 @@ import Foundation
 public enum AppRoute: Hashable, Sendable {
     case today
     case review
+    case document(DocumentLink)
     case briefing(date: String, edition: String, itemID: String?)
     case notification(notificationRef: String, deliveryRef: String?)
     case task(reference: String)
@@ -15,6 +16,9 @@ public enum AppRoute: Hashable, Sendable {
         let path = url.pathComponents.filter { $0 != "/" }
 
         switch host {
+        case "document":
+            guard let link = DocumentLink(url: url) else { return nil }
+            self = .document(link)
         case "review", "dreams":
             guard path.isEmpty, url.user == nil, url.password == nil,
                   url.port == nil, url.fragment == nil,

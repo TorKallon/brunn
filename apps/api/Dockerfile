@@ -18,6 +18,7 @@ RUN cargo build --release \
     && cp /build/target/release/brunn-state /build/brunn-state
 
 FROM builder AS test
+COPY contracts /contracts
 RUN cargo test --lib
 
 FROM gcr.io/distroless/cc-debian12:nonroot@sha256:fccdbb0a547c14e23fcf4ce8ad62ca5d43b4faae8d22cd292f490fef9946c96e AS runtime

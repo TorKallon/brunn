@@ -5,6 +5,12 @@ Alerts inbox for hosted Brunn.
 
 ## Implemented MVP
 
+- authenticated published-document reader via `brunn://document/<slug>` and
+  explicit `?version=<n>` links; native long-form Markdown, historical notices,
+  stable/pinned sharing, pending sign-in replay, and account-bound request cancellation.
+  See [document contract and release checks](../../docs/ios/Documents.md); an
+  implementation/build is not a production or signed-device distribution claim.
+
 - actionable Review inbox with historical prose separated into read-only Older
   reports; questions offer a direct answer field and empty candidates stay hidden
 - managed summaries show readable time-and-place rows and wrapping comparison
