@@ -27,6 +27,7 @@ use uuid::Uuid;
 const STATE_PATH: &str = "dreams/state.md";
 mod location_discovery;
 mod narrative_discovery;
+mod research;
 const MAX_INPUTS: usize = 128;
 const MAX_ITEMS: usize = 96;
 const MAX_LEGACY_ITEMS: usize = 96;
@@ -34,9 +35,9 @@ const LEGACY_REASON: &str =
     "Retained from an earlier run; a concrete candidate is required before application.";
 const MAX_STATE_BYTES: usize = 256 * 1024;
 const MAX_CANDIDATE_BYTES: usize = 32 * 1024;
-const SENSITIVE_INPUT_PATH: &str = r"(^|[/[:space:]_.-])(api[[:space:]_-]*keys?|access[[:space:]_-]*tokens?|credentials?|passwords?|secrets?|private[[:space:]_-]*keys?)([/[:space:]_.-]|$)";
+pub(crate) const SENSITIVE_INPUT_PATH: &str = r"(^|[/[:space:]_.-])(api[[:space:]_-]*keys?|access[[:space:]_-]*tokens?|credentials?|passwords?|secrets?|private[[:space:]_-]*keys?)([/[:space:]_.-]|$)";
 
-fn sensitive_input_path(path: &str) -> bool {
+pub(crate) fn sensitive_input_path(path: &str) -> bool {
     static PATTERN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
         regex::RegexBuilder::new(SENSITIVE_INPUT_PATH)
             .case_insensitive(true)
@@ -94,6 +95,10 @@ pub struct Candidate {
     pub evidence_scope: Option<Value>,
     #[serde(default)]
     pub raw_sources: Vec<crate::location::summary::RawCitation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) subject_scope: Option<crate::dreamer_subject::SubjectScope>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Item {
@@ -182,6 +187,8 @@ struct RunState {
     location_check_cursor: usize,
     #[serde(default)]
     location_dispositions: Vec<Value>,
+    #[serde(default)]
+    research: research::Scheduler,
 }
 #[derive(Clone)]
 struct Entry {
@@ -202,6 +209,11 @@ pub fn router() -> Router<AppState> {
             post(location_discovery::discover),
         )
         .route("/workspace/dreamer/candidates", post(candidates))
+        .route("/workspace/dreamer/research-next", post(research::next))
+        .route(
+            "/workspace/dreamer/research-progress",
+            post(research::progress),
+        )
         .route(
             "/workspace/dreamer/narrative-discover",
             post(narrative_discovery::discover),
@@ -368,6 +380,7 @@ async fn save_state(
             item.candidate.raw_sources.clear();
             item.before_md.clear();
             item.candidate.sources.clear();
+            item.candidate.subject_scope = None;
             item.candidate.summary.clear();
             item.candidate.reason.clear();
             item.candidate.uncertainty.clear();
@@ -470,7 +483,7 @@ fn separate_legacy_history(data: &mut RunState) -> ApiResult<()> {
     Ok(())
 }
 fn counts(data: &RunState) -> Value {
-    json!({"retained":data.inputs.len(),"processed":data.processed_count,"processed_generation":data.processed_generation,"pending":data.items.iter().filter(|i|pending(i)).count(),"proposals":data.items.iter().filter(|i|pending(i)&&i.candidate.kind!="question").count(),"questions":data.items.iter().filter(|i|pending(i)&&i.candidate.kind=="question").count(),"approved_held":data.items.iter().filter(|i|i.status=="approved_held").count(),"applied":data.items.iter().filter(|i|i.status=="applied").count(),"published":data.items.iter().filter(|i|i.status=="applied").count(),"legacy":data.legacy_items.len(),"legacy_backlog":!data.legacy_complete,"retained_location_days":data.location_work.len()})
+    json!({"retained":data.inputs.len(),"processed":data.processed_count,"processed_generation":data.processed_generation,"pending":data.items.iter().filter(|i|pending(i)).count(),"proposals":data.items.iter().filter(|i|pending(i)&&i.candidate.kind!="question").count(),"questions":data.items.iter().filter(|i|pending(i)&&i.candidate.kind=="question").count(),"approved_held":data.items.iter().filter(|i|i.status=="approved_held").count(),"applied":data.items.iter().filter(|i|i.status=="applied").count(),"published":data.items.iter().filter(|i|i.status=="applied").count(),"legacy":data.legacy_items.len(),"legacy_backlog":!data.legacy_complete,"retained_location_days":data.location_work.len(),"research_turns":data.research.service_sequence,"research_completed":data.research.completed})
 }
 fn next_run(now: DateTime<Utc>) -> DateTime<Utc> {
     let local = now.with_timezone(&Los_Angeles);
@@ -749,7 +762,16 @@ pub(crate) fn validate_candidate(candidate: &Candidate, before: &str) -> ApiResu
             "candidate title, summary or explanation exceeds its bound",
         ));
     }
-    if serde_json::to_vec(candidate)?.len() > MAX_CANDIDATE_BYTES {
+    let mut claim_candidate = candidate.clone();
+    claim_candidate.subject_scope = None;
+    if candidate.subject_scope.as_ref().is_some_and(|scope| {
+        serde_json::to_vec(scope).map_or(true, |bytes| bytes.len() > 128 * 1024)
+    }) {
+        return Err(ApiError::invalid(
+            "subject dependency manifest exceeds 128 KiB",
+        ));
+    }
+    if serde_json::to_vec(&claim_candidate)?.len() > MAX_CANDIDATE_BYTES {
         return Err(ApiError::invalid(
             "candidate exceeds 32 KiB; split its scope without discarding evidence",
         ));
@@ -1081,6 +1103,9 @@ async fn retain_inputs(
     // RLS can substantially underestimate rows. Bound the ordered page before
     // any version joins, then resolve each distinct entry only once. Without
     // these fences the planner can put LIMIT after whole-corpus nested loops.
+    // Keep the final exact version lookup lateral as well: with cold import
+    // statistics RLS estimates one visible row and otherwise repeatedly scans
+    // every version for the owner before applying the entry/version join filter.
     let rows = sqlx::query(
         r#"
         WITH change_page AS MATERIALIZED (
@@ -1104,8 +1129,12 @@ async fn retain_inputs(
                (v.version IS NOT NULL) AS source_available,
                (v.content IS NOT NULL) AS is_text
         FROM change_page c JOIN snapshots snapshot ON snapshot.entry_id=c.entry_id
-        LEFT JOIN brunn.entry_versions v
-          ON v.user_id=$1 AND v.entry_id=c.entry_id AND v.version=snapshot.entry_version
+        LEFT JOIN LATERAL (
+            SELECT version,metadata,content
+            FROM brunn.entry_versions
+            WHERE user_id=$1 AND entry_id=c.entry_id AND version=snapshot.entry_version
+            LIMIT 1
+        ) v ON true
         ORDER BY c.generation
     "#,
     )
@@ -1431,6 +1460,7 @@ pub async fn admit(
     data.source_dispositions.clear();
     data.candidate_dispositions.clear();
     retain_inputs(&mut tx, user, &mut data, upper).await?;
+    research::enqueue_requested(&mut tx, &auth, &mut data, &body, upper).await?;
     let lease = body
         .get("lease_seconds")
         .and_then(Value::as_i64)
@@ -1560,6 +1590,7 @@ pub async fn admit(
             );
         }
     }
+    research::invalidate_held(&mut tx, &auth, &mut data).await?;
     if current_mode == "full" {
         let mut changed = false;
         for index in data
@@ -1677,12 +1708,13 @@ async fn admission_response(
             ));
         }
     }
+    let research = research::view_active(tx, auth, data).await?;
     let decisions = load_entry(tx, user, "dreams/decisions.md").await?;
     let rows=sqlx::query("SELECT path,current_version FROM brunn.entries WHERE user_id=$1 AND deleted_at IS NULL AND (starts_with(path,'derived/entities/') OR starts_with(path,'derived/location/')) ORDER BY path LIMIT 256")
         .bind(user).fetch_all(&mut **tx).await?;
     let outputs=rows.iter().map(|r|json!({"path":r.get::<String,_>("path"),"version":r.get::<i64,_>("current_version")})).collect::<Vec<_>>();
     Ok(
-        json!({"admitted":true,"session_id":format!("session:{}",a.attempt_id),"attempt_id":a.attempt_id,"fence":a.fence,"state_version":version,"mode":a.mode,"frozen_generation":a.frozen_generation,"scanned_generation":data.scanned_generation,"processed_generation":data.processed_generation,"inputs":data.inputs,"outputs":outputs,"location_work":a.location_work,"location_evidence":location_evidence,"location_context":a.location_work.as_ref().and_then(|work|work.get("context_sources")).cloned().unwrap_or_else(||json!([])),"narrative_context":a.narrative_context,"narrative_discovery":a.narrative_discovery,"pending":pending_items,"pending_notifications":data.pending_notifications,"decisions":decisions.as_ref().map(|e|e.content.as_str()).unwrap_or(""),"decisions_version":decisions.map_or(0,|e|e.version)}),
+        json!({"research_protocol":1,"research":research,"research_progress":{"turns":data.research.service_sequence,"completed":data.research.completed},"admitted":true,"session_id":format!("session:{}",a.attempt_id),"attempt_id":a.attempt_id,"fence":a.fence,"state_version":version,"mode":a.mode,"frozen_generation":a.frozen_generation,"scanned_generation":data.scanned_generation,"processed_generation":data.processed_generation,"inputs":data.inputs,"outputs":outputs,"location_work":a.location_work,"location_evidence":location_evidence,"location_context":a.location_work.as_ref().and_then(|work|work.get("context_sources")).cloned().unwrap_or_else(||json!([])),"narrative_context":a.narrative_context,"narrative_discovery":a.narrative_discovery,"pending":pending_items,"pending_notifications":data.pending_notifications,"decisions":decisions.as_ref().map(|e|e.content.as_str()).unwrap_or(""),"decisions_version":decisions.map_or(0,|e|e.version)}),
     )
 }
 pub async fn checkpoint(
@@ -1841,6 +1873,8 @@ async fn import_legacy(
                 revises_item_id: None,
                 evidence_scope: None,
                 raw_sources: vec![],
+                subject_ref: None,
+                subject_scope: None,
             };
             data.legacy_items.push(Item {
                 id,
@@ -2011,13 +2045,45 @@ pub async fn candidates(
     }
     let (mut data, version) = load_state(&mut tx, user).await?;
     let request_hash = digest(&body);
-    if let Some(old) = &data.candidate_submission
+    let mut research_job = None;
+    let mut research_operation = None;
+    if let Some(reference) = body.get("subject_ref").and_then(Value::as_str) {
+        let (operation_id, hash) = research::operation(&body, "candidates")?;
+        let (job, job_version) = research::load(&mut tx, &auth, reference)
+            .await?
+            .ok_or_else(|| ApiError::invalid("research subject is not retained"))?;
+        let replay = research::receipt(
+            &mut tx,
+            &auth,
+            &research::path(reference)?,
+            "dreamer_research",
+            &operation_id,
+            &hash,
+        )
+        .await?;
+        research::checked_attempt(&data, &body, &auth, version, replay.is_some())?;
+        if let Some(receipt) = replay {
+            let mut response = admission_response(&mut tx, &auth, &data, version).await?;
+            for (key, value) in receipt["result"].as_object().into_iter().flatten() {
+                response[key] = value.clone();
+            }
+            response["state_version"] = json!(version);
+            response["no_op"] = json!(true);
+            return Ok(Json(response));
+        }
+        research::check_job(&data, &body, &job, job_version)?;
+        research_operation = Some((operation_id, hash));
+        research_job = Some((job, job_version));
+    }
+    if research_job.is_none()
+        && let Some(old) = &data.candidate_submission
         && old["attempt_id"] == body["attempt_id"]
         && old["producer"] == auth.credential_id.0.to_string()
         && old["request_hash"] == request_hash
     {
         return Ok(Json(old["response"].clone()));
     }
+    let subject_submission = research_job.is_some();
     let a = active(&data, &body, &auth, version)?;
     let list: Vec<Candidate> =
         serde_json::from_value(body.get("candidates").cloned().unwrap_or(json!([])))?;
@@ -2047,6 +2113,30 @@ pub async fn candidates(
     let mut destinations = std::collections::BTreeMap::new();
     for candidate in &list {
         if let Some(id) = &candidate.revises_item_id {
+            if let Some((job, _)) = &research_job {
+                let old = data
+                    .items
+                    .iter()
+                    .find(|item| &item.id == id)
+                    .ok_or_else(|| {
+                        ApiError::invalid("revised item is not in the retained inbox")
+                    })?;
+                if old.candidate.evidence_scope.is_some()
+                    || old.candidate.kind != candidate.kind
+                    || old.candidate.path != candidate.path
+                    || old
+                        .candidate
+                        .subject_ref
+                        .as_deref()
+                        .is_some_and(|reference| reference != job.subject_ref)
+                    || old.candidate.subject_ref.is_none()
+                        && old.candidate.path.as_deref() != Some(job.output_path.as_str())
+                {
+                    return Err(ApiError::invalid(
+                        "subject revision must preserve its canonical identity, destination and kind",
+                    ));
+                }
+            }
             if !revisions.insert(id) {
                 return Err(ApiError::invalid(
                     "a retained item can be revised only once per submission",
@@ -2188,7 +2278,102 @@ pub async fn candidates(
         .map(|e| e.content)
         .unwrap_or_default();
     for mut candidate in list {
-        if candidate.evidence_scope.is_none()
+        if candidate.subject_scope.is_some() {
+            return Err(ApiError::invalid(
+                "subject_scope is server-owned; submit subject_ref only",
+            ));
+        }
+        let candidate_generation = if let Some((job, _)) = &research_job {
+            if candidate.evidence_scope.is_some()
+                || !candidate.raw_sources.is_empty()
+                || candidate.subject_ref.as_deref() != Some(job.subject_ref.as_str())
+            {
+                return Err(ApiError::invalid(
+                    "research candidates must identify their subject and cannot contain location evidence",
+                ));
+            }
+            if candidate.sources.iter().any(|source| {
+                !job.sources.iter().any(|input| {
+                    input.entry_ref == source.entry_ref && input.version == source.version
+                })
+            }) {
+                return Err(ApiError::invalid(
+                    "candidate source was not admitted to this research subject",
+                ));
+            }
+            if data.items.iter().any(|item| {
+                item.candidate.path == candidate.path
+                    && candidate.path.is_some()
+                    && matches!(
+                        item.status.as_str(),
+                        "rejected" | "deferred" | "approved_held"
+                    )
+            }) {
+                return Err(ApiError::invalid(
+                    "a rejected, deferred or approved subject destination requires an owner decision before replacement",
+                ));
+            }
+            if candidate.kind == "summary"
+                && (candidate.path.as_deref() != Some(job.output_path.as_str())
+                    || !candidate
+                        .sources
+                        .iter()
+                        .any(|source| source.entry_ref == job.subject_ref))
+            {
+                return Err(ApiError::invalid(
+                    "subject summary must use its stable output_path and cite its canonical source",
+                ));
+            }
+            if candidate.kind == "summary" {
+                let index = candidate
+                    .sources
+                    .iter()
+                    .position(|source| source.entry_ref == job.subject_ref)
+                    .expect("canonical citation checked")
+                    + 1;
+                let marker = format!("[^s{index}]");
+                if !candidate
+                    .content
+                    .as_deref()
+                    .unwrap_or("")
+                    .lines()
+                    .any(|line| {
+                        !line.trim_start().starts_with('#')
+                            && !line.trim_start().starts_with("[^s")
+                            && !line.trim_start().starts_with("[^r")
+                            && line.contains(&marker)
+                    })
+                {
+                    return Err(ApiError::invalid(
+                        "subject summary must cite the canonical source inline",
+                    ));
+                }
+            }
+            if !research::fresh(&mut tx, &auth, job).await? {
+                return Err(ApiError::invalid(
+                    "research evidence or relevant subject scope changed; rediscover before submitting",
+                ));
+            }
+            let mut scope = job.scope.clone();
+            let dependencies = job
+                .sources
+                .iter()
+                .map(|source| Ok((entry_id(&source.entry_ref)?, source.version)))
+                .collect::<ApiResult<Vec<_>>>()?;
+            crate::dreamer_subject::bind_dependencies(&mut tx, &auth, &mut scope, &dependencies)
+                .await?;
+            candidate.subject_scope = Some(scope);
+            job.snapshot_generation
+        } else {
+            if candidate.subject_ref.is_some() {
+                return Err(ApiError::invalid(
+                    "subject candidates require the research request envelope",
+                ));
+            }
+            a.frozen_generation
+        };
+        if research_job.is_none()
+            && candidate.evidence_scope.is_none()
             && candidate.sources.iter().any(|s| {
                 !data
                     .inputs
@@ -2215,7 +2400,7 @@ pub async fn candidates(
             &mut tx,
             user,
             &mut candidate.sources,
-            a.frozen_generation,
+            candidate_generation,
             !location,
         )
         .await?;
@@ -2308,7 +2493,7 @@ pub async fn candidates(
                 reviewable: true,
                 before_md,
                 published: None,
-                frozen_generation: a.frozen_generation,
+                frozen_generation: candidate_generation,
                 created_at,
             };
             ids.push(id);
@@ -2334,7 +2519,7 @@ pub async fn candidates(
             reviewable: true,
             before_md,
             published: None,
-            frozen_generation: a.frozen_generation,
+            frozen_generation: candidate_generation,
             created_at: Utc::now(),
         });
     }
@@ -2367,6 +2552,9 @@ pub async fn candidates(
                 "processed input was not durably admitted",
             ));
         }
+    }
+    if let Some((job, _)) = &research_job {
+        research::validate_processed(job, &processed, body.get("research_progress"))?;
     }
     let before_count = data.inputs.len();
     data.inputs.retain(|i| {
@@ -2421,10 +2609,41 @@ pub async fn candidates(
             data.pending_notifications.push(json!({"status":"pending","event_key":key,"target_kind":"review","run_entry_ref":run["entry_ref"],"run_version":run["version"],"count":ids.len()}));
         }
     }
-    let response = json!({"state_version":version+1,"run_entry_ref":run["entry_ref"],"run_version":run["version"],"accepted_candidate_ids":ids,"pending_count":data.items.iter().filter(|i|pending(i)).count()});
-    data.candidate_submission = Some(
-        json!({"attempt_id":a.attempt_id,"producer":auth.credential_id.0,"request_hash":request_hash,"response":response}),
-    );
+    let mut response = json!({"state_version":version+1,"run_entry_ref":run["entry_ref"],"run_version":run["version"],"accepted_candidate_ids":ids,"pending_count":data.items.iter().filter(|i|pending(i)).count()});
+    if let Some((mut job, job_version)) = research_job {
+        if let Some(progress) = body.get("research_progress") {
+            research::apply_progress(&mut tx, &auth, &mut job, progress).await?;
+        } else {
+            job.status = "waiting".into();
+            job.retry_at = Utc::now() + Duration::hours(24);
+        }
+        job.accepted_candidate_ids = ids.clone();
+        if !ids.is_empty() {
+            data.research
+                .requested_subject_refs
+                .retain(|reference| reference != &job.subject_ref);
+        }
+        data.research.completed += usize::from(!ids.is_empty());
+        let (operation_id, hash) = research_operation.expect("research operation");
+        research::remember(
+            &mut job.receipts,
+            &auth,
+            &operation_id,
+            &hash,
+            response.clone(),
+        );
+        research::save(&state, &mut tx, &auth, &job, job_version).await?;
+        let mut refreshed = admission_response(&mut tx, &auth, &data, version + 1).await?;
+        for (key, value) in response.as_object().expect("candidate response") {
+            refreshed[key] = value.clone();
+        }
+        response = refreshed;
+    }
+    if !subject_submission {
+        data.candidate_submission = Some(
+            json!({"attempt_id":a.attempt_id,"producer":auth.credential_id.0,"request_hash":request_hash,"response":response}),
+        );
+    }
     save_state(&state, &mut tx, &auth, &data, version).await?;
     tx.commit().await?;
     Ok(Json(response))
@@ -2626,17 +2845,39 @@ pub async fn finish(
     ) {
         return Err(ApiError::invalid("invalid terminal outcome"));
     }
-    let detail = body
+    let mut detail = body
         .get("detail")
         .and_then(Value::as_str)
         .unwrap_or("")
         .chars()
         .take(2000)
         .collect::<String>();
+    if body["outcome"] == "completed" && outcome == "partial" && body.get("research").is_some() {
+        detail.push_str(&format!(" Selected research completed; {} historical inputs and {} location days remain retained.", data.inputs.len(), data.location_work.len()));
+    }
+    let mut research_progress = serde_json::Map::new();
+    for key in [
+        "rounds",
+        "subjects_completed",
+        "subjects_yielded",
+        "processed_inputs",
+        "new_review_items",
+        "change_pages",
+    ] {
+        if let Some(value) = body["research"][key].as_u64() {
+            research_progress.insert(key.into(), json!(value));
+        }
+    }
+    if let Some(reason) = body["research"]["stop_reason"].as_str() {
+        research_progress.insert(
+            "stop_reason".into(),
+            json!(reason.chars().take(300).collect::<String>()),
+        );
+    }
     let completed = Utc::now();
     let notification = record_notifications(&mut data, &body["notification"])?;
     data.last_attempt = Some(
-        json!({"attempt_id":a.attempt_id,"producer_credential_id":a.producer_credential_id,"date":a.date,"outcome":outcome,"detail":detail,"started_at":a.started_at,"finished_at":completed,"auth_persistence":body["auth_persistence"],"notification":notification,"execution_outcome":body["execution_outcome"],"model":body["model"],"codex_version":body["codex_version"],"counts":counts(&data)}),
+        json!({"attempt_id":a.attempt_id,"producer_credential_id":a.producer_credential_id,"date":a.date,"outcome":outcome,"detail":detail,"started_at":a.started_at,"finished_at":completed,"auth_persistence":body["auth_persistence"],"notification":notification,"execution_outcome":body["execution_outcome"],"model":body["model"],"codex_version":body["codex_version"],"counts":counts(&data),"research":research_progress}),
     );
     let run = write_run(&state, &mut tx, &auth, &mut data, &a, &outcome, &detail).await?;
     if outcome == "completed" {
@@ -2665,7 +2906,14 @@ async fn item_available(
         .candidate
         .sources
         .iter()
-        .map(|s| entry_id(&s.entry_ref))
+        .map(|s| s.entry_ref.as_str())
+        .chain(
+            item.candidate
+                .subject_scope
+                .iter()
+                .flat_map(|scope| scope.dependencies.iter().map(|s| s.entry_ref.as_str())),
+        )
+        .map(entry_id)
         .collect::<ApiResult<std::collections::BTreeSet<_>>>()?
         .into_iter()
         .collect::<Vec<_>>();
@@ -2695,6 +2943,8 @@ fn withhold_item(item: &Item) -> Item {
     shown.candidate.sources.clear();
     shown.candidate.raw_sources.clear();
     shown.candidate.evidence_scope = None;
+    shown.candidate.subject_ref = None;
+    shown.candidate.subject_scope = None;
     shown.candidate.path = None;
     shown.before_md.clear();
     shown.reviewable = false;
@@ -2745,6 +2995,20 @@ async fn item_stale(
             != Some(load_entry(tx, user, path).await?.map_or(0, |e| e.version))
     {
         return Ok(true);
+    }
+    if let Some(scope) = &item.candidate.subject_scope {
+        let dependencies = item
+            .candidate
+            .sources
+            .iter()
+            .map(|source| Ok((entry_id(&source.entry_ref)?, source.version)))
+            .collect::<ApiResult<Vec<_>>>()?;
+        return Ok(
+            crate::dreamer_subject::check_scope(tx, auth, scope, &dependencies)
+                .await?
+                .status
+                != "fresh",
+        );
     }
     if item.candidate.kind == "summary" {
         for prefix in item
@@ -3130,6 +3394,24 @@ async fn publish_item(
         item.candidate.evidence_scope =
             Some(validate_location_candidate(tx, auth, &item.candidate).await?);
     }
+    if let Some(scope) = &item.candidate.subject_scope {
+        let dependencies = item
+            .candidate
+            .sources
+            .iter()
+            .map(|source| Ok((entry_id(&source.entry_ref)?, source.version)))
+            .collect::<ApiResult<Vec<_>>>()?;
+        if item.candidate.subject_ref.as_deref() != Some(scope.subject_ref.as_str())
+            || crate::dreamer_subject::check_scope(tx, auth, scope, &dependencies)
+                .await?
+                .status
+                != "fresh"
+        {
+            return Err(ApiError::invalid(
+                "subject summary evidence changed; retain its review identity and research it again",
+            ));
+        }
+    }
     validate_candidate(&item.candidate, &item.before_md)?;
     let path = item.candidate.path.clone().expect("validated path");
     let mut metadata = if item.candidate.kind == "summary" {
@@ -3143,7 +3425,7 @@ async fn publish_item(
                     .map(|(prefix, _)| format!("{prefix}/"))
             })
             .collect();
-        json!({"kind":"derived_summary","dreamer_summary":{"schema":"dream.summary.v1","compiler":"brunn-rust-v1","state":"published","candidate_id":item.id,"candidate_hash":item.candidate_hash,"run_entry_ref":item.run_entry_ref,"run_version":item.run_version,"compiled_at":item.created_at,"published_at":Utc::now(),"frozen_generation":item.frozen_generation,"sources":item.candidate.sources,"scope_prefixes":prefixes,"raw_sources":item.candidate.raw_sources,"evidence_scope":item.candidate.evidence_scope}})
+        json!({"kind":"derived_summary","dreamer_summary":{"schema":"dream.summary.v1","compiler":"brunn-rust-v1","state":"published","candidate_id":item.id,"candidate_hash":item.candidate_hash,"run_entry_ref":item.run_entry_ref,"run_version":item.run_version,"compiled_at":item.created_at,"published_at":Utc::now(),"frozen_generation":item.frozen_generation,"sources":item.candidate.sources,"scope_prefixes":prefixes,"raw_sources":item.candidate.raw_sources,"evidence_scope":item.candidate.evidence_scope,"subject_ref":item.candidate.subject_ref,"subject_scope":item.candidate.subject_scope}})
     } else {
         load_entry(tx, user, &path)
             .await?

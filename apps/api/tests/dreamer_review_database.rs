@@ -868,6 +868,12 @@ async fn owner_scale_admission_freezes_latest_versions_and_retains_only_128_inpu
     // run remove their large fixture before preserving the original result.
     let outcome = std::panic::AssertUnwindSafe(async {
     control(&f, "report-only", 0).await;
+    // A fresh database has statistics from before its first large import.
+    // Exercise that cold estimate explicitly; a prior fixture's analyze must
+    // not make this deadline regression disappear on repeated local runs.
+    for statement in ["ANALYZE brunn.entries", "ANALYZE brunn.entry_versions", "ANALYZE brunn.workspace_changes"] {
+        sqlx::query(statement).execute(&f.pool).await.unwrap();
+    }
     const ENTRY_COUNT: i64 = 21_000;
     const UPDATED_COUNT: i64 = 15_000;
     let original = "# Scale source\n\nOriginal immutable observation.\n";
@@ -4689,3 +4695,5 @@ async fn unavailable_change_pages_advance_without_consuming_retained_evidence() 
         "unavailable events prevented the next readable source from admission"
     );
 }
+
+mod subject_research;

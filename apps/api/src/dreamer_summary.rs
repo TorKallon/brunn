@@ -19,6 +19,7 @@ const MAX_ALTERNATIVES: usize = 3;
 const MAX_SOURCES: usize = 64;
 const MAX_CHANGES: i64 = 2_000;
 const MAX_AUDITS: usize = 16;
+const MAX_RESEARCH_SOURCES: usize = 256;
 
 #[derive(Clone, Debug, Deserialize)]
 struct Source {
@@ -40,6 +41,10 @@ struct Manifest {
     scope_prefixes: Vec<String>,
     #[serde(default)]
     evidence_scope: Option<Value>,
+    #[serde(default)]
+    subject_ref: Option<String>,
+    #[serde(default)]
+    subject_scope: Option<crate::dreamer_subject::SubjectScope>,
 }
 
 #[derive(Clone, Debug)]
@@ -76,6 +81,7 @@ pub fn protected_path(path: &str) -> bool {
         )
         || path.starts_with("dreams/runs/")
         || path.starts_with("dreams/reviews/")
+        || path.starts_with("dreams/research/")
 }
 
 pub fn protected_metadata(metadata: &Value) -> bool {
@@ -85,6 +91,7 @@ pub fn protected_metadata(metadata: &Value) -> bool {
         "dreamer_review",
         "dreamer_state",
         "dreamer_receipt",
+        "dreamer_research",
     ]
     .iter()
     .any(|key| metadata.get(*key).is_some())
@@ -113,6 +120,21 @@ fn manifest(metadata: &Value) -> Option<Manifest> {
             .scope_prefixes
             .iter()
             .any(|prefix| prefix.is_empty() || prefix.len() > 1_024)
+        || value.subject_ref.as_ref().is_some_and(|reference| {
+            value
+                .subject_scope
+                .as_ref()
+                .is_none_or(|scope| &scope.subject_ref != reference)
+                || !value
+                    .sources
+                    .iter()
+                    .any(|source| &source.entry_ref == reference)
+        })
+        || value
+            .subject_scope
+            .as_ref()
+            .is_some_and(|scope| value.subject_ref.as_ref() != Some(&scope.subject_ref))
+        || value.subject_scope.is_some() && value.evidence_scope.is_some()
     {
         return None;
     }
@@ -320,12 +342,27 @@ async fn check(
             inaccessible: false,
         });
     }
-    if changed {
+    if changed && manifest.subject_scope.is_none() {
         return Ok(Check {
             status: "stale",
             reason: "source_version_changed",
             sources,
             inaccessible: false,
+        });
+    }
+    if let Some(scope) = &manifest.subject_scope {
+        let dependencies = manifest
+            .sources
+            .iter()
+            .filter_map(|source| source_id(source).map(|id| (id, source.version)))
+            .collect::<Vec<_>>();
+        let subject = crate::dreamer_subject::check_scope(tx, auth, scope, &dependencies).await?;
+        return Ok(Check {
+            status: subject.status,
+            reason: subject.reason,
+            sources,
+            inaccessible: subject.reason == "subject_source_unavailable"
+                || subject.reason.starts_with("invalid_subject_"),
         });
     }
     let changes = sqlx::query("SELECT change.path,(SELECT previous.path FROM brunn.workspace_changes previous WHERE previous.user_id=change.user_id AND previous.entry_id=change.entry_id AND previous.generation<change.generation ORDER BY previous.generation DESC LIMIT 1) AS previous_path FROM brunn.workspace_changes change WHERE change.user_id=$1 AND change.generation>$2 ORDER BY change.generation LIMIT $3")
@@ -512,6 +549,7 @@ fn audit_item(
     audits: &mut Vec<(Uuid, i64)>,
     targets: &mut std::collections::BTreeSet<(String, i64)>,
     raw_sources: &mut std::collections::BTreeSet<(DateTime<Utc>, String)>,
+    source_limit: &mut usize,
 ) -> bool {
     let Some(candidate) = item.get("candidate") else {
         return false;
@@ -519,6 +557,27 @@ fn audit_item(
     let Some(citations) = candidate.get("sources").and_then(Value::as_array) else {
         return false;
     };
+    if citations.len() > MAX_SOURCES {
+        return false;
+    }
+    if let Some(dependencies) = candidate
+        .get("subject_scope")
+        .and_then(|scope| scope.get("dependencies"))
+    {
+        let Some(dependencies) = dependencies
+            .as_array()
+            .filter(|items| items.len() <= MAX_RESEARCH_SOURCES)
+        else {
+            return false;
+        };
+        *source_limit = MAX_RESEARCH_SOURCES;
+        for dependency in dependencies {
+            let Some(reference) = exact_ref(dependency, "entry_ref", "version") else {
+                return false;
+            };
+            sources.insert(reference);
+        }
+    }
     if !audit_location_context(&candidate["evidence_scope"], sources) {
         return false;
     }
@@ -556,7 +615,13 @@ fn audit_item(
             sources.insert(reference);
         }
     }
-    sources.len() + targets.len() + raw_sources.len() <= MAX_SOURCES
+    if *source_limit == MAX_RESEARCH_SOURCES {
+        // A full research manifest may still have an existing publication
+        // target to audit; that target is not another research dependency.
+        sources.len() <= *source_limit && targets.len() + raw_sources.len() <= MAX_SOURCES
+    } else {
+        sources.len() + targets.len() + raw_sources.len() <= *source_limit
+    }
 }
 
 fn audit_location_context(
@@ -575,7 +640,7 @@ fn audit_location_context(
         };
         sources.insert(reference);
     }
-    sources.len() <= MAX_SOURCES
+    sources.len() <= MAX_RESEARCH_SOURCES
 }
 
 /// Validate the exact dependency graph retained in immutable run/review audits.
@@ -590,6 +655,7 @@ async fn audit_access(
     let mut sources = std::collections::BTreeSet::new();
     let mut targets = std::collections::BTreeSet::new();
     let mut raw_sources = std::collections::BTreeSet::new();
+    let mut source_limit = MAX_SOURCES;
     while let Some(reference) = queue.pop() {
         if !visited.insert(reference) {
             continue;
@@ -601,7 +667,29 @@ async fn audit_access(
             return Ok(false);
         };
         let metadata = &doc.metadata;
-        if let Some(receipt) = metadata.get("dreamer_receipt") {
+        if let Some(research) = metadata.get("dreamer_research") {
+            // Work notes are generated evidence caches, even on historical
+            // reads. Every retained dependency must remain visible. Research
+            // may hold more source headers than one publication's citations.
+            source_limit = MAX_RESEARCH_SOURCES;
+            if research["schema"] != "dream.research.v1" {
+                return Ok(false);
+            }
+            for key in ["sources", "reviewed_sources"] {
+                let Some(dependencies) = research[key]
+                    .as_array()
+                    .filter(|items| items.len() <= source_limit)
+                else {
+                    return Ok(false);
+                };
+                for dependency in dependencies {
+                    let Some(reference) = exact_ref(dependency, "entry_ref", "version") else {
+                        return Ok(false);
+                    };
+                    sources.insert(reference);
+                }
+            }
+        } else if let Some(receipt) = metadata.get("dreamer_receipt") {
             let Some(run) = exact_ref(receipt, "receipt_ref", "receipt_version") else {
                 return Ok(false);
             };
@@ -615,6 +703,7 @@ async fn audit_access(
                         &mut queue,
                         &mut targets,
                         &mut raw_sources,
+                        &mut source_limit,
                     )
                 })
             {
@@ -668,6 +757,7 @@ async fn audit_access(
                     &mut queue,
                     &mut targets,
                     &mut raw_sources,
+                    &mut source_limit,
                 ) {
                     return Ok(false);
                 }
@@ -685,6 +775,7 @@ async fn audit_access(
                         &mut queue,
                         &mut targets,
                         &mut raw_sources,
+                        &mut source_limit,
                     ) {
                         return Ok(false);
                     }
@@ -713,13 +804,18 @@ async fn audit_access(
                     queue.push(reference);
                 }
             }
-        } else if !protected_metadata(metadata) {
+        } else if !protected_metadata(metadata)
+            && !doc
+                .path
+                .to_ascii_lowercase()
+                .starts_with("dreams/research/")
+        {
             // Existing untyped legacy runs remain ordinary owner-visible sources.
             sources.insert(reference);
         } else {
             return Ok(false);
         }
-        if sources.len() > MAX_SOURCES {
+        if sources.len() > source_limit {
             return Ok(false);
         }
     }
@@ -810,7 +906,13 @@ async fn project(
     };
     let is_summary =
         selected.metadata.get("dreamer_summary").is_some() || managed_path(&selected.path);
-    if !is_summary && protected_metadata(&selected.metadata) {
+    if !is_summary
+        && (protected_metadata(&selected.metadata)
+            || selected
+                .path
+                .to_ascii_lowercase()
+                .starts_with("dreams/research/"))
+    {
         if !audit_access(tx, auth, &selected).await? {
             if selected.metadata.get("dreamer_receipt").is_some()
                 && let Some(value) = receipt_status(&selected, request, max_chars, generation)
@@ -889,8 +991,9 @@ async fn project(
     } else {
         "no_published_summary"
     };
-    let rows = sqlx::query("SELECT e.id FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version WHERE e.user_id=$1 AND e.deleted_at IS NULL AND (e.path LIKE 'derived/entities/%' OR e.path LIKE 'derived/location/%') AND v.metadata @> $2 ORDER BY e.updated_at DESC,e.id LIMIT $3")
+    let rows = sqlx::query("SELECT e.id FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version WHERE e.user_id=$1 AND e.deleted_at IS NULL AND (e.path LIKE 'derived/entities/%' OR e.path LIKE 'derived/location/%') AND v.metadata @> $2 ORDER BY (v.metadata->'dreamer_summary'->>'subject_ref'=$4) DESC NULLS LAST,e.updated_at DESC,e.id LIMIT $3")
         .bind(auth.user_id.0).bind(json!({"dreamer_summary":{"sources":[{"entry_ref":format!("entry:{id}")}]}})).bind(*alternatives as i64)
+        .bind(format!("entry:{id}"))
         .fetch_all(&mut **tx).await?;
     for row in rows {
         *alternatives -= 1;
@@ -899,6 +1002,7 @@ async fn project(
             continue;
         };
         let check = check(tx, auth, &summary).await?;
+        let canonical = summary.metadata["dreamer_summary"]["subject_ref"] == format!("entry:{id}");
         last_reason = check.reason;
         if check.status == "fresh" {
             let mut summary_value = render(&summary, request, max_chars);
@@ -907,6 +1011,11 @@ async fn project(
             summary_value["requested_source"] =
                 json!({"reference":format!("entry:{id}"),"version":selected.version});
             return Ok(summary_value);
+        }
+        if canonical {
+            // Do not bypass a stale canonical overview with a narrow legacy
+            // summary whose older freshness contract knows less.
+            break;
         }
     }
     value["representation"] = json!("current_source_fallback");
@@ -1004,6 +1113,29 @@ mod tests {
         ));
         assert!(!relevant_change("derived/entities/a.md", &[String::new()]));
         assert!(!relevant_change("dreams/state.md", &[String::new()]));
+    }
+
+    #[test]
+    fn a_full_research_dependency_manifest_can_audit_an_existing_output() {
+        let dependencies = (0..MAX_RESEARCH_SOURCES)
+            .map(|_| json!({"entry_ref":format!("entry:{}",Uuid::now_v7()),"version":1}))
+            .collect::<Vec<_>>();
+        let item = json!({"candidate":{"sources":[dependencies[0].clone()],"path":"derived/entities/aster.md","expected_version":1,"subject_scope":{"dependencies":dependencies}}});
+        let mut sources = std::collections::BTreeSet::new();
+        let mut targets = std::collections::BTreeSet::new();
+        let mut audits = vec![];
+        let mut raw = std::collections::BTreeSet::new();
+        let mut source_limit = MAX_SOURCES;
+        assert!(audit_item(
+            &item,
+            &mut sources,
+            &mut audits,
+            &mut targets,
+            &mut raw,
+            &mut source_limit
+        ));
+        assert_eq!(sources.len(), MAX_RESEARCH_SOURCES);
+        assert_eq!(targets.len(), 1);
     }
 
     async fn fixture() -> Option<(PgPool, AppState, AuthContext)> {
@@ -1104,6 +1236,527 @@ mod tests {
             axum::Json(serde_json::from_value(json!({"requests":[{"ref":format!("entry:{id}"),"view":view,"version":version}]})).unwrap()))
             .await.unwrap().0;
         serde_json::to_value(response).unwrap()["data"]["items"][0].clone()
+    }
+
+    async fn subject_scope(
+        state: &AppState,
+        auth: &AuthContext,
+        id: Uuid,
+        generation: i64,
+    ) -> crate::dreamer_subject::SubjectScope {
+        let mut tx = snapshot(state, auth).await.unwrap();
+        let scope =
+            crate::dreamer_subject::create_scope(&mut tx, auth, &format!("entry:{id}"), generation)
+                .await
+                .unwrap();
+        tx.commit().await.unwrap();
+        scope
+    }
+
+    async fn subject_check(
+        state: &AppState,
+        auth: &AuthContext,
+        scope: &crate::dreamer_subject::SubjectScope,
+        source: Uuid,
+    ) -> crate::dreamer_subject::SubjectCheck {
+        let mut tx = snapshot(state, auth).await.unwrap();
+        let check = crate::dreamer_subject::check_scope(&mut tx, auth, scope, &[(source, 1)])
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        check
+    }
+
+    #[tokio::test]
+    async fn database_subject_scope_checks_cross_directory_changes_and_coverage() {
+        let Some((pool, state, auth)) = fixture().await else {
+            return;
+        };
+        let canonical = Uuid::now_v7();
+        let frozen = put(
+            &pool,
+            &auth,
+            canonical,
+            "People/Aster.md",
+            1,
+            "# Aster",
+            json!({"aliases":["Aster Vale", "Pilot Nimbus"]}),
+        )
+        .await;
+        sqlx::query("UPDATE brunn.entries SET title='Aster' WHERE id=$1")
+            .bind(canonical)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let scope = subject_scope(&state, &auth, canonical, frozen).await;
+        let generated = Uuid::now_v7();
+        put(
+            &pool,
+            &auth,
+            generated,
+            "dreams/research/job.md",
+            1,
+            "Aster research churn",
+            json!({}),
+        )
+        .await;
+        sqlx::query("INSERT INTO brunn.workspace_changes(user_id,entry_id,entry_version,operation,path,content_sha256) SELECT $1,$2,1,'update','dreams/research/job.md',$3 FROM generate_series(1,2100)")
+            .bind(auth.user_id.0).bind(generated).bind(hash_token("Aster research churn")).execute(&pool).await.unwrap();
+        let generated_metadata = Uuid::now_v7();
+        put(
+            &pool,
+            &auth,
+            generated_metadata,
+            "Elsewhere/generated-note.md",
+            1,
+            "Aster generated noise",
+            json!({"dreamer_run":{"schema":"dream.run.v1"}}),
+        )
+        .await;
+        sqlx::query("INSERT INTO brunn.workspace_changes(user_id,entry_id,entry_version,operation,path,content_sha256) SELECT $1,$2,1,'update','Elsewhere/generated-note.md',$3 FROM generate_series(1,2100)")
+            .bind(auth.user_id.0).bind(generated_metadata).bind(hash_token("Aster generated noise")).execute(&pool).await.unwrap();
+        let unrelated = Uuid::now_v7();
+        put(
+            &pool,
+            &auth,
+            unrelated,
+            "Elsewhere/unrelated.md",
+            1,
+            "An unrelated Orchid outcome",
+            json!({}),
+        )
+        .await;
+        assert_eq!(
+            subject_check(&state, &auth, &scope, canonical).await.status,
+            "fresh"
+        );
+
+        let linked = Uuid::now_v7();
+        let generation = put(
+            &pool,
+            &auth,
+            linked,
+            "Imported/Distant/outcome.md",
+            1,
+            "Pilot Nimbus completed the project.",
+            json!({}),
+        )
+        .await;
+        assert_eq!(
+            subject_check(&state, &auth, &scope, canonical).await.reason,
+            "subject_scope_changed"
+        );
+        let scope = subject_scope(&state, &auth, canonical, generation).await;
+        let generation = put(
+            &pool,
+            &auth,
+            linked,
+            "Imported/Distant/outcome.md",
+            2,
+            "An unrelated replacement",
+            json!({}),
+        )
+        .await;
+        // Removed mentions remain changes to the researched scope.
+        assert_eq!(
+            subject_check(&state, &auth, &scope, canonical).await.status,
+            "stale"
+        );
+        let mut tx = snapshot(&state, &auth).await.unwrap();
+        let delta = crate::dreamer_subject::research_changes(
+            &mut tx,
+            &auth,
+            &scope,
+            &[(canonical, 1), (linked, 1)],
+        )
+        .await
+        .unwrap();
+        assert_eq!(delta.status, "complete");
+        assert_eq!(delta.relevant_ids, vec![linked]);
+        assert_eq!(delta.through_generation, generation);
+        tx.commit().await.unwrap();
+        let scope = subject_scope(&state, &auth, canonical, generation).await;
+        assert_eq!(
+            subject_check(&state, &auth, &scope, canonical).await.status,
+            "fresh"
+        );
+
+        let renamed = Uuid::now_v7();
+        let generation = put(
+            &pool,
+            &auth,
+            renamed,
+            "Elsewhere/Aster Vale.md",
+            1,
+            "Outcome with no subject name",
+            json!({}),
+        )
+        .await;
+        let scope = subject_scope(&state, &auth, canonical, generation).await;
+        sqlx::query("UPDATE brunn.entries SET path='dreams/research/moved.md' WHERE id=$1")
+            .bind(renamed)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let generation:i64 = sqlx::query_scalar("INSERT INTO brunn.workspace_changes(user_id,entry_id,entry_version,operation,path,content_sha256) VALUES($1,$2,1,'update','dreams/research/moved.md',$3) RETURNING generation")
+            .bind(auth.user_id.0).bind(renamed).bind(hash_token("Outcome with no subject name")).fetch_one(&pool).await.unwrap();
+        assert_eq!(
+            subject_check(&state, &auth, &scope, canonical).await.status,
+            "stale"
+        );
+
+        let scope = subject_scope(&state, &auth, canonical, generation).await;
+        let deleted = Uuid::now_v7();
+        let generation = put(
+            &pool,
+            &auth,
+            deleted,
+            "Imported/removed.md",
+            1,
+            "Aster's new evidence",
+            json!({}),
+        )
+        .await;
+        assert_eq!(
+            subject_check(&state, &auth, &scope, canonical).await.status,
+            "stale"
+        );
+        let scope = subject_scope(&state, &auth, canonical, generation).await;
+        sqlx::query("UPDATE brunn.entries SET deleted_at=clock_timestamp() WHERE id=$1")
+            .bind(deleted)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let generation:i64 = sqlx::query_scalar("INSERT INTO brunn.workspace_changes(user_id,entry_id,entry_version,operation,path,content_sha256) VALUES($1,$2,1,'delete','Imported/removed.md',$3) RETURNING generation")
+            .bind(auth.user_id.0).bind(deleted).bind(hash_token("Aster's new evidence")).fetch_one(&pool).await.unwrap();
+        assert_eq!(
+            subject_check(&state, &auth, &scope, canonical).await.status,
+            "stale"
+        );
+        let mut tx = snapshot(&state, &auth).await.unwrap();
+        let delta = crate::dreamer_subject::research_changes(
+            &mut tx,
+            &auth,
+            &scope,
+            &[(canonical, 1), (deleted, 1)],
+        )
+        .await
+        .unwrap();
+        assert_eq!(delta.status, "complete");
+        assert_eq!(delta.relevant_ids, vec![deleted]);
+        tx.commit().await.unwrap();
+
+        let scope = subject_scope(&state, &auth, canonical, generation).await;
+        sqlx::query("INSERT INTO brunn.workspace_changes(user_id,entry_id,entry_version,operation,path,content_sha256) SELECT $1,$2,1,'update','Elsewhere/unrelated.md',$3 FROM generate_series(1,2001)")
+            .bind(auth.user_id.0).bind(unrelated).bind(hash_token("An unrelated Orchid outcome")).execute(&pool).await.unwrap();
+        assert_eq!(
+            subject_check(&state, &auth, &scope, canonical).await.reason,
+            "subject_change_check_limit"
+        );
+        let mut tx = snapshot(&state, &auth).await.unwrap();
+        let first =
+            crate::dreamer_subject::research_changes(&mut tx, &auth, &scope, &[(canonical, 1)])
+                .await
+                .unwrap();
+        assert_eq!(first.status, "unchecked");
+        assert!(first.scanned_generation > scope.checked_generation);
+        assert!(first.scanned_generation < first.through_generation);
+        tx.commit().await.unwrap();
+        // A later commit is excluded from the pinned second page, and remains
+        // detectable after that interval has been completely reconciled.
+        put(
+            &pool,
+            &auth,
+            Uuid::now_v7(),
+            "Elsewhere/after-page.md",
+            1,
+            "Pilot Nimbus changed again",
+            json!({}),
+        )
+        .await;
+        let mut cursor_scope = scope.clone();
+        cursor_scope.checked_generation = first.scanned_generation;
+        let mut tx = snapshot(&state, &auth).await.unwrap();
+        let second = crate::dreamer_subject::research_change_page(
+            &mut tx,
+            &auth,
+            &cursor_scope,
+            &[(canonical, 1)],
+            first.through_generation,
+        )
+        .await
+        .unwrap();
+        assert_eq!(second.status, "complete");
+        assert_eq!(second.scanned_generation, first.through_generation);
+        assert!(second.relevant_ids.is_empty());
+        tx.commit().await.unwrap();
+        cursor_scope.checked_generation = second.scanned_generation;
+        assert_eq!(
+            subject_check(&state, &auth, &cursor_scope, canonical)
+                .await
+                .status,
+            "stale"
+        );
+        let generation: i64 = sqlx::query_scalar(
+            "SELECT max(generation) FROM brunn.workspace_changes WHERE user_id=$1",
+        )
+        .bind(auth.user_id.0)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let scope = subject_scope(&state, &auth, canonical, generation).await;
+        put(
+            &pool,
+            &auth,
+            Uuid::now_v7(),
+            "Elsewhere/large.md",
+            1,
+            &"x".repeat(9 * 1024 * 1024),
+            json!({}),
+        )
+        .await;
+        assert_eq!(
+            subject_check(&state, &auth, &scope, canonical).await.reason,
+            "subject_change_coverage_incomplete"
+        );
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn database_subject_overview_wins_and_stale_overview_does_not_fall_through() {
+        let Some((pool, state, auth)) = fixture().await else {
+            return;
+        };
+        let canonical = Uuid::now_v7();
+        let generation = put(
+            &pool,
+            &auth,
+            canonical,
+            "People/Aster.md",
+            1,
+            "# Aster\nOriginal canonical source",
+            json!({}),
+        )
+        .await;
+        sqlx::query("UPDATE brunn.entries SET title='Aster' WHERE id=$1")
+            .bind(canonical)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let scope = subject_scope(&state, &auth, canonical, generation).await;
+        let mut summary_metadata = metadata(canonical, generation);
+        summary_metadata["dreamer_summary"]["subject_ref"] = json!(format!("entry:{canonical}"));
+        summary_metadata["dreamer_summary"]["subject_scope"] = json!(scope);
+        let overview = Uuid::now_v7();
+        put(
+            &pool,
+            &auth,
+            overview,
+            "derived/entities/aster.md",
+            1,
+            "Canonical broad overview",
+            summary_metadata,
+        )
+        .await;
+        put(
+            &pool,
+            &auth,
+            Uuid::now_v7(),
+            "derived/entities/aster-skiing.md",
+            1,
+            "Newer narrow skiing summary",
+            metadata(canonical, generation),
+        )
+        .await;
+        let selected = read_item(&state, &auth, canonical, "current_state", None).await;
+        assert_eq!(selected["text"], "Canonical broad overview");
+        assert_eq!(selected["freshness"]["status"], "fresh");
+        put(
+            &pool,
+            &auth,
+            Uuid::now_v7(),
+            "Elsewhere/novel.md",
+            1,
+            "[[People/Aster.md]] has a newer outcome",
+            json!({}),
+        )
+        .await;
+        let selected = read_item(&state, &auth, canonical, "current_state", None).await;
+        assert_eq!(selected["representation"], "current_source_fallback");
+        assert_eq!(selected["freshness"]["reason"], "subject_scope_changed");
+        assert!(!selected.to_string().contains("skiing summary"));
+        assert_eq!(
+            read_item(&state, &auth, canonical, "full", Some(1)).await["text"],
+            "# Aster\nOriginal canonical source"
+        );
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn database_subject_uncited_dependencies_invalidate_and_protect_history() {
+        let Some((pool, state, auth)) = fixture().await else {
+            return;
+        };
+        let canonical = Uuid::now_v7();
+        put(
+            &pool,
+            &auth,
+            canonical,
+            "People/Aster.md",
+            1,
+            "# Aster\nSupported canonical fact",
+            json!({}),
+        )
+        .await;
+        sqlx::query("UPDATE brunn.entries SET title='Aster' WHERE id=$1")
+            .bind(canonical)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let uncited = Uuid::now_v7();
+        let generation = put(
+            &pool,
+            &auth,
+            uncited,
+            "Imported/Receipts/thread-918.md",
+            1,
+            "A source considered during research",
+            json!({}),
+        )
+        .await;
+        let mut scope = subject_scope(&state, &auth, canonical, generation).await;
+        let mut tx = snapshot(&state, &auth).await.unwrap();
+        crate::dreamer_subject::bind_dependencies(
+            &mut tx,
+            &auth,
+            &mut scope,
+            &[(canonical, 1), (uncited, 1)],
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        let original_scope = serde_json::to_value(&scope).unwrap();
+        assert_eq!(scope.dependencies.len(), 2);
+        let mut manifest = metadata(canonical, generation);
+        manifest["dreamer_summary"]["subject_ref"] = json!(format!("entry:{canonical}"));
+        manifest["dreamer_summary"]["subject_scope"] = json!(scope);
+        assert_eq!(
+            manifest["dreamer_summary"]["sources"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        let summary = Uuid::now_v7();
+        put(
+            &pool,
+            &auth,
+            summary,
+            "derived/entities/aster-full.md",
+            1,
+            "CACHED_SCOPE_CONTEXT_MARKER",
+            manifest,
+        )
+        .await;
+        assert_eq!(
+            read_item(&state, &auth, canonical, "current_state", None).await["text"],
+            "CACHED_SCOPE_CONTEXT_MARKER"
+        );
+        put(
+            &pool,
+            &auth,
+            Uuid::now_v7(),
+            "Different/new-outcome.md",
+            1,
+            "[[thread-918#Outcome|that earlier work]] now has a completed outcome.",
+            json!({}),
+        )
+        .await;
+        assert_eq!(
+            read_item(&state, &auth, canonical, "current_state", None).await["freshness"]["reason"],
+            "subject_scope_changed"
+        );
+        // Changed-but-accessible evidence still permits an explicit historical
+        // read. Losing another dependency must override that stale result.
+        put(
+            &pool,
+            &auth,
+            canonical,
+            "People/Aster.md",
+            2,
+            "# Aster\nNew canonical fact",
+            json!({}),
+        )
+        .await;
+        assert_eq!(
+            read_item(&state, &auth, summary, "full", Some(1)).await["representation"],
+            "historical_summary"
+        );
+        let audit = Uuid::now_v7();
+        put(&pool,&auth,audit,"dreams/runs/subject-history.md",1,"CACHED_SCOPE_CONTEXT_MARKER",json!({"dreamer_run":{"schema":"dream.run.v1","items":[{"candidate":{"sources":[{"entry_ref":format!("entry:{canonical}"),"version":1}],"subject_scope":scope}}]}})).await;
+        assert_eq!(
+            read_item(&state, &auth, audit, "full", None).await["representation"],
+            "audit_snapshot"
+        );
+        sqlx::query("UPDATE brunn.entries SET deleted_at=clock_timestamp() WHERE id=$1")
+            .bind(uncited)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let history = read_item(&state, &auth, summary, "full", Some(1)).await;
+        assert_eq!(history["representation"], "summary_withheld");
+        assert!(!history.to_string().contains("CACHED_SCOPE_CONTEXT_MARKER"));
+        let audit = read_item(&state, &auth, audit, "full", None).await;
+        assert_eq!(audit["representation"], "audit_withheld");
+        assert!(!audit.to_string().contains("CACHED_SCOPE_CONTEXT_MARKER"));
+        assert_eq!(serde_json::to_value(&scope).unwrap(), original_scope);
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn database_subject_research_hides_cached_notes_after_dependency_loss() {
+        let Some((pool, state, auth)) = fixture().await else {
+            return;
+        };
+        let source = Uuid::now_v7();
+        put(
+            &pool,
+            &auth,
+            source,
+            "People/Aster.md",
+            1,
+            "Private source",
+            json!({}),
+        )
+        .await;
+        let research = Uuid::now_v7();
+        put(&pool,&auth,research,"dreams/research/aster.md",1,"CACHED_RESEARCH_SECRET",json!({"dreamer_research":{"schema":"dream.research.v1","sources":[{"entry_ref":format!("entry:{source}"),"version":1}],"reviewed_sources":[]}})).await;
+        assert_eq!(
+            read_item(&state, &auth, research, "full", None).await["representation"],
+            "audit_snapshot"
+        );
+        sqlx::query("UPDATE brunn.entries SET deleted_at=clock_timestamp() WHERE id=$1")
+            .bind(source)
+            .execute(&pool)
+            .await
+            .unwrap();
+        for version in [None, Some(1)] {
+            let result = read_item(&state, &auth, research, "full", version).await;
+            assert_eq!(result["representation"], "audit_withheld");
+            assert!(!result.to_string().contains("CACHED_RESEARCH_SECRET"));
+        }
+        let mut hits = vec![
+            json!({"reference":format!("entry:{research}"),"path":"dreams/research/aster.md","title":"CACHED_RESEARCH_SECRET","excerpt":"CACHED_RESEARCH_SECRET","heading":"CACHED_RESEARCH_SECRET"}),
+        ];
+        protect_evidence(&state, &auth, &mut hits, &mut 3)
+            .await
+            .unwrap();
+        assert!(
+            !serde_json::to_string(&hits)
+                .unwrap()
+                .contains("CACHED_RESEARCH_SECRET")
+        );
+        pool.close().await;
     }
 
     #[tokio::test]

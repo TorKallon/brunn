@@ -17,6 +17,7 @@ pub mod http;
 pub mod narrative;
 pub mod prompt;
 pub mod receipt;
+pub mod research;
 pub mod run;
 pub mod runfile;
 

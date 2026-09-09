@@ -21,6 +21,7 @@ pub mod db;
 pub mod document_service;
 pub mod dreamer;
 pub mod dreamer_review;
+mod dreamer_subject;
 pub mod dreamer_summary;
 pub mod dreaming_service;
 pub mod embeddings;

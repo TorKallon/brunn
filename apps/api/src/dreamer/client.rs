@@ -409,7 +409,12 @@ impl ApiClient {
                 detail,
             }) if matches!(
                 operation,
-                "candidates" | "checkpoint" | "location-discover" | "narrative-discover"
+                "candidates"
+                    | "checkpoint"
+                    | "location-discover"
+                    | "narrative-discover"
+                    | "research-next"
+                    | "research-progress"
             ) && detail == "Review or run state changed; reload before retrying"
                 && body["expected_state_version"]
                     .as_i64()

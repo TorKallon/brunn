@@ -10,6 +10,9 @@ pub(super) async fn discover(
     Extension(auth): Extension<AuthContext>,
     Json(body): Json<Value>,
 ) -> ApiResult<Json<Value>> {
+    if body.get("subject_ref").is_some() {
+        return research::discover(State(state), Extension(auth), Json(body)).await;
+    }
     let auth = runner_auth(&auth)?;
     let plan = crate::dreamer::narrative::parse(
         &json!({"schema":"dream.narrative.discovery.v1","queries":body["queries"]}).to_string(),

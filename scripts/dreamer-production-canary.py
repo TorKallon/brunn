@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import re
+import statistics
 import subprocess
 import sys
 import time
@@ -105,7 +106,8 @@ class Client:
                                "status": "transport_uncertain"})
             raise CanaryError(f"{self.actor} {method} {path}: transport result uncertain; no automatic retry") from None
         self.calls.append({"actor": self.actor, "method": method, "path": path, "status": status,
-                           "elapsed_ms": round((time.monotonic() - started) * 1000, 3)})
+                           "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
+                           "response_bytes": len(data)})
         require(status in expected, f"{self.actor} {method} {path}: HTTP {status}")
         require(len(data) <= MAX_RESPONSE, "HTTP response exceeds canary byte bound")
         if status not in range(200, 300):
@@ -347,6 +349,174 @@ def run_cycle(owner, runner, reader, source, text, target_version, report, enabl
     return current
 
 
+def research_body(admission):
+    body = {key: admission[key] for key in ("attempt_id", "fence")}
+    body.update(expected_state_version=admission["state_version"], operation_id=str(uuid.uuid4()))
+    if admission.get("research"):
+        body.update(subject_ref=admission["research"]["subject_ref"],
+                    research_version=admission["research"]["version"])
+    return body
+
+
+def measure_subject_reads(reader, canonical, summary, samples=5):
+    """Alternate warmed HTTP reads; report actual response bytes without a speed gate."""
+    measurements = {"canonical_current_state": [], "exact_raw_source": []}
+    for sample in range(samples + 1):
+        for name in measurements:
+            request = {"ref": canonical["entry_ref"], "max_chars": 100_000}
+            request.update({"view": "current_state"} if name == "canonical_current_state"
+                           else {"view": "full", "version": canonical["version"]})
+            item = read_one(reader, **request)
+            if name == "canonical_current_state":
+                require(item.get("representation") == "derived_summary"
+                        and item["reference"] == summary["reference"]
+                        and item["freshness"]["status"] == "fresh", "measured canonical read lost its fresh overview")
+            else:
+                require(item["reference"] == canonical["entry_ref"] and item["version"] == canonical["version"]
+                        and item.get("representation") != "derived_summary", "measured exact source was substituted")
+            if sample:  # One warmup per arm; retain no response text or metadata.
+                call = reader.calls[-1]
+                require(call["path"] == "/v1/workspace/read" and call["status"] == 200,
+                        "read measurement did not match an HTTP response")
+                measurements[name].append({key: call[key] for key in ("elapsed_ms", "response_bytes")})
+    return {name: {"samples": rows, "median_ms": statistics.median(row["elapsed_ms"] for row in rows),
+                   "median_response_bytes": statistics.median(row["response_bytes"] for row in rows)}
+            for name, rows in measurements.items()}
+
+
+def run_subject_cycle(owner, runner, reader, report):
+    """Supplement legacy cycles in the same disposable fixture; no model or push."""
+    canonical_path = "sources/People/Canary Aster.md"
+    trail_path, primary_path = "sources/CanaryResearch/Trail.md", "sources/CanaryResearch/Outcome.md"
+    canonical_text = ("# Canary Aster\n\nCanary Aster has a project trail at [[" + trail_path + "]].\n"
+                      + "\nSynthetic padding for the fixture read comparison.\n" * 100)
+    trail_text = "# Trail\n\nThe primary result is in [[" + primary_path + "]].\n"
+    old_text = "# Outcome\n\nAn old plan is awaiting execution.\n"
+    outcome = "The current outcome is complete; one equipment detail remains unresolved."
+    new_text = "# Outcome\n\n" + outcome + "\n"
+    canonical = write(owner, canonical_path, canonical_text, 0)
+    trail = write(owner, trail_path, trail_text, 0)
+    primary = write(owner, primary_path, old_text, 0)
+    date = datetime.now(ZoneInfo("America/Los_Angeles")).date().isoformat()
+    admitted = runner.request("POST", "/v1/workspace/dreamer/admit", {
+        "attempt_id": str(uuid.uuid4()), "date": date, "kind": "manual", "lease_seconds": 600,
+        "requested_subject_refs": [canonical["entry_ref"]]})
+    require(admitted.get("admitted") is True and admitted.get("mode") == "full"
+            and admitted.get("research_protocol") == 1, "release requires admitted full-mode research_protocol 1")
+    expected = {row["entry_ref"]: row["version"] for row in (canonical, trail, primary)}
+    require(not admitted.get("location_work") and len(admitted["inputs"]) == 3
+            and {row["entry_ref"]: row["version"] for row in admitted["inputs"]} == expected,
+            "subject admission escaped the three synthetic sources")
+    next_body = research_body(admitted)
+    reader.request("POST", "/v1/workspace/dreamer/research-next", next_body, expected=(403,))
+    current = unwrap(runner.request("POST", "/v1/workspace/dreamer/research-next", next_body))
+    require(current["research"]["subject_ref"] == canonical["entry_ref"]
+            and current["research"]["subject_path"] == canonical_path,
+            "requested canonical identity was not selected")
+    canonical_read = read_one(reader, ref=canonical["entry_ref"], version=canonical["version"], view="full", max_chars=100_000)
+    require(canonical_read["text"] == canonical_text, "canonical exact source changed before research")
+    requests = []
+    # Follow two source links, then re-read a changed primary within this attempt.
+    for target, source, text in ((trail_path, trail, trail_text), (primary_path, primary, old_text),
+                                (primary["entry_ref"], primary, new_text)):
+        if len(requests) == 2:
+            primary = write(owner, primary_path, new_text, primary["version"])
+            source = primary
+        body = {**research_body(current), "queries": [], "targets": [target]}
+        requests.append(body)
+        current = unwrap(runner.request("POST", "/v1/workspace/dreamer/narrative-discover", body))
+        require(any(row["entry_ref"] == source["entry_ref"] and row["version"] == source["version"]
+                    for row in current["research"]["sources"]), "linked exact source was not admitted at its current version")
+        exact = read_one(reader, ref=source["entry_ref"], version=source["version"], view="full", max_chars=100_000)
+        require(exact["reference"] == source["entry_ref"] and exact["text"] == text,
+                "linked primary exact source mismatch")
+        require(current["frozen_generation"] == admitted["frozen_generation"]
+                and current["inputs"] == admitted["inputs"]
+                and current["processed_generation"] == admitted["processed_generation"],
+                "research discovery changed the frozen attempt or consumed pending inputs")
+    require(current["research"]["snapshot_generation"] > admitted["frozen_generation"],
+            "research did not advance beyond the original attempt snapshot")
+    selectors = [{"entry_ref": row["entry_ref"], "version": row["version"], "start_line": 3, "end_line": 3}
+                 for row in (canonical, primary)]
+    current = unwrap(runner.request("POST", "/v1/workspace/dreamer/research-progress", {
+        **research_body(current), "notes": outcome, "reviewed_sources": selectors,
+        "pending_queries": [], "pending_targets": [], "status": "researching"}))
+    require(current["research"]["notes"] == outcome
+            and {(row["entry_ref"], row["version"]) for row in current["research"]["reviewed_sources"]}
+                == {(row["entry_ref"], row["version"]) for row in selectors},
+            "research checkpoint lost its supported notes or exact source selectors")
+    replay = runner.request("POST", "/v1/workspace/dreamer/narrative-discover", requests[0])
+    latest = unwrap(replay)
+    require(replay.get("no_op") is True and latest["research"]["version"] == current["research"]["version"]
+            and latest["research"]["sources"] == current["research"]["sources"]
+            and latest["state_version"] == current["state_version"], "old discovery replay rewound newer research")
+    current, job = latest, latest["research"]
+    expected[primary["entry_ref"]] = primary["version"]
+    require(len(job["sources"]) == 3 and {row["entry_ref"]: row["version"] for row in job["sources"]} == expected,
+            "research header manifest omitted or duplicated a fixture dependency")
+    content = "# Canary Aster overview\n\nCanary Aster has a project trail.[^s1]\n" + outcome + "[^s2]\n"
+    submitted = runner.request("POST", "/v1/workspace/dreamer/candidates", {
+        **research_body(current), "candidates": [{"kind": "summary", "title": "Canary Aster overview",
+            "summary": "Synthetic subject overview with one unresolved detail.", "reason": "Verify persistent exact-source research.",
+            "subject_ref": canonical["entry_ref"], "path": job["output_path"], "expected_version": job["output_version"],
+            "content": content, "sources": selectors}], "processed_inputs": [],
+        "research_progress": {"notes": outcome, "reviewed_sources": selectors,
+                              "pending_queries": [], "pending_targets": [], "status": "waiting"},
+        "findings": ["Synthetic linked evidence inspected; original inputs deliberately retained."]})
+    require(len(submitted["accepted_candidate_ids"]) == 1, "subject candidate was not accepted exactly once")
+    terminal = {key: admitted[key] for key in ("attempt_id", "fence")}
+    terminal.update(expected_state_version=submitted["state_version"], outcome="partial",
+                    detail="Synthetic subject completed; original inputs retained.",
+                    auth_persistence={"status": "not_needed"}, notification={"status": "not_needed"})
+    finished = runner.request("POST", "/v1/workspace/dreamer/finish", terminal)
+    require(finished["latest_receipt"]["status"] == "partial" and finished["latest_receipt"]["mode"] == "full",
+            "subject terminal receipt misrepresented retained inputs")
+    view = unwrap(owner.request("GET", "/v1/dreamer/review"))
+    matches = [item for item in view["items"] if item["id"] in submitted["accepted_candidate_ids"]]
+    require(len(matches) == 1 and matches[0]["reviewable"] and not matches[0]["stale"],
+            "subject candidate was stale before fixture owner review")
+    item = matches[0]
+    require(item["candidate"]["target_path"] == job["output_path"], "subject candidate destination changed")
+    approved = unwrap(owner.request("POST", "/v1/dreamer/review/decisions", {
+        "item_id": item["id"], "run_entry_ref": item["run_entry_ref"], "run_version": item["run_version"],
+        "candidate_hash": item["candidate_hash"], "expected_decisions_version": view["decision_version"],
+        "decision": "approve", "comment": "Synthetic fixture subject approval.",
+        "idempotency_key": "canary-subject-decision:" + admitted["attempt_id"]}))
+    require(approved.get("application_status") == "applied", "full-mode subject approval did not publish")
+    summary = read_one(reader, ref=canonical["entry_ref"], view="current_state", max_chars=100_000)
+    require(summary.get("representation") == "derived_summary" and summary["freshness"]["status"] == "fresh"
+            and summary["path"] == job["output_path"] and summary["version"] == job["output_version"] + 1
+            and summary["text"].startswith(content), "canonical current_state did not select the fresh approved overview")
+    manifest = summary.get("metadata", {}).get("dreamer_summary", {})
+    dependencies = manifest.get("subject_scope", {}).get("dependencies", [])
+    require(manifest.get("subject_ref") == canonical["entry_ref"] and len(dependencies) == 3
+            and {row["entry_ref"]: row["version"] for row in dependencies} == expected
+            and {row["entry_ref"] for row in manifest.get("sources", [])} == {row["entry_ref"] for row in selectors},
+            "published subject lost its server-owned uncited research dependency")
+    measurements = measure_subject_reads(reader, canonical, summary)
+    # Neither the canonical name nor a cited source occurs in this new note.
+    write(owner, "sources/Elsewhere/ResearchUpdate.md", "# Update\n\nA later correction links to [[" + trail_path + "]].\n", 0)
+    for reference in (canonical["entry_ref"], summary["reference"]):
+        fallback = read_one(reader, ref=reference, view="current_state", max_chars=100_000)
+        require(fallback.get("representation") == "current_source_fallback"
+                and fallback["reference"] == canonical["entry_ref"] and fallback["text"] == canonical_text
+                and fallback["freshness"]["reason"] == "subject_scope_changed",
+                "uncited cross-directory link did not invalidate the published overview")
+    for source, version, text in ((canonical, canonical["version"], canonical_text), (trail, trail["version"], trail_text),
+                                  (primary, 1, old_text), (primary, primary["version"], new_text)):
+        exact = read_one(reader, ref=source["entry_ref"], version=version, view="full", max_chars=100_000)
+        require(exact["reference"] == source["entry_ref"] and exact["version"] == version and exact["text"] == text,
+                "subject publication or invalidation mutated an exact source")
+    report["subject_cycle"] = {"research_protocol": 1, "requested_subject_ref": canonical["entry_ref"],
+        "discovery_rounds": len(requests), "replay_after_newer_round": True, "newer_primary_version": primary["version"],
+        "supported_progress_checkpoint": True,
+        "research_dependencies": len(dependencies), "claim_sources": len(selectors), "item_id": item["id"],
+        "summary_ref": summary["reference"], "summary_version": summary["version"], "freshness_before_link": "fresh",
+        "uncited_cross_directory_invalidation": "passed", "exact_sources_preserved": True,
+        "terminal_outcome": "partial", "original_inputs_retained": len(admitted["inputs"]),
+        "read_comparison": measurements, "latency_speed_gate": False}
+
+
 def cleanup(owner, fixture, real_owner_id, timeout):
     identity = owner.request("GET", "/v1/me")
     fixture_identity(identity, fixture, real_owner_id)
@@ -438,6 +608,8 @@ def execute(owner, real_owner_id, args, report, persist):
         report["source_edit_fallback"] = "passed"
         run_cycle(fixture_owner, runner, reader, changed, second, summary["version"], report)
         report["recovery"] = "fresh replacement summary published through a new owner decision"
+        persist()
+        run_subject_cycle(fixture_owner, runner, reader, report)
         report["status"] = "passed"
     finally:
         if fixture_owner is not None:

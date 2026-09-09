@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -159,6 +159,151 @@ class DreamerProductionCanaryTests(unittest.TestCase):
         self.assertTrue(all(call.args == ("GET", "/v1/status") for call in request.call_args_list))
         self.assertEqual(sleep.call_count, 2)
         self.assertIn("awaiting_summary_preference_enable", output.call_args.args[0])
+
+    def test_subject_cycle_requires_current_replay_full_dependencies_and_stale_fallback(self):
+        for fault, error in ((None, None), ("protocol", "research_protocol 1"),
+                             ("replay", "rewound"), ("manifest", "uncited research dependency"),
+                             ("freshness", "did not invalidate"), ("exact", "mutated an exact source")):
+            with self.subTest(fault=fault):
+                canonical = {"entry_ref": "entry:canonical", "version": 1, "path": "sources/People/Canary Aster.md"}
+                trail = {"entry_ref": "entry:trail", "version": 1, "path": "sources/CanaryResearch/Trail.md"}
+                primary = {"entry_ref": "entry:primary", "version": 1, "path": "sources/CanaryResearch/Outcome.md"}
+                changed = {**primary, "version": 2}
+                headers = [canonical, trail, primary]
+                admitted = {"admitted": True, "mode": "full", "research_protocol": 0 if fault == "protocol" else 1,
+                            "attempt_id": "fixture-attempt", "fence": "fixture-fence", "state_version": 1,
+                            "inputs": headers, "frozen_generation": 3, "processed_generation": 0}
+                job = {"subject_ref": canonical["entry_ref"], "subject_path": canonical["path"],
+                       "output_path": "derived/entities/canary-aster.md", "output_version": 0}
+                admissions = [{**admitted, "state_version": index + 2,
+                               "research": {**job, "version": index + 1, "sources": sources,
+                                            "snapshot_generation": 4 if index == 3 else 3}}
+                              for index, sources in enumerate(([canonical], headers[:2], headers, [canonical, trail, changed]))]
+                checkpoint = deepcopy(admissions[-1])
+                checkpoint["state_version"] = 6
+                checkpoint["research"].update(version=5,
+                    notes="The current outcome is complete; one equipment detail remains unresolved.",
+                    reviewed_sources=[canonical, changed])
+                replay = deepcopy(checkpoint)
+                if fault == "replay":
+                    replay["research"]["version"] = 1
+                runner = Mock()
+                runner.request.side_effect = [admitted, {"data": admissions[0]},
+                    *({"data": item} for item in admissions[1:]), {"data": checkpoint}, {"no_op": True, "data": replay},
+                    {"accepted_candidate_ids": ["fixture-item"], "state_version": 7},
+                    {"latest_receipt": {"status": "partial", "mode": "full"}}]
+                item = {"id": "fixture-item", "reviewable": True, "stale": False, "run_entry_ref": "entry:run",
+                        "run_version": 1, "candidate_hash": "fixture-hash", "candidate": {"target_path": job["output_path"]}}
+                owner = Mock()
+                owner.request.side_effect = [{"items": [item], "decision_version": 7}, {"application_status": "applied"}]
+                reader, report, documents, writes = Mock(), {}, {}, []
+
+                def fixture_write(client, path, content, version):
+                    self.assertIs(client, owner)
+                    self.assertNotEqual(path, "dreams/CONTROL.md")
+                    writes.append(path)
+                    documents[path, version + 1] = content
+                    source = next((row for row in headers if row["path"] == path), {"entry_ref": "entry:update", "path": path})
+                    return {**source, "version": version + 1}
+
+                def fixture_read(client, **request):
+                    self.assertIs(client, reader)
+                    if request["view"] == "full":
+                        source = next(row for row in headers if row["entry_ref"] == request["ref"])
+                        text = documents[source["path"], request["version"]]
+                        if fault == "exact" and len(writes) == 5:
+                            text = "corrupted"
+                        return {"reference": source["entry_ref"], "version": request["version"], "text": text}
+                    if len(writes) == 5:
+                        return {"reference": canonical["entry_ref"], "text": documents[canonical["path"], 1],
+                                "representation": "derived_summary" if fault == "freshness" else "current_source_fallback",
+                                "freshness": {"reason": "subject_scope_changed"}}
+                    candidate = runner.request.call_args_list[-2].args[2]["candidates"][0]
+                    return {"reference": "entry:summary", "path": job["output_path"], "version": 1,
+                            "representation": "derived_summary", "freshness": {"status": "fresh"}, "text": candidate["content"],
+                            "metadata": {"dreamer_summary": {"subject_ref": canonical["entry_ref"], "sources": candidate["sources"],
+                                "subject_scope": {"dependencies": [canonical, changed] if fault == "manifest" else [canonical, trail, changed]}}}}
+
+                with patch.object(canary, "write", side_effect=fixture_write), \
+                        patch.object(canary, "read_one", side_effect=fixture_read), \
+                        patch.object(canary, "measure_subject_reads", return_value={"synthetic_measurement": True}):
+                    if error:
+                        with self.assertRaisesRegex(canary.CanaryError, error):
+                            canary.run_subject_cycle(owner, runner, reader, report)
+                        self.assertNotIn("subject_cycle", report)
+                    else:
+                        canary.run_subject_cycle(owner, runner, reader, report)
+                        self.assertEqual(report["subject_cycle"]["research_dependencies"], 3)
+                        self.assertEqual(report["subject_cycle"]["claim_sources"], 2)
+                        self.assertEqual(report["subject_cycle"]["uncited_cross_directory_invalidation"], "passed")
+                        calls = runner.request.call_args_list
+                        self.assertEqual(calls[0].args[2]["requested_subject_refs"], [canonical["entry_ref"]])
+                        self.assertEqual(calls[2].args[2], calls[6].args[2])
+                        self.assertNotEqual(calls[2].args[2]["operation_id"], calls[3].args[2]["operation_id"])
+                        self.assertEqual(calls[5].args[1], "/v1/workspace/dreamer/research-progress")
+                        self.assertEqual(calls[7].args[2]["research_version"], 5)
+                        self.assertEqual(calls[7].args[2]["processed_inputs"], [])
+                        self.assertNotIn("subject_scope", calls[7].args[2]["candidates"][0])
+                        self.assertTrue(all("notifications" not in call.args[1] for call in calls))
+
+    def test_subject_read_measurement_is_warmed_alternating_and_content_free(self):
+        canonical, summary = {"entry_ref": "entry:canonical", "version": 1}, {"reference": "entry:summary"}
+        reader = Mock(calls=[])
+
+        def read(client, **request):
+            self.assertIs(client, reader)
+            current = request["view"] == "current_state"
+            reader.calls.append({"path": "/v1/workspace/read", "status": 200,
+                                 "elapsed_ms": 20 if current else 10, "response_bytes": 100 if current else 1000,
+                                 "private": "DO_NOT_REPORT"})
+            return {"reference": summary["reference"] if current else canonical["entry_ref"],
+                    "representation": "derived_summary" if current else "source", "version": 1,
+                    "freshness": {"status": "fresh"}, "text": "DO_NOT_REPORT"}
+
+        with patch.object(canary, "read_one", side_effect=read) as reads:
+            result = canary.measure_subject_reads(reader, canonical, summary)
+        self.assertEqual(reads.call_count, 12)
+        for name in result:
+            self.assertEqual(len(result[name]["samples"]), 5)
+        self.assertEqual(result["canonical_current_state"]["median_ms"], 20)
+        self.assertEqual(result["exact_raw_source"]["median_response_bytes"], 1000)
+        self.assertNotIn("DO_NOT_REPORT", json.dumps(result))
+        self.assertEqual([call.kwargs["view"] for call in reads.call_args_list], ["current_state", "full"] * 6)
+        # A slower current_state still passes: this is measurement, not a speed gate.
+
+    def test_supplemental_failure_after_both_legacy_cycles_still_cleans_same_fixture(self):
+        read_fd, write_fd = os.pipe()
+        os.write(write_fd, json.dumps({"user": identity()["user"], "credential": {"token": "FIXTURE_SECRET"}}).encode())
+        os.close(write_fd)
+        args = argparse.Namespace(expected_revision="new", fixture_fd=read_fd, admin_base=None,
+                                  cleanup_timeout=1, summary_preference="enabled")
+        report = {"preflight": {"build_revision": "new", "review_http_status": 200,
+                                "feature_flags": {"dreamer_summary_reads_enabled": True}}, "calls": []}
+        client = StubClient({"/v1/me": identity(), "/v1/workspace/dashboard": {"storage": {"text": {"count": 0}}},
+            "/v1/workspace/notifications?limit=1": {"items": []},
+            "/v1/credentials": {"capabilities": list(canary.RUNNER_CAPS), "token": "FIXTURE_SECRET"},
+            "/v1/workspace/write": {}, "/v1/workspace/notifications": {}, "/v1/workspace/read": {}})
+        first = "The synthetic fixture valve is amber; its state is uncertain."
+        second = "The synthetic fixture valve is violet; its state remains uncertain."
+        fallback = {"representation": "current_source_fallback", "text": second}
+        owner = type("Owner", (), {"base": "https://brunn.ai/api"})()
+        try:
+            with patch.object(canary, "Client", return_value=client), \
+                    patch.object(canary, "write", side_effect=[{}, {"entry_ref": "entry:source", "version": 1},
+                                                               {"entry_ref": "entry:source", "version": 2}]), \
+                    patch.object(canary, "read_one", side_effect=[fallback, fallback, {"text": first}]), \
+                    patch.object(canary, "run_cycle", return_value={"reference": "entry:summary", "version": 1}) as legacy, \
+                    patch.object(canary, "run_subject_cycle", side_effect=canary.CanaryError("supplemental failed")) as subject, \
+                    patch.object(canary, "cleanup", return_value={"canonical_purge_verified": True}) as cleanup:
+                with self.assertRaisesRegex(canary.CanaryError, "supplemental failed"):
+                    canary.execute(owner, OWNER_ID, args, report, lambda: None)
+                self.assertEqual(legacy.call_count, 2)
+                subject.assert_called_once_with(client, client, client, report)
+                cleanup.assert_called_once_with(client, FIXTURE, OWNER_ID, 1)
+            self.assertEqual(report["source_edit_fallback"], "passed")
+            self.assertNotIn("FIXTURE_SECRET", json.dumps(report))
+        finally:
+            os.close(read_fd)
 
 
 if __name__ == "__main__":

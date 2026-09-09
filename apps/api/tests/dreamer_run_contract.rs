@@ -34,6 +34,7 @@ struct Mock {
     run_version: i64,
     state_version: i64,
     admissions: usize,
+    admission_requests: Vec<Value>,
     submissions: usize,
     submitted: Vec<Value>,
     auth_puts: usize,
@@ -55,7 +56,13 @@ struct Mock {
     narrative_discoveries: Vec<Value>,
     narrative_context: Vec<Value>,
     current_admission: Option<Value>,
+    research_jobs: Vec<Value>,
+    research_enabled: bool,
+    research_next_count: usize,
+    research_progress: Vec<Value>,
 }
+#[path = "dreamer_run_contract/research_contract.rs"]
+mod research_contract;
 type Shared = Arc<Mutex<Mock>>;
 fn error(code: StatusCode, message: &str) -> Response {
     (code, Json(json!({"error":{"message":message}}))).into_response()
@@ -136,6 +143,25 @@ async fn narrative_discover(State(shared): State<Shared>, Json(body): Json<Value
     value["narrative_context"] = json!(s.narrative_context);
     value["narrative_discovery"] =
         json!({"request_hash":"narrative-fixture","queries":body["queries"]});
+    if s.research_enabled {
+        research_contract::assert_operation(&body);
+        value["research"]["sources"] = json!(s.narrative_context);
+        if body["queries"] == json!([])
+            && body["targets"] == json!([])
+            && let Some(cursor) = value["research"]["coverage"]["change_cursor"].as_i64()
+        {
+            let upper = value["research"]["coverage"]["change_upper"]
+                .as_i64()
+                .unwrap();
+            let next = (cursor + 1000).min(upper);
+            value["research"]["coverage"]["change_cursor"] = json!(next);
+            if next == upper {
+                value["research"]["coverage"]["change_status"] = json!("complete");
+            }
+        }
+        value["research"]["version"] = json!(value["research"]["version"].as_i64().unwrap() + 1);
+        s.current_admission = Some(value.clone());
+    }
     Json(json!({"data":value}))
 }
 async fn write(State(shared): State<Shared>, headers: HeaderMap) -> Response {
@@ -147,6 +173,7 @@ async fn write(State(shared): State<Shared>, headers: HeaderMap) -> Response {
 }
 async fn admit(State(shared): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
     let mut s = shared.lock().unwrap();
+    s.admission_requests.push(body.clone());
     if body["kind"] == "nightly"
         && s.latest
             .as_ref()
@@ -166,6 +193,9 @@ async fn admit(State(shared): State<Shared>, Json(body): Json<Value>) -> Json<Va
             .unwrap()
             .extend(location.as_object().unwrap().clone());
     }
+    if s.research_enabled {
+        response["research_protocol"] = json!(1);
+    }
     s.current_admission = Some(response.clone());
     Json(response)
 }
@@ -179,6 +209,9 @@ async fn checkpoint(State(shared): State<Shared>, Json(body): Json<Value>) -> Re
 }
 async fn candidates(State(shared): State<Shared>, Json(body): Json<Value>) -> Response {
     let mut s = shared.lock().unwrap();
+    if body["subject_ref"].is_string() {
+        research_contract::assert_operation(&body);
+    }
     s.submissions += 1;
     s.submitted.push(body.clone());
     if s.review_conflicts > 0 {
@@ -219,7 +252,28 @@ async fn candidates(State(shared): State<Shared>, Json(body): Json<Value>) -> Re
     s.state_version += 1;
     s.run_version += 1;
     s.writes += 2;
-    Json(json!({"state_version":s.state_version,"run_entry_ref":RUN,"run_version":s.run_version,"accepted_candidate_ids":ids,"pending_count":s.pending.len()})).into_response()
+    let mut result = json!({"state_version":s.state_version,"run_entry_ref":RUN,"run_version":s.run_version,"accepted_candidate_ids":ids,"pending_count":s.pending.len()});
+    if s.research_enabled {
+        let mut current = s.current_admission.clone().unwrap();
+        let processed = body["processed_inputs"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        if let Some(inputs) = current["inputs"].as_array_mut() {
+            inputs.retain(|input| {
+                !processed
+                    .iter()
+                    .any(|p| input["entry_ref"] == p["entry_ref"])
+            });
+        }
+        current["state_version"] = json!(s.state_version);
+        result
+            .as_object_mut()
+            .unwrap()
+            .extend(current.as_object().unwrap().clone());
+        s.current_admission = Some(current);
+    }
+    Json(result).into_response()
 }
 async fn finish(State(shared): State<Shared>, Json(body): Json<Value>) -> Response {
     let mut s = shared.lock().unwrap();
@@ -271,6 +325,14 @@ async fn build_with_budget(
         .route("/v1/workspace/secrets/put", post(secret_put))
         .route("/v1/workspace/dreamer/admit", post(admit))
         .route("/v1/workspace/dreamer/checkpoint", post(checkpoint))
+        .route(
+            "/v1/workspace/dreamer/research-next",
+            post(research_contract::next),
+        )
+        .route(
+            "/v1/workspace/dreamer/research-progress",
+            post(research_contract::progress),
+        )
         .route(
             "/v1/workspace/dreamer/location-discover",
             post(location_discover),

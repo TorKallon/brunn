@@ -186,10 +186,12 @@ async fn verify(State(app): State<Arc<DreamerApp>>, headers: HeaderMap) -> Respo
     Json(json!({"runtime": runtime,"verification":"recorded","live_probe":false})).into_response()
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 struct RunRequest {
     #[serde(default)]
     kind: Option<String>,
+    #[serde(default)]
+    requested_subject_refs: Vec<String>,
 }
 
 async fn run_now(
@@ -198,7 +200,17 @@ async fn run_now(
     body: Option<Json<RunRequest>>,
 ) -> Response {
     require_auth!(app, headers);
-    let kind = match body.and_then(|Json(request)| request.kind).as_deref() {
+    let request = body.map(|Json(request)| request).unwrap_or_default();
+    if request.requested_subject_refs.len() > 16
+        || request.requested_subject_refs.iter().any(|reference| {
+            reference
+                .strip_prefix("entry:")
+                .is_none_or(|id| uuid::Uuid::parse_str(id).is_err())
+        })
+    {
+        return (StatusCode::BAD_REQUEST, Json(json!({"error":"requested_subject_refs must contain at most 16 exact entry references"}))).into_response();
+    }
+    let kind = match request.kind.as_deref() {
         Some("backfill") => RunKind::Backfill,
         _ => RunKind::Manual,
     };
@@ -210,7 +222,7 @@ async fn run_now(
         let _guard = guard;
         let report = app_for_run
             .dreamer
-            .run_once(DreamerApp::today(), kind)
+            .run_once_with_subjects(DreamerApp::today(), kind, &request.requested_subject_refs)
             .await;
         *app_for_run.last_report.lock().await = Some(report);
     });

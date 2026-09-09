@@ -331,26 +331,39 @@ compare-and-set, followed by readback. A failed custody or receipt write is a
 failure, even when Codex exited successfully. Keep the existing encryption key
 and authenticated vault contents across deployment; no reconnect is needed.
 
-The wrapper uses `/v1/workspace/dreamer/admit`, `/checkpoint`, `/candidates`, and
-`/finish` with the runner credential. Admission freezes exact input references,
-versions, hashes, and an upper generation under an owner-scoped lease and fence.
-One versioned `dreams/state.md` retains progress and unfinished work. Scanned
-generation and processed generation are distinct: partial attempts cannot erase
-unprocessed inputs, and concurrent writes remain eligible for the next pass.
-Codex receives the frozen input list and returns a bounded `dream.candidates.v1`
-JSON file. The server validates sources, citations, permissions, and target
-versions before publishing candidate records or approved summaries.
+The wrapper uses the runner credential for fenced admission, research,
+candidate acceptance and terminal reporting. Admission retains exact input
+references and an upper generation. `dreams/state.md` holds the scheduler and
+unfinished input; protected `dreams/research/<canonical UUID>.md` records hold
+each subject's evidence, reviewed versions, compact supported conclusions and
+unfinished leads. Scanning, research completion and publication are distinct.
 
-Before ordinary consolidation, the same ChatGPT-backed model can plan up to six
-subject searches in `dream.narrative.discovery.v1`. The fenced
-`/v1/workspace/dreamer/narrative-discover` endpoint runs existing lexical search
-with relevant and recent result lanes, then retains at most 64 accessible exact
-source headers inside the attempt's generation boundary. Generated, evaluation,
-location and sensitive records are excluded. The model reads those exact
-versions as `narrative_context`; context discovery never consumes pending input
-or advances progress. An exact discovery replay returns the frozen admission;
-changed queries cannot replace it within the attempt. Failed planning retains
-work and still completes the authentication and receipt finalizers.
+With `research_protocol: 1`, the same ChatGPT-backed model follows missing
+references through repeated `narrative-discover` rounds and returns
+`dream.research.step.v1`. The wrapper uses `research-next` and
+`research-progress` to continue and checkpoint that work. Each subject may
+acquire newer exact sources without changing the separate location evidence
+boundary. Bounded source-change pages resume from durable cursors. Only
+accepted proposals or supported no-change findings consume reviewed input.
+Failed model output receives precise feedback before a bounded retry; a slow
+subject yields with saved progress so another subject can run. The older
+single-discovery protocol remains available to compatible older runners.
+
+Manual `/run` requests may include at most 16 `requested_subject_refs` containing
+exact canonical entry references. Those identity-only requests are durably
+queued and survive selection, yields and restarts until dispositioned. Normal
+scheduling also visits People notes, registered project hubs, ungrouped input
+and resumable jobs. Research cannot override fresh approvals, deferrals or
+rejections. A stale subject approval is marked as needing changes, preserving
+its candidate and decision history; revised content requires a new decision.
+
+The server validates exact citations, every admitted subject dependency,
+newly relevant source changes, permissions and destination versions at intake,
+publication and current-state reads. A current canonical read prefers its fresh
+subject overview. If freshness cannot be established it returns source
+material; loss of dependency access withholds cached content even from
+historical reads. Claim citations remain compact and separate from the full
+server-owned dependency manifest. See [Dreamer Subject Research.md](Dreamer%20Subject%20Research.md).
 
 Ordinary proposals prioritize useful person, project and topic views and
 source-backed corrections. Explicit corrections or supported later outcomes

@@ -15,8 +15,10 @@ use super::{
     client::{ApiClient, ClientError, SecretVersion},
     codex::{self, AuthCheck, ExecSpec},
     control::{self, ControlState},
-    prompt, receipt, runfile,
+    prompt, receipt, research, runfile,
 };
+
+mod research_loop;
 
 pub const CONTROL_PATH: &str = "dreams/CONTROL.md";
 pub const DECISIONS_PATH: &str = "dreams/decisions.md";
@@ -114,6 +116,8 @@ pub struct RunReport {
     pub notification: Value,
     pub persistence_error: Option<String>,
     pub counts: Value,
+    #[serde(default)]
+    pub research: Value,
 }
 
 /// `dreamer-runtime` vault record: connection identity and last-attempt
@@ -218,6 +222,17 @@ impl Dreamer {
     /// All paths after an enabled admission reach one terminal persistence path.
     /// A process killed before it does is recovered by the server lease/fence.
     pub async fn run_once(&self, today: NaiveDate, kind: RunKind) -> RunReport {
+        self.run_once_with_subjects(today, kind, &[]).await
+    }
+
+    /// Manual subject requests supply canonical identities only. The server
+    /// validates and durably queues them before ordinary fair scheduling.
+    pub async fn run_once_with_subjects(
+        &self,
+        today: NaiveDate,
+        kind: RunKind,
+        requested_subject_refs: &[String],
+    ) -> RunReport {
         let _auth_guard = self.auth_lock.lock().await;
         let mut report = RunReport {
             date: today.format("%Y-%m-%d").to_string(),
@@ -238,6 +253,7 @@ impl Dreamer {
             notification: json!({"status":"not_needed"}),
             persistence_error: None,
             counts: json!({}),
+            research: json!({}),
         };
         let mut runtime = self.runtime_status().await;
         let control_file = match self.workspace.read_markdown(CONTROL_PATH).await {
@@ -287,7 +303,8 @@ impl Dreamer {
         let admission = match self.runner.dreamer("admit", json!({
             "attempt_id":report.attempt_id, "date":report.date,
             "kind":match kind { RunKind::Nightly=>"nightly", RunKind::Manual=>"manual", RunKind::Backfill=>"backfill" },
-            "lease_seconds": kind.time_budget().as_secs()+600
+            "lease_seconds": kind.time_budget().as_secs()+600,
+            "requested_subject_refs":requested_subject_refs
         })).await {
             Ok(value) if value["admitted"] == true => value,
             Ok(value) => {
@@ -352,7 +369,7 @@ impl Dreamer {
             "detail": outcome_detail(&report.outcome), "execution_outcome":report.outcome,
             "auth_persistence":report.auth_persistence,"notification":report.notification,
             "completed_at":report.completed_at,"model":self.config.codex_model,
-            "codex_version":runtime.codex_version
+            "codex_version":runtime.codex_version,"research":report.research
         });
         let terminal = self
             .runner
@@ -374,9 +391,20 @@ impl Dreamer {
                         if report.outcome == RunOutcome::Completed && latest["status"] == "partial"
                         {
                             report.outcome = RunOutcome::Partial {
-                                detail:
+                                detail: if let Some(completed) =
+                                    report.research["subjects_completed"].as_u64()
+                                {
+                                    format!(
+                                        "Finished research on {completed} subjects; {} older inputs and {} location days remain queued.",
+                                        report.counts["retained"].as_u64().unwrap_or(0),
+                                        report.counts["retained_location_days"]
+                                            .as_u64()
+                                            .unwrap_or(0)
+                                    )
+                                } else {
                                     "server retained unfinished admitted work for a later attempt"
-                                        .into(),
+                                        .into()
+                                },
                             };
                         }
                         if report.outcome == RunOutcome::Completed
@@ -563,7 +591,63 @@ impl Dreamer {
             .unwrap_or_else(|| kind.time_budget());
         let finalizer_reserve = Duration::from_secs(15).min(budget / 10);
         let usable = budget.saturating_sub(finalizer_reserve);
+        if admission["research_protocol"] == 1 {
+            let deadline = tokio::time::Instant::now() + usable;
+            let mut location_outcome = None;
+            if admission["location_work"].is_object() {
+                let mut location = admission.clone();
+                location["inputs"] = json!([]);
+                location["defer_review_notification"] = json!(true);
+                location_outcome = Some(
+                    self.legacy_reasoning(
+                        &location,
+                        state_version,
+                        report,
+                        kind,
+                        run_home,
+                        env,
+                        usable * 2 / 3,
+                    )
+                    .await,
+                );
+            }
+            return self
+                .research_loop(
+                    admission,
+                    state_version,
+                    report,
+                    run_home,
+                    env,
+                    deadline,
+                    location_outcome,
+                )
+                .await;
+        }
+        self.legacy_reasoning(
+            admission,
+            state_version,
+            report,
+            kind,
+            run_home,
+            env,
+            usable,
+        )
+        .await
+    }
+
+    async fn legacy_reasoning(
+        &self,
+        admission: &Value,
+        state_version: &mut i64,
+        report: &mut RunReport,
+        kind: RunKind,
+        run_home: &RunHome,
+        env: &BTreeMap<String, String>,
+        usable: Duration,
+    ) -> RunOutcome {
         let total_deadline = tokio::time::Instant::now() + usable;
+        // This is runner state; server discovery responses do not echo it.
+        let defer_review_notification = admission["defer_review_notification"] == true;
         let narrative_allowance = if admission["location_work"].is_object()
             && admission["inputs"]
                 .as_array()
@@ -904,7 +988,13 @@ impl Dreamer {
                 ));
             }
         }
+        if accepted > 0 && defer_review_notification {
+            report.research["new_review_items"] = json!(accepted);
+            report.research["last_review_ref"] = value["run_entry_ref"].clone();
+            report.research["last_review_version"] = value["run_version"].clone();
+        }
         if accepted > 0
+            && !defer_review_notification
             && let (Some(run_ref), Some(version)) = (
                 value["run_entry_ref"].as_str(),
                 value["run_version"].as_i64(),
