@@ -2563,7 +2563,9 @@ async fn deleted_review_evidence_withholds_cached_fields_from_review_and_runner_
 }
 
 async fn seed_location_pilot(f: &Fixture) -> (chrono::DateTime<Utc>, String, String) {
-    let from = (Utc::now() - chrono::Duration::days(2))
+    // Keep this explicit pilot outside the automatically selected latest closed
+    // Pacific day, including the hours when UTC has already advanced a date.
+    let from = (Utc::now() - chrono::Duration::days(3))
         .date_naive()
         .and_hms_opt(0, 0, 0)
         .unwrap()
@@ -3343,6 +3345,11 @@ async fn location_candidate_guards_retain_work_and_revision_preserves_published_
             "boundaries 12:00 and 13:00",
             "boundaries 12:00:00 and 13:00:00"
         ));
+        let mut too_short = valid.clone();
+        too_short["content"] = json!(format!(
+            "{}\n| 12:00 pm–12:00 pm | Named destination — high confidence[^r1] |",
+            valid["content"].as_str().unwrap()
+        ));
         vec![
             ("must cite retained raw observations", raw_omitted),
             (
@@ -3356,6 +3363,7 @@ async fn location_candidate_guards_retain_work_and_revision_preserves_published_
             ("summary uncertainty must appear verbatim", sidebar_only),
             ("location content validation failed", wrong_clock),
             ("location content validation failed", canonical_seconds),
+            ("longer than two minutes", too_short),
         ]
     };
     let initial_state = current(&f, "dreams/state.md").await.unwrap();

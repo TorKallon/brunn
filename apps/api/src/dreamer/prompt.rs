@@ -10,8 +10,8 @@ pub const PROBE_PROMPT: &str =
     "Reply with the single word READY and nothing else. Do not call any tools.";
 
 /// Shared by discovery, drafting and the independent audit. Stop selection is
-/// an evidence judgment, not a duration threshold or a geocoder-label rule.
-pub const LOCATION_STOP_GUIDANCE: &str = "Select places visited, not every interruption in movement. A brief pair of stationary road samples can be a traffic light, queue or repeated position; accurate coordinates and elapsed time alone do not establish a visit. Require positive evidence of a distinct destination: assess the surrounding movement, whether the position fits a site rather than its access road, visit estimates, sustained dwell and independently supported place identity together. A short stop at a supported destination can belong in the timeline even when the canonical index says transit. A road pause with no destination evidence stays in the raw evidence, without its own row or a renamed 'brief pause' entry. Do not require a named business, infer a purpose, or impose a minimum duration. Longer sparse endpoints at a distinct residential or other destination can support a stop, with observation-window uncertainty kept separate. If a short ambiguous cluster is equally explained by normal travel, omit it from the primary timeline; do not claim a visit merely to preserve every cluster.";
+/// an evidence judgment plus the owner's minimum stay, not a geocoder-label rule.
+pub const LOCATION_STOP_GUIDANCE: &str = "Select places visited, not every interruption in movement. A timeline stop requires BOTH positive evidence of a distinct destination AND evidence of a stay longer than two minutes. Two pings a minute apart do not qualify even at a named destination. A brief pair of stationary road samples can be a traffic light, queue or repeated position; accurate coordinates and elapsed time alone do not establish a visit. Assess the surrounding movement, whether the position fits a site rather than its access road, visit estimates, sustained dwell and independently supported place identity together. A supported stop of a few minutes can belong in the timeline even when the canonical index says transit. A road pause with no destination evidence stays in the raw evidence regardless of duration, without its own row or a renamed 'brief pause' entry. Do not require a named business or infer a purpose. Use actual selected observation/visit timestamps to check the duration, not rounded display minutes, callback time, receipt delay, nearby travel points or an invented boundary. Longer sparse endpoints at a distinct residential or other destination can support a stop, with observation-window uncertainty kept separate. If a short ambiguous cluster is equally explained by normal travel, omit it from the primary timeline; do not claim a visit merely to preserve every cluster.";
 
 /// Ordinary memory work runs separately after location has been checked and
 /// retained. Neither its prose nor its decisions become location evidence.
@@ -382,6 +382,7 @@ fn cited_timestamps(
     candidate: &Value,
     packet: &Value,
     line: &str,
+    observation_only: bool,
 ) -> Vec<(DateTime<FixedOffset>, bool)> {
     let mut result = Vec::new();
     for citation in CITATIONS.captures_iter(line) {
@@ -413,6 +414,12 @@ fn cited_timestamps(
                     .flatten()
                     .filter_map(Value::as_str)
                 {
+                    if observation_only
+                        && (field == "first_received_at"
+                            || field == "at" && report["type"] != "ping")
+                    {
+                        continue;
+                    }
                     if ["at", "arrived_at", "departed_at", "first_received_at"].contains(&field)
                         && let Some(value) = report[field]
                             .as_str()
@@ -472,7 +479,7 @@ pub fn location_clock_issues(output: &Value, admission: &Value) -> Vec<String> {
             {
                 issues.push(format!("Line {}: code fences and model footnote definitions are not allowed in location content.", index + 1));
             }
-            let support = cited_timestamps(candidate, &admission["location_evidence"], line);
+            let support = cited_timestamps(candidate, &admission["location_evidence"], line, false);
             for clock in CLOCKS.captures_iter(line) {
                 if clock.name("zone").is_some() {
                     continue;
@@ -504,6 +511,59 @@ pub fn location_clock_issues(output: &Value, admission: &Value) -> Vec<String> {
     issues
 }
 
+/// Reject explicitly short timeline windows using exact selected instants.
+/// Passing this minimum does not establish a destination or continuous stay;
+/// the independent model audit still evaluates those separate requirements.
+fn location_stop_duration_issues(candidate: &Value, admission: &Value) -> Vec<String> {
+    let Some(zone) = admission["location_work"]["timezone"]
+        .as_str()
+        .and_then(|zone| zone.parse::<Tz>().ok())
+    else {
+        return Vec::new(); // Clock validation reports the missing timezone.
+    };
+    let mut issues = Vec::new();
+    for (index, line) in candidate["content"]
+        .as_str()
+        .unwrap_or("")
+        .lines()
+        .enumerate()
+    {
+        let trimmed = line.trim();
+        if !["|", "- ", "* "]
+            .iter()
+            .any(|prefix| trimmed.starts_with(prefix))
+        {
+            continue; // Material uncertainty paragraphs are not stop rows.
+        }
+        let claims: Vec<_> = CLOCKS
+            .captures_iter(line)
+            .filter_map(|clock| {
+                let literal = clock.name("iso").or_else(|| clock.name("clock"))?;
+                ClockClaim::parse(
+                    literal.as_str(),
+                    clock.name("iso").is_some(),
+                    clock.name("meridian").map(|m| m.as_str()),
+                )
+            })
+            .collect();
+        let [start, end] = claims.as_slice() else {
+            continue;
+        };
+        let support = cited_timestamps(candidate, &admission["location_evidence"], line, true);
+        let enough_time = support.iter().any(|(first, raw)| {
+            start.supported_by(*first, *raw, zone)
+                && support.iter().any(|(last, raw)| {
+                    end.supported_by(*last, *raw, zone)
+                        && *last - *first > chrono::Duration::seconds(120)
+                })
+        });
+        if !enough_time {
+            issues.push(format!("Line {}: a timeline stop requires an observed or estimated visit window longer than two minutes, even at a named destination. Use exact selected observation/visit instants; receipt delays and callback times do not count. Remove this short stop unless the same frozen evidence supports a longer stay; do not invent or extend boundaries.", index+1));
+        }
+    }
+    issues
+}
+
 /// Readability is a publication gate as well as citation fidelity. This runs
 /// after the independent audit so a verbose first draft gets its bounded repair.
 pub fn location_content_issues(output: &Value, admission: &Value) -> Vec<String> {
@@ -514,6 +574,7 @@ pub fn location_content_issues(output: &Value, admission: &Value) -> Vec<String>
         .flatten()
         .filter(|c| is_location_candidate(c))
     {
+        issues.extend(location_stop_duration_issues(candidate, admission));
         let content = candidate["content"].as_str().unwrap_or("");
         let words = content.split_whitespace().count();
         if words > 250 {
@@ -1179,6 +1240,57 @@ mod tests {
     }
 
     #[test]
+    fn minimum_stop_stay_uses_exact_instants_and_preserves_real_short_visits() {
+        let check = |first: &str, last: &str, expected: bool| {
+            let reports: Vec<_> = [first, last]
+                .into_iter()
+                .map(|at| {
+                    json!({
+                        "natural_key":{"at":at,"type":"ping"},"at":at,"type":"ping",
+                        "lat":1.0,"lon":2.0,"name":"Named destination"
+                    })
+                })
+                .collect();
+            let sources: Vec<_> = reports
+                .iter()
+                .map(|r| json!({"natural_key":r["natural_key"],"fields":["at","lat","lon"]}))
+                .collect();
+            let candidate = json!({"content":format!("| {}–{} | Named destination — high confidence[^r1][^r2] |",&first[11..16],&last[11..16]),"raw_sources":sources});
+            let admission =
+                json!({"location_work":{"timezone":"UTC"},"location_evidence":{"reports":reports}});
+            assert_eq!(
+                location_stop_duration_issues(&candidate, &admission).is_empty(),
+                expected,
+                "{first} to {last}"
+            );
+        };
+        check("2040-02-03T10:00:00Z", "2040-02-03T10:01:00Z", false);
+        check("2040-02-03T10:00:00Z", "2040-02-03T10:02:00Z", false);
+        check("2040-02-03T10:00:59Z", "2040-02-03T10:03:00Z", true);
+        // A displayed two-minute window can exceed two minutes in the actual data.
+        check("2040-02-03T10:00:01Z", "2040-02-03T10:02:59Z", true);
+        check("2040-02-03T10:00:00Z", "2040-02-03T10:03:00Z", true);
+        check("2040-02-03T23:59:30Z", "2040-02-04T00:00:30Z", false);
+        check("2040-02-03T23:59:30Z", "2040-02-04T00:02:31Z", true);
+    }
+
+    #[test]
+    fn callback_and_receipt_delay_cannot_extend_a_stop() {
+        let report = json!({"natural_key":{"at":"2040-02-03T10:10:00Z","type":"visit"},"type":"visit",
+            "at":"2040-02-03T10:10:00Z","first_received_at":"2040-02-03T10:15:00Z",
+            "arrived_at":"2040-02-03T10:00:00Z","departed_at":"2040-02-03T10:01:00Z"});
+        let admission = json!({"location_work":{"timezone":"UTC"},"location_evidence":{"reports":[report.clone()]}});
+        for end in ["10:01", "10:10", "10:15"] {
+            let candidate = json!({"content":format!("- 10:00–{end} Named destination[^r1]"),"raw_sources":[{"natural_key":report["natural_key"],"fields":["at","arrived_at","departed_at","first_received_at"]}]});
+            assert_eq!(
+                location_stop_duration_issues(&candidate, &admission).len(),
+                1,
+                "{end}"
+            );
+        }
+    }
+
+    #[test]
     fn readable_location_contract_rejects_verbose_audits_but_preserves_brief_stops() {
         let (mut admission, mut output) = clock_fixture();
         let mut rows = Vec::new();
@@ -1191,7 +1303,7 @@ mod tests {
             ("Home", "11:55", "18:18"),
             ("Main Street area", "18:39", "19:39"),
             ("Bellevue Way area", "19:47", "23:43"),
-            ("Home area", "23:53", "23:54"),
+            ("Home area", "23:53", "23:59"),
         ] {
             let first = citations.len() + 1;
             for clock in [start, end] {

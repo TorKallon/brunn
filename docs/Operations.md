@@ -434,6 +434,13 @@ narrative pass and finalization retain their separate reserves.
 The primary timeline normally uses one first-to-last approximate observation
 window per place, with material gaps stated once rather than a list of every
 sampling segment. This does not assert continuous presence.
+Timeline stops require both destination evidence and a stay longer than two
+minutes. A road pause remains travel evidence even if it lasts longer; a named
+venue does not make a one-minute pair of pings a visit. The runner and API check
+explicit stop windows against exact selected observation or visit-estimate
+timestamps, excluding receipt delays and visit callbacks. The model still
+judges whether the observed group supports a destination visit. Raw evidence
+and phone capture are unchanged.
 Discovery sees raw observations with known Home coordinates/addresses removed;
 it can search the public web, but has no shell or Brunn tools. The wrapper
 independently fetches at most eight public HTTPS pages and verifies short exact
