@@ -941,12 +941,13 @@ pub(super) async fn apply_progress(
             "no_change must review the canonical subject",
         ));
     }
-    source_versions(
+    source_versions_with_policy(
         tx,
         auth.user_id.0,
         &mut reviewed,
         job.snapshot_generation,
         true,
+        SourceSelectorPolicy::CheckpointEndOfDocument,
     )
     .await?;
     if !fresh(tx, auth, job).await? {

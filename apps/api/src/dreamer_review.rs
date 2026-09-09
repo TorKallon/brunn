@@ -503,12 +503,36 @@ fn next_run(now: DateTime<Utc>) -> DateTime<Utc> {
         .with_timezone(&Utc)
 }
 
+enum SourceSelectorPolicy {
+    Strict,
+    CheckpointEndOfDocument,
+}
+
 async fn source_versions(
     tx: &mut Transaction<'_, Postgres>,
     user: Uuid,
     sources: &mut [Source],
     frozen: i64,
     require_current: bool,
+) -> ApiResult<()> {
+    source_versions_with_policy(
+        tx,
+        user,
+        sources,
+        frozen,
+        require_current,
+        SourceSelectorPolicy::Strict,
+    )
+    .await
+}
+
+async fn source_versions_with_policy(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+    sources: &mut [Source],
+    frozen: i64,
+    require_current: bool,
+    policy: SourceSelectorPolicy,
 ) -> ApiResult<()> {
     if sources.len() > 64 {
         return Err(ApiError::invalid(
@@ -541,10 +565,18 @@ async fn source_versions(
         let content = content
             .ok_or_else(|| ApiError::invalid("candidate sources must be readable Markdown"))?;
         let lines: Vec<_> = content.lines().collect();
-        if source.end_line > lines.len() || source.end_line - source.start_line > 400 {
+        // Check the original request before normalization: an EOF overshoot
+        // cannot turn an empty, out-of-range, or oversized request into evidence.
+        if source.start_line > lines.len()
+            || source.end_line - source.start_line > 400
+            || matches!(policy, SourceSelectorPolicy::Strict) && source.end_line > lines.len()
+        {
             return Err(ApiError::invalid(
                 "source selector is outside its exact source version or exceeds 400 lines",
             ));
+        }
+        if matches!(policy, SourceSelectorPolicy::CheckpointEndOfDocument) {
+            source.end_line = source.end_line.min(lines.len());
         }
         source.path = row.get("path");
         if source.path.starts_with("dreams/")

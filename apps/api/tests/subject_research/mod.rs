@@ -46,6 +46,343 @@ fn subject_candidate(admission: &Value, selectors: Vec<Value>) -> Value {
 }
 
 #[tokio::test]
+async fn checkpoint_eof_normalization_preserves_all_progress_and_replay_but_candidates_stay_strict()
+{
+    for (newline, trailing) in [("\n", true), ("\r\n", true), ("\n", false)] {
+        let Some(f) = fixture().await else { return };
+        control(&f, "report-only", 0).await;
+        write(
+            &f,
+            "sources/People/Orchid.md",
+            "# Orchid\n\nEarlier source.\n",
+            0,
+        )
+        .await;
+        let mut content = (1..=25)
+            .map(|line| match line {
+                1 => "# Orchid".to_owned(),
+                2 => String::new(),
+                _ => format!("Synthetic canonical observation {line}."),
+            })
+            .collect::<Vec<_>>()
+            .join(newline);
+        if trailing {
+            content.push_str(newline);
+        }
+        assert_eq!(content.lines().count(), 25);
+        let canonical = write(&f, "sources/People/Orchid.md", &content, 1).await;
+        let supporting = write(
+            &f,
+            "sources/Notes/Support.md",
+            "# Support\n\nA supporting source observation.\n",
+            0,
+        )
+        .await;
+        let selected = next_subject(&f, &admit(&f).await).await;
+        let (_, admitted) =
+            discover_subject(&f, &selected, vec![supporting["entry_ref"].clone()]).await;
+        let selectors = vec![
+            json!({"entry_ref":canonical["entry_ref"],"version":2,"start_line":1,"end_line":26,"path":"untrusted-path","excerpt":"untrusted-excerpt"}),
+            json!({"entry_ref":supporting["entry_ref"],"version":1,"start_line":1,"end_line":3}),
+        ];
+        let notes = format!(
+            "Checked observations remain provisional.\n\n{}",
+            "Both exact sources have been read; the remaining lead needs further investigation.\n"
+                .repeat(80)
+        );
+        let original = progress_body(&admitted, selectors.clone(), "researching", &notes);
+        let saved = ok(post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/research-progress",
+            original.clone(),
+        )
+        .await)["data"]
+            .clone();
+        assert_eq!(saved["research"]["notes"], notes);
+        let normalized = &saved["research"]["reviewed_sources"];
+        assert_eq!(normalized.as_array().unwrap().len(), selectors.len());
+        assert_eq!(normalized[0]["entry_ref"], canonical["entry_ref"]);
+        assert_eq!(normalized[0]["version"], 2);
+        assert_eq!(normalized[0]["start_line"], 1);
+        assert_eq!(normalized[0]["end_line"], 25);
+        assert_eq!(normalized[0]["path"], canonical["path"]);
+        assert_eq!(
+            normalized[0]["excerpt"],
+            content.lines().collect::<Vec<_>>().join("\n")
+        );
+        assert_eq!(normalized[1]["entry_ref"], supporting["entry_ref"]);
+        assert_eq!(normalized[1]["start_line"], 1);
+        assert_eq!(normalized[1]["end_line"], 3);
+        assert_eq!(
+            normalized[1]["excerpt"],
+            "# Support\n\nA supporting source observation."
+        );
+        assert_eq!(
+            saved["inputs"], admitted["inputs"],
+            "a checkpoint does not consume input"
+        );
+        let research_path = format!(
+            "dreams/research/{}.md",
+            canonical["entry_ref"]
+                .as_str()
+                .unwrap()
+                .trim_start_matches("entry:")
+        );
+        let persisted = current(&f, &research_path).await.unwrap();
+        let state = current(&f, "dreams/state.md").await.unwrap();
+        assert_eq!(persisted.2["dreamer_research"]["notes"], notes);
+        assert_eq!(
+            persisted.2["dreamer_research"]["reviewed_sources"],
+            *normalized
+        );
+
+        let replay = ok(post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/research-progress",
+            original.clone(),
+        )
+        .await);
+        assert_eq!(replay["no_op"], true);
+        assert_eq!(replay["data"]["research"]["notes"], notes);
+        assert_eq!(replay["data"]["research"]["reviewed_sources"], *normalized);
+        assert_eq!(current(&f, &research_path).await.unwrap(), persisted);
+        assert_eq!(current(&f, "dreams/state.md").await.unwrap(), state);
+        let mut different = original;
+        different["reviewed_sources"][0]["end_line"] = json!(25);
+        let changed_payload = post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/research-progress",
+            different,
+        )
+        .await;
+        assert_eq!(changed_payload.status, StatusCode::BAD_REQUEST);
+        assert!(
+            changed_payload
+                .body
+                .to_string()
+                .contains("operation_id was already accepted with a different payload")
+        );
+
+        let mut candidate = subject_candidate(&saved, selectors);
+        candidate["title"] = json!("Orchid overview");
+        candidate["content"] = json!(
+            "# Orchid\n\nThe canonical source records observations.[^s1]\nA supporting source records another observation.[^s2]\n"
+        );
+        let mut request = research_request(&saved);
+        request["candidates"] = json!([candidate]);
+        request["processed_inputs"] = json!([]);
+        let rejected = post(&f, &f.runner, "/v1/workspace/dreamer/candidates", request).await;
+        assert_eq!(rejected.status, StatusCode::BAD_REQUEST);
+        assert!(
+            rejected
+                .body
+                .to_string()
+                .contains("source selector is outside its exact source version"),
+            "{}",
+            rejected.body
+        );
+        assert_eq!(current(&f, &research_path).await.unwrap(), persisted);
+        assert_eq!(current(&f, "dreams/state.md").await.unwrap(), state);
+        assert!(
+            current(&f, saved["research"]["output_path"].as_str().unwrap())
+                .await
+                .is_none()
+        );
+    }
+}
+
+#[tokio::test]
+async fn checkpoint_eof_normalization_rejects_invalid_ranges_and_sources_atomically() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let canonical = write(
+        &f,
+        "sources/People/Orchid.md",
+        "# Orchid\n\nA canonical source observation.\n",
+        0,
+    )
+    .await;
+    let support = write(
+        &f,
+        "sources/Notes/Support.md",
+        "# Support\n\nA supporting source observation.\n",
+        0,
+    )
+    .await;
+    let empty = write(&f, "sources/Notes/Empty.md", "", 0).await;
+    let deleted = write(
+        &f,
+        "sources/Notes/Deleted.md",
+        "# Deleted\n\nAn initially accessible source.\n",
+        0,
+    )
+    .await;
+    let generated = write(
+        &f,
+        "sources/Notes/Generated.md",
+        "# Generated\n\nAn initially ordinary source.\n",
+        0,
+    )
+    .await;
+    let foreign_actor = actor(&f.pool, None, OWNER_CAPS).await;
+    let foreign = ok(post(&f, &foreign_actor, "/v1/workspace/write", json!({"path":"sources/Foreign.md","content":"# Foreign\n\nAnother user's source.\n","expected_version":0,"metadata":{}})).await)["data"].clone();
+    let selected = next_subject(&f, &admit(&f).await).await;
+    let (_, admitted) = discover_subject(
+        &f,
+        &selected,
+        [&support, &empty, &deleted, &generated]
+            .map(|s| s["entry_ref"].clone())
+            .to_vec(),
+    )
+    .await;
+    let saved = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        progress_body(
+            &admitted,
+            vec![reviewed(&canonical), reviewed(&support)],
+            "researching",
+            "Previously checked notes must survive rejected updates.",
+        ),
+    )
+    .await)["data"]
+        .clone();
+    let research_path = format!(
+        "dreams/research/{}.md",
+        canonical["entry_ref"]
+            .as_str()
+            .unwrap()
+            .trim_start_matches("entry:")
+    );
+    let persisted = current(&f, &research_path).await.unwrap();
+    let state = current(&f, "dreams/state.md").await.unwrap();
+    let first = json!({"entry_ref":canonical["entry_ref"],"version":1,"start_line":1,"end_line":4});
+    let invalid = [
+        (
+            json!({"entry_ref":support["entry_ref"],"version":1,"start_line":0,"end_line":3}),
+            "positive and ordered",
+        ),
+        (
+            json!({"entry_ref":support["entry_ref"],"version":1,"start_line":2,"end_line":1}),
+            "positive and ordered",
+        ),
+        (
+            json!({"entry_ref":support["entry_ref"],"version":1,"start_line":4,"end_line":5}),
+            "outside its exact source version",
+        ),
+        (
+            json!({"entry_ref":support["entry_ref"],"version":1,"start_line":1,"end_line":402}),
+            "outside its exact source version",
+        ),
+        (
+            json!({"entry_ref":empty["entry_ref"],"version":1,"start_line":1,"end_line":1}),
+            "outside its exact source version",
+        ),
+        (
+            json!({"entry_ref":foreign["entry_ref"],"version":1,"start_line":1,"end_line":4}),
+            "admitted research evidence",
+        ),
+    ];
+    for (selector, error) in invalid {
+        let response = post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/research-progress",
+            progress_body(
+                &saved,
+                vec![first.clone(), selector],
+                "researching",
+                "This rejected checkpoint must not replace the saved notes.",
+            ),
+        )
+        .await;
+        assert_eq!(response.status, StatusCode::BAD_REQUEST);
+        assert!(
+            response.body.to_string().contains(error),
+            "{}",
+            response.body
+        );
+        assert_eq!(
+            current(&f, &research_path).await.unwrap(),
+            persisted,
+            "an earlier valid selector cannot partially persist"
+        );
+        assert_eq!(current(&f, "dreams/state.md").await.unwrap(), state);
+    }
+    write(
+        &f,
+        "sources/Notes/Support.md",
+        "# Support\n\nA corrected supporting observation.\n",
+        1,
+    )
+    .await;
+    sqlx::query("UPDATE brunn.entries SET deleted_at=clock_timestamp() WHERE user_id=$1 AND id=$2")
+        .bind(f.owner.user)
+        .bind(
+            Uuid::parse_str(
+                deleted["entry_ref"]
+                    .as_str()
+                    .unwrap()
+                    .trim_start_matches("entry:"),
+            )
+            .unwrap(),
+        )
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE brunn.entries SET path='derived/Generated.md' WHERE user_id=$1 AND id=$2")
+        .bind(f.owner.user)
+        .bind(
+            Uuid::parse_str(
+                generated["entry_ref"]
+                    .as_str()
+                    .unwrap()
+                    .trim_start_matches("entry:"),
+            )
+            .unwrap(),
+        )
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    for (source, status, error) in [
+        (&support, StatusCode::CONFLICT, "candidate evidence changed"),
+        (&deleted, StatusCode::BAD_REQUEST, "missing or inaccessible"),
+        (
+            &generated,
+            StatusCode::BAD_REQUEST,
+            "generated Dreamer output cannot be its own source evidence",
+        ),
+    ] {
+        let selector =
+            json!({"entry_ref":source["entry_ref"],"version":1,"start_line":1,"end_line":4});
+        let response = post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/research-progress",
+            progress_body(
+                &saved,
+                vec![first.clone(), selector],
+                "researching",
+                "This invalid evidence must not replace the saved notes.",
+            ),
+        )
+        .await;
+        assert_eq!(response.status, status);
+        assert!(
+            response.body.to_string().contains(error),
+            "{}",
+            response.body
+        );
+        assert_eq!(current(&f, &research_path).await.unwrap(), persisted);
+        assert_eq!(current(&f, "dreams/state.md").await.unwrap(), state);
+    }
+}
+
+#[tokio::test]
 async fn linked_primary_second_round_replay_after_interleaving_and_exact_candidate_publication() {
     let Some(f) = fixture().await else { return };
     control(&f, "report-only", 0).await;

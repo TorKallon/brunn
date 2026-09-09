@@ -417,15 +417,18 @@ def run_subject_cycle(owner, runner, reader, report):
     require(canonical_read["text"] == canonical_text, "canonical exact source changed before research")
     initial_notes = "Canary Aster has a project trail."
     initial_selectors = [{"entry_ref": canonical["entry_ref"], "version": canonical["version"],
-                          "start_line": 3, "end_line": 3}]
+                          "start_line": 3, "end_line": len(canonical_text.splitlines())}]
+    # Full/range reads stop at EOF. A trailing-newline counting error must not
+    # discard the research conclusions; the server records the actual range.
+    requested_selectors = [{**row, "end_line": row["end_line"] + 1} for row in initial_selectors]
     current = unwrap(runner.request("POST", "/v1/workspace/dreamer/research-progress", {
-        **research_body(current), "notes": initial_notes, "reviewed_sources": initial_selectors,
+        **research_body(current), "notes": initial_notes, "reviewed_sources": requested_selectors,
         "pending_queries": [], "pending_targets": [trail_path], "status": "researching"}))
     checked_selectors = current["research"]["reviewed_sources"]
     require(current["research"]["notes"] == initial_notes
             and [{key: row.get(key) for key in ("entry_ref", "version", "start_line", "end_line")}
                  for row in checked_selectors] == initial_selectors,
-            "initial research checkpoint lost supported notes or exact source selectors")
+            "research checkpoint did not preserve notes with exact end-of-document selectors")
     # The imported display title is a section label, not another project name.
     unrelated_path = "sources/Elsewhere/Unrelated.md"
     unrelated = write(owner, unrelated_path, "## Purpose\n\nA separate fixture task has unrelated evidence.\n", 0)
@@ -476,14 +479,20 @@ def run_subject_cycle(owner, runner, reader, report):
     require(len(job["sources"]) == 3 and {row["entry_ref"]: row["version"] for row in job["sources"]} == expected,
             "research header manifest omitted or duplicated a fixture dependency")
     content = "# Canary Aster overview\n\nCanary Aster has a project trail.[^s1]\n" + outcome + "[^s2]\n"
-    submitted = runner.request("POST", "/v1/workspace/dreamer/candidates", {
+    submission = {
         **research_body(current), "candidates": [{"kind": "summary", "title": "Canary Aster overview",
             "summary": "Synthetic subject overview with one unresolved detail.", "reason": "Verify persistent exact-source research.",
             "subject_ref": canonical["entry_ref"], "path": job["output_path"], "expected_version": job["output_version"],
             "content": content, "sources": selectors}], "processed_inputs": [],
         "research_progress": {"notes": outcome, "reviewed_sources": selectors,
                               "pending_queries": [], "pending_targets": [], "status": "waiting"},
-        "findings": ["Synthetic linked evidence inspected; original inputs deliberately retained."]})
+        "findings": ["Synthetic linked evidence inspected; original inputs deliberately retained."]}
+    invalid_submission = json.loads(json.dumps(submission))
+    invalid_submission["operation_id"] = str(uuid.uuid4())
+    invalid_submission["candidates"][0]["sources"][1]["end_line"] = len(new_text.splitlines()) + 1
+    rejected = runner.request("POST", "/v1/workspace/dreamer/candidates", invalid_submission, expected=(400,))
+    require(rejected.get("http_status") == 400, "publication accepted an out-of-range source selector")
+    submitted = runner.request("POST", "/v1/workspace/dreamer/candidates", submission)
     require(len(submitted["accepted_candidate_ids"]) == 1, "subject candidate was not accepted exactly once")
     terminal = {key: admitted[key] for key in ("attempt_id", "fence")}
     terminal.update(expected_state_version=submitted["state_version"], outcome="partial",
@@ -537,6 +546,8 @@ def run_subject_cycle(owner, runner, reader, report):
     report["subject_cycle"] = {"research_protocol": 1, "requested_subject_ref": canonical["entry_ref"],
         "discovery_rounds": len(requests), "replay_after_newer_round": True, "newer_primary_version": primary["version"],
         "supported_progress_checkpoint": True,
+        "checkpoint_eof_normalized": True,
+        "publication_eof_remains_strict": True,
         "saved_progress_survives_additive_discovery": True,
         "changed_dependency_invalidates_progress": True,
         "generic_section_heading_is_not_an_identity": True,

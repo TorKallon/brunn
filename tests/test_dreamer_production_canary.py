@@ -162,6 +162,8 @@ class DreamerProductionCanaryTests(unittest.TestCase):
 
     def test_subject_cycle_requires_current_replay_full_dependencies_and_stale_fallback(self):
         for fault, error in ((None, None), ("protocol", "research_protocol 1"),
+                             ("checkpoint_eof", "exact end-of-document selectors"),
+                             ("publication_eof", "publication accepted an out-of-range"),
                              ("additive_progress", "additive discovery lost checked progress"),
                              ("unreviewed_source", "marked new sources reviewed"),
                              ("changed_progress", "changed dependency did not invalidate"),
@@ -182,8 +184,10 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                        "output_path": "derived/entities/canary-aster.md", "output_version": 0,
                        "notes": "", "reviewed_sources": []}
                 initial_selectors = [{"entry_ref": canonical["entry_ref"], "version": 1,
-                                      "start_line": 3, "end_line": 3, "path": canonical["path"],
-                                      "excerpt": "Canary Aster has a project trail at [[sources/CanaryResearch/Trail.md]]."}]
+                                      "start_line": 3, "end_line": 203, "path": canonical["path"],
+                                      "excerpt": "Canary Aster has a project trail at [[sources/CanaryResearch/Trail.md]].\n"
+                                      + "\nSynthetic padding for the fixture read comparison.\n" * 99
+                                      + "\nSynthetic padding for the fixture read comparison."}]
                 admissions = [{**admitted, "state_version": 2 if index == 0 else index + 3,
                                "research": {**job, "version": 1 if index == 0 else index + 2, "sources": sources,
                                             "snapshot_generation": 4 if index == 3 else 3}}
@@ -192,6 +196,9 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                 initial_progress["state_version"] = 3
                 initial_progress["research"].update(version=2, notes="Canary Aster has a project trail.",
                                                     reviewed_sources=initial_selectors)
+                if fault == "checkpoint_eof":
+                    initial_progress["research"]["reviewed_sources"] = [
+                        {**initial_selectors[0], "end_line": 204}]
                 for item in admissions[1:3]:
                     item["research"].update(notes=initial_progress["research"]["notes"],
                                             reviewed_sources=deepcopy(initial_selectors))
@@ -213,6 +220,7 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                 runner = Mock()
                 runner.request.side_effect = [admitted, {"data": admissions[0]}, {"data": initial_progress},
                     *({"data": item} for item in admissions[1:]), {"data": checkpoint}, {"no_op": True, "data": replay},
+                    {"http_status": 200 if fault == "publication_eof" else 400},
                     {"accepted_candidate_ids": ["fixture-item"], "state_version": 8},
                     {"latest_receipt": {"status": "partial", "mode": "full"}}]
                 item = {"id": "fixture-item", "reviewable": True, "stale": False, "run_entry_ref": "entry:run",
@@ -265,6 +273,8 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                         self.assertEqual(report["subject_cycle"]["claim_sources"], 2)
                         self.assertEqual(report["subject_cycle"]["uncited_cross_directory_invalidation"], "passed")
                         self.assertTrue(report["subject_cycle"]["saved_progress_survives_additive_discovery"])
+                        self.assertTrue(report["subject_cycle"]["checkpoint_eof_normalized"])
+                        self.assertTrue(report["subject_cycle"]["publication_eof_remains_strict"])
                         self.assertTrue(report["subject_cycle"]["changed_dependency_invalidates_progress"])
                         self.assertTrue(report["subject_cycle"]["generic_section_heading_is_not_an_identity"])
                         self.assertTrue(documents[canonical["path"], 1].startswith("## Purpose\n"))
@@ -274,9 +284,14 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                         self.assertNotEqual(calls[3].args[2]["operation_id"], calls[4].args[2]["operation_id"])
                         self.assertEqual(calls[2].args[1], "/v1/workspace/dreamer/research-progress")
                         self.assertEqual(calls[6].args[1], "/v1/workspace/dreamer/research-progress")
-                        self.assertEqual(calls[8].args[2]["research_version"], 6)
-                        self.assertEqual(calls[8].args[2]["processed_inputs"], [])
-                        self.assertNotIn("subject_scope", calls[8].args[2]["candidates"][0])
+                        self.assertEqual(calls[2].args[2]["reviewed_sources"][0]["end_line"], 204)
+                        self.assertEqual(calls[8].kwargs["expected"], (400,))
+                        self.assertEqual(calls[8].args[2]["candidates"][0]["sources"][1]["end_line"], 4)
+                        self.assertEqual(calls[9].args[2]["candidates"][0]["sources"][1]["end_line"], 3)
+                        self.assertNotEqual(calls[8].args[2]["operation_id"], calls[9].args[2]["operation_id"])
+                        self.assertEqual(calls[9].args[2]["research_version"], 6)
+                        self.assertEqual(calls[9].args[2]["processed_inputs"], [])
+                        self.assertNotIn("subject_scope", calls[9].args[2]["candidates"][0])
                         self.assertTrue(all("notifications" not in call.args[1] for call in calls))
 
     def test_subject_read_measurement_is_warmed_alternating_and_content_free(self):
