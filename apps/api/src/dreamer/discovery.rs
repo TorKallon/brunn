@@ -226,14 +226,14 @@ fn visible_text(html: &str) -> String {
     let document = Html::parse_document(html);
     let mut parts = Vec::new();
     for node in document.tree.nodes() {
-        if let Some(text) = node.value().as_text() {
-            if !node.ancestors().any(|ancestor| {
+        if let Some(text) = node.value().as_text()
+            && !node.ancestors().any(|ancestor| {
                 ancestor.value().as_element().is_some_and(|e| {
                     matches!(e.name(), "script" | "style" | "noscript" | "template")
                 })
-            }) {
-                parts.push(text.text.to_string());
-            }
+            })
+        {
+            parts.push(text.text.to_string());
         }
     }
     normalized(&parts.join(" "))
@@ -438,7 +438,7 @@ async fn fetch_inner(lookup: &Lookup) -> Result<Value, String> {
 }
 
 pub async fn verify_lookups(lookups: &[Lookup]) -> (Vec<Value>, Vec<String>) {
-    let results = stream::iter(lookups.to_vec().into_iter().map(|lookup| async move {
+    let results = stream::iter(lookups.iter().cloned().map(|lookup| async move {
         let result = tokio::time::timeout(Duration::from_secs(25), fetch_inner(&lookup)).await;
         match result {
             Ok(Ok(value)) => Ok(value),
@@ -469,7 +469,7 @@ mod tests {
     use super::*;
     fn text_pdf() -> Vec<u8> {
         let stream = "BT /F1 12 Tf 72 720 Td (Example Garden is a public botanical garden at 12 Public Road.) Tj ET";
-        let objects=vec!["<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+        let objects=["<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
             "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".into(),
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>".into(),
             format!("<< /Length {} >>\nstream\n{stream}\nendstream",stream.len()),

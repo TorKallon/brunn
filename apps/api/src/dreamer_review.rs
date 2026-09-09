@@ -838,10 +838,13 @@ pub(crate) fn validate_candidate(candidate: &Candidate, before: &str) -> ApiResu
                     "summaries may publish only to managed derived summary paths",
                 ));
             }
-            for line in content.lines().map(str::trim).filter(|l| {
-                !l.is_empty()
-                    && !l.starts_with('#')
-                    && !(candidate.evidence_scope.is_some() && location_table_structure(l))
+            let lines: Vec<_> = content.lines().map(str::trim).collect();
+            for (index, line) in lines.iter().enumerate().filter(|(index, line)| {
+                !(line.is_empty()
+                    || line.starts_with('#')
+                    || summary_table_structure(&lines, *index)
+                    || candidate.evidence_scope.is_some()
+                        && **line == "Times are approximate observation windows.")
             }) {
                 if line.starts_with("[^s")
                     || line.starts_with("[^r")
@@ -856,9 +859,10 @@ pub(crate) fn validate_candidate(candidate: &Candidate, before: &str) -> ApiResu
                             .enumerate()
                             .any(|(i, _)| line.contains(&format!("[^r{}]", i + 1)))
                 {
-                    return Err(ApiError::invalid(
-                        "every summary fact/uncertainty line needs a declared [^sN] or [^rN] citation; footnotes are rendered by the server",
-                    ));
+                    return Err(ApiError::invalid(format!(
+                        "summary line {} needs a declared [^sN] or [^rN] citation; footnotes are rendered by the server",
+                        index + 1
+                    )));
                 }
             }
         }
@@ -915,21 +919,68 @@ pub(crate) fn validate_candidate(candidate: &Candidate, before: &str) -> ApiResu
     }
     Ok(())
 }
-fn location_table_structure(line: &str) -> bool {
-    // This fixed reading legend defines the presentation, like the column
-    // headings. It makes no claim about a particular place or observation.
-    if line == "Times are approximate observation windows." {
-        return true;
+fn summary_table_structure(lines: &[&str], index: usize) -> bool {
+    fn cells(line: &str) -> Option<Vec<&str>> {
+        (line.starts_with('|') && line.ends_with('|'))
+            .then(|| line.trim_matches('|').split('|').map(str::trim).collect())
     }
-    let cells: Vec<_> = line.trim_matches('|').split('|').map(str::trim).collect();
-    line.starts_with('|')
-        && line.ends_with('|')
-        && cells.len() == 2
-        && ((cells[0].eq_ignore_ascii_case("when") && cells[1].eq_ignore_ascii_case("where"))
-            || cells.iter().all(|cell| {
+    // Like Markdown headings, table headings are presentation. Only a header
+    // directly followed by its matching delimiter row gets this exemption;
+    // every data row still needs evidence, for ordinary and location summaries.
+    let pair = |header: &str, delimiter: &str| {
+        let (Some(header), Some(delimiter)) = (cells(header), cells(delimiter)) else {
+            return false;
+        };
+        header.len() >= 2
+            && header.len() == delimiter.len()
+            && header.iter().all(|cell| !cell.is_empty())
+            && delimiter.iter().all(|cell| {
                 cell.trim_matches(':').len() >= 3
                     && cell.trim_matches(':').chars().all(|c| c == '-')
+            })
+    };
+    lines
+        .get(index + 1)
+        .is_some_and(|next| pair(lines[index], next))
+        || index > 0 && pair(lines[index - 1], lines[index])
+}
+
+#[cfg(test)]
+mod summary_structure_tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_tables_allow_headings_but_require_cited_data_rows() {
+        let mut candidate: Candidate = serde_json::from_value(json!({
+            "kind":"summary","title":"Compare recorded experiments",
+            "path":"derived/entities/experiments.md","expected_version":0,
+            "sources":[{"entry_ref":format!("entry:{}",Uuid::now_v7()),
+                "version":1,"start_line":1,"end_line":4}],
+            "content":"# Recorded experiments\n\n| Element | First experiment | Second experiment |\n| --- | :---: | ---: |\n| Material | Oak.[^s1] | Birch.[^s1] |"
+        })).unwrap();
+        validate_candidate(&candidate, "").unwrap();
+        candidate.content = candidate.content.map(|c| c.replace("[^s1]", ""));
+        assert!(validate_candidate(&candidate, "").is_err());
+    }
+
+    #[test]
+    fn unmatched_or_detached_table_rows_do_not_exempt_uncited_claims() {
+        for body in [
+            "| Fact | Value |\n| Recorded | Uncited |",
+            "| Fact | Value |\n\n| --- | --- |",
+            "| Fact | Value |\n| --- | --- | --- |",
+            "| Fact | Value |\n| --- | --- |\n| Recorded | Uncited |",
+        ] {
+            let candidate: Candidate = serde_json::from_value(json!({
+                "kind":"summary","title":"Unsupported table",
+                "path":"derived/entities/unsupported.md","expected_version":0,
+                "sources":[{"entry_ref":format!("entry:{}",Uuid::now_v7()),
+                    "version":1,"start_line":1,"end_line":4}],"content":body
             }))
+            .unwrap();
+            assert!(validate_candidate(&candidate, "").is_err(), "{body}");
+        }
+    }
 }
 
 /// Citation selectors remain on the immutable candidate and in the published
@@ -1550,24 +1601,21 @@ pub async fn admit(
                             "run_entry_ref":item.run_entry_ref,"run_version":item.run_version,
                             "code":code,"reason":message,
                         }));
-                        if let Some(scope) = &item.candidate.evidence_scope {
-                            if !data
+                        if let Some(scope) = &item.candidate.evidence_scope
+                            && !data
                                 .location_work
                                 .iter()
                                 .any(|work| same_location_window(scope, work))
-                            {
-                                if let Some(known) = data
-                                    .location_scopes
-                                    .iter()
-                                    .find(|known| same_location_window(scope, known))
-                                {
-                                    let mut work = known.clone();
-                                    work.as_object_mut()
-                                        .expect("retained location scope")
-                                        .remove("fingerprint");
-                                    data.location_work.push(work);
-                                }
-                            }
+                            && let Some(known) = data
+                                .location_scopes
+                                .iter()
+                                .find(|known| same_location_window(scope, known))
+                        {
+                            let mut work = known.clone();
+                            work.as_object_mut()
+                                .expect("retained location scope")
+                                .remove("fingerprint");
+                            data.location_work.push(work);
                         }
                     }
                     Err(error) => return Err(error),
@@ -1723,18 +1771,18 @@ async fn import_legacy(
             if !matches!(section, "Proposed" | "Needs your call") {
                 continue;
             }
-            if let Some((n, text)) = line.split_once(". ") {
-                if let Ok(n) = n.parse::<usize>() {
-                    number = number.max(n);
-                    paragraphs.push((n, section.to_owned(), text.to_owned()));
-                    continue;
-                }
+            if let Some((n, text)) = line.split_once(". ")
+                && let Ok(n) = n.parse::<usize>()
+            {
+                number = number.max(n);
+                paragraphs.push((n, section.to_owned(), text.to_owned()));
+                continue;
             }
-            if !line.trim().is_empty() {
-                if let Some((_, _, text)) = paragraphs.last_mut() {
-                    text.push('\n');
-                    text.push_str(line);
-                }
+            if !line.trim().is_empty()
+                && let Some((_, _, text)) = paragraphs.last_mut()
+            {
+                text.push('\n');
+                text.push_str(line);
             }
         }
         data.next_item
@@ -1959,13 +2007,12 @@ pub async fn candidates(
     }
     let (mut data, version) = load_state(&mut tx, user).await?;
     let request_hash = digest(&body);
-    if let Some(old) = &data.candidate_submission {
-        if old["attempt_id"] == body["attempt_id"]
-            && old["producer"] == auth.credential_id.0.to_string()
-            && old["request_hash"] == request_hash
-        {
-            return Ok(Json(old["response"].clone()));
-        }
+    if let Some(old) = &data.candidate_submission
+        && old["attempt_id"] == body["attempt_id"]
+        && old["producer"] == auth.credential_id.0.to_string()
+        && old["request_hash"] == request_hash
+    {
+        return Ok(Json(old["response"].clone()));
     }
     let a = active(&data, &body, &auth, version)?;
     let list: Vec<Candidate> =
@@ -2012,17 +2059,15 @@ pub async fn candidates(
                     "location revision must preserve the original destination, kind and evidence window",
                 ));
             }
-            if let Some(old) = data.items.iter().find(|item| &item.id == id) {
-                if old.candidate.kind != "question"
-                    && !is_location(&old.candidate)
-                    && !is_location(candidate)
-                    && (old.candidate.kind != candidate.kind
-                        || old.candidate.path != candidate.path)
-                {
-                    return Err(ApiError::invalid(
-                        "a revision must preserve its original destination and kind",
-                    ));
-                }
+            if let Some(old) = data.items.iter().find(|item| &item.id == id)
+                && old.candidate.kind != "question"
+                && !is_location(&old.candidate)
+                && !is_location(candidate)
+                && (old.candidate.kind != candidate.kind || old.candidate.path != candidate.path)
+            {
+                return Err(ApiError::invalid(
+                    "a revision must preserve its original destination and kind",
+                ));
             }
         }
         if let Some(path) = &candidate.path {
@@ -2627,12 +2672,11 @@ async fn item_available(
             return Ok(false);
         }
     }
-    if item.candidate.expected_version.unwrap_or(0) > 0 {
-        if let Some(path) = &item.candidate.path {
-            if load_entry(tx, user, path).await?.is_none() {
-                return Ok(false);
-            }
-        }
+    if item.candidate.expected_version.unwrap_or(0) > 0
+        && let Some(path) = &item.candidate.path
+        && load_entry(tx, user, path).await?.is_none()
+    {
+        return Ok(false);
     }
     Ok(true)
 }
@@ -2692,12 +2736,11 @@ async fn item_stale(
             return Ok(true);
         }
     }
-    if let Some(path) = &item.candidate.path {
-        if item.candidate.expected_version
+    if let Some(path) = &item.candidate.path
+        && item.candidate.expected_version
             != Some(load_entry(tx, user, path).await?.map_or(0, |e| e.version))
-        {
-            return Ok(true);
-        }
+    {
+        return Ok(true);
     }
     if item.candidate.kind == "summary" {
         for prefix in item
@@ -2806,26 +2849,25 @@ fn legacy_proposal_texts(
                 current = None;
                 continue;
             }
-            if matches!(section.as_str(), "Proposed" | "Needs your call") {
-                if let Some((number, text)) = line.split_once(". ") {
-                    if let Ok(number) = number.parse::<usize>() {
-                        let key = (section.clone(), number);
-                        result
-                            .entry(key.clone())
-                            .and_modify(|value| *value = None)
-                            .or_insert_with(|| Some(text.to_owned()));
-                        current = Some(key);
-                        fence = legacy_fence_opening(text);
-                        continue;
-                    }
-                }
+            if matches!(section.as_str(), "Proposed" | "Needs your call")
+                && let Some((number, text)) = line.split_once(". ")
+                && let Ok(number) = number.parse::<usize>()
+            {
+                let key = (section.clone(), number);
+                result
+                    .entry(key.clone())
+                    .and_modify(|value| *value = None)
+                    .or_insert_with(|| Some(text.to_owned()));
+                current = Some(key);
+                fence = legacy_fence_opening(text);
+                continue;
             }
         }
-        if let Some(key) = &current {
-            if let Some(Some(text)) = result.get_mut(key) {
-                text.push('\n');
-                text.push_str(line);
-            }
+        if let Some(key) = &current
+            && let Some(Some(text)) = result.get_mut(key)
+        {
+            text.push('\n');
+            text.push_str(line);
         }
     }
     for text in result.values_mut().flatten() {
@@ -3296,29 +3338,28 @@ pub async fn decide(
     .await?;
     // A review is an owner action, never a synthetic nightly execution. Keep
     // the last real attempt, timestamp, outcome and exact run receipt identity.
-    if current_mode.is_some() {
-        if let Some(old) = load_entry(&mut tx, user, "dreams/latest-receipt.md").await? {
-            if let Ok(mut latest) = crate::dreamer::receipt::parse_latest(&old.content) {
-                let a = Attempt {
-                    attempt_id: String::new(),
-                    fence: String::new(),
-                    date: item.run_id.clone(),
-                    producer_credential_id: String::new(),
-                    started_at: now,
-                    lease_until: now,
-                    frozen_generation: item.frozen_generation,
-                    mode: current_mode.clone().unwrap_or_default(),
-                    admission_hash: String::new(),
-                    admission_version: 0,
-                    location_work: None,
-                    narrative_context: Vec::new(),
-                    narrative_discovery: None,
-                };
-                latest["pending_owner"] =
-                    projection(&data, &a, &json!({}), "completed", now)["pending_owner"].clone();
-                write_projection(&state, &mut tx, &auth, &latest).await?;
-            }
-        }
+    if current_mode.is_some()
+        && let Some(old) = load_entry(&mut tx, user, "dreams/latest-receipt.md").await?
+        && let Ok(mut latest) = crate::dreamer::receipt::parse_latest(&old.content)
+    {
+        let a = Attempt {
+            attempt_id: String::new(),
+            fence: String::new(),
+            date: item.run_id.clone(),
+            producer_credential_id: String::new(),
+            started_at: now,
+            lease_until: now,
+            frozen_generation: item.frozen_generation,
+            mode: current_mode.clone().unwrap_or_default(),
+            admission_hash: String::new(),
+            admission_version: 0,
+            location_work: None,
+            narrative_context: Vec::new(),
+            narrative_discovery: None,
+        };
+        latest["pending_owner"] =
+            projection(&data, &a, &json!({}), "completed", now)["pending_owner"].clone();
+        write_projection(&state, &mut tx, &auth, &latest).await?;
     }
     let version = save_state(&state, &mut tx, &auth, &data, version).await?;
     tx.commit().await?;

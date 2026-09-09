@@ -295,12 +295,11 @@ pub(crate) async fn context_sources_current_in_tx(
         {
             return Ok(false);
         }
-        if let Some(expires) = source["expires_at"].as_str() {
-            if chrono::DateTime::parse_from_rfc3339(expires)
+        if let Some(expires) = source["expires_at"].as_str()
+            && chrono::DateTime::parse_from_rfc3339(expires)
                 .map_or(true, |at| at <= chrono::Utc::now())
-            {
-                return Ok(false);
-            }
+        {
+            return Ok(false);
         }
         let Some(content) = row.get::<Option<String>, _>("content") else {
             return Ok(false);

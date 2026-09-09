@@ -691,6 +691,65 @@ async fn historical_run(f: &Fixture, path: &str, content: &str, version: i64) ->
     result
 }
 
+#[tokio::test]
+async fn ordinary_summary_tables_retain_uncited_work_and_accept_cited_rows() {
+    let Some(f) = fixture().await else {
+        return;
+    };
+    control(&f, "report-only", 0).await;
+    let source = write(
+        &f,
+        "sources/Experiments/Notes.md",
+        "# Experiments\n\nThe first trial used oak and the second used birch.\n",
+        0,
+    )
+    .await;
+    let admission = admit(&f).await;
+    let mut valid = candidate(&source, "experiment-comparison");
+    valid["content"] = json!(
+        "# Recorded experiments\n\n| Element | First trial | Second trial |\n| --- | :---: | ---: |\n| Material | Oak.[^s1] | Birch.[^s1] |\n"
+    );
+    let mut invalid = valid.clone();
+    invalid["content"] = json!(valid["content"].as_str().unwrap().replace("[^s1]", ""));
+    let before = current(&f, "dreams/state.md").await.unwrap();
+    let mut body = attempt(&admission, admission["state_version"].as_i64().unwrap());
+    body["candidates"] = json!([invalid]);
+    body["processed_inputs"] = admission["inputs"].clone();
+    let rejected = post(&f, &f.runner, "/v1/workspace/dreamer/candidates", body).await;
+    assert_eq!(
+        rejected.status,
+        StatusCode::BAD_REQUEST,
+        "{}",
+        rejected.body
+    );
+    assert!(rejected.body.to_string().contains("needs a declared"));
+    assert_eq!(current(&f, "dreams/state.md").await.unwrap(), before);
+    let (_, accepted) = submit(
+        &f,
+        &admission,
+        admission["state_version"].as_i64().unwrap(),
+        vec![valid.clone()],
+    )
+    .await;
+    finish(
+        &f,
+        &admission,
+        accepted["state_version"].as_i64().unwrap(),
+        "completed",
+    )
+    .await;
+    let result = review(&f).await;
+    assert_eq!(result["items"].as_array().unwrap().len(), 1);
+    assert_eq!(result["items"][0]["reviewable"], true);
+    assert!(
+        result["items"][0]["candidate"]["after_md"]
+            .as_str()
+            .unwrap()
+            .contains("| Material | Oak.[^s1] | Birch.[^s1] |")
+    );
+    assert!(current(&f, valid["path"].as_str().unwrap()).await.is_none());
+}
+
 async fn expire_fixture_lease(f: &Fixture) {
     sqlx::query("UPDATE brunn.entry_versions v SET metadata=jsonb_set(metadata,'{dreamer_state,active,lease_until}',to_jsonb($2::text)) FROM brunn.entries e WHERE e.user_id=$1 AND e.path='dreams/state.md' AND v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version")
         .bind(f.owner.user).bind((Utc::now()-chrono::Duration::seconds(1)).to_rfc3339()).execute(&f.pool).await.unwrap();
@@ -3618,11 +3677,11 @@ async fn seed_obsolete_location_candidate(
     obsolete: ObsoleteLocationCandidate,
     status: &str,
 ) -> (chrono::DateTime<Utc>, Value, &'static str) {
-    let (from, _, _) = seed_location_pilot(&f).await;
-    queue_pilot(&f, from).await;
-    let admitted = admit(&f).await;
+    let (from, _, _) = seed_location_pilot(f).await;
+    queue_pilot(f, from).await;
+    let admitted = admit(f).await;
     let (_, accepted) = submit(
-        &f,
+        f,
         &admitted,
         admitted["state_version"].as_i64().unwrap(),
         vec![pilot_candidate(&admitted)],
@@ -3633,7 +3692,7 @@ async fn seed_obsolete_location_candidate(
     // Copy its exact submitted source data back into an unfinalized
     // fixture candidate. Normal finish creates a new immutable audit;
     // the already-written valid audit version is never rewritten.
-    let mut stored = current(&f, "dreams/state.md").await.unwrap();
+    let mut stored = current(f, "dreams/state.md").await.unwrap();
     let item = &mut stored.2["dreamer_state"]["items"][0];
     let run_id = Uuid::parse_str(
         item["run_entry_ref"]
@@ -3690,13 +3749,13 @@ async fn seed_obsolete_location_candidate(
             .bind(f.owner.user).bind(&stored.2).bind(stored.0).execute(&f.pool).await.unwrap();
     assert_eq!(changed.rows_affected(), 1);
     finish(
-        &f,
+        f,
         &admitted,
         accepted["state_version"].as_i64().unwrap(),
         "completed",
     )
     .await;
-    let view = review(&f).await;
+    let view = review(f).await;
     (from, view, expected_error)
 }
 

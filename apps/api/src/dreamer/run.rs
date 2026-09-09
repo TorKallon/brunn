@@ -904,32 +904,32 @@ impl Dreamer {
                 ));
             }
         }
-        if accepted > 0 {
-            if let (Some(run_ref), Some(version)) = (
+        if accepted > 0
+            && let (Some(run_ref), Some(version)) = (
                 value["run_entry_ref"].as_str(),
                 value["run_version"].as_i64(),
-            ) {
-                let event_key = format!("dreaming-review-{}", report.attempt_id);
-                let retry_results = report
-                    .notification
-                    .get("retry_results")
-                    .cloned()
-                    .unwrap_or(json!([]));
-                report.notification = match self
-                    .runner
-                    .review_ready(&event_key, run_ref, version, accepted)
-                    .await
-                {
-                    Ok(ack) => {
-                        json!({"status":"accepted","event_key":event_key,"run_entry_ref":run_ref,"run_version":version,"count":accepted,"ack":ack})
-                    }
-                    Err(_) => {
-                        json!({"status":"failed","event_key":event_key,"run_entry_ref":run_ref,"run_version":version,"count":accepted,"detail":"review-ready notification publication failed; pending work retained"})
-                    }
-                };
-                report.notification["retry_results"] = retry_results;
-                report.notification["target_kind"] = json!("review");
-            }
+            )
+        {
+            let event_key = format!("dreaming-review-{}", report.attempt_id);
+            let retry_results = report
+                .notification
+                .get("retry_results")
+                .cloned()
+                .unwrap_or(json!([]));
+            report.notification = match self
+                .runner
+                .review_ready(&event_key, run_ref, version, accepted)
+                .await
+            {
+                Ok(ack) => {
+                    json!({"status":"accepted","event_key":event_key,"run_entry_ref":run_ref,"run_version":version,"count":accepted,"ack":ack})
+                }
+                Err(_) => {
+                    json!({"status":"failed","event_key":event_key,"run_entry_ref":run_ref,"run_version":version,"count":accepted,"detail":"review-ready notification publication failed; pending work retained"})
+                }
+            };
+            report.notification["retry_results"] = retry_results;
+            report.notification["target_kind"] = json!("review");
         }
         if let Some(detail) = partial {
             return RunOutcome::Partial { detail };
@@ -1254,17 +1254,17 @@ impl Dreamer {
             env.remove("BRUNN_API_TOKEN");
             env.remove("BRUNN_API_URL");
         }
-        if let Some(effort) = self.config.host_env.get("DREAMER_REASONING_EFFORT") {
-            if ["low", "medium", "high", "xhigh", "max", "ultra"].contains(&effort.as_str()) {
-                let at = argv.len() - 1;
-                argv.splice(
-                    at..at,
-                    [
-                        "--config".into(),
-                        format!("model_reasoning_effort=\"{effort}\""),
-                    ],
-                );
-            }
+        if let Some(effort) = self.config.host_env.get("DREAMER_REASONING_EFFORT")
+            && ["low", "medium", "high", "xhigh", "max", "ultra"].contains(&effort.as_str())
+        {
+            let at = argv.len() - 1;
+            argv.splice(
+                at..at,
+                [
+                    "--config".into(),
+                    format!("model_reasoning_effort=\"{effort}\""),
+                ],
+            );
         }
         let mut command = Command::new(&argv[0]);
         command

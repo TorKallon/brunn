@@ -812,10 +812,10 @@ async fn project(
         selected.metadata.get("dreamer_summary").is_some() || managed_path(&selected.path);
     if !is_summary && protected_metadata(&selected.metadata) {
         if !audit_access(tx, auth, &selected).await? {
-            if selected.metadata.get("dreamer_receipt").is_some() {
-                if let Some(value) = receipt_status(&selected, request, max_chars, generation) {
-                    return Ok(value);
-                }
+            if selected.metadata.get("dreamer_receipt").is_some()
+                && let Some(value) = receipt_status(&selected, request, max_chars, generation)
+            {
+                return Ok(value);
             }
             let mut value = withheld(
                 id,

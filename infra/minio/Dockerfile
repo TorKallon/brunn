@@ -21,7 +21,7 @@ RUN set -eu; \
           golang.org/x/crypto@v0.55.0 \
           golang.org/x/net@v0.57.0 \
           golang.org/x/text@v0.41.0 \
-          google.golang.org/grpc@v1.83.1 \
+          google.golang.org/grpc@v1.83.2 \
         && go mod download all; then \
         dependencies_ready=true; \
         break; \

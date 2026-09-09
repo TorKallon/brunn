@@ -441,6 +441,14 @@ explicit stop windows against exact selected observation or visit-estimate
 timestamps, excluding receipt delays and visit callbacks. The model still
 judges whether the observed group supports a destination visit. Raw evidence
 and phone capture are unchanged.
+Before rejecting a short window, reasoning checks the whole packet, including
+observations immediately outside the day, for a longer stay at the same place.
+An observation cutoff is not a departure: a corroborated visit crossing midnight
+keeps its supporting endpoints and explicitly labels the adjacent day. The rule
+applies to all places. Supported destinations take priority over eliminating
+every possible traffic pause; isolated one-minute pairs still do not qualify.
+Ordinary and location summary tables may use uncited structural column headings
+and delimiter rows. Every data row still requires declared source citations.
 Discovery sees raw observations with known Home coordinates/addresses removed;
 it can search the public web, but has no shell or Brunn tools. The wrapper
 independently fetches at most eight public HTTPS pages and verifies short exact

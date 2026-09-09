@@ -61,10 +61,9 @@ async fn secret_refresh_cas_has_one_winner_and_rejects_delete_recreate_aba() {
         ),
     );
     assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
-    let (winner, loser) = if a.is_ok() {
-        (a.unwrap().0, b.unwrap_err())
-    } else {
-        (b.unwrap().0, a.unwrap_err())
+    let (winner, loser) = match (a, b) {
+        (Ok(winner), Err(loser)) | (Err(loser), Ok(winner)) => (winner.0, loser),
+        _ => panic!("expected exactly one successful secret write"),
     };
     assert_eq!(
         loser.into_response().status(),
@@ -84,10 +83,9 @@ async fn secret_refresh_cas_has_one_winner_and_rejects_delete_recreate_aba() {
         ),
     );
     assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
-    let loser = if a.is_ok() {
-        b.unwrap_err()
-    } else {
-        a.unwrap_err()
+    let loser = match (a, b) {
+        (Ok(_), Err(loser)) | (Err(loser), Ok(_)) => loser,
+        _ => panic!("expected exactly one successful secret write"),
     };
     assert_eq!(
         loser.into_response().status(),

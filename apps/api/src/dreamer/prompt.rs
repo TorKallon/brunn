@@ -11,7 +11,7 @@ pub const PROBE_PROMPT: &str =
 
 /// Shared by discovery, drafting and the independent audit. Stop selection is
 /// an evidence judgment plus the owner's minimum stay, not a geocoder-label rule.
-pub const LOCATION_STOP_GUIDANCE: &str = "Select places visited, not every interruption in movement. A timeline stop requires BOTH positive evidence of a distinct destination AND evidence of a stay longer than two minutes. Two pings a minute apart do not qualify even at a named destination. A brief pair of stationary road samples can be a traffic light, queue or repeated position; accurate coordinates and elapsed time alone do not establish a visit. Assess the surrounding movement, whether the position fits a site rather than its access road, visit estimates, sustained dwell and independently supported place identity together. A supported stop of a few minutes can belong in the timeline even when the canonical index says transit. A road pause with no destination evidence stays in the raw evidence regardless of duration, without its own row or a renamed 'brief pause' entry. Do not require a named business or infer a purpose. Use actual selected observation/visit timestamps to check the duration, not rounded display minutes, callback time, receipt delay, nearby travel points or an invented boundary. Longer sparse endpoints at a distinct residential or other destination can support a stop, with observation-window uncertainty kept separate. If a short ambiguous cluster is equally explained by normal travel, omit it from the primary timeline; do not claim a visit merely to preserve every cluster.";
+pub const LOCATION_STOP_GUIDANCE: &str = "Select places visited, not every interruption in movement. A timeline stop requires BOTH positive evidence of a distinct destination AND evidence of a stay longer than two minutes. Two pings a minute apart do not qualify even at a named destination. A brief pair of stationary road samples can be a traffic light, queue or repeated position; accurate coordinates and elapsed time alone do not establish a visit. Assess the surrounding movement, whether the position fits a site rather than its access road, visit estimates, sustained dwell and independently supported place identity together. A supported stop of a few minutes can belong in the timeline even when the canonical index says transit. A road pause with no destination evidence stays in the raw evidence regardless of duration, without its own row or a renamed 'brief pause' entry. Do not require a named business or infer a purpose. Use actual selected observation/visit timestamps to check the duration, not rounded display minutes, callback time, receipt delay, nearby travel points or an invented boundary. Longer sparse endpoints at a distinct residential or other destination can support a stop, with observation-window uncertainty kept separate. Preserve supported destinations when stop-versus-travel evidence is imperfect; avoiding a missed real stop takes priority over eliminating every possible traffic pause. Before rejecting a short window, inspect the whole packet for observations or visit estimates at the same destination, including boundary_observations. A day boundary or sparse sampling is not a physical departure. If exact evidence supports the same stay into the adjacent day, cite that evidence on the row and show the supported window with the adjacent day explicit. Never cut a corroborated stay down to the last in-day ping and then discard it for failing the minimum. This applies to every destination, without a Home exception. An isolated one-minute pair without longer supporting evidence still does not qualify.";
 
 /// Ordinary memory work runs separately after location has been checked and
 /// retained. Neither its prose nor its decisions become location evidence.
@@ -558,7 +558,7 @@ fn location_stop_duration_issues(candidate: &Value, admission: &Value) -> Vec<St
                 })
         });
         if !enough_time {
-            issues.push(format!("Line {}: a timeline stop requires an observed or estimated visit window longer than two minutes, even at a named destination. Use exact selected observation/visit instants; receipt delays and callback times do not count. Remove this short stop unless the same frozen evidence supports a longer stay; do not invent or extend boundaries.", index+1));
+            issues.push(format!("Line {}: a timeline stop requires an observed or estimated visit window longer than two minutes, even at a named destination. Before removing it, inspect the full packet and boundary_observations for a longer supported stay at that same destination. Cite exact supporting observation/visit instants and make any adjacent day explicit; a day cutoff is not a departure. Receipt delays, callback times and nearby travel points do not extend a stay. Remove only an unsupported short stop; never invent boundaries.", index+1));
         }
     }
     issues
@@ -1035,7 +1035,7 @@ mod tests {
             "{}\nUncited assertion.",
             invalid["candidates"][0]["content"].as_str().unwrap()
         ));
-        assert!(location_submission_issues(&invalid, &admission)[0].contains("every summary fact"));
+        assert!(location_submission_issues(&invalid, &admission)[0].contains("needs a declared"));
         invalid = output.clone();
         invalid["candidates"][0]["raw_sources"][0]["fields"] = json!(["at", "poi.0.name"]);
         assert!(location_submission_issues(&invalid, &admission)[0].contains("unsupported field"));
@@ -1288,6 +1288,54 @@ mod tests {
                 "{end}"
             );
         }
+    }
+
+    #[test]
+    fn day_boundary_evidence_preserves_a_real_stop_without_inventing_midnight() {
+        let arrival = json!({
+            "natural_key":{"at":"2040-02-03T23:54:43Z","type":"visit_arrival"},
+            "type":"visit_arrival","at":"2040-02-03T23:54:43Z",
+            "arrived_at":"2040-02-03T23:53:41Z","departed_at":null
+        });
+        let ping = json!({"natural_key":{"at":"2040-02-03T23:54:15Z","type":"ping"},
+            "type":"ping","at":"2040-02-03T23:54:15Z"});
+        let after = json!({"natural_key":{"at":"2040-02-04T00:01:04Z","type":"ping"},
+            "type":"ping","at":"2040-02-04T00:01:04Z"});
+        let mut admission = json!({"location_work":{"timezone":"UTC"},
+            "location_evidence":{"reports":[arrival.clone(),ping.clone()],
+                "boundary_observations":{"after":after.clone()}}});
+        let mut candidate = json!({"kind":"summary","path":"derived/location/2040-02-03.md",
+            "content":"| 11:53 pm–11:54 pm | A destination[^r1][^r2] |",
+            "raw_sources":[
+                {"natural_key":arrival["natural_key"],"fields":["arrived_at"]},
+                {"natural_key":ping["natural_key"],"fields":["at"]},
+                {"natural_key":after["natural_key"],"fields":["at"]}]});
+        // A short in-day span needs repair, not an invented midnight endpoint.
+        assert_eq!(
+            location_stop_duration_issues(&candidate, &admission).len(),
+            1
+        );
+        candidate["content"] =
+            json!("| 11:53 pm–12:01 am next day | A destination[^r1][^r2][^r3] |");
+        assert!(
+            location_content_issues(&json!({"candidates":[candidate.clone()]}), &admission)
+                .is_empty()
+        );
+        candidate["content"] =
+            json!("| 11:53 pm–12:00 am next day | A destination[^r1][^r2][^r3] |");
+        assert!(
+            !location_content_issues(&json!({"candidates":[candidate.clone()]}), &admission)
+                .is_empty()
+        );
+        // Boundary context must be real and selected; an unseen next-day stay
+        // or a callback arriving later must never rescue a one-minute pair.
+        candidate["content"] =
+            json!("| 11:53 pm–12:01 am next day | A destination[^r1][^r2][^r3] |");
+        admission["location_evidence"]["boundary_observations"] = json!({});
+        assert_eq!(
+            location_stop_duration_issues(&candidate, &admission).len(),
+            1
+        );
     }
 
     #[test]

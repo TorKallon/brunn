@@ -82,11 +82,11 @@ impl DreamerApp {
             today.pred_opt().unwrap_or(today)
         };
         let runtime = self.dreamer.runtime_status().await;
-        if runtime.last_run_date.as_deref() != Some(&due.format("%Y-%m-%d").to_string()) {
-            if let Ok(_guard) = self.run_lock.try_lock() {
-                let report = self.dreamer.run_once(due, RunKind::Nightly).await;
-                *self.last_report.lock().await = Some(report);
-            }
+        if runtime.last_run_date.as_deref() != Some(&due.format("%Y-%m-%d").to_string())
+            && let Ok(_guard) = self.run_lock.try_lock()
+        {
+            let report = self.dreamer.run_once(due, RunKind::Nightly).await;
+            *self.last_report.lock().await = Some(report);
         }
         loop {
             let now = Utc::now().with_timezone(&Los_Angeles);
