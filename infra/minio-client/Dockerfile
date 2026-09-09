@@ -15,7 +15,7 @@ RUN git clone --filter=blob:none https://github.com/minio/mc.git . \
 RUN go get \
       github.com/prometheus/prometheus@v0.311.3 \
       golang.org/x/crypto@v0.55.0 \
-      golang.org/x/net@v0.57.0 \
+      golang.org/x/net@v0.58.0 \
       golang.org/x/text@v0.41.0 \
       google.golang.org/grpc@v1.83.2 \
     && go mod tidy \

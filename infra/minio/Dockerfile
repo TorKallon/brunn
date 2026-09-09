@@ -19,7 +19,7 @@ RUN set -eu; \
           github.com/rabbitmq/amqp091-go@v1.13.0 \
           go.opentelemetry.io/otel/sdk@v1.44.0 \
           golang.org/x/crypto@v0.55.0 \
-          golang.org/x/net@v0.57.0 \
+          golang.org/x/net@v0.58.0 \
           golang.org/x/text@v0.41.0 \
           google.golang.org/grpc@v1.83.2 \
         && go mod download all; then \

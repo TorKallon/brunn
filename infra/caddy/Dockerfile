@@ -9,7 +9,7 @@ RUN git clone --filter=blob:none https://github.com/caddyserver/caddy.git . \
     && test "$(git rev-parse HEAD)" = "${CADDY_COMMIT}" \
     && test "$(git describe --tags --exact-match)" = "${CADDY_RELEASE}"
 RUN go get golang.org/x/crypto@v0.55.0 \
-      golang.org/x/net@v0.57.0 \
+      golang.org/x/net@v0.58.0 \
       golang.org/x/text@v0.41.0 \
       google.golang.org/grpc@v1.83.2 \
     && go mod tidy \
