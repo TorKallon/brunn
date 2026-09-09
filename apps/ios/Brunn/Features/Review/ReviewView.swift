@@ -176,8 +176,12 @@ struct ReviewView: View {
                 } else { Text("No attempt recorded") }
                 if let run = data.lastSuccessfulRun {
                     ReviewSourceLink(reference: run.entryRef, version: run.version,
-                                     title: "Last successful run: \(run.runID)")
-                } else { Text("No successful run recorded") }
+                                     title: "Last fully completed run: \(run.runID)")
+                } else {
+                    Text("No fully completed run yet")
+                    Text("Runs can produce review items while leaving unfinished work for later.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 LabeledContent("Approved and held", value: "\(data.counts.approvedHeld)")
                 LabeledContent("Applied", value: "\(data.counts.applied)")
             }

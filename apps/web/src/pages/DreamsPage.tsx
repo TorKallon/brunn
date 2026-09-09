@@ -61,11 +61,11 @@ function RunStatus({ data }: { data: DreamerReviewData }) {
       </> : <strong>No attempt recorded</strong>}
     </div>
     <div className="review-run-fact">
-      <span className="review-eyebrow">Last successful run</span>
+      <span className="review-eyebrow">Last fully completed run</span>
       {data.last_successful_run ? <>
         <strong><EntryLink entryRef={data.last_successful_run.entry_ref} version={data.last_successful_run.version}>{data.last_successful_run.run_id}</EntryLink></strong>
         <span>Report v{data.last_successful_run.version}</span>
-      </> : <><strong>No successful run recorded</strong><p>Pending work may still be available below.</p></>}
+      </> : <><strong>No fully completed run yet</strong><p>Runs can produce review items while leaving unfinished work for later.</p></>}
     </div>
     <div className="review-run-fact">
       <span className="review-eyebrow">Application mode</span>
