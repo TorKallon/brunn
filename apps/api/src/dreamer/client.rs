@@ -12,6 +12,8 @@ use serde_json::{Value, json};
 
 #[derive(Debug)]
 pub enum ClientError {
+    /// A research checkpoint was definitively rejected until evidence refresh.
+    ResearchRefreshRequired(String),
     /// The API rejected a CAS write because the entry moved.
     Conflict {
         actual_version: Option<i64>,
@@ -24,6 +26,7 @@ pub enum ClientError {
 impl std::fmt::Display for ClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ClientError::ResearchRefreshRequired(detail) => write!(f, "{detail}"),
             ClientError::Conflict {
                 actual_version,
                 detail,
@@ -137,6 +140,13 @@ impl ApiClient {
             .chars()
             .take(1024)
             .collect();
+        let code = body.pointer("/error/code").and_then(Value::as_str);
+        if path == "/v1/workspace/dreamer/research-progress"
+            && ((status == StatusCode::BAD_REQUEST && code == Some("research_refresh_required"))
+                || (status == StatusCode::CONFLICT && code == Some("dreamer_source_changed")))
+        {
+            return Err(ClientError::ResearchRefreshRequired(message));
+        }
         if status == StatusCode::CONFLICT {
             let actual_version = body
                 .pointer("/error/details/actual_version")
@@ -470,8 +480,8 @@ impl ApiClient {
 mod tests {
     use super::*;
 
-    // Transport-level behavior (409 mapping, retry-once) is covered against a
-    // mock HTTP server in the integration tests; here we only pin pure logic.
+    // Runner behavior is exercised against a mock HTTP server in integration
+    // tests; constructed responses pin the endpoint/status/code boundary here.
 
     #[test]
     fn conflict_error_renders() {
@@ -480,5 +490,119 @@ mod tests {
             detail: "source changed".into(),
         };
         assert!(error.to_string().contains('4'));
+    }
+
+    async fn decode_fixture(path: &str, status: StatusCode, body: &str) -> ClientResult<Value> {
+        let response = http::Response::builder()
+            .status(status)
+            .header("content-type", "application/json")
+            .body(body.to_owned())
+            .unwrap();
+        ApiClient::decode(path, response.into()).await
+    }
+
+    #[tokio::test]
+    async fn research_refresh_decode_requires_exact_endpoint_status_and_code() {
+        for path in [
+            "/v1/workspace/dreamer/research-progress",
+            "/v1/workspace/dreamer/candidates",
+            "/v1/workspace/dreamer/narrative-discover",
+        ] {
+            for status in [
+                StatusCode::BAD_REQUEST,
+                StatusCode::CONFLICT,
+                StatusCode::UNAUTHORIZED,
+                StatusCode::FORBIDDEN,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StatusCode::OK,
+            ] {
+                for code in [
+                    "research_refresh_required",
+                    "dreamer_source_changed",
+                    "invalid_request",
+                    "dreamer_attempt_conflict",
+                    "dreamer_research_conflict",
+                    "dreamer_state_conflict",
+                ] {
+                    let body = json!({"error":{"code":code,"message":"Public synthetic error",
+                        "details":{"private_detail":"DETAIL_MUST_NOT_ENTER_FEEDBACK"}}})
+                    .to_string();
+                    let result = decode_fixture(path, status, &body).await;
+                    let expected = path == "/v1/workspace/dreamer/research-progress"
+                        && ((status == StatusCode::BAD_REQUEST
+                            && code == "research_refresh_required")
+                            || (status == StatusCode::CONFLICT
+                                && code == "dreamer_source_changed"));
+                    assert_eq!(
+                        matches!(&result, Err(ClientError::ResearchRefreshRequired(_))),
+                        expected,
+                        "{path}, {status}, {code}: {result:?}"
+                    );
+                    if let Err(error) = result {
+                        assert!(!error.to_string().contains("DETAIL_MUST_NOT_ENTER_FEEDBACK"));
+                    }
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn malformed_research_errors_never_authorize_refresh() {
+        for status in [StatusCode::BAD_REQUEST, StatusCode::CONFLICT] {
+            for body in [
+                "{incomplete JSON",
+                "null",
+                r#"{"code":"research_refresh_required"}"#,
+                r#"{"error":{"message":"research_refresh_required"}}"#,
+                r#"{"error":{"code":["research_refresh_required","dreamer_source_changed"]}}"#,
+            ] {
+                let result =
+                    decode_fixture("/v1/workspace/dreamer/research-progress", status, body).await;
+                assert!(
+                    matches!(
+                        result,
+                        Err(ClientError::Failed(_)) | Err(ClientError::Conflict { .. })
+                    ),
+                    "{status}: {body}: {result:?}"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn research_transport_failure_and_timeout_remain_uncertain_failures() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let client = ApiClient {
+            http: reqwest::Client::builder()
+                .timeout(Duration::from_millis(50))
+                .build()
+                .unwrap(),
+            base_url,
+            token: "synthetic-test-only".into(),
+        };
+        // Keep the listener bound without answering HTTP, so the first request
+        // times out. Closing it makes the second request a connection failure.
+        let result = client
+            .post(
+                "/v1/workspace/dreamer/research-progress",
+                json!({"operation_id":"synthetic"}),
+            )
+            .await;
+        assert!(
+            matches!(&result, Err(ClientError::Failed(detail)) if detail.starts_with("POST ")),
+            "request timeout: {result:?}"
+        );
+        drop(listener);
+        let result = client
+            .post(
+                "/v1/workspace/dreamer/research-progress",
+                json!({"operation_id":"synthetic"}),
+            )
+            .await;
+        assert!(
+            matches!(&result, Err(ClientError::Failed(detail)) if detail.starts_with("POST ")),
+            "connection failure: {result:?}"
+        );
     }
 }

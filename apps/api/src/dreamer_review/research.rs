@@ -951,7 +951,9 @@ pub(super) async fn apply_progress(
     )
     .await?;
     if !fresh(tx, auth, job).await? {
-        return Err(ApiError::invalid(
+        return Err(ApiError::public(
+            axum::http::StatusCode::BAD_REQUEST,
+            "research_refresh_required",
             "research evidence or relevant subject scope changed; rediscover before saving conclusions",
         ));
     }
@@ -1065,6 +1067,57 @@ pub(super) async fn progress(
     Ok(Json(json!({"data":response})))
 }
 
+async fn resolve_target(
+    tx: &mut Transaction<'_, Postgres>,
+    auth: &AuthContext,
+    target: &str,
+) -> ApiResult<Option<Uuid>> {
+    if target.starts_with("entry:") {
+        return entry_id(target).map(Some);
+    }
+    // These are workspace identifiers, never filesystem paths or remote URLs.
+    if target.starts_with(['/', '\\', '~']) || url::Url::parse(target).is_ok() {
+        return Ok(None);
+    }
+    if target.contains(['\\', '\n', '\r']) || target.split('/').any(|part| part == "..") {
+        return Err(ApiError::invalid(
+            "research targets must be exact source paths or entry references",
+        ));
+    }
+    // An exact identity wins even when headers later exclude it. A deleted or
+    // generated exact source must not silently redirect to another document.
+    if let Some(id) =
+        sqlx::query_scalar("SELECT id FROM brunn.entries WHERE user_id=$1 AND path=$2")
+            .bind(auth.user_id.0)
+            .bind(target)
+            .fetch_optional(&mut **tx)
+            .await?
+    {
+        return Ok(Some(id));
+    }
+    let stem = target
+        .strip_suffix(".markdown")
+        .or_else(|| target.strip_suffix(".md"))
+        .unwrap_or(target);
+    let mut variants = BTreeSet::new();
+    for suffix in ["", ".md", ".markdown"] {
+        let path = format!("{stem}{suffix}");
+        if !path.starts_with("sources/") {
+            variants.insert(format!("sources/{path}"));
+        }
+        variants.insert(path);
+    }
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM brunn.entries WHERE user_id=$1 AND path=ANY($2) AND deleted_at IS NULL",
+    )
+    .bind(auth.user_id.0)
+    .bind(variants.into_iter().collect::<Vec<_>>())
+    .fetch_all(&mut **tx)
+    .await?;
+    // Resolve the complete bounded set together; variant order is not evidence.
+    Ok((ids.len() == 1).then(|| ids[0]))
+}
+
 pub(super) async fn discover(
     State(state): State<AppState>,
     Extension(auth): Extension<AuthContext>,
@@ -1159,31 +1212,15 @@ pub(super) async fn discover(
     check_job(&data, &body, &job, job_version)?;
     let upper = generation(&mut tx, &auth).await?;
     let mut exact = BTreeSet::new();
+    let mut target_ids = BTreeMap::new();
     let mut unresolved = Vec::new();
     for target in &targets {
-        let id = if target.starts_with("entry:") {
-            Some(entry_id(target)?)
-        } else {
-            if target.contains(['\\', '\n', '\r']) || target.split('/').any(|part| part == "..") {
-                return Err(ApiError::invalid(
-                    "research targets must be exact source paths or entry references",
-                ));
-            }
-            sqlx::query_scalar(
-                "SELECT id FROM brunn.entries WHERE user_id=$1 AND path=$2 AND deleted_at IS NULL",
-            )
-            .bind(auth.user_id.0)
-            .bind(target)
-            .fetch_optional(&mut *tx)
-            .await?
-        };
-        if let Some(id) = id {
+        if let Some(id) = resolve_target(&mut tx, &auth, target).await? {
+            target_ids.insert(target.clone(), id);
             exact.insert(id);
             if !leads.contains(&id) {
                 leads.push(id);
             }
-        } else {
-            unresolved.push(target.clone());
         }
     }
     let canonical = entry_id(&job.subject_ref)?;
@@ -1210,10 +1247,11 @@ pub(super) async fn discover(
         }
     }
     for target in &targets {
-        let resolved = job
-            .sources
-            .iter()
-            .any(|s| s.entry_ref == *target || s.path == *target);
+        let resolved = target_ids.get(target).is_some_and(|id| {
+            job.sources
+                .iter()
+                .any(|s| s.entry_ref == format!("entry:{id}"))
+        });
         if !resolved && !unresolved.contains(target) {
             unresolved.push(target.clone());
         }

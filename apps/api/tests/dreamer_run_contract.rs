@@ -14,7 +14,7 @@ use brunn::dreamer::{
 use chrono::NaiveDate;
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -60,6 +60,8 @@ struct Mock {
     research_enabled: bool,
     research_next_count: usize,
     research_progress: Vec<Value>,
+    research_progress_replies: VecDeque<Option<(StatusCode, String)>>,
+    research_discovery_sources: VecDeque<Vec<Value>>,
 }
 #[path = "dreamer_run_contract/research_contract.rs"]
 mod research_contract;
@@ -145,7 +147,11 @@ async fn narrative_discover(State(shared): State<Shared>, Json(body): Json<Value
         json!({"request_hash":"narrative-fixture","queries":body["queries"]});
     if s.research_enabled {
         research_contract::assert_operation(&body);
-        value["research"]["sources"] = json!(s.narrative_context);
+        value["research"]["sources"] = json!(
+            s.research_discovery_sources
+                .pop_front()
+                .unwrap_or_else(|| s.narrative_context.clone())
+        );
         if body["queries"] == json!([])
             && body["targets"] == json!([])
             && let Some(cursor) = value["research"]["coverage"]["change_cursor"].as_i64()

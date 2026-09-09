@@ -388,9 +388,10 @@ def run_subject_cycle(owner, runner, reader, report):
     """Supplement legacy cycles in the same disposable fixture; no model or push."""
     canonical_path = "sources/Projects/Canary Aster/Canary Aster.md"
     trail_path, primary_path = "sources/CanaryResearch/Trail.md", "sources/CanaryResearch/Outcome.md"
-    canonical_text = ("## Purpose\n\nCanary Aster has a project trail at [[" + trail_path + "]].\n"
+    trail_target, primary_target = "CanaryResearch/Trail", "CanaryResearch/Outcome.md"
+    canonical_text = ("## Purpose\n\nCanary Aster has a project trail at [[" + trail_target + "]].\n"
                       + "\nSynthetic padding for the fixture read comparison.\n" * 100)
-    trail_text = "# Trail\n\nThe primary result is in [[" + primary_path + "]].\n"
+    trail_text = "# Trail\n\nThe primary result is in [[" + primary_target + "]].\n"
     old_text = "# Outcome\n\nAn old plan is awaiting execution.\n"
     outcome = "The current outcome is complete; one equipment detail remains unresolved."
     new_text = "# Outcome\n\n" + outcome + "\n"
@@ -423,7 +424,7 @@ def run_subject_cycle(owner, runner, reader, report):
     requested_selectors = [{**row, "end_line": row["end_line"] + 1} for row in initial_selectors]
     current = unwrap(runner.request("POST", "/v1/workspace/dreamer/research-progress", {
         **research_body(current), "notes": initial_notes, "reviewed_sources": requested_selectors,
-        "pending_queries": [], "pending_targets": [trail_path], "status": "researching"}))
+        "pending_queries": [], "pending_targets": [trail_target], "status": "researching"}))
     checked_selectors = current["research"]["reviewed_sources"]
     require(current["research"]["notes"] == initial_notes
             and [{key: row.get(key) for key in ("entry_ref", "version", "start_line", "end_line")}
@@ -434,11 +435,16 @@ def run_subject_cycle(owner, runner, reader, report):
     unrelated = write(owner, unrelated_path, "## Purpose\n\nA separate fixture task has unrelated evidence.\n", 0)
     requests = []
     # Follow two source links, then re-read a changed primary within this attempt.
-    for target, source, text in ((trail_path, trail, trail_text), (primary_path, primary, old_text),
+    for target, source, text in ((trail_target, trail, trail_text), (primary_target, primary, old_text),
                                 (primary["entry_ref"], primary, new_text)):
         if len(requests) == 2:
             primary = write(owner, primary_path, new_text, primary["version"])
             source = primary
+            rejected = runner.request("POST", "/v1/workspace/dreamer/research-progress", {
+                **research_body(current), "notes": initial_notes, "reviewed_sources": checked_selectors,
+                "pending_queries": [], "pending_targets": [], "status": "researching"}, expected=(400,))
+            require(rejected.get("error", {}).get("code") == "research_refresh_required",
+                    "changed subject scope did not return the typed refresh-required rejection")
         body = {**research_body(current), "queries": [], "targets": [target]}
         requests.append(body)
         current = unwrap(runner.request("POST", "/v1/workspace/dreamer/narrative-discover", body))
@@ -451,6 +457,9 @@ def run_subject_cycle(owner, runner, reader, report):
                     "changed dependency did not invalidate checked progress")
         require(any(row["entry_ref"] == source["entry_ref"] and row["version"] == source["version"]
                     for row in current["research"]["sources"]), "linked exact source was not admitted at its current version")
+        unresolved = current["research"].get("coverage", {}).get("unresolved_targets")
+        require(isinstance(unresolved, list) and target not in unresolved,
+                "imported link resolution receipt still reports the admitted target unresolved")
         exact = read_one(reader, ref=source["entry_ref"], version=source["version"], view="full", max_chars=100_000)
         require(exact["reference"] == source["entry_ref"] and exact["text"] == text,
                 "linked primary exact source mismatch")
@@ -548,6 +557,8 @@ def run_subject_cycle(owner, runner, reader, report):
         "supported_progress_checkpoint": True,
         "checkpoint_eof_normalized": True,
         "publication_eof_remains_strict": True,
+        "imported_wiki_links_resolved": True,
+        "changed_scope_refresh_signal": True,
         "saved_progress_survives_additive_discovery": True,
         "changed_dependency_invalidates_progress": True,
         "generic_section_heading_is_not_an_identity": True,

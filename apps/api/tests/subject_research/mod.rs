@@ -45,6 +45,414 @@ fn subject_candidate(admission: &Value, selectors: Vec<Value>) -> Value {
         "content":"# Radley\n\nRadley is the canonical person.[^s1]\nThe current outcome is complete; one equipment detail remains unresolved.[^s2]\n", "sources":selectors})
 }
 
+async fn imported_link_source(f: &Fixture, path: &str) -> Value {
+    write(
+        f,
+        path,
+        "# Evidence\n\nA synthetic source observation.\n",
+        0,
+    )
+    .await
+}
+
+#[tokio::test]
+async fn imported_link_targets_preserve_directories_exact_precedence_receipts_and_progress() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let canonical = write(
+        &f,
+        "sources/People/Orchid.md",
+        "# Orchid\n\nA canonical source observation.\n",
+        0,
+    )
+    .await;
+    let outline = imported_link_source(&f, "sources/Projects/Orchid/Outline.md").await;
+    let decision = imported_link_source(&f, "sources/Projects/Orchid/Decision.markdown").await;
+    let exact = imported_link_source(&f, "Projects/Exact.md").await;
+    let shadow = imported_link_source(&f, "sources/Projects/Exact.md").await;
+    let collision = imported_link_source(&f, "Projects/Collision.md").await;
+    let imported_collision = imported_link_source(&f, "sources/Projects/Collision.markdown").await;
+    let wrong_folder = imported_link_source(&f, "sources/Elsewhere/Only.md").await;
+    let selected = next_subject(&f, &admit(&f).await).await;
+    let notes = "The canonical source has been checked; the imported project links remain leads.";
+    let saved = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        progress_body(&selected, vec![reviewed(&canonical)], "researching", notes),
+    )
+    .await)["data"]
+        .clone();
+    let unresolved = [
+        "Projects/Collision",
+        "Projects/Wrong/Only",
+        "Only",
+        "/sources/Projects/Orchid/Outline.md",
+        "https://example.org/Projects/Orchid/Outline.md",
+        "C:\\Projects\\Orchid\\Outline.md",
+        "Projects/Orchid/Outline#Details",
+    ];
+    let mut targets = [
+        "Projects/Orchid/Outline",
+        "Projects/Orchid/Outline.md",
+        "Projects/Orchid/Outline.markdown",
+        "sources/Projects/Orchid/Outline",
+        "sources/Projects/Orchid/Outline.markdown",
+        "Projects/Orchid/Decision",
+        "Projects/Orchid/Decision.md",
+        "Projects/Orchid/Decision.markdown",
+        "Projects/Exact.md",
+        "Projects/Orchid/Outline",
+    ]
+    .map(|t| json!(t))
+    .to_vec();
+    targets.extend(unresolved.iter().map(|t| json!(t)));
+    let (original, expanded) = discover_subject(&f, &saved, targets.clone()).await;
+    assert_eq!(
+        expanded["research"]["coverage"]["unresolved_targets"],
+        json!(unresolved)
+    );
+    let sources = expanded["research"]["sources"].as_array().unwrap();
+    assert_eq!(
+        sources.len(),
+        4,
+        "different imported spellings admit each identity only once"
+    );
+    for source in [&canonical, &outline, &decision, &exact] {
+        assert!(
+            sources
+                .iter()
+                .any(|s| s["entry_ref"] == source["entry_ref"] && s["path"] == source["path"])
+        );
+    }
+    for source in [&shadow, &collision, &imported_collision, &wrong_folder] {
+        assert!(
+            !sources
+                .iter()
+                .any(|s| s["entry_ref"] == source["entry_ref"])
+        );
+    }
+    assert_eq!(expanded["research"]["notes"], notes);
+    assert_eq!(
+        expanded["research"]["reviewed_sources"],
+        saved["research"]["reviewed_sources"]
+    );
+    assert_eq!(expanded["inputs"], saved["inputs"]);
+    let mut repeated = research_request(&expanded);
+    repeated["queries"] = json!([]);
+    targets.reverse();
+    repeated["targets"] = json!(targets);
+    let repeated = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/narrative-discover",
+        repeated,
+    )
+    .await);
+    assert_eq!(
+        repeated["no_op"], true,
+        "variant order and duplicate spellings cannot manufacture discovery progress"
+    );
+    let replay = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/narrative-discover",
+        original,
+    )
+    .await);
+    assert_eq!(replay["no_op"], true);
+    assert_eq!(
+        replay["data"]["research"]["sources"],
+        expanded["research"]["sources"]
+    );
+    assert_eq!(replay["data"]["research"]["notes"], notes);
+    assert_eq!(
+        replay["data"]["research"]["version"],
+        repeated["data"]["research"]["version"]
+    );
+    let checked = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        progress_body(
+            &replay["data"],
+            vec![reviewed(&canonical), reviewed(&outline)],
+            "researching",
+            "The canonical and imported outline have both been checked.",
+        ),
+    )
+    .await)["data"]
+        .clone();
+    let corrected = write(
+        &f,
+        "sources/Projects/Orchid/Outline.md",
+        "# Evidence\n\nA corrected source observation.\n",
+        1,
+    )
+    .await;
+    let (_, refreshed) =
+        discover_subject(&f, &checked, vec![json!("Projects/Orchid/Outline")]).await;
+    assert_eq!(refreshed["research"]["notes"], "");
+    assert_eq!(refreshed["research"]["reviewed_sources"], json!([]));
+    assert_eq!(
+        refreshed["research"]["coverage"]["unresolved_targets"],
+        json!([])
+    );
+    assert!(
+        refreshed["research"]["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["entry_ref"] == corrected["entry_ref"] && s["version"] == 2)
+    );
+}
+
+#[tokio::test]
+async fn imported_link_aliases_cannot_bypass_source_exclusions_or_exact_identity() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let canonical = write(
+        &f,
+        "sources/People/Orchid.md",
+        "# Orchid\n\nA canonical source observation.\n",
+        0,
+    )
+    .await;
+    let foreign_actor = actor(&f.pool, None, OWNER_CAPS).await;
+    let foreign = ok(post(&f, &foreign_actor, "/v1/workspace/write", json!({"path":"sources/Imported/Foreign.md","content":"# Foreign\n\nAnother user's source.\n","expected_version":0,"metadata":{}})).await)["data"].clone();
+    let mut excluded = Vec::new();
+    for name in ["Deleted", "Generated", "Large"] {
+        let exact = imported_link_source(&f, &format!("Imported/{name}.md")).await;
+        imported_link_source(&f, &format!("sources/Imported/{name}.md")).await;
+        let fallback = imported_link_source(&f, &format!("sources/Imported/{name}Only.md")).await;
+        for source in [exact, fallback] {
+            let id = Uuid::parse_str(
+                source["entry_ref"]
+                    .as_str()
+                    .unwrap()
+                    .trim_start_matches("entry:"),
+            )
+            .unwrap();
+            match name {
+                "Deleted" => {
+                    sqlx::query("UPDATE brunn.entries SET deleted_at=clock_timestamp() WHERE user_id=$1 AND id=$2").bind(f.owner.user).bind(id).execute(&f.pool).await.unwrap();
+                }
+                "Generated" => {
+                    sqlx::query("UPDATE brunn.entry_versions SET metadata=jsonb_build_object('dreamer_run',jsonb_build_object('schema','dream.run.v1')) WHERE user_id=$1 AND entry_id=$2 AND version=1").bind(f.owner.user).bind(id).execute(&f.pool).await.unwrap();
+                }
+                "Large" => {
+                    let content = "Synthetic large evidence.\n".repeat(50000);
+                    let hash = hex::encode(Sha256::digest(content.as_bytes()));
+                    sqlx::query("UPDATE brunn.entry_versions SET content=$3,size_bytes=$4,content_sha256=$5 WHERE user_id=$1 AND entry_id=$2 AND version=1").bind(f.owner.user).bind(id).bind(&content).bind(content.len() as i64).bind(hash).execute(&f.pool).await.unwrap();
+                }
+                _ => unreachable!(),
+            }
+            excluded.push(source);
+        }
+    }
+    let selected = next_subject(&f, &admit(&f).await).await;
+    let mut targets = [
+        "Imported/Deleted.md",
+        "Imported/Generated.md",
+        "Imported/Large.md",
+        "Imported/DeletedOnly",
+        "Imported/GeneratedOnly",
+        "Imported/LargeOnly",
+        "Imported/Foreign",
+    ]
+    .map(|t| json!(t))
+    .to_vec();
+    targets.push(foreign["entry_ref"].clone());
+    targets.extend(excluded.iter().map(|s| s["entry_ref"].clone()));
+    let (_, expanded) = discover_subject(&f, &selected, targets.clone()).await;
+    assert_eq!(
+        expanded["research"]["coverage"]["unresolved_targets"],
+        json!(targets)
+    );
+    assert_eq!(expanded["research"]["sources"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        expanded["research"]["sources"][0]["entry_ref"],
+        canonical["entry_ref"]
+    );
+    assert_eq!(expanded["inputs"], selected["inputs"]);
+}
+
+#[tokio::test]
+async fn imported_link_target_stays_unresolved_when_the_unique_source_exceeds_the_job_cap() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let canonical = write(
+        &f,
+        "sources/People/Orchid.md",
+        "# Orchid\n\nA canonical source observation.\n",
+        0,
+    )
+    .await;
+    let content = "# Evidence\n\nA synthetic source observation.\n";
+    let hash = hex::encode(Sha256::digest(content.as_bytes()));
+    let mut tx = f.pool.begin().await.unwrap();
+    sqlx::query("INSERT INTO brunn.entries(user_id,path,title,kind,media_type,current_version) SELECT $1,'sources/Bulk/'||lpad(n::text,6,'0')||'.md','Evidence','markdown','text/markdown',1 FROM generate_series(1,256) n")
+        .bind(f.owner.user).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO brunn.entry_versions(user_id,entry_id,version,content_sha256,content,size_bytes,metadata,created_by_credential_id) SELECT user_id,id,1,$2,$3,$4,'{}'::jsonb,$5 FROM brunn.entries WHERE user_id=$1 AND starts_with(path,'sources/Bulk/')")
+        .bind(f.owner.user).bind(&hash).bind(content).bind(content.len() as i64).bind(f.owner.id).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO brunn.workspace_changes(user_id,entry_id,entry_version,operation,path,content_sha256) SELECT user_id,id,1,'create',path,$2 FROM brunn.entries WHERE user_id=$1 AND starts_with(path,'sources/Bulk/') ORDER BY path")
+        .bind(f.owner.user).bind(hash).execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+    let mut selected = next_subject(&f, &admit(&f).await).await;
+    let targets = (1..=255)
+        .map(|n| json!(format!("Bulk/{n:06}")))
+        .collect::<Vec<_>>();
+    for page in targets.chunks(32) {
+        (_, selected) = discover_subject(&f, &selected, page.to_vec()).await;
+        assert_eq!(
+            selected["research"]["coverage"]["unresolved_targets"],
+            json!([])
+        );
+    }
+    assert_eq!(
+        selected["research"]["sources"].as_array().unwrap().len(),
+        256
+    );
+    let (_, capped) = discover_subject(
+        &f,
+        &selected,
+        vec![json!("Bulk/000256"), json!("People/Orchid")],
+    )
+    .await;
+    assert_eq!(capped["research"]["coverage"]["source_cap_reached"], true);
+    assert_eq!(
+        capped["research"]["coverage"]["unresolved_targets"],
+        json!(["Bulk/000256"])
+    );
+    assert_eq!(
+        capped["research"]["sources"],
+        selected["research"]["sources"]
+    );
+    assert_eq!(
+        capped["research"]["sources"][0]["entry_ref"],
+        canonical["entry_ref"]
+    );
+}
+
+#[tokio::test]
+async fn checkpoint_source_and_scope_changes_return_typed_recovery_errors_without_partial_writes() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let canonical = write(
+        &f,
+        "sources/People/Orchid.md",
+        "# Orchid\n\nA canonical source observation.\n",
+        0,
+    )
+    .await;
+    let supporting = imported_link_source(&f, "sources/Notes/Support.md").await;
+    let selected = next_subject(&f, &admit(&f).await).await;
+    let (_, admitted) =
+        discover_subject(&f, &selected, vec![supporting["entry_ref"].clone()]).await;
+    let mut saved = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        progress_body(
+            &admitted,
+            vec![reviewed(&canonical), reviewed(&supporting)],
+            "researching",
+            "The original exact sources have been checked.",
+        ),
+    )
+    .await)["data"]
+        .clone();
+    let research_path = format!(
+        "dreams/research/{}.md",
+        canonical["entry_ref"]
+            .as_str()
+            .unwrap()
+            .trim_start_matches("entry:")
+    );
+    for (cited_change, status, code) in [
+        (true, StatusCode::CONFLICT, "dreamer_source_changed"),
+        (false, StatusCode::BAD_REQUEST, "research_refresh_required"),
+    ] {
+        let changed = if cited_change {
+            write(
+                &f,
+                "sources/Notes/Support.md",
+                "# Evidence\n\nA corrected supporting observation.\n",
+                1,
+            )
+            .await
+        } else {
+            write(
+                &f,
+                "UnrelatedDirectory/Outcome.md",
+                "# Outcome\n\nOrchid has a newly relevant outcome.\n",
+                0,
+            )
+            .await
+        };
+        let persisted = current(&f, &research_path).await.unwrap();
+        let state = current(&f, "dreams/state.md").await.unwrap();
+        let selectors = saved["research"]["reviewed_sources"]
+            .as_array()
+            .unwrap()
+            .clone();
+        let rejected = post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/research-progress",
+            progress_body(
+                &saved,
+                selectors,
+                "researching",
+                "The rejected checkpoint must not replace the prior notes.",
+            ),
+        )
+        .await;
+        assert_eq!(rejected.status, status, "{}", rejected.body);
+        assert_eq!(rejected.body["error"]["code"], code, "{}", rejected.body);
+        assert_eq!(
+            current(&f, &research_path).await.unwrap(),
+            persisted,
+            "rejection must preserve notes, job version and operation receipts"
+        );
+        assert_eq!(current(&f, "dreams/state.md").await.unwrap(), state);
+        let (_, refreshed) = discover_subject(&f, &saved, vec![]).await;
+        assert_eq!(refreshed["research"]["notes"], "");
+        assert_eq!(refreshed["research"]["reviewed_sources"], json!([]));
+        assert!(
+            refreshed["research"]["sources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|s| s["entry_ref"] == changed["entry_ref"]
+                    && s["version"] == changed["version"])
+        );
+        let selectors = refreshed["research"]["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(reviewed)
+            .collect();
+        saved = ok(post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/research-progress",
+            progress_body(
+                &refreshed,
+                selectors,
+                "researching",
+                "Current exact source versions have been checked after reconciliation.",
+            ),
+        )
+        .await)["data"]
+            .clone();
+        assert_eq!(
+            saved["research"]["notes"],
+            "Current exact source versions have been checked after reconciliation."
+        );
+    }
+}
+
 #[tokio::test]
 async fn checkpoint_eof_normalization_preserves_all_progress_and_replay_but_candidates_stay_strict()
 {

@@ -164,6 +164,8 @@ class DreamerProductionCanaryTests(unittest.TestCase):
         for fault, error in ((None, None), ("protocol", "research_protocol 1"),
                              ("checkpoint_eof", "exact end-of-document selectors"),
                              ("publication_eof", "publication accepted an out-of-range"),
+                             ("link_receipt", "imported link resolution receipt"),
+                             ("refresh_signal", "typed refresh-required rejection"),
                              ("additive_progress", "additive discovery lost checked progress"),
                              ("unreviewed_source", "marked new sources reviewed"),
                              ("changed_progress", "changed dependency did not invalidate"),
@@ -182,10 +184,10 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                             "inputs": headers, "frozen_generation": 3, "processed_generation": 0}
                 job = {"subject_ref": canonical["entry_ref"], "subject_path": canonical["path"],
                        "output_path": "derived/entities/canary-aster.md", "output_version": 0,
-                       "notes": "", "reviewed_sources": []}
+                       "notes": "", "reviewed_sources": [], "coverage": {"unresolved_targets": []}}
                 initial_selectors = [{"entry_ref": canonical["entry_ref"], "version": 1,
                                       "start_line": 3, "end_line": 203, "path": canonical["path"],
-                                      "excerpt": "Canary Aster has a project trail at [[sources/CanaryResearch/Trail.md]].\n"
+                                      "excerpt": "Canary Aster has a project trail at [[CanaryResearch/Trail]].\n"
                                       + "\nSynthetic padding for the fixture read comparison.\n" * 99
                                       + "\nSynthetic padding for the fixture read comparison."}]
                 admissions = [{**admitted, "state_version": 2 if index == 0 else index + 3,
@@ -204,6 +206,8 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                                             reviewed_sources=deepcopy(initial_selectors))
                 if fault == "additive_progress":
                     admissions[1]["research"]["notes"] = ""
+                elif fault == "link_receipt":
+                    admissions[1]["research"]["coverage"] = {"unresolved_targets": ["CanaryResearch/Trail"]}
                 elif fault == "unreviewed_source":
                     admissions[1]["research"]["reviewed_sources"].append(trail)
                 elif fault == "changed_progress":
@@ -219,7 +223,9 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                     replay["research"]["version"] = 1
                 runner = Mock()
                 runner.request.side_effect = [admitted, {"data": admissions[0]}, {"data": initial_progress},
-                    *({"data": item} for item in admissions[1:]), {"data": checkpoint}, {"no_op": True, "data": replay},
+                    *({"data": item} for item in admissions[1:3]),
+                    {"http_status": 400, "error": {"code": "invalid_request" if fault == "refresh_signal" else "research_refresh_required"}},
+                    {"data": admissions[3]}, {"data": checkpoint}, {"no_op": True, "data": replay},
                     {"http_status": 200 if fault == "publication_eof" else 400},
                     {"accepted_candidate_ids": ["fixture-item"], "state_version": 8},
                     {"latest_receipt": {"status": "partial", "mode": "full"}}]
@@ -275,23 +281,30 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                         self.assertTrue(report["subject_cycle"]["saved_progress_survives_additive_discovery"])
                         self.assertTrue(report["subject_cycle"]["checkpoint_eof_normalized"])
                         self.assertTrue(report["subject_cycle"]["publication_eof_remains_strict"])
+                        self.assertTrue(report["subject_cycle"]["imported_wiki_links_resolved"])
+                        self.assertTrue(report["subject_cycle"]["changed_scope_refresh_signal"])
                         self.assertTrue(report["subject_cycle"]["changed_dependency_invalidates_progress"])
                         self.assertTrue(report["subject_cycle"]["generic_section_heading_is_not_an_identity"])
                         self.assertTrue(documents[canonical["path"], 1].startswith("## Purpose\n"))
                         calls = runner.request.call_args_list
                         self.assertEqual(calls[0].args[2]["requested_subject_refs"], [canonical["entry_ref"]])
-                        self.assertEqual(calls[3].args[2], calls[7].args[2])
+                        self.assertEqual(calls[3].args[2]["targets"], ["CanaryResearch/Trail"])
+                        self.assertEqual(calls[4].args[2]["targets"], ["CanaryResearch/Outcome.md"])
+                        self.assertEqual(calls[3].args[2], calls[8].args[2])
                         self.assertNotEqual(calls[3].args[2]["operation_id"], calls[4].args[2]["operation_id"])
                         self.assertEqual(calls[2].args[1], "/v1/workspace/dreamer/research-progress")
-                        self.assertEqual(calls[6].args[1], "/v1/workspace/dreamer/research-progress")
+                        self.assertEqual(calls[5].args[1], "/v1/workspace/dreamer/research-progress")
+                        self.assertEqual(calls[5].kwargs["expected"], (400,))
+                        self.assertEqual(calls[7].args[1], "/v1/workspace/dreamer/research-progress")
                         self.assertEqual(calls[2].args[2]["reviewed_sources"][0]["end_line"], 204)
-                        self.assertEqual(calls[8].kwargs["expected"], (400,))
-                        self.assertEqual(calls[8].args[2]["candidates"][0]["sources"][1]["end_line"], 4)
-                        self.assertEqual(calls[9].args[2]["candidates"][0]["sources"][1]["end_line"], 3)
-                        self.assertNotEqual(calls[8].args[2]["operation_id"], calls[9].args[2]["operation_id"])
-                        self.assertEqual(calls[9].args[2]["research_version"], 6)
-                        self.assertEqual(calls[9].args[2]["processed_inputs"], [])
-                        self.assertNotIn("subject_scope", calls[9].args[2]["candidates"][0])
+                        rejected, accepted = calls[-3], calls[-2]
+                        self.assertEqual(rejected.kwargs["expected"], (400,))
+                        self.assertEqual(rejected.args[2]["candidates"][0]["sources"][1]["end_line"], 4)
+                        self.assertEqual(accepted.args[2]["candidates"][0]["sources"][1]["end_line"], 3)
+                        self.assertNotEqual(rejected.args[2]["operation_id"], accepted.args[2]["operation_id"])
+                        self.assertEqual(accepted.args[2]["research_version"], 6)
+                        self.assertEqual(accepted.args[2]["processed_inputs"], [])
+                        self.assertNotIn("subject_scope", accepted.args[2]["candidates"][0])
                         self.assertTrue(all("notifications" not in call.args[1] for call in calls))
 
     def test_subject_read_measurement_is_warmed_alternating_and_content_free(self):

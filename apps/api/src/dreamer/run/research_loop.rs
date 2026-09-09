@@ -46,24 +46,22 @@ impl Dreamer {
         operation: &str,
         body: Value,
         deadline: tokio::time::Instant,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, ClientError> {
         let request = async {
             match self.runner.dreamer(operation, body.clone()).await {
                 Ok(value) => Ok(value),
-                Err(ClientError::Failed(detail)) if detail.starts_with("POST ") => self
-                    .runner
-                    .dreamer(operation, body)
-                    .await
-                    .map_err(|error| error.to_string()),
-                Err(error) => Err(error.to_string()),
+                Err(ClientError::Failed(detail)) if detail.starts_with("POST ") => {
+                    self.runner.dreamer(operation, body).await
+                }
+                Err(error) => Err(error),
             }
         };
         tokio::time::timeout_at(deadline, request)
             .await
             .unwrap_or_else(|_| {
-                Err(format!(
+                Err(ClientError::Failed(format!(
                     "{operation} timed out; server progress remains retained for reconciliation"
-                ))
+                )))
             })
     }
 
@@ -120,6 +118,9 @@ impl Dreamer {
             }
             let mut feedback = String::new();
             let mut repairs = 0usize;
+            // Successful discovery cannot erase a rejected checkpoint. Only a
+            // subsequently accepted checkpoint resets this part of the budget.
+            let mut refresh_rejections = 0usize;
             let mut no_progress = 0usize;
             let mut subject_round = 0usize;
             // Leave time for another subject even if this model invocation
@@ -135,7 +136,7 @@ impl Dreamer {
                 }
                 // Each subject retains its continuation if it needs more than
                 // one run. The next subject still gets an opportunity today.
-                if repairs >= 2
+                if repairs + refresh_rejections >= 2
                     || no_progress >= 2
                     || subject_round >= 32
                     || tokio::time::Instant::now() >= subject_deadline
@@ -200,7 +201,7 @@ impl Dreamer {
                             }
                         }
                         Err(error) => {
-                            feedback = error;
+                            feedback = error.to_string();
                             repairs = 2;
                         }
                     }
@@ -249,6 +250,7 @@ impl Dreamer {
                     envelope(&current, *state_version, &uuid::Uuid::now_v7().to_string());
                 match step.action {
                     research::Action::Discover => {
+                        let mut rejected_checkpoint = None;
                         if !step.reviewed_sources.is_empty() {
                             add_fields(&mut body, progress(&step, "researching"));
                             body["processed_inputs"] = json!([]);
@@ -257,9 +259,17 @@ impl Dreamer {
                                 .research_request("research-progress", body, deadline)
                                 .await
                             {
-                                Ok(value) => merge(&mut current, &value, state_version),
+                                Ok(value) => {
+                                    merge(&mut current, &value, state_version);
+                                    repairs = 0;
+                                    refresh_rejections = 0;
+                                }
+                                Err(ClientError::ResearchRefreshRequired(detail)) => {
+                                    refresh_rejections += 1;
+                                    rejected_checkpoint = Some(detail);
+                                }
                                 Err(error) => {
-                                    feedback = error;
+                                    feedback = error.to_string();
                                     repairs += 1;
                                     continue;
                                 }
@@ -287,10 +297,15 @@ impl Dreamer {
                                     no_progress = 0;
                                     feedback.clear();
                                 }
+                                if let Some(detail) = rejected_checkpoint {
+                                    feedback = format!(
+                                        "The previous research checkpoint was not saved: {detail}. Discovery has refreshed the admitted evidence. Reread the refreshed sources and reconsider the rejected conclusions before saving them. {feedback}"
+                                    );
+                                }
                                 repairs = 0;
                             }
                             Err(error) => {
-                                feedback = error;
+                                feedback = error.to_string();
                                 repairs += 1;
                             }
                         }
@@ -352,7 +367,7 @@ impl Dreamer {
                                 break;
                             }
                             Err(error) => {
-                                feedback = error;
+                                feedback = error.to_string();
                                 repairs += 1;
                             }
                         }
