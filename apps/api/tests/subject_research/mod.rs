@@ -59,6 +59,559 @@ fn subject_candidate(admission: &Value, selectors: Vec<Value>) -> Value {
         "content":"# Radley\n\nRadley is the canonical person.[^s1]\nThe current outcome is complete; one equipment detail remains unresolved.[^s2]\n", "sources":selectors})
 }
 
+async fn briefing_fixture_source(f: &Fixture, path: &str, version: i64, metadata: Value) -> Value {
+    ok(post(f, &f.owner, "/v1/workspace/write", json!({
+        "path":path,"content":format!("# Edition context\n\nOrchid has an established source observation.\n\nFixture revision {version}.\n"),
+        "expected_version":version,"metadata":metadata
+    })).await)["data"].clone()
+}
+
+async fn mark_legacy_briefing_version(f: &Fixture, source: &Value) {
+    // Model a record already classified under the former admission policy,
+    // without changing its exact evidence version or the change cursor.
+    sqlx::query("UPDATE brunn.entry_versions SET metadata=metadata||'{\"kind\":\"briefing_edition\"}'::jsonb WHERE user_id=$1 AND entry_id=$2 AND version=$3")
+        .bind(f.owner.user)
+        .bind(Uuid::parse_str(source["entry_ref"].as_str().unwrap().trim_start_matches("entry:")).unwrap())
+        .bind(source["version"].as_i64().unwrap())
+        .execute(&f.pool).await.unwrap();
+}
+
+async fn exact_run_record(f: &Fixture, receipt: &Value) -> (String, Value) {
+    sqlx::query_as("SELECT content,metadata FROM brunn.entry_versions WHERE user_id=$1 AND entry_id=$2 AND version=$3")
+        .bind(f.owner.user)
+        .bind(Uuid::parse_str(receipt["run_entry_ref"].as_str().unwrap().trim_start_matches("entry:")).unwrap())
+        .bind(receipt["run_version"].as_i64().unwrap())
+        .fetch_one(&f.pool).await.unwrap()
+}
+
+#[tokio::test]
+async fn generated_briefing_legacy_held_candidate_does_not_abort_full_admission() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let source = briefing_fixture_source(&f, "Briefings/Legacy.md", 0, json!({})).await;
+    let first = admit(&f).await;
+    let (_, accepted) = submit(
+        &f,
+        &first,
+        first["state_version"].as_i64().unwrap(),
+        vec![candidate(&source, "legacy-held")],
+    )
+    .await;
+    finish(
+        &f,
+        &first,
+        accepted["state_version"].as_i64().unwrap(),
+        "completed",
+    )
+    .await;
+    let view = review(&f).await;
+    let original = view["items"][0].clone();
+    assert_eq!(original["stale"], false);
+    let held = ok(post(
+        &f,
+        &f.owner,
+        "/v1/dreamer/review/decisions",
+        decision(&view, &original, "approve"),
+    )
+    .await);
+    assert_eq!(held["data"]["application_status"], "approved_held");
+    let immutable = exact_run_record(&f, &accepted).await;
+    mark_legacy_briefing_version(&f, &source).await;
+    let stale = review(&f).await;
+    assert_eq!(stale["items"][0]["stale"], true);
+    assert_eq!(
+        stale["items"][0]["candidate_hash"],
+        original["candidate_hash"]
+    );
+    control(&f, "full", 1).await;
+    let next = admit(&f).await;
+    assert_eq!(next["admitted"], true);
+    assert_eq!(next["pending"][0]["status"], "needs_changes");
+    assert_eq!(
+        next["pending"][0]["candidate_hash"],
+        original["candidate_hash"]
+    );
+    assert!(
+        current(&f, "derived/entities/legacy-held.md")
+            .await
+            .is_none()
+    );
+    assert_eq!(exact_run_record(&f, &accepted).await, immutable);
+}
+
+#[tokio::test]
+async fn generated_briefing_churn_keeps_an_ordinary_legacy_prefix_candidate_fresh() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let source = briefing_fixture_source(&f, "Briefings/Primary.md", 0, json!({})).await;
+    let first = admit(&f).await;
+    let (_, accepted) = submit(
+        &f,
+        &first,
+        first["state_version"].as_i64().unwrap(),
+        vec![candidate(&source, "legacy-prefix")],
+    )
+    .await;
+    let original = review(&f).await["items"][0].clone();
+    assert_eq!(original["stale"], false);
+    let immutable = exact_run_record(&f, &accepted).await;
+    let generated = briefing_fixture_source(
+        &f,
+        "Briefings/Edition.md",
+        0,
+        json!({"kind":"briefing_edition"}),
+    )
+    .await;
+    briefing_fixture_source(
+        &f,
+        generated["path"].as_str().unwrap(),
+        1,
+        json!({"kind":"briefing_edition"}),
+    )
+    .await;
+    let fresh = review(&f).await;
+    assert_eq!(fresh["items"][0]["stale"], false);
+    assert_eq!(
+        fresh["items"][0]["candidate_hash"],
+        original["candidate_hash"]
+    );
+    // The same prefix still detects the edition becoming primary evidence.
+    briefing_fixture_source(&f, generated["path"].as_str().unwrap(), 2, json!({})).await;
+    assert_eq!(review(&f).await["items"][0]["stale"], true);
+    assert_eq!(exact_run_record(&f, &accepted).await, immutable);
+}
+
+#[tokio::test]
+async fn generated_briefing_location_candidates_recheck_cited_and_uncited_context() {
+    // A canonical citation exercises the evidence_scope early return; an
+    // uncited retained context exercises exact and current metadata separately.
+    for excluded in ["canonical", "exact_context", "current_context"] {
+        let Some(f) = fixture().await else { return };
+        control(&f, "report-only", 0).await;
+        let (from, _, _) = seed_location_pilot(&f).await;
+        let mut context = None;
+        let mut current_context = None;
+        if excluded != "canonical" {
+            context = Some(
+                historical_context(
+                    &f,
+                    from,
+                    "sources/Context/Owner.md",
+                    "# Owner\n\nI identify the stop as Example Garden.\n",
+                )
+                .await,
+            );
+            current_context = Some(
+                write(
+                    &f,
+                    "sources/Context/Owner.md",
+                    "# Current owner note\n\nExample Garden remains a known venue.\n",
+                    1,
+                )
+                .await,
+            );
+        }
+        queue_pilot(&f, from).await;
+        let mut admitted = admit(&f).await;
+        if excluded != "canonical" {
+            admitted = discover_context(&f, &admitted, "Example Garden").await;
+            assert_eq!(admitted["location_context"].as_array().unwrap().len(), 1);
+            assert_eq!(admitted["location_context"][0]["version"], 1);
+            assert_eq!(admitted["location_context"][0]["current_version"], 2);
+        }
+        let mut proposal = pilot_candidate(&admitted);
+        if excluded != "canonical" {
+            proposal["evidence_scope"]["context_sources"] =
+                admitted["location_work"]["context_sources"].clone();
+        }
+        assert_eq!(
+            proposal["sources"].as_array().unwrap().len(),
+            1,
+            "retained context remains uncited"
+        );
+        let (_, accepted) = submit(
+            &f,
+            &admitted,
+            admitted["state_version"].as_i64().unwrap(),
+            vec![proposal],
+        )
+        .await;
+        finish(
+            &f,
+            &admitted,
+            accepted["state_version"].as_i64().unwrap(),
+            "completed",
+        )
+        .await;
+        let view = review(&f).await;
+        let original = view["items"][0].clone();
+        assert_eq!(original["stale"], false, "{excluded}");
+        let held = ok(post(
+            &f,
+            &f.owner,
+            "/v1/dreamer/review/decisions",
+            decision(&view, &original, "approve"),
+        )
+        .await);
+        assert_eq!(held["data"]["application_status"], "approved_held");
+        let immutable = exact_run_record(&f, &accepted).await;
+        let source = match excluded {
+            "canonical" => {
+                json!({"entry_ref":admitted["location_evidence"]["canonical_months"][0]["ref"],"version":admitted["location_evidence"]["canonical_months"][0]["version"]})
+            }
+            "exact_context" => context.unwrap(),
+            _ => current_context.unwrap(),
+        };
+        mark_legacy_briefing_version(&f, &source).await;
+        let stale = review(&f).await;
+        assert_eq!(stale["items"][0]["stale"], true, "{excluded}");
+        assert_eq!(
+            stale["items"][0]["candidate_hash"],
+            original["candidate_hash"]
+        );
+        let denied = post(
+            &f,
+            &f.owner,
+            "/v1/dreamer/review/decisions",
+            decision(&stale, &stale["items"][0], "approve"),
+        )
+        .await;
+        assert_eq!(denied.status, StatusCode::CONFLICT, "{}", denied.body);
+        assert_eq!(exact_run_record(&f, &accepted).await, immutable);
+        assert!(
+            current(&f, &format!("derived/location/{}.md", from.date_naive()))
+                .await
+                .is_none()
+        );
+    }
+}
+
+#[tokio::test]
+async fn generated_briefing_editions_are_excluded_without_excluding_ordinary_briefing_notes() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let canonical = write(
+        &f,
+        "sources/People/Orchid.md",
+        "# Orchid\n\nA canonical source observation.\n",
+        0,
+    )
+    .await;
+    let legacy = briefing_fixture_source(
+        &f,
+        "Briefings/2026/Morning.md",
+        0,
+        json!({"kind":"briefing_edition"}),
+    )
+    .await;
+    let edition = briefing_fixture_source(
+        &f,
+        "sources/GeneratedEdition.md",
+        0,
+        json!({"kind":"briefing_edition","briefing":{"schema":"briefing.edition.v1"}}),
+    )
+    .await;
+    let ordinary = briefing_fixture_source(&f, "Briefings/Ordinary.md", 0, json!({})).await;
+    let annotated = briefing_fixture_source(
+        &f,
+        "sources/Annotated.md",
+        0,
+        json!({"briefing":{"note":"an ordinary source annotation"}}),
+    )
+    .await;
+    let admitted = admit(&f).await;
+    let inputs = admitted["inputs"].as_array().unwrap();
+    assert_eq!(inputs.len(), 3);
+    for source in [&canonical, &ordinary, &annotated] {
+        assert!(
+            inputs
+                .iter()
+                .any(|input| input["entry_ref"] == source["entry_ref"])
+        );
+    }
+    let selected = next_subject(&f, &admitted).await;
+    let (_, discovered) = discover_subject(
+        &f,
+        &selected,
+        vec![
+            legacy["path"].clone(),
+            edition["entry_ref"].clone(),
+            ordinary["path"].clone(),
+            annotated["entry_ref"].clone(),
+        ],
+    )
+    .await;
+    assert_eq!(
+        discovered["research"]["coverage"]["unresolved_targets"],
+        json!([legacy["path"], edition["entry_ref"]])
+    );
+    let sources = discovered["research"]["sources"].as_array().unwrap();
+    assert_eq!(sources.len(), 3);
+    for source in [&canonical, &ordinary, &annotated] {
+        assert!(
+            sources
+                .iter()
+                .any(|input| input["entry_ref"] == source["entry_ref"])
+        );
+    }
+    // Evidence policy does not make briefing storage or exact reads protected.
+    let updated = briefing_fixture_source(
+        &f,
+        legacy["path"].as_str().unwrap(),
+        1,
+        json!({"kind":"briefing_edition"}),
+    )
+    .await;
+    assert_eq!(updated["version"], 2);
+    let read = ok(post(
+        &f,
+        &f.owner,
+        "/v1/workspace/read",
+        json!({"requests":[{"path":legacy["path"],"view":"full"}]}),
+    )
+    .await);
+    assert!(
+        read.to_string()
+            .contains("Orchid has an established source observation.")
+    );
+    finish(
+        &f,
+        &discovered,
+        discovered["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
+    let denied = post(&f, &f.runner, "/v1/workspace/dreamer/admit", json!({"attempt_id":Uuid::now_v7(),"date":date(),"kind":"manual","lease_seconds":60,"requested_subject_refs":[legacy["entry_ref"]]})).await;
+    assert_eq!(denied.status, StatusCode::BAD_REQUEST, "{}", denied.body);
+}
+
+#[tokio::test]
+async fn generated_briefing_retained_inputs_receive_exclusions_without_model_processing() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let canonical = write(
+        &f,
+        "sources/People/Orchid.md",
+        "# Orchid\n\nA canonical source observation.\n",
+        0,
+    )
+    .await;
+    let legacy = briefing_fixture_source(&f, "Briefings/Legacy.md", 0, json!({})).await;
+    let transition = briefing_fixture_source(&f, "Briefings/Transition.md", 0, json!({})).await;
+    let first = admit(&f).await;
+    assert_eq!(first["inputs"].as_array().unwrap().len(), 3);
+    finish(
+        &f,
+        &first,
+        first["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
+    mark_legacy_briefing_version(&f, &legacy).await;
+    briefing_fixture_source(
+        &f,
+        transition["path"].as_str().unwrap(),
+        1,
+        json!({"kind":"briefing_edition"}),
+    )
+    .await;
+    let second = admit(&f).await;
+    assert_eq!(second["inputs"].as_array().unwrap().len(), 1);
+    assert_eq!(second["inputs"][0]["entry_ref"], canonical["entry_ref"]);
+    let stored = current(&f, "dreams/state.md").await.unwrap().2;
+    assert_eq!(stored["dreamer_state"]["processed_count"], 0);
+    let dispositions = stored["dreamer_state"]["source_dispositions"]
+        .as_array()
+        .unwrap();
+    assert_eq!(dispositions.len(), 2);
+    for source in [&legacy, &transition] {
+        let input = first["inputs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|input| input["entry_ref"] == source["entry_ref"])
+            .unwrap();
+        let disposition = dispositions
+            .iter()
+            .find(|item| item["entry_ref"] == source["entry_ref"])
+            .unwrap();
+        assert_eq!(disposition["disposition"], "excluded_generated_briefing");
+        assert_eq!(disposition["version"], input["version"]);
+        assert_eq!(disposition["generation"], input["generation"]);
+        assert!(
+            disposition["detail"]
+                .as_str()
+                .unwrap()
+                .contains("not model processing")
+        );
+    }
+    let (_, terminal) = finish(
+        &f,
+        &second,
+        second["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
+    assert_eq!(terminal["counts"]["processed"], 0);
+    let run = current(&f, &format!("dreams/runs/{}.md", date()))
+        .await
+        .unwrap();
+    assert_eq!(
+        run.2["dreamer_run"]["source_dispositions"],
+        json!(dispositions)
+    );
+    let third = admit(&f).await;
+    assert_eq!(third["inputs"].as_array().unwrap().len(), 1);
+    assert_eq!(third["inputs"][0]["entry_ref"], canonical["entry_ref"]);
+    assert_eq!(
+        current(&f, "dreams/state.md").await.unwrap().2["dreamer_state"]["processed_count"],
+        0
+    );
+    assert_eq!(
+        current(&f, "dreams/state.md").await.unwrap().2["dreamer_state"]["source_dispositions"],
+        json!([]),
+        "an excluded retained identity is not repeatedly dispositioned"
+    );
+}
+
+#[tokio::test]
+async fn generated_briefing_legacy_research_and_candidates_invalidate_without_rewriting_dependencies()
+ {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let canonical = write(
+        &f,
+        "sources/People/Orchid.md",
+        "# Orchid\n\nA canonical source observation.\n",
+        0,
+    )
+    .await;
+    let legacy = briefing_fixture_source(&f, "Briefings/Legacy.md", 0, json!({})).await;
+    let selected = next_subject(&f, &admit(&f).await).await;
+    let (_, selected) = discover_subject(&f, &selected, vec![legacy["entry_ref"].clone()]).await;
+    let saved = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        progress_body(
+            &selected,
+            vec![reviewed(&canonical), reviewed(&legacy)],
+            "researching",
+            "Legacy conclusions used the briefing dependency.",
+        ),
+    )
+    .await)["data"]
+        .clone();
+    let mut submission = research_request(&saved);
+    submission["candidates"] = json!([subject_candidate(
+        &saved,
+        vec![reviewed(&canonical), reviewed(&legacy)]
+    )]);
+    submission["processed_inputs"] = json!([]);
+    let accepted = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/candidates",
+        submission,
+    )
+    .await);
+    let before = review(&f).await;
+    let immutable_run_path = format!("dreams/runs/{}.md", date());
+    let immutable_run = current(&f, &immutable_run_path).await.unwrap();
+    let research_path = format!(
+        "dreams/research/{}.md",
+        canonical["entry_ref"]
+            .as_str()
+            .unwrap()
+            .trim_start_matches("entry:")
+    );
+    mark_legacy_briefing_version(&f, &legacy).await;
+    let state = current(&f, "dreams/state.md").await.unwrap();
+    let job = current(&f, &research_path).await.unwrap();
+    let rejected = post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        progress_body(
+            &accepted,
+            vec![reviewed(&canonical), reviewed(&legacy)],
+            "researching",
+            "Do not retain new conclusions from generated evidence.",
+        ),
+    )
+    .await;
+    assert_eq!(rejected.status, StatusCode::BAD_REQUEST);
+    assert!(
+        rejected
+            .body
+            .to_string()
+            .contains("generated briefing editions cannot be source evidence"),
+        "{}",
+        rejected.body
+    );
+    // A retained ordinary candidate path must obey the same exact-source gate.
+    let mut request = attempt(&accepted, accepted["state_version"].as_i64().unwrap());
+    request["candidates"] = json!([candidate(&legacy, "briefing-forbidden")]);
+    request["processed_inputs"] = json!([]);
+    let rejected = post(&f, &f.runner, "/v1/workspace/dreamer/candidates", request).await;
+    assert_eq!(rejected.status, StatusCode::BAD_REQUEST);
+    assert!(
+        rejected
+            .body
+            .to_string()
+            .contains("generated briefing editions cannot be source evidence"),
+        "{}",
+        rejected.body
+    );
+    assert_eq!(current(&f, "dreams/state.md").await.unwrap(), state);
+    assert_eq!(current(&f, &research_path).await.unwrap(), job);
+    let view = review(&f).await;
+    assert_eq!(
+        view["items"][0]["candidate_hash"],
+        before["items"][0]["candidate_hash"]
+    );
+    let denied = post(
+        &f,
+        &f.owner,
+        "/v1/dreamer/review/decisions",
+        decision(&view, &view["items"][0], "approve"),
+    )
+    .await;
+    assert_eq!(denied.status, StatusCode::CONFLICT, "{}", denied.body);
+    assert_eq!(
+        current(&f, &immutable_run_path).await.unwrap(),
+        immutable_run
+    );
+    let (_, refreshed) = discover_subject(&f, &accepted, vec![]).await;
+    assert_eq!(
+        refreshed["research"]["sources"].as_array().unwrap().len(),
+        1
+    );
+    assert_eq!(
+        refreshed["research"]["sources"][0]["entry_ref"],
+        canonical["entry_ref"]
+    );
+    assert_eq!(refreshed["research"]["notes"], "");
+    assert_eq!(refreshed["research"]["reviewed_sources"], json!([]));
+    ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        progress_body(
+            &refreshed,
+            vec![reviewed(&canonical)],
+            "researching",
+            "Reconsidered using only the canonical primary source.",
+        ),
+    )
+    .await);
+    assert_eq!(
+        current(&f, &immutable_run_path).await.unwrap(),
+        immutable_run,
+        "refresh must not prune an old proposal's immutable dependency manifest"
+    );
+}
+
 #[tokio::test]
 async fn compact_research_checkpoint_retains_64_large_ranges_across_additions_replay_and_reload() {
     let Some(f) = fixture().await else { return };

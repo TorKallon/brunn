@@ -270,7 +270,7 @@ pub(crate) async fn context_sources_current_in_tx(
         let Some(version) = source["version"].as_i64().filter(|version| *version > 0) else {
             return Ok(false);
         };
-        let row = sqlx::query("SELECT e.path,e.current_version,v.content,v.content_sha256,v.metadata FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=$3 WHERE e.user_id=$1 AND e.id=$2 AND e.deleted_at IS NULL AND e.kind='markdown'")
+        let row = sqlx::query("SELECT e.path,e.current_version,v.content,v.content_sha256,v.metadata,head.metadata AS current_metadata FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=$3 LEFT JOIN brunn.entry_versions head ON head.user_id=e.user_id AND head.entry_id=e.id AND head.version=e.current_version WHERE e.user_id=$1 AND e.id=$2 AND e.deleted_at IS NULL AND e.kind='markdown'")
             .bind(auth.user_id.0).bind(id).bind(version).fetch_optional(&mut **tx).await?;
         let Some(row) = row else {
             return Ok(false);
@@ -290,6 +290,11 @@ pub(crate) async fn context_sources_current_in_tx(
             .any(|prefix| path.starts_with(prefix))
             || path == "private/dreamer.md"
             || crate::dreamer_summary::protected_metadata(&row.get::<Value, _>("metadata"))
+            || crate::dreamer_summary::generated_briefing_metadata(&row.get::<Value, _>("metadata"))
+            || row
+                .get::<Option<Value>, _>("current_metadata")
+                .as_ref()
+                .is_some_and(crate::dreamer_summary::generated_briefing_metadata)
             || source["content_hash"]
                 != format!("sha256:{}", row.get::<String, _>("content_sha256"))
         {

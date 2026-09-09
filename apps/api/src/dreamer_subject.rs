@@ -150,6 +150,7 @@ pub(crate) async fn create_scope(
         || !row.get::<bool, _>("admitted")
         || !source_path(&path)
         || crate::dreamer_summary::protected_metadata(&metadata)
+        || crate::dreamer_summary::generated_briefing_metadata(&metadata)
     {
         return Err(ApiError::invalid(
             "canonical subject is outside its evidence snapshot",
@@ -193,6 +194,7 @@ pub(crate) async fn bind_dependencies(
             || !source_path(&path)
             || path.len() > 1024
             || crate::dreamer_summary::protected_metadata(&row.get::<Value, _>("metadata"))
+            || crate::dreamer_summary::generated_briefing_metadata(&row.get::<Value, _>("metadata"))
         {
             return Err(ApiError::invalid(
                 "subject dependency changed or is outside its snapshot",
@@ -304,8 +306,12 @@ pub(crate) async fn check_scope(
         return Ok(result("unchecked", "invalid_subject_scope"));
     }
     let ids = dependencies.iter().map(|(id, _)| *id).collect::<Vec<_>>();
-    let heads = sqlx::query("SELECT e.id,e.path,e.current_version,v.metadata FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version WHERE e.user_id=$1 AND e.id=ANY($2) AND e.deleted_at IS NULL")
-        .bind(auth.user_id.0).bind(&ids).fetch_all(&mut **tx).await?;
+    let versions = dependencies
+        .iter()
+        .map(|(_, version)| *version)
+        .collect::<Vec<_>>();
+    let heads = sqlx::query("SELECT e.id,e.path,e.current_version,v.metadata FROM unnest($2::uuid[],$3::bigint[]) selected(id,version) JOIN brunn.entries e ON e.user_id=$1 AND e.id=selected.id JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version JOIN LATERAL (SELECT original.metadata FROM brunn.entry_versions original WHERE original.user_id=e.user_id AND original.entry_id=e.id AND original.version=selected.version LIMIT 1) original ON true WHERE e.deleted_at IS NULL AND coalesce(original.metadata->>'kind','')<>'briefing_edition'")
+        .bind(auth.user_id.0).bind(&ids).bind(versions).fetch_all(&mut **tx).await?;
     // Availability takes precedence over every freshness result, including for
     // historical summary reads. An earlier changed source cannot hide a later
     // revoked dependency and allow cached text to escape.
@@ -316,6 +322,9 @@ pub(crate) async fn check_scope(
             .is_none_or(|head| {
                 !source_path(head.get("path"))
                     || crate::dreamer_summary::protected_metadata(&head.get::<Value, _>("metadata"))
+                    || crate::dreamer_summary::generated_briefing_metadata(
+                        &head.get::<Value, _>("metadata"),
+                    )
             })
     }) {
         return Ok(result("stale", "subject_source_unavailable"));
@@ -335,6 +344,9 @@ pub(crate) async fn check_scope(
         }
         if !source_path(head.get("path"))
             || crate::dreamer_summary::protected_metadata(&head.get::<Value, _>("metadata"))
+            || crate::dreamer_summary::generated_briefing_metadata(
+                &head.get::<Value, _>("metadata"),
+            )
         {
             return Ok(result("stale", "subject_source_unavailable"));
         }
@@ -442,11 +454,13 @@ pub(crate) async fn research_change_page(
                 AND ((lower(c.path) !~ '^(derived/|dreams/|\.brunn/|agent-memory/|location/|evidence/location/|memory/evidence/|artifacts/|private/dreamer\.md$)'
                     AND c.path !~* $8
                     AND NOT(coalesce(change_v.metadata,'{}'::jsonb) ?| ARRAY['dreamer_summary','dreamer_run','dreamer_review','dreamer_state','dreamer_receipt','dreamer_research'])
+                    AND coalesce(change_v.metadata->>'kind','')<>'briefing_edition'
                     AND coalesce(change_v.metadata,'{}'::jsonb)::text NOT LIKE '%"evaluation_output": true%'
                     AND coalesce(change_v.metadata,'{}'::jsonb)::text NOT LIKE '%"exclude_from_same_day_evaluation_inputs": true%')
                     OR (previous.path IS NOT NULL AND lower(previous.path) !~ '^(derived/|dreams/|\.brunn/|agent-memory/|location/|evidence/location/|memory/evidence/|artifacts/|private/dreamer\.md$)'
                     AND previous.path !~* $8
                     AND NOT(coalesce(previous_v.metadata,'{}'::jsonb) ?| ARRAY['dreamer_summary','dreamer_run','dreamer_review','dreamer_state','dreamer_receipt','dreamer_research'])
+                    AND coalesce(previous_v.metadata->>'kind','')<>'briefing_edition'
                     AND coalesce(previous_v.metadata,'{}'::jsonb)::text NOT LIKE '%"evaluation_output": true%'
                     AND coalesce(previous_v.metadata,'{}'::jsonb)::text NOT LIKE '%"exclude_from_same_day_evaluation_inputs": true%'))
             ORDER BY c.generation LIMIT $3

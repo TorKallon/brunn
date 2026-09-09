@@ -2997,6 +2997,36 @@ async fn place_discovery_excludes_substring_hits_credentials_and_secret_adjacent
     ] {
         historical_context(&f, from, path, &content).await;
     }
+    // Either missing pre-cap predicate would let 33 newer generated hits hide
+    // the eligible primary before the historical query's LIMIT 32.
+    for index in 0..66 {
+        let path = format!("Briefings/2026/Generated-{index:02}.md");
+        let briefing = historical_context(
+            &f,
+            from,
+            &path,
+            "# Edition\n\nFogo GENERATED_BRIEFING_CANARY\n",
+        )
+        .await;
+        let id = Uuid::parse_str(
+            briefing["entry_ref"]
+                .as_str()
+                .unwrap()
+                .trim_start_matches("entry:"),
+        )
+        .unwrap();
+        sqlx::query("UPDATE brunn.entry_versions SET created_at=$3 WHERE user_id=$1 AND entry_id=$2 AND version=1")
+            .bind(f.owner.user).bind(id).bind(from-chrono::Duration::hours(12)).execute(&f.pool).await.unwrap();
+        write(
+            &f,
+            &path,
+            "# Later context\n\nA later Fogo observation.\n",
+            1,
+        )
+        .await;
+        sqlx::query("UPDATE brunn.entry_versions SET metadata=metadata||'{\"kind\":\"briefing_edition\"}'::jsonb WHERE user_id=$1 AND entry_id=$2 AND version=$3")
+            .bind(f.owner.user).bind(id).bind(if index<33 {1_i64}else{2}).execute(&f.pool).await.unwrap();
+    }
     queue_pilot(&f, from).await;
     let admitted = admit(&f).await;
     assert_eq!(
@@ -3005,10 +3035,12 @@ async fn place_discovery_excludes_substring_hits_credentials_and_secret_adjacent
     );
     assert!(!admitted["inputs"].to_string().contains("API Keys.md"));
     assert!(!admitted["inputs"].to_string().contains("passwords.md"));
+    assert!(!admitted["inputs"].to_string().contains("Generated-33.md"));
     let found = discover_context(&f, &admitted, "Fogo").await;
     let sources = found["location_context"].as_array().unwrap();
     assert_eq!(sources.len(), 1, "unexpected discovery sources");
     assert_eq!(sources[0]["entry_ref"], valid["entry_ref"]);
+    assert!(!found.to_string().contains("GENERATED_BRIEFING_CANARY"));
     assert_eq!(
         sources[0]["excerpt"],
         "# Familiar venues\n\nFogo is a restaurant."

@@ -97,6 +97,12 @@ pub fn protected_metadata(metadata: &Value) -> bool {
     .any(|key| metadata.get(*key).is_some())
 }
 
+/// Generated editions are readable workspace documents, but not primary
+/// Dreamer evidence. This classification deliberately grants no write protection.
+pub(crate) fn generated_briefing_metadata(metadata: &Value) -> bool {
+    metadata.get("kind").and_then(Value::as_str) == Some("briefing_edition")
+}
+
 fn source_id(source: &Source) -> Option<Uuid> {
     (source.version > 0).then_some(())?;
     Uuid::parse_str(source.entry_ref.strip_prefix("entry:")?).ok()
@@ -220,8 +226,14 @@ async fn check(
         .collect::<Vec<_>>();
     // Dependency validation needs heads, not 64 complete source bodies. Fetch
     // one fallback body only if the validated representation cannot be used.
-    let rows = sqlx::query("SELECT e.id,e.path,e.title,e.media_type,v.version,NULL::text AS content,v.content_sha256,v.metadata,v.created_at AS updated_at FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version WHERE e.user_id=$1 AND e.id=ANY($2) AND e.deleted_at IS NULL")
-        .bind(auth.user_id.0).bind(ids).fetch_all(&mut **tx).await?;
+    let versions = manifest
+        .sources
+        .iter()
+        .map(|source| source.version)
+        .collect::<Vec<_>>();
+    let rows = sqlx::query("SELECT e.id,e.path,e.title,e.media_type,v.version,NULL::text AS content,v.content_sha256,v.metadata,v.created_at AS updated_at,original.version IS NULL OR coalesce(original.metadata->>'kind','')='briefing_edition' AS source_excluded FROM unnest($2::uuid[],$3::bigint[]) selected(id,version) JOIN brunn.entries e ON e.user_id=$1 AND e.id=selected.id JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version LEFT JOIN LATERAL (SELECT original.version,original.metadata FROM brunn.entry_versions original WHERE original.user_id=e.user_id AND original.entry_id=e.id AND original.version=selected.version LIMIT 1) original ON true WHERE e.deleted_at IS NULL")
+        .bind(auth.user_id.0).bind(ids).bind(versions).fetch_all(&mut **tx).await?;
+    inaccessible |= rows.iter().any(|row| row.get::<bool, _>("source_excluded"));
     let heads = rows
         .into_iter()
         .map(document_row)
@@ -231,7 +243,9 @@ async fn check(
             inaccessible = true;
             continue;
         };
-        if current.metadata.get("dreamer_summary").is_some() || current.path.starts_with("derived/")
+        if current.metadata.get("dreamer_summary").is_some()
+            || generated_briefing_metadata(&current.metadata)
+            || current.path.starts_with("derived/")
         {
             inaccessible = true;
             continue;
@@ -365,7 +379,7 @@ async fn check(
                 || subject.reason.starts_with("invalid_subject_"),
         });
     }
-    let changes = sqlx::query("SELECT change.path,(SELECT previous.path FROM brunn.workspace_changes previous WHERE previous.user_id=change.user_id AND previous.entry_id=change.entry_id AND previous.generation<change.generation ORDER BY previous.generation DESC LIMIT 1) AS previous_path FROM brunn.workspace_changes change WHERE change.user_id=$1 AND change.generation>$2 ORDER BY change.generation LIMIT $3")
+    let changes = sqlx::query("SELECT change.path,previous.path AS previous_path FROM brunn.workspace_changes change LEFT JOIN LATERAL (SELECT old.path,old.entry_version FROM brunn.workspace_changes old WHERE old.user_id=change.user_id AND old.entry_id=change.entry_id AND old.generation<change.generation ORDER BY old.generation DESC LIMIT 1) previous ON true LEFT JOIN brunn.entry_versions change_v ON change_v.user_id=change.user_id AND change_v.entry_id=change.entry_id AND change_v.version=change.entry_version LEFT JOIN brunn.entry_versions previous_v ON previous_v.user_id=change.user_id AND previous_v.entry_id=change.entry_id AND previous_v.version=previous.entry_version WHERE change.user_id=$1 AND change.generation>$2 AND (coalesce(change_v.metadata->>'kind','')<>'briefing_edition' OR previous.path IS NOT NULL AND coalesce(previous_v.metadata->>'kind','')<>'briefing_edition') ORDER BY change.generation LIMIT $3")
         .bind(auth.user_id.0).bind(manifest.frozen_generation).bind(MAX_CHANGES + 1)
         .fetch_all(&mut **tx).await?;
     let relevant = changes.iter().any(|row| {
@@ -1094,6 +1108,27 @@ mod tests {
     };
     use sqlx::{PgPool, postgres::PgPoolOptions};
     #[test]
+    fn generated_briefing_evidence_classification_does_not_protect_writes() {
+        for metadata in [
+            json!({"kind":"briefing_edition"}),
+            json!({"kind":"briefing_edition","briefing":{"schema":"briefing.v1"}}),
+        ] {
+            assert!(generated_briefing_metadata(&metadata));
+            assert!(!protected_metadata(&metadata));
+        }
+        for metadata in [
+            json!({}),
+            json!({"briefing":{"schema":"briefing.v1"}}),
+            json!({"kind":"ordinary_note","briefing":true}),
+            json!({"kind":"Briefing_Edition"}),
+            json!({"kind":["briefing_edition"]}),
+        ] {
+            assert!(!generated_briefing_metadata(&metadata));
+        }
+        assert!(!protected_path("Briefings/2026/Edition.md"));
+    }
+
+    #[test]
     fn manifests_are_bounded_and_require_exact_sources() {
         let source = json!({"entry_ref":format!("entry:{}",Uuid::nil()),"version":1});
         let mut value = json!({"dreamer_summary":{"schema":"dream.summary.v1","state":"published","frozen_generation":1,"sources":[source.clone()],"scope_prefixes":["sources/"]}});
@@ -1265,6 +1300,429 @@ mod tests {
             .unwrap();
         tx.commit().await.unwrap();
         check
+    }
+
+    #[tokio::test]
+    async fn database_subject_generated_briefing_churn_is_excluded_before_coverage_limits() {
+        let Some((pool, state, auth)) = fixture().await else {
+            return;
+        };
+        let canonical = Uuid::now_v7();
+        let generation = put(
+            &pool,
+            &auth,
+            canonical,
+            "Projects/Aster.md",
+            1,
+            "# Aster\nPrimary project evidence",
+            json!({}),
+        )
+        .await;
+        let scope = subject_scope(&state, &auth, canonical, generation).await;
+        let overview = Uuid::now_v7();
+        let mut overview_metadata = metadata(canonical, generation);
+        overview_metadata["dreamer_summary"]["subject_ref"] = json!(format!("entry:{canonical}"));
+        overview_metadata["dreamer_summary"]["subject_scope"] = json!(scope);
+        put(
+            &pool,
+            &auth,
+            overview,
+            "derived/entities/aster.md",
+            1,
+            "Supported Aster overview",
+            overview_metadata,
+        )
+        .await;
+        // Legacy prefix manifests use the same edition exclusion without
+        // requiring a new subject_scope or silently rewriting old metadata.
+        let legacy = Uuid::now_v7();
+        let mut legacy_metadata = metadata(canonical, generation);
+        legacy_metadata["dreamer_summary"]["scope_prefixes"] = json!(["Briefings/"]);
+        put(
+            &pool,
+            &auth,
+            legacy,
+            "derived/entities/legacy-aster.md",
+            1,
+            "Legacy supported overview",
+            legacy_metadata,
+        )
+        .await;
+        for (index, briefing_metadata) in [
+            json!({"kind":"briefing_edition"}),
+            json!({"kind":"briefing_edition","briefing":{"schema":"briefing.v1"}}),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let briefing = Uuid::now_v7();
+            let path = format!("Briefings/edition-{index}.md");
+            let initial = "# Morning\nAster remains in an unchanged costs section.";
+            let updated = format!("{initial}\nAn unrelated world-news addition.");
+            put(
+                &pool,
+                &auth,
+                briefing,
+                &path,
+                1,
+                initial,
+                briefing_metadata.clone(),
+            )
+            .await;
+            assert_eq!(
+                read_item(&state, &auth, briefing, "full", None).await["text"],
+                initial
+            );
+            put(
+                &pool,
+                &auth,
+                briefing,
+                &path,
+                2,
+                &updated,
+                briefing_metadata,
+            )
+            .await;
+            assert_eq!(
+                read_item(&state, &auth, briefing, "full", None).await["text"],
+                updated
+            );
+            assert_eq!(
+                read_item(&state, &auth, briefing, "full", Some(1)).await["text"],
+                initial
+            );
+            // Real feed pages can contain more generated churn than the cap.
+            // Excluding it after LIMIT would incorrectly make coverage unchecked.
+            sqlx::query("INSERT INTO brunn.workspace_changes(user_id,entry_id,entry_version,operation,path,content_sha256) SELECT $1,$2,2,'update',$3,$4 FROM generate_series(1,2100)")
+                .bind(auth.user_id.0).bind(briefing).bind(&path).bind(hash_token(&updated)).execute(&pool).await.unwrap();
+            sqlx::query("UPDATE brunn.entries SET deleted_at=clock_timestamp() WHERE id=$1")
+                .bind(briefing)
+                .execute(&pool)
+                .await
+                .unwrap();
+            sqlx::query("INSERT INTO brunn.workspace_changes(user_id,entry_id,entry_version,operation,path,content_sha256) VALUES($1,$2,2,'delete',$3,$4)")
+                .bind(auth.user_id.0).bind(briefing).bind(&path).bind(hash_token(&updated)).execute(&pool).await.unwrap();
+        }
+        let mut tx = snapshot(&state, &auth).await.unwrap();
+        let changes =
+            crate::dreamer_subject::research_changes(&mut tx, &auth, &scope, &[(canonical, 1)])
+                .await
+                .unwrap();
+        assert_eq!(changes.status, "complete");
+        assert!(changes.relevant_ids.is_empty());
+        assert_eq!(changes.scanned_generation, changes.through_generation);
+        tx.commit().await.unwrap();
+        assert_eq!(
+            subject_check(&state, &auth, &scope, canonical).await.status,
+            "fresh"
+        );
+        assert_eq!(
+            read_item(&state, &auth, canonical, "current_state", None).await["text"],
+            "Supported Aster overview"
+        );
+        assert_eq!(
+            read_item(&state, &auth, legacy, "full", None).await["freshness"]["status"],
+            "fresh"
+        );
+
+        // Neither the directory nor a generic briefing annotation classifies
+        // ordinary sources as generated editions.
+        for (index, ordinary_metadata) in [
+            json!({}),
+            json!({"briefing":{"schema":"briefing.v1"}}),
+            json!({"kind":"ordinary_note","briefing":true}),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let generation: i64 = sqlx::query_scalar(
+                "SELECT max(generation) FROM brunn.workspace_changes WHERE user_id=$1",
+            )
+            .bind(auth.user_id.0)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            let scope = subject_scope(&state, &auth, canonical, generation).await;
+            let ordinary = Uuid::now_v7();
+            put(
+                &pool,
+                &auth,
+                ordinary,
+                &format!("Briefings/primary-{index}.md"),
+                1,
+                "Aster has a new primary outcome.",
+                ordinary_metadata,
+            )
+            .await;
+            let mut tx = snapshot(&state, &auth).await.unwrap();
+            let changes =
+                crate::dreamer_subject::research_changes(&mut tx, &auth, &scope, &[(canonical, 1)])
+                    .await
+                    .unwrap();
+            assert_eq!(changes.status, "complete");
+            assert_eq!(changes.relevant_ids, [ordinary]);
+            tx.commit().await.unwrap();
+            assert_eq!(
+                subject_check(&state, &auth, &scope, canonical).await.reason,
+                "subject_scope_changed"
+            );
+        }
+        assert_eq!(
+            read_item(&state, &auth, legacy, "full", None).await["freshness"]["status"],
+            "stale"
+        );
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn database_subject_generated_briefing_transitions_keep_primary_changes_relevant() {
+        let Some((pool, state, auth)) = fixture().await else {
+            return;
+        };
+        let canonical = Uuid::now_v7();
+        put(
+            &pool,
+            &auth,
+            canonical,
+            "Topics/Aster.md",
+            1,
+            "# Aster",
+            json!({}),
+        )
+        .await;
+        let changing = Uuid::now_v7();
+        let path = "Briefings/transition.md";
+        let generation = put(
+            &pool,
+            &auth,
+            changing,
+            path,
+            1,
+            "Aster primary evidence",
+            json!({}),
+        )
+        .await;
+        let scope = subject_scope(&state, &auth, canonical, generation).await;
+        let generation = put(
+            &pool,
+            &auth,
+            changing,
+            path,
+            2,
+            "Unrelated generated edition",
+            json!({"kind":"briefing_edition"}),
+        )
+        .await;
+        let mut tx = snapshot(&state, &auth).await.unwrap();
+        let changes =
+            crate::dreamer_subject::research_changes(&mut tx, &auth, &scope, &[(canonical, 1)])
+                .await
+                .unwrap();
+        assert_eq!(
+            changes.relevant_ids,
+            [changing],
+            "removed primary mentions remain relevant through previous metadata"
+        );
+        tx.commit().await.unwrap();
+        assert_eq!(
+            subject_check(&state, &auth, &scope, canonical).await.reason,
+            "subject_scope_changed"
+        );
+
+        let scope = subject_scope(&state, &auth, canonical, generation).await;
+        let generation = put(
+            &pool,
+            &auth,
+            changing,
+            path,
+            3,
+            "Aster new primary outcome",
+            json!({"briefing":{"schema":"briefing.v1"}}),
+        )
+        .await;
+        let mut tx = snapshot(&state, &auth).await.unwrap();
+        let changes =
+            crate::dreamer_subject::research_changes(&mut tx, &auth, &scope, &[(canonical, 1)])
+                .await
+                .unwrap();
+        assert_eq!(
+            changes.relevant_ids,
+            [changing],
+            "a generated-to-ordinary transition must be admitted"
+        );
+        tx.commit().await.unwrap();
+        assert_eq!(
+            subject_check(&state, &auth, &scope, canonical).await.reason,
+            "subject_scope_changed"
+        );
+
+        let scope = subject_scope(&state, &auth, canonical, generation).await;
+        sqlx::query("UPDATE brunn.entries SET deleted_at=clock_timestamp() WHERE id=$1")
+            .bind(changing)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO brunn.workspace_changes(user_id,entry_id,entry_version,operation,path,content_sha256) VALUES($1,$2,3,'delete',$3,$4)")
+            .bind(auth.user_id.0).bind(changing).bind(path).bind(hash_token("Aster new primary outcome")).execute(&pool).await.unwrap();
+        assert_eq!(
+            subject_check(&state, &auth, &scope, canonical).await.reason,
+            "subject_scope_changed"
+        );
+        pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn database_subject_generated_briefing_dependencies_remain_invalid_and_immutable() {
+        let Some((pool, state, auth)) = fixture().await else {
+            return;
+        };
+        let canonical = Uuid::now_v7();
+        put(
+            &pool,
+            &auth,
+            canonical,
+            "Projects/Aster.md",
+            1,
+            "# Aster\nPrimary evidence",
+            json!({}),
+        )
+        .await;
+        let briefing = Uuid::now_v7();
+        let path = "Briefings/legacy-edition.md";
+        let generation = put(
+            &pool,
+            &auth,
+            briefing,
+            path,
+            1,
+            "Aster generated report",
+            json!({"kind":"briefing_edition"}),
+        )
+        .await;
+        let mut scope = subject_scope(&state, &auth, canonical, generation).await;
+        let mut tx = snapshot(&state, &auth).await.unwrap();
+        assert!(
+            crate::dreamer_subject::create_scope(
+                &mut tx,
+                &auth,
+                &format!("entry:{briefing}"),
+                generation
+            )
+            .await
+            .is_err()
+        );
+        let original_scope = json!(scope);
+        assert!(
+            crate::dreamer_subject::bind_dependencies(
+                &mut tx,
+                &auth,
+                &mut scope,
+                &[(canonical, 1), (briefing, 1)]
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(
+            json!(scope),
+            original_scope,
+            "failed binding must not partially mutate the scope"
+        );
+        tx.commit().await.unwrap();
+
+        // Simulate an immutable proposal admitted before the policy correction.
+        // Its generated dependency was researched but not cited in the claims.
+        scope.dependencies = vec![
+            crate::dreamer_subject::SubjectDependency {
+                entry_ref: format!("entry:{canonical}"),
+                version: 1,
+                path: "Projects/Aster.md".into(),
+            },
+            crate::dreamer_subject::SubjectDependency {
+                entry_ref: format!("entry:{briefing}"),
+                version: 1,
+                path: path.into(),
+            },
+        ];
+        let original_scope = json!(scope);
+        let mut overview_metadata = metadata(canonical, generation);
+        overview_metadata["dreamer_summary"]["subject_ref"] = json!(format!("entry:{canonical}"));
+        overview_metadata["dreamer_summary"]["subject_scope"] = original_scope.clone();
+        let overview = Uuid::now_v7();
+        let cached = "CACHED_GENERATED_OVERVIEW";
+        put(
+            &pool,
+            &auth,
+            overview,
+            "derived/entities/aster.md",
+            1,
+            cached,
+            overview_metadata.clone(),
+        )
+        .await;
+        assert_eq!(
+            subject_check(&state, &auth, &scope, canonical).await.reason,
+            "subject_source_unavailable"
+        );
+        assert_eq!(
+            read_item(&state, &auth, canonical, "current_state", None).await["representation"],
+            "current_source_fallback"
+        );
+        assert_eq!(
+            read_item(&state, &auth, overview, "full", Some(1)).await["representation"],
+            "summary_withheld"
+        );
+
+        // Changing the current kind cannot launder a generated exact version
+        // retained in an older manifest into primary evidence.
+        put(
+            &pool,
+            &auth,
+            briefing,
+            path,
+            2,
+            "Aster primary replacement",
+            json!({}),
+        )
+        .await;
+        assert_eq!(
+            subject_check(&state, &auth, &scope, canonical).await.reason,
+            "subject_source_unavailable"
+        );
+        let legacy = Uuid::now_v7();
+        let mut legacy_metadata = metadata(briefing, generation);
+        legacy_metadata["dreamer_summary"]["sources"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"entry_ref":format!("entry:{briefing}"),"version":2}));
+        put(
+            &pool,
+            &auth,
+            legacy,
+            "derived/entities/legacy.md",
+            1,
+            cached,
+            legacy_metadata,
+        )
+        .await;
+        assert_eq!(
+            read_item(&state, &auth, legacy, "full", Some(1)).await["representation"],
+            "summary_withheld"
+        );
+        assert_eq!(
+            read_item(&state, &auth, briefing, "full", Some(1)).await["text"],
+            "Aster generated report"
+        );
+        assert_eq!(
+            read_item(&state, &auth, briefing, "full", None).await["text"],
+            "Aster primary replacement"
+        );
+        let saved = sqlx::query("SELECT metadata,content,content_sha256 FROM brunn.entry_versions WHERE user_id=$1 AND entry_id=$2 AND version=1")
+            .bind(auth.user_id.0).bind(overview).fetch_one(&pool).await.unwrap();
+        assert_eq!(saved.get::<Value, _>("metadata"), overview_metadata);
+        assert_eq!(saved.get::<String, _>("content"), cached);
+        assert_eq!(saved.get::<String, _>("content_sha256"), hash_token(cached));
+        assert_eq!(json!(scope), original_scope);
+        pool.close().await;
     }
 
     #[tokio::test]

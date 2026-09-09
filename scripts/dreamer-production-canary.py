@@ -192,9 +192,9 @@ def read_one(client, **request):
     return items[0]
 
 
-def write(client, path, content, version):
+def write(client, path, content, version, *, metadata=None):
     return unwrap(client.request("POST", "/v1/workspace/write", {
-        "path": path, "content": content, "expected_version": version, "metadata": {},
+        "path": path, "content": content, "expected_version": version, "metadata": metadata or {},
     }))
 
 
@@ -459,7 +459,7 @@ def run_subject_cycle(owner, runner, reader, report):
                 "pending_queries": [], "pending_targets": [], "status": "researching"}, expected=(400,))
             require(rejected.get("error", {}).get("code") == "research_refresh_required",
                     "changed subject scope did not return the typed refresh-required rejection")
-        body = {**research_body(current), "queries": [], "targets": [target]}
+        body = {**research_body(current), "queries": ["Canary Aster"] if not requests else [], "targets": [target]}
         requests.append(body)
         current = unwrap(runner.request("POST", "/v1/workspace/dreamer/narrative-discover", body))
         if len(requests) < 3:
@@ -553,6 +553,22 @@ def run_subject_cycle(owner, runner, reader, report):
         require(fresh.get("representation") == "derived_summary" and fresh["freshness"]["status"] == "fresh"
                 and fresh["reference"] == summary["reference"] and fresh["text"] == summary["text"],
                 "unrelated section heading invalidated the subject overview")
+    # Generated editions may repeat a subject without becoming new evidence.
+    # Verify both the legacy type-only marker and the current structured marker.
+    briefing_path = "Briefings/2026/Canary edition.md"
+    for version, metadata in ((0, {"kind": "briefing_edition"}),
+                              (1, {"kind": "briefing_edition", "briefing": {"schema": "briefing.v1"}})):
+        briefing_text = ("# Synthetic briefing\n\nCanary Aster follows [[" + trail_path + "]].\n"
+                         + "Unrelated fixture news revision " + str(version + 1) + ".\n")
+        briefing = write(owner, briefing_path, briefing_text, version, metadata=metadata)
+        for reference in (canonical["entry_ref"], summary["reference"]):
+            fresh = read_one(reader, ref=reference, view="current_state", max_chars=100_000)
+            require(fresh.get("representation") == "derived_summary" and fresh["freshness"]["status"] == "fresh"
+                    and fresh["reference"] == summary["reference"] and fresh["text"] == summary["text"],
+                    "generated briefing edition invalidated the subject overview")
+        exact = read_one(reader, ref=briefing["entry_ref"], version=briefing["version"], view="full", max_chars=100_000)
+        require(exact["reference"] == briefing["entry_ref"] and exact["version"] == briefing["version"]
+                and exact["text"] == briefing_text, "generated briefing exact read was changed or unavailable")
     # Neither the canonical name nor a cited source occurs in this new note.
     write(owner, "sources/Elsewhere/ResearchUpdate.md", "# Update\n\nA later correction links to [[" + trail_path + "]].\n", 0)
     for reference in (canonical["entry_ref"], summary["reference"]):
@@ -573,10 +589,13 @@ def run_subject_cycle(owner, runner, reader, report):
         "checkpoint_selectors_compact": True,
         "publication_eof_remains_strict": True,
         "imported_wiki_links_resolved": True,
+        "subject_header_search_exercised": True,
         "changed_scope_refresh_signal": True,
         "saved_progress_survives_additive_discovery": True,
         "changed_dependency_invalidates_progress": True,
         "generic_section_heading_is_not_an_identity": True,
+        "generated_briefing_editions_do_not_invalidate": True,
+        "generated_briefing_exact_reads_preserved": True,
         "research_dependencies": len(dependencies), "claim_sources": len(selectors), "item_id": item["id"],
         "summary_ref": summary["reference"], "summary_version": summary["version"], "freshness_before_link": "fresh",
         "uncited_cross_directory_invalidation": "passed", "exact_sources_preserved": True,

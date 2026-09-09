@@ -5,6 +5,9 @@
 pub const SIMPLE_LEXICAL_CANDIDATES_SQL: &str =
     "SELECT * FROM brunn.workspace_lexical_candidates_v2($1,$2)";
 
+pub(crate) const DREAMER_LEXICAL_CANDIDATES_SQL: &str =
+    "SELECT * FROM brunn.dreamer_lexical_candidates($1,$2)";
+
 pub const SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL: &str = r#"
 WITH generation AS (
   SELECT brunn_auth.workspace_generation($1) AS workspace_generation

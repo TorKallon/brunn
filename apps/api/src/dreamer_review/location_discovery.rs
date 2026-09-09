@@ -17,7 +17,7 @@ fn query_pattern(query: &str) -> String {
 }
 
 pub(super) fn excluded(path: &str, metadata: &Value) -> bool {
-    input_excluded(path, metadata["kind"].as_str())
+    input_excluded(path, metadata)
         || path.starts_with("memory/evidence/")
         || path.starts_with("artifacts/")
         || path.starts_with("Evidence/Location/")
@@ -106,6 +106,8 @@ async fn context(
                 AND v.content IS NOT NULL AND v.size_bytes<=1048576
                 AND NOT (v.metadata ?| ARRAY['dreamer_summary','dreamer_run','dreamer_review','dreamer_state','dreamer_receipt'])
                 AND NOT (current_v.metadata ?| ARRAY['dreamer_summary','dreamer_run','dreamer_review','dreamer_state','dreamer_receipt'])
+                AND coalesce(v.metadata->>'kind','')<>'briefing_edition'
+                AND coalesce(current_v.metadata->>'kind','')<>'briefing_edition'
                 AND v.metadata::text NOT LIKE '%"evaluation_output": true%'
                 AND current_v.metadata::text NOT LIKE '%"evaluation_output": true%'
                 AND v.metadata::text NOT LIKE '%"exclude_from_same_day_evaluation_inputs": true%'

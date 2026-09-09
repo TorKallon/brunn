@@ -198,6 +198,9 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                              ("changed_progress", "changed dependency did not invalidate"),
                              ("replay", "rewound"), ("manifest", "uncited research dependency"),
                              ("generic_heading", "unrelated section heading invalidated"),
+                             ("generated_briefing_create", "generated briefing edition invalidated"),
+                             ("generated_briefing_update", "generated briefing edition invalidated"),
+                             ("generated_briefing_raw", "generated briefing exact read was changed"),
                              ("freshness", "did not invalidate"), ("exact", "mutated an exact source")):
             with self.subTest(fault=fault):
                 canonical = {"entry_ref": "entry:canonical", "version": 1,
@@ -261,13 +264,18 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                 owner = Mock()
                 owner.request.side_effect = [{"items": [item], "decision_version": 7}, {"application_status": "applied"}]
                 reader, report, documents, writes = Mock(), {}, {}, []
+                briefing_path = "Briefings/2026/Canary edition.md"
+                briefing = {"entry_ref": "entry:briefing", "path": briefing_path}
 
-                def fixture_write(client, path, content, version):
+                def fixture_write(client, path, content, version, *, metadata=None):
                     self.assertIs(client, owner)
                     self.assertNotEqual(path, "dreams/CONTROL.md")
+                    if path == briefing_path:
+                        self.assertEqual(metadata, {"kind": "briefing_edition"} if version == 0 else
+                                         {"kind": "briefing_edition", "briefing": {"schema": "briefing.v1"}})
                     writes.append(path)
                     documents[path, version + 1] = content
-                    source = next((row for row in headers if row["path"] == path),
+                    source = next((row for row in [*headers, briefing] if row["path"] == path),
                                   {"entry_ref": "entry:unrelated" if path.endswith("/Unrelated.md") else "entry:update", "path": path})
                     return {**source, "version": version + 1}
 
@@ -275,9 +283,9 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                     self.assertIs(client, reader)
                     relevant_change = ("sources/Elsewhere/ResearchUpdate.md", 1) in documents
                     if request["view"] == "full":
-                        source = next(row for row in headers if row["entry_ref"] == request["ref"])
+                        source = next(row for row in [*headers, briefing] if row["entry_ref"] == request["ref"])
                         text = documents[source["path"], request["version"]]
-                        if fault == "exact" and relevant_change:
+                        if (fault == "exact" and relevant_change) or (fault == "generated_briefing_raw" and source == briefing):
                             text = "corrupted"
                         return {"reference": source["entry_ref"], "version": request["version"], "text": text}
                     if relevant_change:
@@ -285,6 +293,10 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                                 "representation": "derived_summary" if fault == "freshness" else "current_source_fallback",
                                 "freshness": {"reason": "subject_scope_changed"}}
                     if fault == "generic_heading" and ("sources/Elsewhere/Unrelated.md", 2) in documents:
+                        return {"reference": canonical["entry_ref"], "text": documents[canonical["path"], 1],
+                                "representation": "current_source_fallback", "freshness": {"reason": "subject_scope_changed"}}
+                    if ((fault == "generated_briefing_create" and (briefing_path, 1) in documents)
+                            or (fault == "generated_briefing_update" and (briefing_path, 2) in documents)):
                         return {"reference": canonical["entry_ref"], "text": documents[canonical["path"], 1],
                                 "representation": "current_source_fallback", "freshness": {"reason": "subject_scope_changed"}}
                     candidate = runner.request.call_args_list[-2].args[2]["candidates"][0]
@@ -310,13 +322,17 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                         self.assertTrue(report["subject_cycle"]["checkpoint_selectors_compact"])
                         self.assertTrue(report["subject_cycle"]["publication_eof_remains_strict"])
                         self.assertTrue(report["subject_cycle"]["imported_wiki_links_resolved"])
+                        self.assertTrue(report["subject_cycle"]["subject_header_search_exercised"])
                         self.assertTrue(report["subject_cycle"]["changed_scope_refresh_signal"])
                         self.assertTrue(report["subject_cycle"]["changed_dependency_invalidates_progress"])
                         self.assertTrue(report["subject_cycle"]["generic_section_heading_is_not_an_identity"])
+                        self.assertTrue(report["subject_cycle"]["generated_briefing_editions_do_not_invalidate"])
+                        self.assertTrue(report["subject_cycle"]["generated_briefing_exact_reads_preserved"])
                         self.assertTrue(documents[canonical["path"], 1].startswith("## Purpose\n"))
                         calls = runner.request.call_args_list
                         self.assertEqual(calls[0].args[2]["requested_subject_refs"], [canonical["entry_ref"]])
                         self.assertEqual(calls[3].args[2]["targets"], ["CanaryResearch/Trail"])
+                        self.assertEqual(calls[3].args[2]["queries"], ["Canary Aster"])
                         self.assertEqual(calls[4].args[2]["targets"], ["CanaryResearch/Outcome.md"])
                         self.assertEqual(calls[3].args[2], calls[8].args[2])
                         self.assertNotEqual(calls[3].args[2]["operation_id"], calls[4].args[2]["operation_id"])

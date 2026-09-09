@@ -38,8 +38,9 @@ use crate::{
     },
     models::{Capability, CheckpointRequest, CredentialId, ResponseStatus, UserId, canonical_json},
     retrieval_sql::{
-        SIMPLE_ENTRY_LINK_CANDIDATES_SQL, SIMPLE_LEXICAL_CANDIDATES_SQL,
-        SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL, SIMPLE_SEMANTIC_CANDIDATES_SQL,
+        DREAMER_LEXICAL_CANDIDATES_SQL, SIMPLE_ENTRY_LINK_CANDIDATES_SQL,
+        SIMPLE_LEXICAL_CANDIDATES_SQL, SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL,
+        SIMPLE_SEMANTIC_CANDIDATES_SQL,
     },
     semantic_policy::{PreparedQueryEmbedding, SemanticRuntime},
     usage::{ProductActivityOperation, UsageOperation},
@@ -50,6 +51,9 @@ use crate::{
 };
 
 type HmacSha256 = Hmac<Sha256>;
+
+#[cfg(test)]
+mod dreamer_search_tests;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct WorkspaceEnvelope<T> {
@@ -4693,18 +4697,14 @@ pub(crate) async fn search_headers_for_dreamer(
     let mut results = Vec::new();
     for (n, query) in queries.iter().enumerate() {
         for sort in [SearchSort::BestMatch, SearchSort::LastModified] {
-            let (mut candidates, _) = fetch_lexical_candidates(
-                &mut tx,
-                query,
-                query,
-                sort,
-                None,
-                false,
-                0.0,
-                false,
-                auth.user_id.0,
-            )
-            .await?;
+            // Filter generated editions inside the lexical query, before its
+            // bounded sampling and entry limits as well as this header limit.
+            let rows = sqlx::query(DREAMER_LEXICAL_CANDIDATES_SQL)
+                .bind(query)
+                .bind(sort.as_str())
+                .fetch_all(&mut *tx)
+                .await?;
+            let mut candidates = lexical_candidate_rows(rows, query, None, false, 0.0);
             sort_candidates(&mut candidates, sort);
             let mut seen = std::collections::BTreeSet::new();
             candidates.retain(|candidate| seen.insert(candidate.entry_id));
@@ -4750,9 +4750,30 @@ async fn fetch_lexical_candidates(
                 .and_then(|row| row.get::<Option<i64>, _>("workspace_generation"))
         })
         .flatten();
-    let candidates = rows
+    let rows = rows
         .into_iter()
         .filter(|row| !include_generation || row.get::<Option<Uuid>, _>("entry_id").is_some())
+        .collect();
+    Ok((
+        lexical_candidate_rows(
+            rows,
+            scoring_query,
+            features,
+            supersession_enabled,
+            supersession_weight,
+        ),
+        workspace_generation,
+    ))
+}
+
+fn lexical_candidate_rows(
+    rows: Vec<PgRow>,
+    scoring_query: &str,
+    features: Option<&WorkspaceFeatureSnapshot>,
+    supersession_enabled: bool,
+    supersession_weight: f64,
+) -> Vec<Candidate> {
+    rows.into_iter()
         .map(|row| {
             let path: String = row.get("path");
             let title: String = row.get("title");
@@ -4783,8 +4804,7 @@ async fn fetch_lexical_candidates(
                 superseded_by: None,
             }
         })
-        .collect();
-    Ok((candidates, workspace_generation))
+        .collect()
 }
 
 async fn semantic_candidates(

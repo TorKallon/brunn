@@ -546,7 +546,7 @@ async fn source_versions_with_policy(
                 "source versions and line selectors must be positive and ordered",
             ));
         }
-        let row=sqlx::query("SELECT e.path,e.current_version,v.content,EXISTS(SELECT 1 FROM brunn.workspace_changes c WHERE c.user_id=e.user_id AND c.entry_id=e.id AND c.entry_version=v.version AND c.generation<=$4) AS in_snapshot FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=$3 WHERE e.user_id=$1 AND e.id=$2 AND e.deleted_at IS NULL")
+        let row=sqlx::query("SELECT e.path,e.current_version,v.content,v.metadata,head.metadata AS current_metadata,EXISTS(SELECT 1 FROM brunn.workspace_changes c WHERE c.user_id=e.user_id AND c.entry_id=e.id AND c.entry_version=v.version AND c.generation<=$4) AS in_snapshot FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=$3 LEFT JOIN brunn.entry_versions head ON head.user_id=e.user_id AND head.entry_id=e.id AND head.version=e.current_version WHERE e.user_id=$1 AND e.id=$2 AND e.deleted_at IS NULL")
             .bind(user).bind(id).bind(source.version).bind(frozen).fetch_optional(&mut **tx).await?
             .ok_or_else(|| ApiError::invalid("a candidate source is missing or inaccessible"))?;
         if !row.get::<bool, _>("in_snapshot") {
@@ -559,6 +559,16 @@ async fn source_versions_with_policy(
                 "dreamer_source_changed",
                 "candidate evidence changed; retain and recompile it",
                 json!({"entry_ref":source.entry_ref}),
+            ));
+        }
+        if crate::dreamer_summary::generated_briefing_metadata(&row.get::<Value, _>("metadata"))
+            || row
+                .get::<Option<Value>, _>("current_metadata")
+                .as_ref()
+                .is_some_and(crate::dreamer_summary::generated_briefing_metadata)
+        {
+            return Err(ApiError::invalid(
+                "generated briefing editions cannot be source evidence",
             ));
         }
         let content: Option<String> = row.get("content");
@@ -1105,7 +1115,7 @@ fn candidate_body(candidate: &Candidate) -> String {
     }
     body
 }
-fn input_excluded(path: &str, kind: Option<&str>) -> bool {
+fn input_excluded(path: &str, metadata: &Value) -> bool {
     sensitive_input_path(path)
         || path.starts_with("dreams/")
         || path.starts_with("derived/")
@@ -1115,7 +1125,11 @@ fn input_excluded(path: &str, kind: Option<&str>) -> bool {
         || path.starts_with("Evidence/Location/")
         || path == "Location/Places.md"
         || path.starts_with("Location/Visits/")
-        || matches!(kind, Some("location-places" | "location-visits"))
+        || matches!(
+            metadata["kind"].as_str(),
+            Some("location-places" | "location-visits")
+        )
+        || crate::dreamer_summary::generated_briefing_metadata(metadata)
 }
 async fn retain_inputs(
     tx: &mut Transaction<'_, Postgres>,
@@ -1125,10 +1139,54 @@ async fn retain_inputs(
 ) -> ApiResult<()> {
     // Re-evaluate retained headers after policy upgrades without reading the
     // excluded bodies or pretending the model reasoned about them.
+    if data.inputs.len() > MAX_INPUTS {
+        return Err(ApiError::invalid(
+            "retained input count exceeds its supported bound",
+        ));
+    }
+    let mut generated_briefings = std::collections::BTreeSet::new();
+    if !data.inputs.is_empty() {
+        let ids = data
+            .inputs
+            .iter()
+            .map(|input| entry_id(&input.entry_ref))
+            .collect::<ApiResult<Vec<_>>>()?;
+        let versions = data
+            .inputs
+            .iter()
+            .map(|input| input.version)
+            .collect::<Vec<_>>();
+        let rows = sqlx::query(r#"
+            SELECT retained.entry_id,exact.metadata,head.metadata AS current_metadata
+            FROM unnest($2::uuid[],$3::bigint[]) AS retained(entry_id,version)
+            LEFT JOIN LATERAL (
+                SELECT jsonb_build_object('kind',metadata->'kind') AS metadata FROM brunn.entry_versions
+                WHERE user_id=$1 AND entry_id=retained.entry_id AND version=retained.version LIMIT 1
+            ) exact ON true
+            LEFT JOIN brunn.entries e ON e.user_id=$1 AND e.id=retained.entry_id
+            LEFT JOIN LATERAL (
+                SELECT jsonb_build_object('kind',metadata->'kind') AS metadata FROM brunn.entry_versions
+                WHERE user_id=$1 AND entry_id=retained.entry_id AND version=e.current_version LIMIT 1
+            ) head ON true
+        "#).bind(user).bind(ids).bind(versions).fetch_all(&mut **tx).await?;
+        for row in rows {
+            if ["metadata", "current_metadata"].iter().any(|column| {
+                row.get::<Option<Value>, _>(*column)
+                    .as_ref()
+                    .is_some_and(crate::dreamer_summary::generated_briefing_metadata)
+            }) {
+                generated_briefings.insert(format!("entry:{}", row.get::<Uuid, _>("entry_id")));
+            }
+        }
+    }
     data.inputs.retain(|input| {
         if sensitive_input_path(&input.path) {
             data.source_dispositions.push(json!({"entry_ref":input.entry_ref,"version":input.version,"generation":input.generation,
                 "disposition":"excluded_credential_record","detail":"Credential records are excluded from automatic synthesis."}));
+            false
+        } else if generated_briefings.contains(&input.entry_ref) {
+            data.source_dispositions.push(json!({"entry_ref":input.entry_ref,"version":input.version,"generation":input.generation,
+                "disposition":"excluded_generated_briefing","detail":"Generated briefing editions are excluded from automatic synthesis; this is not model processing."}));
             false
         } else { true }
     });
@@ -1190,9 +1248,7 @@ async fn retain_inputs(
             continue;
         }
         let metadata: Value = row.get("metadata");
-        if !row.get::<bool, _>("is_text")
-            || input_excluded(&path, metadata.get("kind").and_then(Value::as_str))
-        {
+        if !row.get::<bool, _>("is_text") || input_excluded(&path, &metadata) {
             data.scanned_generation = generation;
             continue;
         }
@@ -2992,6 +3048,50 @@ async fn item_stale(
     if !item.reviewable {
         return Ok(false);
     }
+    // Apply source-class changes before location/subject branches can return
+    // early. Old immutable proposals retain every dependency and need review.
+    if item.candidate.sources.len() > 64 {
+        return Ok(true);
+    }
+    if !item.candidate.sources.is_empty() {
+        let ids = item
+            .candidate
+            .sources
+            .iter()
+            .map(|source| entry_id(&source.entry_ref))
+            .collect::<ApiResult<Vec<_>>>()?;
+        let versions = item
+            .candidate
+            .sources
+            .iter()
+            .map(|source| source.version)
+            .collect::<Vec<_>>();
+        let generated: bool = sqlx::query_scalar(
+            r#"
+            SELECT EXISTS (
+                SELECT 1 FROM unnest($2::uuid[],$3::bigint[]) AS selected(id,version)
+                LEFT JOIN brunn.entries e ON e.user_id=$1 AND e.id=selected.id
+                LEFT JOIN LATERAL (
+                    SELECT metadata->>'kind' AS kind FROM brunn.entry_versions
+                    WHERE user_id=$1 AND entry_id=selected.id AND version=selected.version LIMIT 1
+                ) exact ON true
+                LEFT JOIN LATERAL (
+                    SELECT metadata->>'kind' AS kind FROM brunn.entry_versions
+                    WHERE user_id=$1 AND entry_id=selected.id AND version=e.current_version LIMIT 1
+                ) current ON true
+                WHERE exact.kind='briefing_edition' OR current.kind='briefing_edition'
+            )
+        "#,
+        )
+        .bind(user)
+        .bind(ids)
+        .bind(versions)
+        .fetch_one(&mut **tx)
+        .await?;
+        if generated {
+            return Ok(true);
+        }
+    }
     if let Some(scope) = &item.candidate.evidence_scope {
         if !auth.can(Capability::Save) && !auth.can(Capability::DreamerRun) {
             return Ok(true);
@@ -3050,7 +3150,7 @@ async fn item_stale(
             .filter_map(|s| s.path.rsplit_once('/').map(|(p, _)| format!("{p}/")))
             .collect::<std::collections::BTreeSet<_>>()
         {
-            let changed:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM brunn.workspace_changes WHERE user_id=$1 AND generation>$2 AND starts_with(path,$3))")
+            let changed:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM brunn.workspace_changes change LEFT JOIN LATERAL (SELECT old.entry_version FROM brunn.workspace_changes old WHERE old.user_id=change.user_id AND old.entry_id=change.entry_id AND old.generation<change.generation ORDER BY old.generation DESC LIMIT 1) previous ON true LEFT JOIN brunn.entry_versions change_v ON change_v.user_id=change.user_id AND change_v.entry_id=change.entry_id AND change_v.version=change.entry_version LEFT JOIN brunn.entry_versions previous_v ON previous_v.user_id=change.user_id AND previous_v.entry_id=change.entry_id AND previous_v.version=previous.entry_version WHERE change.user_id=$1 AND change.generation>$2 AND starts_with(change.path,$3) AND (coalesce(change_v.metadata->>'kind','')<>'briefing_edition' OR previous.entry_version IS NOT NULL AND coalesce(previous_v.metadata->>'kind','')<>'briefing_edition'))")
                 .bind(user).bind(item.frozen_generation).bind(prefix).fetch_one(&mut **tx).await?;
             if changed {
                 return Ok(true);
