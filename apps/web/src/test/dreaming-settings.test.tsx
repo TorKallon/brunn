@@ -1,6 +1,6 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { installApiMock, renderApp } from "./renderApp";
 
 const disconnectedStatus = {
@@ -53,14 +53,14 @@ describe("Settings → Dreaming", () => {
     expect(screen.getByRole("button", { name: "Resume" })).toBeInTheDocument();
   });
 
-  it("starts a device-code connect and surfaces the URL and code", async () => {
+  it("immediately replaces Connect with a focused authorization step and copyable code", async () => {
     installApiMock({
       "GET /api/v1/workspace/dreaming/status": disconnectedStatus,
       "POST /api/v1/workspace/dreaming/connect/start": {
         status: "complete",
         data: {
           state: "pending",
-          url: "https://auth.openai.com/activate",
+          url: "https://auth.openai.com/codex/device",
           code: "ABCD-EFGH",
         },
       },
@@ -69,11 +69,90 @@ describe("Settings → Dreaming", () => {
     renderApp("/settings");
 
     await user.click(await screen.findByRole("button", { name: /Connect/ }));
-    // The mutation succeeded; the panel refetches status. The mock still
-    // reports disconnected, so we only assert the request round-trip worked
-    // (no error surface appeared).
+    const heading = await screen.findByRole("heading", { name: "Finish connecting Dreamer" });
+    await waitFor(() => expect(heading).toHaveFocus());
+    expect(screen.getByText("ABCD-EFGH")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Authorize in ChatGPT" })).toHaveAttribute("href", "https://auth.openai.com/codex/device");
+    expect(screen.getByRole("link", { name: "Authorize in ChatGPT" })).toHaveAttribute("target", "_blank");
+    expect(screen.queryByRole("button", { name: "Connect" })).not.toBeInTheDocument();
+    const copy = vi.spyOn(navigator.clipboard, "writeText");
+    await user.click(screen.getByRole("button", { name: "Copy code" }));
+    expect(copy).toHaveBeenCalledWith("ABCD-EFGH");
+    expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument();
     expect(screen.queryByText(/Connect failed/)).not.toBeInTheDocument();
   });
+
+  it("keeps the code usable when clipboard access is denied", async () => {
+    installApiMock({
+      "GET /api/v1/workspace/dreaming/status": {
+        ...disconnectedStatus,
+        data: { ...disconnectedStatus.data, dreamer: { connect: { state: "pending", url: "https://auth.openai.com/codex/device", code: "ABCD-EFGH" }, runtime: {} } },
+      },
+    });
+    const user = userEvent.setup();
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("Clipboard denied"));
+    renderApp("/settings");
+    await user.click(await screen.findByRole("button", { name: "Copy code" }));
+    expect(screen.getByText(/Select and copy the code above/)).toBeInTheDocument();
+    expect(screen.getByText("ABCD-EFGH")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Authorize in ChatGPT" })).toBeInTheDocument();
+  });
+
+  it("shows preparation while the sign-in request is in flight", async () => {
+    let resolve!: (value: unknown) => void;
+    const response = new Promise((done) => { resolve = done; });
+    installApiMock({
+      "GET /api/v1/workspace/dreaming/status": disconnectedStatus,
+      "POST /api/v1/workspace/dreaming/connect/start": () => response,
+    });
+    const user = userEvent.setup();
+    renderApp("/settings");
+    await user.click(await screen.findByRole("button", { name: "Connect" }));
+    expect(await screen.findByText("Preparing your sign-in link…")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Connect" })).not.toBeInTheDocument();
+    resolve({ status: "complete", data: { state: "pending", url: "https://auth.openai.com/codex/device", code: "ABCD-EFGH" } });
+    expect(await screen.findByRole("link", { name: "Authorize in ChatGPT" })).toBeInTheDocument();
+  });
+
+  it("finishes a verifying login and replaces the instructions with the connected account", async () => {
+    let finished = false;
+    installApiMock({
+      "GET /api/v1/workspace/dreaming/status": () => finished ? connectedStatus : {
+        ...disconnectedStatus,
+        data: { ...disconnectedStatus.data, dreamer: { connect: { state: "verifying" }, runtime: {} } },
+      },
+      "GET /api/v1/workspace/dreaming/connect/wait": () => {
+        finished = true;
+        return { status: "complete", data: connectedStatus.data.dreamer.connect };
+      },
+    });
+    renderApp("/settings");
+    expect(await screen.findByText("Checking your connection…")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Connect" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("acct_dreamer (pro)")).toBeInTheDocument(), { timeout: 5000 });
+    expect(screen.queryByText("Checking your connection…")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
+  }, 7000);
+
+  it("reports a connection-check failure and recovers without starting another login", async () => {
+    let checks = 0;
+    installApiMock({
+      "GET /api/v1/workspace/dreaming/status": () => checks > 1 ? connectedStatus : {
+        ...disconnectedStatus,
+        data: { ...disconnectedStatus.data, dreamer: { connect: { state: "pending", url: "https://auth.openai.com/codex/device", code: "ABCD-EFGH" }, runtime: {} } },
+      },
+      "GET /api/v1/workspace/dreaming/connect/wait": () => {
+        checks++;
+        return checks === 1 ? { status: 503, body: { error: { code: "unavailable", message: "Temporary failure" } } } : { status: "complete", data: connectedStatus.data.dreamer.connect };
+      },
+    });
+    renderApp("/settings");
+    await waitFor(() => expect(screen.getByText(/We couldn’t check your connection/)).toBeInTheDocument(), { timeout: 5000 });
+    expect(screen.getByRole("link", { name: "Authorize in ChatGPT" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("acct_dreamer (pro)")).toBeInTheDocument(), { timeout: 5000 });
+    expect(screen.queryByText(/We couldn’t check your connection/)).not.toBeInTheDocument();
+    expect(checks).toBe(2);
+  }, 10000);
 
   it("shows a connected account with Disconnect and Pause", async () => {
     installApiMock({
