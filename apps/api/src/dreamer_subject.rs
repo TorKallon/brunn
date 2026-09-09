@@ -75,10 +75,27 @@ fn source_path(path: &str) -> bool {
         && !crate::dreamer_review::sensitive_input_path(&path)
 }
 
-fn names(path: &str, title: &str, metadata: &Value) -> ApiResult<Vec<String>> {
+fn names(path: &str, metadata: &Value) -> ApiResult<Vec<String>> {
     let stem = path.rsplit('/').next().unwrap_or(path);
     let stem = stem.strip_suffix(".md").unwrap_or(stem);
-    let mut values = vec![title.to_owned(), stem.to_owned()];
+    // entries.title is a display label inferred from the first Markdown heading,
+    // which may describe a section rather than identify this canonical subject.
+    let mut values = vec![stem.to_owned()];
+    match &metadata["title"] {
+        Value::Null => {}
+        Value::String(title)
+            if !title.trim().is_empty()
+                && title.trim().len() <= 160
+                && !title.contains(['\n', '\r']) =>
+        {
+            values.push(title.clone());
+        }
+        _ => {
+            return Err(ApiError::invalid(
+                "canonical subject names exceed the supported bounds",
+            ));
+        }
+    }
     for key in ["aliases", "alias"] {
         match &metadata[key] {
             Value::String(value) => values.push(value.clone()),
@@ -124,7 +141,7 @@ pub(crate) async fn create_scope(
 ) -> ApiResult<SubjectScope> {
     let id = subject_id(canonical_ref)
         .ok_or_else(|| ApiError::invalid("canonical subject must be an exact entry reference"))?;
-    let row = sqlx::query("SELECT e.path,e.title,v.metadata,EXISTS(SELECT 1 FROM brunn.workspace_changes c WHERE c.user_id=e.user_id AND c.entry_id=e.id AND c.entry_version=e.current_version AND c.generation<=$3) AS admitted FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version WHERE e.user_id=$1 AND e.id=$2 AND e.deleted_at IS NULL AND e.kind='markdown' AND v.content IS NOT NULL")
+    let row = sqlx::query("SELECT e.path,v.metadata,EXISTS(SELECT 1 FROM brunn.workspace_changes c WHERE c.user_id=e.user_id AND c.entry_id=e.id AND c.entry_version=e.current_version AND c.generation<=$3) AS admitted FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version WHERE e.user_id=$1 AND e.id=$2 AND e.deleted_at IS NULL AND e.kind='markdown' AND v.content IS NOT NULL")
         .bind(auth.user_id.0).bind(id).bind(generation).fetch_optional(&mut **tx).await?
         .ok_or_else(|| ApiError::invalid("canonical subject is unavailable"))?;
     let path: String = row.get("path");
@@ -140,7 +157,7 @@ pub(crate) async fn create_scope(
     }
     Ok(SubjectScope {
         subject_ref: canonical_ref.to_owned(),
-        names: names(&path, row.get("title"), &metadata)?,
+        names: names(&path, &metadata)?,
         subject_path: path,
         checked_generation: generation,
         dependencies: Vec::new(),
@@ -287,7 +304,7 @@ pub(crate) async fn check_scope(
         return Ok(result("unchecked", "invalid_subject_scope"));
     }
     let ids = dependencies.iter().map(|(id, _)| *id).collect::<Vec<_>>();
-    let heads = sqlx::query("SELECT e.id,e.path,e.title,e.current_version,v.metadata FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version WHERE e.user_id=$1 AND e.id=ANY($2) AND e.deleted_at IS NULL")
+    let heads = sqlx::query("SELECT e.id,e.path,e.current_version,v.metadata FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version WHERE e.user_id=$1 AND e.id=ANY($2) AND e.deleted_at IS NULL")
         .bind(auth.user_id.0).bind(&ids).fetch_all(&mut **tx).await?;
     // Availability takes precedence over every freshness result, including for
     // historical summary reads. An earlier changed source cannot hide a later
@@ -322,11 +339,7 @@ pub(crate) async fn check_scope(
             return Ok(result("stale", "subject_source_unavailable"));
         }
         if *id == canonical {
-            let current_names = names(
-                head.get("path"),
-                head.get("title"),
-                &head.get::<Value, _>("metadata"),
-            );
+            let current_names = names(head.get("path"), &head.get::<Value, _>("metadata"));
             if head.get::<String, _>("path") != scope.subject_path
                 || current_names
                     .as_ref()
@@ -509,7 +522,6 @@ mod tests {
     fn names_are_source_owned_and_matching_is_literal() {
         let source_names = names(
             "People/A+B.md",
-            "A+B",
             &serde_json::json!({"aliases":["A. B.", "A+B"]}),
         )
         .unwrap();
@@ -524,7 +536,6 @@ mod tests {
         assert!(
             names(
                 "People/Owner.md",
-                "Owner",
                 &serde_json::json!({"aliases":[{"name":"model-selected"}]})
             )
             .is_err()
@@ -535,5 +546,60 @@ mod tests {
         assert!(links.is_match("[[A+B outcome#Completed|the outcome]]"));
         assert!(!links.is_match("[[A+B outcomes]]"));
         assert!(!links.is_match("A+B outcome is unrelated plain text"));
+    }
+
+    #[test]
+    fn subject_names_use_filename_and_explicit_metadata_without_heading_blacklists() {
+        assert_eq!(
+            names("Projects/Ithrion.md", &serde_json::json!({})).unwrap(),
+            ["ithrion"]
+        );
+        assert_eq!(
+            names("Projects/Ithrion.md", &serde_json::json!({"title":"Aurora Atlas", "aliases":["North Relay"], "alias":"Purpose"})).unwrap(),
+            ["aurora atlas", "ithrion", "north relay", "purpose"]
+        );
+        for metadata in [
+            serde_json::json!({"title":"Purpose"}),
+            serde_json::json!({"aliases":["Purpose"]}),
+            serde_json::json!({"alias":"Purpose"}),
+        ] {
+            assert_eq!(
+                names("Projects/Ithrion.md", &metadata).unwrap(),
+                ["ithrion", "purpose"]
+            );
+        }
+        assert_eq!(
+            names("Projects/Purpose.md", &serde_json::json!({"title":null})).unwrap(),
+            ["purpose"]
+        );
+    }
+
+    #[test]
+    fn explicit_subject_titles_must_be_bounded_nonempty_single_line_strings() {
+        for title in [
+            serde_json::json!(""),
+            serde_json::json!("   "),
+            serde_json::json!("\nPurpose"),
+            serde_json::json!("Purpose\r"),
+            serde_json::json!("x".repeat(161)),
+            serde_json::json!(42),
+            serde_json::json!(false),
+            serde_json::json!([]),
+            serde_json::json!({}),
+        ] {
+            let error =
+                names("Projects/Ithrion.md", &serde_json::json!({"title":title})).unwrap_err();
+            assert!(
+                matches!(error, ApiError::Public { message, .. } if message == "canonical subject names exceed the supported bounds")
+            );
+        }
+        assert_eq!(
+            names(
+                "Projects/Ithrion.md",
+                &serde_json::json!({"title":"  Aurora Atlas  "})
+            )
+            .unwrap(),
+            ["aurora atlas", "ithrion"]
+        );
     }
 }

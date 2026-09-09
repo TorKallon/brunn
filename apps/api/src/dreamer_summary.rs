@@ -1268,6 +1268,203 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn database_subject_identity_uses_explicit_names_and_preserves_old_manifest_dependencies()
+    {
+        let Some((pool, state, auth)) = fixture().await else {
+            return;
+        };
+        let canonical = Uuid::now_v7();
+        let source = "## Purpose\n\nCanonical project source.";
+        let mut generation = put(
+            &pool,
+            &auth,
+            canonical,
+            "sources/Projects/Ithrion.md",
+            1,
+            source,
+            json!({"title":"Aurora Atlas", "aliases":["The Meridian"], "alias":"North Relay"}),
+        )
+        .await;
+        // Simulate the normalizer's first-heading display title, retaining the
+        // explicit structured metadata separately from that inferred label.
+        let inferred =
+            crate::ingest::normalize_document("sources/Projects/Ithrion.md", source).title;
+        assert_eq!(inferred, "Purpose");
+        sqlx::query("UPDATE brunn.entries SET title=$2 WHERE id=$1")
+            .bind(canonical)
+            .bind(inferred)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let scope = subject_scope(&state, &auth, canonical, generation).await;
+        assert_eq!(
+            scope.names,
+            ["aurora atlas", "ithrion", "north relay", "the meridian"]
+        );
+        let unrelated = Uuid::now_v7();
+        generation = put(
+            &pool,
+            &auth,
+            unrelated,
+            "Elsewhere/Other.md",
+            1,
+            "## Purpose\n\nAn unrelated project with the same section heading.",
+            json!({}),
+        )
+        .await;
+        sqlx::query("UPDATE brunn.entries SET title='Purpose' WHERE id=$1")
+            .bind(unrelated)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let mut tx = snapshot(&state, &auth).await.unwrap();
+        let changes =
+            crate::dreamer_subject::research_changes(&mut tx, &auth, &scope, &[(canonical, 1)])
+                .await
+                .unwrap();
+        assert_eq!(changes.status, "complete");
+        assert!(
+            changes.relevant_ids.is_empty(),
+            "an unrelated section heading must not be admitted as subject evidence"
+        );
+        tx.commit().await.unwrap();
+        assert_eq!(
+            subject_check(&state, &auth, &scope, canonical).await.status,
+            "fresh"
+        );
+
+        // Each source-owned name and exact link remains independently relevant.
+        for (index, mention) in [
+            "Ithrion",
+            "Aurora Atlas",
+            "The Meridian",
+            "North Relay",
+            "[[sources/Projects/Ithrion.md]]",
+            &format!("entry:{canonical}"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let scope = subject_scope(&state, &auth, canonical, generation).await;
+            let related = Uuid::now_v7();
+            generation = put(
+                &pool,
+                &auth,
+                related,
+                &format!("Elsewhere/Related-{index}.md"),
+                1,
+                &format!("## Purpose\n\nAn outcome for {mention}."),
+                json!({}),
+            )
+            .await;
+            let mut tx = snapshot(&state, &auth).await.unwrap();
+            let changes =
+                crate::dreamer_subject::research_changes(&mut tx, &auth, &scope, &[(canonical, 1)])
+                    .await
+                    .unwrap();
+            assert_eq!(
+                changes.relevant_ids,
+                [related],
+                "missing relationship through {mention}"
+            );
+            tx.commit().await.unwrap();
+            assert_eq!(
+                subject_check(&state, &auth, &scope, canonical).await.reason,
+                "subject_scope_changed"
+            );
+        }
+
+        let mut scope = subject_scope(&state, &auth, canonical, generation).await;
+        let mut tx = snapshot(&state, &auth).await.unwrap();
+        crate::dreamer_subject::bind_dependencies(&mut tx, &auth, &mut scope, &[(canonical, 1)])
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(scope.dependencies.len(), 1);
+        let summary = Uuid::now_v7();
+        let mut manifest = metadata(canonical, generation);
+        manifest["dreamer_summary"]["subject_ref"] = json!(format!("entry:{canonical}"));
+        manifest["dreamer_summary"]["subject_scope"] = json!(scope);
+        put(
+            &pool,
+            &auth,
+            summary,
+            "derived/entities/ithrion.md",
+            1,
+            "Current canonical overview",
+            manifest,
+        )
+        .await;
+        let selected = read_item(&state, &auth, canonical, "current_state", None).await;
+        assert_eq!(selected["text"], "Current canonical overview");
+        assert_eq!(selected["freshness"]["status"], "fresh");
+
+        // Older admitted evidence remains conservative, even if it was found
+        // through a former inferred name. Reading cannot rewrite approved bytes.
+        let mut legacy = scope.clone();
+        let mut tx = snapshot(&state, &auth).await.unwrap();
+        crate::dreamer_subject::bind_dependencies(
+            &mut tx,
+            &auth,
+            &mut legacy,
+            &[(canonical, 1), (unrelated, 1)],
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        legacy.names.push("purpose".into());
+        legacy.names.sort();
+        let original_legacy = json!(legacy);
+        let mut manifest = metadata(canonical, generation);
+        manifest["dreamer_summary"]["subject_ref"] = json!(format!("entry:{canonical}"));
+        manifest["dreamer_summary"]["subject_scope"] = original_legacy.clone();
+        put(
+            &pool,
+            &auth,
+            summary,
+            "derived/entities/ithrion.md",
+            2,
+            "Older identity overview",
+            manifest,
+        )
+        .await;
+        assert_eq!(
+            subject_check(&state, &auth, &legacy, canonical)
+                .await
+                .reason,
+            "subject_identity_changed"
+        );
+        let selected = read_item(&state, &auth, canonical, "current_state", None).await;
+        assert_eq!(selected["representation"], "current_source_fallback");
+        assert_eq!(selected["freshness"]["reason"], "subject_identity_changed");
+        assert_eq!(selected["text"], source);
+        assert_eq!(
+            read_item(&state, &auth, summary, "full", Some(2)).await["representation"],
+            "historical_summary"
+        );
+        sqlx::query("UPDATE brunn.entries SET deleted_at=clock_timestamp() WHERE id=$1")
+            .bind(unrelated)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            subject_check(&state, &auth, &legacy, canonical)
+                .await
+                .reason,
+            "subject_source_unavailable"
+        );
+        assert_eq!(
+            read_item(&state, &auth, summary, "full", Some(2)).await["representation"],
+            "summary_withheld"
+        );
+        let retained: Value = sqlx::query_scalar("SELECT metadata->'dreamer_summary'->'subject_scope' FROM brunn.entry_versions WHERE user_id=$1 AND entry_id=$2 AND version=2")
+            .bind(auth.user_id.0).bind(summary).fetch_one(&pool).await.unwrap();
+        assert_eq!(retained, original_legacy);
+        assert_eq!(json!(legacy), original_legacy);
+        pool.close().await;
+    }
+
+    #[tokio::test]
     async fn database_subject_scope_checks_cross_directory_changes_and_coverage() {
         let Some((pool, state, auth)) = fixture().await else {
             return;

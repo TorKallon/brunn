@@ -32,6 +32,8 @@ Published metadata contains server-validated `subject_ref` and `subject_scope`. 
 
 A shared helper checks bounded source changes after `subject_scope.checked_generation` against the canonical reference/path/name, verified aliases and every admitted dependency, including uncited sources and literal wiki links. Store server-validated dependency headers separately from claim citations. Check current and previous versions, including deleted/renamed records and removed mentions. Relevant changes are stale; truncated, inaccessible or uncheckable coverage is unchecked. Exclude generated research/run changes before the page limit. Durable reconciliation retains a pinned upper generation and scan cursor; the wrapper drains unfinished pages before model work. Run the checks at candidate intake, application and reads, with full dependency access validation before any freshness early return. Search rank is never proof of absence, and a partial page never advances the published freshness boundary.
 
+Identity names come from the canonical filename and explicit structured metadata `title`, `alias` and `aliases`. Display titles inferred from Markdown section headings do not establish identity. When this derivation changes, existing manifests become stale and retain their exact bytes and dependencies until reviewed again.
+
 Research paths/metadata join protected reads/search/access auditing. Never serve cached conclusions after dependency access loss. Strip all research state from location prompts; preserve the existing location evidence packet and Sunday stop rules.
 
 ## Verification and release

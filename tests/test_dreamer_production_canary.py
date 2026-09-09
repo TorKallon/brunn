@@ -166,9 +166,11 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                              ("unreviewed_source", "marked new sources reviewed"),
                              ("changed_progress", "changed dependency did not invalidate"),
                              ("replay", "rewound"), ("manifest", "uncited research dependency"),
+                             ("generic_heading", "unrelated section heading invalidated"),
                              ("freshness", "did not invalidate"), ("exact", "mutated an exact source")):
             with self.subTest(fault=fault):
-                canonical = {"entry_ref": "entry:canonical", "version": 1, "path": "sources/People/Canary Aster.md"}
+                canonical = {"entry_ref": "entry:canonical", "version": 1,
+                             "path": "sources/Projects/Canary Aster/Canary Aster.md"}
                 trail = {"entry_ref": "entry:trail", "version": 1, "path": "sources/CanaryResearch/Trail.md"}
                 primary = {"entry_ref": "entry:primary", "version": 1, "path": "sources/CanaryResearch/Outcome.md"}
                 changed = {**primary, "version": 2}
@@ -224,21 +226,26 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                     self.assertNotEqual(path, "dreams/CONTROL.md")
                     writes.append(path)
                     documents[path, version + 1] = content
-                    source = next((row for row in headers if row["path"] == path), {"entry_ref": "entry:update", "path": path})
+                    source = next((row for row in headers if row["path"] == path),
+                                  {"entry_ref": "entry:unrelated" if path.endswith("/Unrelated.md") else "entry:update", "path": path})
                     return {**source, "version": version + 1}
 
                 def fixture_read(client, **request):
                     self.assertIs(client, reader)
+                    relevant_change = ("sources/Elsewhere/ResearchUpdate.md", 1) in documents
                     if request["view"] == "full":
                         source = next(row for row in headers if row["entry_ref"] == request["ref"])
                         text = documents[source["path"], request["version"]]
-                        if fault == "exact" and len(writes) == 5:
+                        if fault == "exact" and relevant_change:
                             text = "corrupted"
                         return {"reference": source["entry_ref"], "version": request["version"], "text": text}
-                    if len(writes) == 5:
+                    if relevant_change:
                         return {"reference": canonical["entry_ref"], "text": documents[canonical["path"], 1],
                                 "representation": "derived_summary" if fault == "freshness" else "current_source_fallback",
                                 "freshness": {"reason": "subject_scope_changed"}}
+                    if fault == "generic_heading" and ("sources/Elsewhere/Unrelated.md", 2) in documents:
+                        return {"reference": canonical["entry_ref"], "text": documents[canonical["path"], 1],
+                                "representation": "current_source_fallback", "freshness": {"reason": "subject_scope_changed"}}
                     candidate = runner.request.call_args_list[-2].args[2]["candidates"][0]
                     return {"reference": "entry:summary", "path": job["output_path"], "version": 1,
                             "representation": "derived_summary", "freshness": {"status": "fresh"}, "text": candidate["content"],
@@ -259,6 +266,8 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                         self.assertEqual(report["subject_cycle"]["uncited_cross_directory_invalidation"], "passed")
                         self.assertTrue(report["subject_cycle"]["saved_progress_survives_additive_discovery"])
                         self.assertTrue(report["subject_cycle"]["changed_dependency_invalidates_progress"])
+                        self.assertTrue(report["subject_cycle"]["generic_section_heading_is_not_an_identity"])
+                        self.assertTrue(documents[canonical["path"], 1].startswith("## Purpose\n"))
                         calls = runner.request.call_args_list
                         self.assertEqual(calls[0].args[2]["requested_subject_refs"], [canonical["entry_ref"]])
                         self.assertEqual(calls[3].args[2], calls[7].args[2])

@@ -1085,16 +1085,13 @@ async fn oversized_relevant_source_keeps_coverage_unchecked_and_safe_yield_does_
 async fn automatic_invalid_subject_is_skipped_without_rolling_back_the_selection_cursor() {
     let Some(f) = fixture().await else { return };
     control(&f, "report-only", 0).await;
-    let invalid = write(
+    let invalid = ok(post(
         &f,
-        "sources/People/First.md",
-        &format!(
-            "# {}\n\nAn ordinary source with an overlong canonical title.\n",
-            "x".repeat(161)
-        ),
-        0,
+        &f.owner,
+        "/v1/workspace/write",
+        json!({"path":"sources/People/First.md","content":"# First\n\nAn ordinary source with an overlong explicit title.\n","expected_version":0,"metadata":{"title":"x".repeat(161)}}),
     )
-    .await;
+    .await)["data"].clone();
     let valid = write(
         &f,
         "sources/People/Second.md",

@@ -386,9 +386,9 @@ def measure_subject_reads(reader, canonical, summary, samples=5):
 
 def run_subject_cycle(owner, runner, reader, report):
     """Supplement legacy cycles in the same disposable fixture; no model or push."""
-    canonical_path = "sources/People/Canary Aster.md"
+    canonical_path = "sources/Projects/Canary Aster/Canary Aster.md"
     trail_path, primary_path = "sources/CanaryResearch/Trail.md", "sources/CanaryResearch/Outcome.md"
-    canonical_text = ("# Canary Aster\n\nCanary Aster has a project trail at [[" + trail_path + "]].\n"
+    canonical_text = ("## Purpose\n\nCanary Aster has a project trail at [[" + trail_path + "]].\n"
                       + "\nSynthetic padding for the fixture read comparison.\n" * 100)
     trail_text = "# Trail\n\nThe primary result is in [[" + primary_path + "]].\n"
     old_text = "# Outcome\n\nAn old plan is awaiting execution.\n"
@@ -426,6 +426,9 @@ def run_subject_cycle(owner, runner, reader, report):
             and [{key: row.get(key) for key in ("entry_ref", "version", "start_line", "end_line")}
                  for row in checked_selectors] == initial_selectors,
             "initial research checkpoint lost supported notes or exact source selectors")
+    # The imported display title is a section label, not another project name.
+    unrelated_path = "sources/Elsewhere/Unrelated.md"
+    unrelated = write(owner, unrelated_path, "## Purpose\n\nA separate fixture task has unrelated evidence.\n", 0)
     requests = []
     # Follow two source links, then re-read a changed primary within this attempt.
     for target, source, text in ((trail_path, trail, trail_text), (primary_path, primary, old_text),
@@ -512,6 +515,12 @@ def run_subject_cycle(owner, runner, reader, report):
             and {row["entry_ref"] for row in manifest.get("sources", [])} == {row["entry_ref"] for row in selectors},
             "published subject lost its server-owned uncited research dependency")
     measurements = measure_subject_reads(reader, canonical, summary)
+    write(owner, unrelated_path, "## Purpose\n\nThe separate fixture task has a later unrelated outcome.\n", unrelated["version"])
+    for reference in (canonical["entry_ref"], summary["reference"]):
+        fresh = read_one(reader, ref=reference, view="current_state", max_chars=100_000)
+        require(fresh.get("representation") == "derived_summary" and fresh["freshness"]["status"] == "fresh"
+                and fresh["reference"] == summary["reference"] and fresh["text"] == summary["text"],
+                "unrelated section heading invalidated the subject overview")
     # Neither the canonical name nor a cited source occurs in this new note.
     write(owner, "sources/Elsewhere/ResearchUpdate.md", "# Update\n\nA later correction links to [[" + trail_path + "]].\n", 0)
     for reference in (canonical["entry_ref"], summary["reference"]):
@@ -530,6 +539,7 @@ def run_subject_cycle(owner, runner, reader, report):
         "supported_progress_checkpoint": True,
         "saved_progress_survives_additive_discovery": True,
         "changed_dependency_invalidates_progress": True,
+        "generic_section_heading_is_not_an_identity": True,
         "research_dependencies": len(dependencies), "claim_sources": len(selectors), "item_id": item["id"],
         "summary_ref": summary["reference"], "summary_version": summary["version"], "freshness_before_link": "fresh",
         "uncited_cross_directory_invalidation": "passed", "exact_sources_preserved": True,
