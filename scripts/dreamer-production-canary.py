@@ -415,6 +415,17 @@ def run_subject_cycle(owner, runner, reader, report):
             "requested canonical identity was not selected")
     canonical_read = read_one(reader, ref=canonical["entry_ref"], version=canonical["version"], view="full", max_chars=100_000)
     require(canonical_read["text"] == canonical_text, "canonical exact source changed before research")
+    initial_notes = "Canary Aster has a project trail."
+    initial_selectors = [{"entry_ref": canonical["entry_ref"], "version": canonical["version"],
+                          "start_line": 3, "end_line": 3}]
+    current = unwrap(runner.request("POST", "/v1/workspace/dreamer/research-progress", {
+        **research_body(current), "notes": initial_notes, "reviewed_sources": initial_selectors,
+        "pending_queries": [], "pending_targets": [trail_path], "status": "researching"}))
+    checked_selectors = current["research"]["reviewed_sources"]
+    require(current["research"]["notes"] == initial_notes
+            and [{key: row.get(key) for key in ("entry_ref", "version", "start_line", "end_line")}
+                 for row in checked_selectors] == initial_selectors,
+            "initial research checkpoint lost supported notes or exact source selectors")
     requests = []
     # Follow two source links, then re-read a changed primary within this attempt.
     for target, source, text in ((trail_path, trail, trail_text), (primary_path, primary, old_text),
@@ -425,6 +436,13 @@ def run_subject_cycle(owner, runner, reader, report):
         body = {**research_body(current), "queries": [], "targets": [target]}
         requests.append(body)
         current = unwrap(runner.request("POST", "/v1/workspace/dreamer/narrative-discover", body))
+        if len(requests) < 3:
+            require(current["research"]["notes"] == initial_notes
+                    and current["research"]["reviewed_sources"] == checked_selectors,
+                    "additive discovery lost checked progress or marked new sources reviewed")
+        else:
+            require(not current["research"]["notes"] and not current["research"]["reviewed_sources"],
+                    "changed dependency did not invalidate checked progress")
         require(any(row["entry_ref"] == source["entry_ref"] and row["version"] == source["version"]
                     for row in current["research"]["sources"]), "linked exact source was not admitted at its current version")
         exact = read_one(reader, ref=source["entry_ref"], version=source["version"], view="full", max_chars=100_000)
@@ -510,6 +528,8 @@ def run_subject_cycle(owner, runner, reader, report):
     report["subject_cycle"] = {"research_protocol": 1, "requested_subject_ref": canonical["entry_ref"],
         "discovery_rounds": len(requests), "replay_after_newer_round": True, "newer_primary_version": primary["version"],
         "supported_progress_checkpoint": True,
+        "saved_progress_survives_additive_discovery": True,
+        "changed_dependency_invalidates_progress": True,
         "research_dependencies": len(dependencies), "claim_sources": len(selectors), "item_id": item["id"],
         "summary_ref": summary["reference"], "summary_version": summary["version"], "freshness_before_link": "fresh",
         "uncited_cross_directory_invalidation": "passed", "exact_sources_preserved": True,

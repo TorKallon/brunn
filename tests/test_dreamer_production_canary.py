@@ -162,6 +162,9 @@ class DreamerProductionCanaryTests(unittest.TestCase):
 
     def test_subject_cycle_requires_current_replay_full_dependencies_and_stale_fallback(self):
         for fault, error in ((None, None), ("protocol", "research_protocol 1"),
+                             ("additive_progress", "additive discovery lost checked progress"),
+                             ("unreviewed_source", "marked new sources reviewed"),
+                             ("changed_progress", "changed dependency did not invalidate"),
                              ("replay", "rewound"), ("manifest", "uncited research dependency"),
                              ("freshness", "did not invalidate"), ("exact", "mutated an exact source")):
             with self.subTest(fault=fault):
@@ -174,23 +177,41 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                             "attempt_id": "fixture-attempt", "fence": "fixture-fence", "state_version": 1,
                             "inputs": headers, "frozen_generation": 3, "processed_generation": 0}
                 job = {"subject_ref": canonical["entry_ref"], "subject_path": canonical["path"],
-                       "output_path": "derived/entities/canary-aster.md", "output_version": 0}
-                admissions = [{**admitted, "state_version": index + 2,
-                               "research": {**job, "version": index + 1, "sources": sources,
+                       "output_path": "derived/entities/canary-aster.md", "output_version": 0,
+                       "notes": "", "reviewed_sources": []}
+                initial_selectors = [{"entry_ref": canonical["entry_ref"], "version": 1,
+                                      "start_line": 3, "end_line": 3, "path": canonical["path"],
+                                      "excerpt": "Canary Aster has a project trail at [[sources/CanaryResearch/Trail.md]]."}]
+                admissions = [{**admitted, "state_version": 2 if index == 0 else index + 3,
+                               "research": {**job, "version": 1 if index == 0 else index + 2, "sources": sources,
                                             "snapshot_generation": 4 if index == 3 else 3}}
                               for index, sources in enumerate(([canonical], headers[:2], headers, [canonical, trail, changed]))]
+                initial_progress = deepcopy(admissions[0])
+                initial_progress["state_version"] = 3
+                initial_progress["research"].update(version=2, notes="Canary Aster has a project trail.",
+                                                    reviewed_sources=initial_selectors)
+                for item in admissions[1:3]:
+                    item["research"].update(notes=initial_progress["research"]["notes"],
+                                            reviewed_sources=deepcopy(initial_selectors))
+                if fault == "additive_progress":
+                    admissions[1]["research"]["notes"] = ""
+                elif fault == "unreviewed_source":
+                    admissions[1]["research"]["reviewed_sources"].append(trail)
+                elif fault == "changed_progress":
+                    admissions[3]["research"].update(notes=initial_progress["research"]["notes"],
+                                                    reviewed_sources=initial_selectors)
                 checkpoint = deepcopy(admissions[-1])
-                checkpoint["state_version"] = 6
-                checkpoint["research"].update(version=5,
+                checkpoint["state_version"] = 7
+                checkpoint["research"].update(version=6,
                     notes="The current outcome is complete; one equipment detail remains unresolved.",
                     reviewed_sources=[canonical, changed])
                 replay = deepcopy(checkpoint)
                 if fault == "replay":
                     replay["research"]["version"] = 1
                 runner = Mock()
-                runner.request.side_effect = [admitted, {"data": admissions[0]},
+                runner.request.side_effect = [admitted, {"data": admissions[0]}, {"data": initial_progress},
                     *({"data": item} for item in admissions[1:]), {"data": checkpoint}, {"no_op": True, "data": replay},
-                    {"accepted_candidate_ids": ["fixture-item"], "state_version": 7},
+                    {"accepted_candidate_ids": ["fixture-item"], "state_version": 8},
                     {"latest_receipt": {"status": "partial", "mode": "full"}}]
                 item = {"id": "fixture-item", "reviewable": True, "stale": False, "run_entry_ref": "entry:run",
                         "run_version": 1, "candidate_hash": "fixture-hash", "candidate": {"target_path": job["output_path"]}}
@@ -236,14 +257,17 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                         self.assertEqual(report["subject_cycle"]["research_dependencies"], 3)
                         self.assertEqual(report["subject_cycle"]["claim_sources"], 2)
                         self.assertEqual(report["subject_cycle"]["uncited_cross_directory_invalidation"], "passed")
+                        self.assertTrue(report["subject_cycle"]["saved_progress_survives_additive_discovery"])
+                        self.assertTrue(report["subject_cycle"]["changed_dependency_invalidates_progress"])
                         calls = runner.request.call_args_list
                         self.assertEqual(calls[0].args[2]["requested_subject_refs"], [canonical["entry_ref"]])
-                        self.assertEqual(calls[2].args[2], calls[6].args[2])
-                        self.assertNotEqual(calls[2].args[2]["operation_id"], calls[3].args[2]["operation_id"])
-                        self.assertEqual(calls[5].args[1], "/v1/workspace/dreamer/research-progress")
-                        self.assertEqual(calls[7].args[2]["research_version"], 5)
-                        self.assertEqual(calls[7].args[2]["processed_inputs"], [])
-                        self.assertNotIn("subject_scope", calls[7].args[2]["candidates"][0])
+                        self.assertEqual(calls[3].args[2], calls[7].args[2])
+                        self.assertNotEqual(calls[3].args[2]["operation_id"], calls[4].args[2]["operation_id"])
+                        self.assertEqual(calls[2].args[1], "/v1/workspace/dreamer/research-progress")
+                        self.assertEqual(calls[6].args[1], "/v1/workspace/dreamer/research-progress")
+                        self.assertEqual(calls[8].args[2]["research_version"], 6)
+                        self.assertEqual(calls[8].args[2]["processed_inputs"], [])
+                        self.assertNotIn("subject_scope", calls[8].args[2]["candidates"][0])
                         self.assertTrue(all("notifications" not in call.args[1] for call in calls))
 
     def test_subject_read_measurement_is_warmed_alternating_and_content_free(self):

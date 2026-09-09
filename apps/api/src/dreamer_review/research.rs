@@ -660,10 +660,9 @@ async fn refresh(
     }
     job.pending_change_refs = pending;
     current.truncate(MAX_SOURCES);
-    let changed =
-        current.len() != job.sources.len() || job.sources.iter().any(|s| !current.contains(s));
+    let prior_evidence_changed = job.sources.iter().any(|source| !current.contains(source));
     let scope_changed = !fresh(tx, auth, job).await?;
-    if changed || scope_changed {
+    if prior_evidence_changed || scope_changed {
         job.notes.clear();
         job.reviewed_sources.clear();
         job.discoveries.clear();
@@ -1219,7 +1218,11 @@ pub(super) async fn discover(
         }
     }
     let changed = before != job.sources;
-    if changed {
+    // Additional headers are unreviewed leads, not a change to the exact
+    // evidence supporting saved work. Preserve its notes and selectors unless
+    // an earlier header changed or disappeared; refresh separately invalidates
+    // conclusions when newer relevant corpus changes affect the subject scope.
+    if before.iter().any(|source| !job.sources.contains(source)) {
         job.notes.clear();
         job.reviewed_sources.clear();
     }

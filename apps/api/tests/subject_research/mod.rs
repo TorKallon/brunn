@@ -1121,3 +1121,221 @@ async fn automatic_invalid_subject_is_skipped_without_rolling_back_the_selection
         "explicit invalid requested identities remain a useful validation error"
     );
 }
+
+#[tokio::test]
+async fn additive_discovery_preserves_checked_progress_but_source_or_scope_changes_invalidate_it() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let canonical = write(
+        &f,
+        "sources/People/Orchid.md",
+        "# Orchid\n\nOrchid has an established source fact.\n",
+        0,
+    )
+    .await;
+    let supporting = write(
+        &f,
+        "sources/Notes/Supporting.md",
+        "# Supporting\n\nA supporting observation refers to [[sources/Notes/Primary.md]].\n",
+        0,
+    )
+    .await;
+    let primary = write(
+        &f,
+        "sources/Notes/Primary.md",
+        "# Primary\n\nAn independently retained primary observation.\n",
+        0,
+    )
+    .await;
+    let a = next_subject(&f, &admit(&f).await).await;
+    let note =
+        "The canonical source records an established fact; supporting sources still need review.";
+    let progress = progress_body(&a, vec![reviewed(&canonical)], "researching", note);
+    let saved = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        progress,
+    )
+    .await)["data"]
+        .clone();
+    let (first_discovery, expanded) =
+        discover_subject(&f, &saved, vec![supporting["entry_ref"].clone()]).await;
+    assert_eq!(
+        expanded["research"]["notes"], note,
+        "adding evidence must not erase already checked work"
+    );
+    assert_eq!(
+        expanded["research"]["reviewed_sources"],
+        saved["research"]["reviewed_sources"]
+    );
+    assert_eq!(expanded["research"]["sources"].as_array().unwrap().len(), 2);
+    assert!(
+        !expanded["research"]["reviewed_sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|source| source["entry_ref"] == supporting["entry_ref"]),
+        "new source headers remain unreviewed"
+    );
+    assert_eq!(
+        expanded["inputs"], saved["inputs"],
+        "discovery does not acknowledge historical input"
+    );
+
+    let reconciled_note = "The canonical and supporting observations have been reviewed; the linked primary remains an unfinished lead.";
+    let progress = progress_body(
+        &expanded,
+        vec![reviewed(&canonical), reviewed(&supporting)],
+        "researching",
+        reconciled_note,
+    );
+    let checkpoint = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        progress,
+    )
+    .await)["data"]
+        .clone();
+    let (_, expanded) = discover_subject(&f, &checkpoint, vec![primary["entry_ref"].clone()]).await;
+    assert_eq!(expanded["research"]["notes"], reconciled_note);
+    assert_eq!(
+        expanded["research"]["reviewed_sources"],
+        checkpoint["research"]["reviewed_sources"]
+    );
+    assert_eq!(expanded["research"]["sources"].as_array().unwrap().len(), 3);
+    assert!(
+        !expanded["research"]["reviewed_sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|source| source["entry_ref"] == primary["entry_ref"])
+    );
+    let research_path = format!(
+        "dreams/research/{}.md",
+        canonical["entry_ref"]
+            .as_str()
+            .unwrap()
+            .trim_start_matches("entry:")
+    );
+    let stored = current(&f, &research_path).await.unwrap().2;
+    assert_eq!(
+        stored["dreamer_research"]["notes"], reconciled_note,
+        "checked work must survive a process restart in the durable job"
+    );
+    assert_eq!(
+        stored["dreamer_research"]["reviewed_sources"],
+        checkpoint["research"]["reviewed_sources"]
+    );
+    let replay = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/narrative-discover",
+        first_discovery,
+    )
+    .await);
+    assert_eq!(replay["no_op"], true);
+    assert_eq!(
+        replay["data"]["research"]["notes"], reconciled_note,
+        "old operation replay returns current checked progress"
+    );
+
+    let corrected = write(
+        &f,
+        "sources/Notes/Supporting.md",
+        "# Supporting\n\nA corrected supporting observation replaces the prior one.\n",
+        1,
+    )
+    .await;
+    let (_, changed) = discover_subject(&f, &expanded, vec![]).await;
+    assert_eq!(changed["research"]["notes"], "");
+    assert_eq!(changed["research"]["reviewed_sources"], json!([]));
+    assert!(
+        changed["research"]["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|source| source["entry_ref"] == corrected["entry_ref"] && source["version"] == 2)
+    );
+
+    let progress = progress_body(
+        &changed,
+        vec![reviewed(&canonical), reviewed(&corrected)],
+        "researching",
+        "The corrected source has now been checked.",
+    );
+    let checked = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        progress,
+    )
+    .await)["data"]
+        .clone();
+    let relevant = write(
+        &f,
+        "UnrelatedDirectory/Current.md",
+        "# Current\n\nOrchid has a newly relevant outcome.\n",
+        0,
+    )
+    .await;
+    let (_, refreshed) = discover_subject(&f, &checked, vec![]).await;
+    assert_eq!(
+        refreshed["research"]["notes"], "",
+        "newly relevant corpus changes still invalidate old conclusions"
+    );
+    assert_eq!(refreshed["research"]["reviewed_sources"], json!([]));
+    assert!(
+        refreshed["research"]["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|source| source["entry_ref"] == relevant["entry_ref"])
+    );
+
+    let progress = progress_body(
+        &refreshed,
+        vec![
+            reviewed(&canonical),
+            reviewed(&corrected),
+            reviewed(&relevant),
+        ],
+        "researching",
+        "The newly relevant outcome has been reconciled with the checked sources.",
+    );
+    let checked = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        progress,
+    )
+    .await)["data"]
+        .clone();
+    sqlx::query(
+        "UPDATE brunn.entries SET path='.brunn/tasks/'||id::text||'.md' WHERE user_id=$1 AND id=$2",
+    )
+    .bind(f.owner.user)
+    .bind(
+        Uuid::parse_str(
+            primary["entry_ref"]
+                .as_str()
+                .unwrap()
+                .trim_start_matches("entry:"),
+        )
+        .unwrap(),
+    )
+    .execute(&f.pool)
+    .await
+    .unwrap();
+    let (_, withheld) = discover_subject(&f, &checked, vec![]).await;
+    assert_eq!(
+        withheld["research"]["notes"], "",
+        "loss of access to prior research evidence still clears cached conclusions"
+    );
+    assert_eq!(withheld["research"]["reviewed_sources"], json!([]));
+    assert_eq!(
+        current(&f, &research_path).await.unwrap().2["dreamer_research"]["notes"],
+        ""
+    );
+}
