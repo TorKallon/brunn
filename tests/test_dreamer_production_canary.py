@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from copy import deepcopy
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -36,6 +37,31 @@ class StubClient:
 
 
 class DreamerProductionCanaryTests(unittest.TestCase):
+    def test_expected_http_error_retains_only_bounded_public_code(self):
+        cases = [
+            (json.dumps({"error": {"code": "research_refresh_required", "message": "PRIVATE_MESSAGE",
+                                   "details": {"token": "PRIVATE_TOKEN"}}}),
+             {"http_status": 400, "error": {"code": "research_refresh_required"}}),
+            ("{malformed", {"http_status": 400}),
+            ("null", {"http_status": 400}),
+            ('{"error":[]}', {"http_status": 400}),
+            ('{"error":{"code":["research_refresh_required"]}}', {"http_status": 400}),
+            (json.dumps({"error": {"code": "x" * 97}}), {"http_status": 400}),
+            (json.dumps({"error": {"code": "PRIVATE\nTOKEN"}}), {"http_status": 400}),
+        ]
+        for body, expected in cases:
+            with self.subTest(body=body):
+                calls = []
+                client = canary.Client("https://brunn.ai/api", "SYNTHETIC_TOKEN", calls, "fixture")
+                error = canary.urllib.error.HTTPError("https://brunn.ai/api/v1/workspace/dreamer/research-progress",
+                    400, "synthetic rejection", None, io.BytesIO(body.encode()))
+                with patch.object(client.opener, "open", side_effect=error):
+                    result = client.request("POST", "/v1/workspace/dreamer/research-progress", {}, expected=(400,))
+                self.assertEqual(result, expected)
+                self.assertEqual(calls[0]["status"], 400)
+                for forbidden in ("PRIVATE_MESSAGE", "PRIVATE_TOKEN", "SYNTHETIC_TOKEN"):
+                    self.assertNotIn(forbidden, json.dumps({"result": result, "calls": calls}))
+
     def test_owner_keychain_origin_and_redirects_are_bounded(self):
         self.assertEqual(canary.safe_base("https://brunn.ai/api/"), "https://brunn.ai/api")
         self.assertEqual(canary.safe_base("http://127.0.0.1:18110", admin=True), "http://127.0.0.1:18110")

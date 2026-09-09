@@ -100,7 +100,8 @@ class Client:
             with self.opener.open(request, timeout=30) as response:
                 status, data = response.status, response.read(MAX_RESPONSE + 1)
         except urllib.error.HTTPError as error:
-            status, data = error.code, error.read(MAX_RESPONSE + 1)
+            with error:
+                status, data = error.code, error.read(MAX_RESPONSE + 1)
         except (urllib.error.URLError, TimeoutError, OSError):
             self.calls.append({"actor": self.actor, "method": method, "path": path,
                                "status": "transport_uncertain"})
@@ -111,7 +112,18 @@ class Client:
         require(status in expected, f"{self.actor} {method} {path}: HTTP {status}")
         require(len(data) <= MAX_RESPONSE, "HTTP response exceeds canary byte bound")
         if status not in range(200, 300):
-            return {"http_status": status}
+            result = {"http_status": status}
+            # Typed rejection checks need the public code, but never the error
+            # message, details, credentials or arbitrary response content.
+            try:
+                payload = json.loads(data)
+            except (ValueError, UnicodeDecodeError):
+                payload = None
+            error = payload.get("error") if isinstance(payload, dict) else None
+            code = error.get("code") if isinstance(error, dict) else None
+            if isinstance(code, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,95}", code):
+                result["error"] = {"code": code}
+            return result
         try:
             return json.loads(data)
         except (ValueError, UnicodeDecodeError):

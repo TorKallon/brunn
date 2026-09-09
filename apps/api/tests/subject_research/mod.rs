@@ -324,10 +324,28 @@ async fn imported_link_target_stays_unresolved_when_the_unique_source_exceeds_th
         capped["research"]["coverage"]["unresolved_targets"],
         json!(["Bulk/000256"])
     );
-    assert_eq!(
-        capped["research"]["sources"],
-        selected["research"]["sources"]
-    );
+    // Discovery appends headers in SQL order; refresh may reorder the retained
+    // batch. The cap must preserve every complete header, not that query order.
+    let mut before = selected["research"]["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .collect::<Vec<_>>();
+    let mut after = capped["research"]["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .collect::<Vec<_>>();
+    for sources in [&mut before, &mut after] {
+        sources.sort_by(|left, right| left["entry_ref"].as_str().cmp(&right["entry_ref"].as_str()));
+    }
+    assert_eq!(after.len(), before.len());
+    for (before, after) in before.into_iter().zip(after) {
+        assert_eq!(
+            after, before,
+            "the cap must retain each source's exact header"
+        );
+    }
     assert_eq!(
         capped["research"]["sources"][0]["entry_ref"],
         canonical["entry_ref"]
