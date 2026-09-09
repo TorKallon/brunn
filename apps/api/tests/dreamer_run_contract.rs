@@ -24,6 +24,8 @@ use std::{
 const SOURCE: &str = "entry:019fba27-687b-7582-8b99-e9371dbe2ce5";
 const RUN: &str = "entry:01a07b52-2bf0-7d62-8969-9ea0b3c49399";
 const SECRET_REF: &str = "secret:01a07b52-2bf0-7d62-8969-9ea0b3c49388";
+const WORKSPACE_TOKEN: &str = "brunn-test-workspace-secret-should-never-reach-model";
+const RUNNER_TOKEN: &str = "brunn-test-runner-secret-should-never-reach-model";
 #[derive(Default)]
 struct Mock {
     control: Option<String>,
@@ -290,9 +292,9 @@ async fn build_with_budget(
     let stub = stub(dir.path(), behavior);
     let dreamer = Dreamer::new(DreamerConfig {
         api_url: format!("http://{address}"),
-        workspace_token: "workspace".into(),
+        workspace_token: WORKSPACE_TOKEN.into(),
         model_token: "model".into(),
-        runner_token: "runner".into(),
+        runner_token: RUNNER_TOKEN.into(),
         codex_path: stub,
         codex_model: "test-model".into(),
         mcp_server_entry: PathBuf::from("/dev/null"),
@@ -383,8 +385,9 @@ async fn accepted_candidates_have_exact_receipt_and_read_only_model() {
     assert!(!report.mode_flipped);
     let env = std::fs::read_to_string(dir.path().join("model-env")).unwrap();
     assert!(env.contains("BRUNN_API_TOKEN=model"));
-    assert!(!env.contains("workspace"));
-    assert!(!env.contains("runner"));
+    // The CI home directory contains "runner"; inspect the actual secrets.
+    assert!(!env.contains(WORKSPACE_TOKEN));
+    assert!(!env.contains(RUNNER_TOKEN));
     assert!(!env.contains("OPENAI_API_KEY"));
     let s = s.lock().unwrap();
     assert_eq!(s.pending.len(), 1);
@@ -847,11 +850,7 @@ async fn location_audit_submits_only_the_corrected_artifact_under_the_original_i
     let audit_env =
         std::fs::read_to_string(dir.path().join("env-location-audit-answer.md")).unwrap();
     assert!(!audit_env.contains("BRUNN_API_TOKEN="));
-    for forbidden in [
-        "BRUNN_API_TOKEN=runner",
-        "BRUNN_API_TOKEN=workspace",
-        "OPENAI_API_KEY",
-    ] {
+    for forbidden in [RUNNER_TOKEN, WORKSPACE_TOKEN, "OPENAI_API_KEY"] {
         assert!(!audit_env.contains(forbidden));
     }
     let s = s.lock().unwrap();
@@ -1297,7 +1296,8 @@ async fn unsupported_audited_clock_requires_one_correction_before_submission() {
     let correction_env =
         std::fs::read_to_string(dir.path().join("env-location-correction-answer.md")).unwrap();
     assert!(!correction_env.contains("BRUNN_API_TOKEN="));
-    assert!(!correction_env.contains("BRUNN_API_TOKEN=runner"));
+    assert!(!correction_env.contains(RUNNER_TOKEN));
+    assert!(!correction_env.contains(WORKSPACE_TOKEN));
     assert!(!correction_env.contains("OPENAI_API_KEY"));
     let s = s.lock().unwrap();
     assert_eq!(s.submissions, 1);

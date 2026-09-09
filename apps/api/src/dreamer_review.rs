@@ -33,6 +33,7 @@ const MAX_LEGACY_ITEMS: usize = 96;
 const LEGACY_REASON: &str =
     "Retained from an earlier run; a concrete candidate is required before application.";
 const MAX_STATE_BYTES: usize = 256 * 1024;
+const MAX_CANDIDATE_BYTES: usize = 32 * 1024;
 const SENSITIVE_INPUT_PATH: &str = r"(^|[/[:space:]_.-])(api[[:space:]_-]*keys?|access[[:space:]_-]*tokens?|credentials?|passwords?|secrets?|private[[:space:]_-]*keys?)([/[:space:]_.-]|$)";
 
 fn sensitive_input_path(path: &str) -> bool {
@@ -544,9 +545,12 @@ async fn source_versions(
             ));
         }
         source.excerpt = lines[source.start_line - 1..source.end_line].join("\n");
-        if source.excerpt.len() > 12000 {
+        // A coherent source (for example a small CSV) may use most of the
+        // candidate budget. The complete hydrated candidate is checked below;
+        // an extra 12 KB per-source limit rejected otherwise valid summaries.
+        if source.excerpt.len() > MAX_CANDIDATE_BYTES {
             return Err(ApiError::invalid(
-                "source excerpt exceeds the candidate evidence budget",
+                "source excerpt exceeds the 32 KiB candidate budget",
             ));
         }
     }
@@ -745,7 +749,7 @@ pub(crate) fn validate_candidate(candidate: &Candidate, before: &str) -> ApiResu
             "candidate title, summary or explanation exceeds its bound",
         ));
     }
-    if serde_json::to_vec(candidate)?.len() > 32768 {
+    if serde_json::to_vec(candidate)?.len() > MAX_CANDIDATE_BYTES {
         return Err(ApiError::invalid(
             "candidate exceeds 32 KiB; split its scope without discarding evidence",
         ));

@@ -40,8 +40,24 @@ final class DreamerReviewTests: XCTestCase {
         }
         let unrelatedTable = "| Key | Value |\n| --- | --- |\n| Original | Intact |"
         let malformedTable = "| When | Where |\n| --- | --- |\n| 12:00 | A | Additional data |"
-        XCTAssertEqual(ReviewSummaryBlock.parse(unrelatedTable), [.paragraph(unrelatedTable)])
+        XCTAssertEqual(ReviewSummaryBlock.parse(unrelatedTable), [.table(columns: ["Key", "Value"], rows: [["Original", "Intact"]])])
         XCTAssertEqual(ReviewSummaryBlock.parse(malformedTable), [.paragraph(malformedTable)])
+    }
+
+    func testComparisonTableKeepsEveryColumnCitationAndEscapedPipe() {
+        let markdown = "| Topic | Before | After |\n| :--- | ---: | :---: |\n| A | Old [s1] | New \\| retained [s2] |\n| B | | Current [s3] |"
+        XCTAssertEqual(ReviewSummaryBlock.parse(markdown), [.table(
+            columns: ["Topic", "Before", "After"],
+            rows: [["A", "Old [s1]", "New \\| retained [s2]"], ["B", "", "Current [s3]"]]
+        )])
+        for invalid in ["| A | B |\n| --- | --- | --- |\n| C | D |",
+                        "| A | B |\n| --- | --- |\n| C | D | Lost |"] {
+            XCTAssertEqual(ReviewSummaryBlock.parse(invalid), [.paragraph(invalid)])
+        }
+        let candidate = DreamerReviewCandidate(bodyMD: nil, beforeMD: "Old", afterMD: markdown, targetPath: "derived/entities/example.md")
+        XCTAssertTrue(candidate.isManagedSummary)
+        XCTAssertEqual(candidate.summaryMD, markdown)
+        XCTAssertEqual(candidate.afterMD, markdown)
     }
 
     func testNativeRoutesAndPinnedSource() throws {

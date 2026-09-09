@@ -421,9 +421,8 @@ private struct ReviewDetailView: View {
     }
 }
 
-// The managed location contract uses this two-column table. Render it as rows
-// that wrap on a phone; keep unrecognized Markdown intact and exact bytes in
-// the separate change disclosure.
+// Render summary tables vertically so every value wraps on a phone. Keep
+// unrecognized Markdown intact and exact bytes in the change disclosure.
 enum ReviewSummaryBlock: Equatable {
     struct Stop: Equatable {
         let when: String
@@ -432,19 +431,23 @@ enum ReviewSummaryBlock: Equatable {
     case paragraph(String)
     case heading(String)
     case stops([Stop])
+    case table(columns: [String], rows: [[String]])
 
     static func parse(_ text: String) -> [Self] {
         text.replacingOccurrences(of: "\r\n", with: "\n")
             .components(separatedBy: "\n\n").filter { !$0.isEmpty }.map { paragraph in
                 let lines = paragraph.components(separatedBy: "\n")
-                if lines.count >= 3, cells(lines[0]) == ["When", "Where"],
-                   let separator = cells(lines[1]), separator.allSatisfy({
+                if lines.count >= 3, let columns = cells(lines[0]), columns.allSatisfy({ !$0.isEmpty }),
+                   let separator = cells(lines[1]), separator.count == columns.count, separator.allSatisfy({
                        let dashes = $0.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
                        return dashes.count >= 3 && dashes.allSatisfy { $0 == "-" }
                    }) {
                     let rows = lines.dropFirst(2).compactMap(cells)
-                    if rows.count == lines.count - 2 {
-                        return .stops(rows.map { Stop(when: $0[0], whereMD: $0[1]) })
+                    if rows.count == lines.count - 2, rows.allSatisfy({ $0.count == columns.count }) {
+                        if columns == ["When", "Where"] {
+                            return .stops(rows.map { Stop(when: $0[0], whereMD: $0[1]) })
+                        }
+                        return .table(columns: columns, rows: rows)
                     }
                 }
                 if lines.count == 1, let space = paragraph.firstIndex(of: " ") {
@@ -460,9 +463,23 @@ enum ReviewSummaryBlock: Equatable {
     private static func cells(_ line: String) -> [String]? {
         var trimmed = line.trimmingCharacters(in: .whitespaces)
         if trimmed.hasPrefix("|") { trimmed.removeFirst() }
-        if trimmed.hasSuffix("|") { trimmed.removeLast() }
-        let values = trimmed.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
-        return values.count == 2 && values.allSatisfy { !$0.isEmpty } ? values : nil
+        var values = [String]()
+        var value = ""
+        var escaped = false
+        for character in trimmed {
+            if character == "|" && !escaped {
+                values.append(value.trimmingCharacters(in: .whitespaces))
+                value = ""
+            } else {
+                value.append(character)
+            }
+            escaped = character == "\\" && !escaped
+        }
+        // A final unescaped pipe closes the row; an escaped pipe is content.
+        if !value.isEmpty || !trimmed.hasSuffix("|") {
+            values.append(value.trimmingCharacters(in: .whitespaces))
+        }
+        return (2...8).contains(values.count) ? values : nil
     }
 }
 
@@ -485,6 +502,22 @@ private struct ReviewSummaryMarkdown: View {
                                 SafeMarkdownText(markdown: stop.whereMD).font(.body)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                case .table(let columns, let rows):
+                    VStack(alignment: .leading, spacing: 20) {
+                        ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                            if index > 0 { Divider() }
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach(Array(columns.enumerated()), id: \.offset) { column, label in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        SafeMarkdownText(markdown: label)
+                                            .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                                        SafeMarkdownText(markdown: row[column]).font(.body)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
                         }
                     }
                 }

@@ -2824,6 +2824,11 @@ pub async fn process_due_reply_by(state: &AppState, as_of: DateTime<Utc>) -> Api
     let question_conversation_id: Uuid = candidate.try_get("conversation_id")?;
     let question_seq: i64 = candidate.try_get("seq")?;
 
+    // Match ordinary writes: workspace fence, then conversation, then message.
+    // Entry triggers also take this fence; acquiring it after a conversation
+    // lock would deadlock against a concurrent reply holding the fence.
+    crate::db::lock_workspace_commit(&mut tx, user_id).await?;
+
     // Match the send path's conversation-before-message lock order. This
     // serializes a reply racing its deadline without a question/conversation
     // deadlock or a false expiry.

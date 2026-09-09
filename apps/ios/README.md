@@ -7,8 +7,8 @@ Alerts inbox for hosted Brunn.
 
 - actionable Review inbox with historical prose separated into read-only Older
   reports; questions offer a direct answer field and empty candidates stay hidden
-- managed summaries show readable time-and-place rows; exact changes and supporting
-  evidence are collapsed until requested
+- managed summaries show readable time-and-place rows and wrapping comparison
+  fields; exact changes and supporting evidence are collapsed until requested
 - Review refreshes on foreground, tab return, and notification signals; an open
   detail shows replacements immediately and requires acknowledgment before decisions
 - visible Review tab and Home shortcut for Dreamer proposals, questions, complete

@@ -750,6 +750,53 @@ async fn ordinary_summary_tables_retain_uncited_work_and_accept_cited_rows() {
     assert!(current(&f, valid["path"].as_str().unwrap()).await.is_none());
 }
 
+#[tokio::test]
+async fn coherent_large_source_fits_candidate_but_hydrated_total_stays_bounded() {
+    let Some(f) = fixture().await else {
+        return;
+    };
+    control(&f, "report-only", 0).await;
+    let content = format!("# Measurements\n\n{}\n", "Recorded data. ".repeat(1100));
+    let source = write(&f, "sources/Measurements.md", &content, 0).await;
+    let admission = admit(&f).await;
+    let valid = candidate(&source, "measurements");
+    let mut oversized = valid.clone();
+    oversized["content"] = json!("Evidence.[^s1]\n".repeat(1400));
+    let before = current(&f, "dreams/state.md").await.unwrap();
+    let mut body = attempt(&admission, admission["state_version"].as_i64().unwrap());
+    body["candidates"] = json!([oversized]);
+    body["processed_inputs"] = admission["inputs"].clone();
+    let rejected = post(&f, &f.runner, "/v1/workspace/dreamer/candidates", body).await;
+    assert_eq!(
+        rejected.status,
+        StatusCode::BAD_REQUEST,
+        "{}",
+        rejected.body
+    );
+    assert!(rejected.body.to_string().contains("32 KiB"));
+    assert_eq!(current(&f, "dreams/state.md").await.unwrap(), before);
+    let (_, accepted) = submit(
+        &f,
+        &admission,
+        admission["state_version"].as_i64().unwrap(),
+        vec![valid],
+    )
+    .await;
+    finish(
+        &f,
+        &admission,
+        accepted["state_version"].as_i64().unwrap(),
+        "completed",
+    )
+    .await;
+    let result = review(&f).await;
+    assert_eq!(result["items"][0]["reviewable"], true);
+    assert_eq!(
+        result["items"][0]["sources"][0]["excerpt"],
+        content.lines().nth(2).unwrap()
+    );
+}
+
 async fn expire_fixture_lease(f: &Fixture) {
     sqlx::query("UPDATE brunn.entry_versions v SET metadata=jsonb_set(metadata,'{dreamer_state,active,lease_until}',to_jsonb($2::text)) FROM brunn.entries e WHERE e.user_id=$1 AND e.path='dreams/state.md' AND v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version")
         .bind(f.owner.user).bind((Utc::now()-chrono::Duration::seconds(1)).to_rfc3339()).execute(&f.pool).await.unwrap();

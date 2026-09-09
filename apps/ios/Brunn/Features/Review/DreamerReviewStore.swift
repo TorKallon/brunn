@@ -44,7 +44,8 @@ final class DreamerReviewStore: ObservableObject {
 
 #if DEBUG
     func loadUITestFixture() {
-        if ProcessInfo.processInfo.arguments.contains("--ui-test-review-location") {
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-review-location")
+            || ProcessInfo.processInfo.arguments.contains("--ui-test-review-table") {
             loadUITestLocationFixture()
             return
         }
@@ -95,20 +96,34 @@ final class DreamerReviewStore: ObservableObject {
     Ranges bracket observations; arrival and departure remain approximate.
     """
 
+    static let uiTestComparisonSummary = """
+    # Workshop decisions
+
+    | Topic | Earlier information | Current understanding |
+    | --- | --- | --- |
+    | Storage | Shelves were planned for the narrow wall. [s1] | The newer measurement leaves enough room for a workbench, with the shelves on the opposite wall. [s2] |
+    | Lighting | The first plan used a single ceiling fixture. [s3] | Use separate task lighting above the bench; the final fixture choice remains open. [s4] |
+
+    Final detail: the newer measurements replace the old layout assumption.
+    """
+
     private func loadUITestLocationFixture() {
         let replacement = ProcessInfo.processInfo.arguments.contains("--ui-test-review-replacement") && selected != nil
-        let summary = replacement ? "# Updated example\n\nThe replacement summary arrived while this item was open." : Self.uiTestLocationSummary
+        let comparison = ProcessInfo.processInfo.arguments.contains("--ui-test-review-table")
+        let original = comparison ? Self.uiTestComparisonSummary : Self.uiTestLocationSummary
+        let summary = replacement ? "# Updated example\n\nThe replacement summary arrived while this item was open." : original
         data = DreamerReviewData(
             available: true, mode: "report-only", paused: false, unavailableReason: nil,
             lastAttempt: nil, lastSuccessfulRun: nil,
             counts: .init(pending: 1, proposals: 1, questions: 0, approvedHeld: 0, applied: 0, legacy: 0),
             items: [.init(id: "demo-review-location", kind: "proposal",
-                          title: "Where you were on February 3", bodyMD: "A summary of the day's observed places.",
+                          title: comparison ? "Consolidate workshop decisions" : "Where you were on February 3",
+                          bodyMD: comparison ? "Reconcile the old and new workshop plans." : "A summary of the day's observed places.",
                           whyMD: "", uncertaintyMD: "Ranges bracket observations; arrival and departure remain approximate.",
                           runID: "Demo run", runEntryRef: "entry:demo-review-run", runVersion: replacement ? 3 : 2,
                           candidateHash: replacement ? "sha256:demo-replacement" : "sha256:demo-location",
                           candidate: .init(bodyMD: summary, beforeMD: "Previous location summary.",
-                                           afterMD: summary, targetPath: "derived/location/days/2040-02-03.md"),
+                                           afterMD: summary, targetPath: comparison ? "derived/entities/workshop.md" : "derived/location/days/2040-02-03.md"),
                           sources: (1...30).map { number in
                               .init(entryRef: "entry:demo-location-evidence-\(number)", path: nil, version: 12,
                                     label: "Location evidence \(number)", excerpt: "Raw observation details \(number)")

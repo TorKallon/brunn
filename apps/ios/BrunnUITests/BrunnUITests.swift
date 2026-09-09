@@ -2,6 +2,32 @@ import XCTest
 
 final class BrunnUITests: XCTestCase {
     @MainActor
+    func testComparisonSummaryWrapsAllColumnsAndKeepsFinalDetail() {
+        let app = launchDemo(extraArguments: ["--ui-test-review-fixture", "--ui-test-review-table"])
+        app.tabBars.buttons["Review"].tap()
+        let item = app.buttons["review-item-demo-review-location"]
+        XCTAssertTrue(item.waitForExistence(timeout: 4))
+        item.tap()
+        for value in ["Storage", "Shelves were planned for the narrow wall. [s1]",
+                      "The newer measurement leaves enough room for a workbench, with the shelves on the opposite wall. [s2]",
+                      "Lighting", "Use separate task lighting above the bench; the final fixture choice remains open. [s4]",
+                      "Final detail: the newer measurements replace the old layout assumption."] {
+            let text = app.staticTexts[value]
+            scroll(text, intoViewIn: app)
+            XCTAssertTrue(text.isHittable, "Missing table content: \(value)")
+            XCTAssertGreaterThanOrEqual(text.frame.minX, app.frame.minX)
+            XCTAssertLessThanOrEqual(text.frame.maxX, app.frame.maxX)
+            if value.hasPrefix("The newer") { keepScreenshot(named: "review-comparison-wrapped-columns", from: app) }
+        }
+        keepScreenshot(named: "review-comparison-final-detail", from: app)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "| Topic | Earlier information |")).firstMatch.exists)
+        let changes = element("review-exact-changes-toggle", in: app)
+        scroll(changes, intoViewIn: app)
+        changes.tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "| Topic | Earlier information |")).firstMatch.exists)
+    }
+
+    @MainActor
     func testReviewIsVisibleInTabBarAndReachableFromHome() {
         let app = launchDemo()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
