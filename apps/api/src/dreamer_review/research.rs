@@ -39,6 +39,7 @@ pub(super) struct Job {
     pub scope: SubjectScope,
     pub snapshot_generation: i64,
     pub sources: Vec<Input>,
+    #[serde(serialize_with = "serialize_reviewed_selectors")]
     pub reviewed_sources: Vec<Source>,
     pub notes: String,
     pub pending_queries: Vec<String>,
@@ -57,6 +58,37 @@ pub(super) struct Job {
     pub change_scan: Option<ChangeScan>,
     #[serde(default)]
     pub pending_change_refs: Vec<String>,
+}
+
+/// Research retains validated selectors, not another copy of source bodies.
+/// Apply this projection at serialization so old excerpt-bearing records also
+/// become compact when returned or saved. Candidate evidence remains hydrated.
+fn serialize_reviewed_selectors<S>(sources: &[Source], serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use serde::ser::SerializeSeq;
+
+    #[derive(Serialize)]
+    struct Selector<'a> {
+        entry_ref: &'a str,
+        version: i64,
+        start_line: usize,
+        end_line: usize,
+        path: &'a str,
+    }
+
+    let mut sequence = serializer.serialize_seq(Some(sources.len()))?;
+    for source in sources {
+        sequence.serialize_element(&Selector {
+            entry_ref: &source.entry_ref,
+            version: source.version,
+            start_line: source.start_line,
+            end_line: source.end_line,
+            path: &source.path,
+        })?;
+    }
+    sequence.end()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

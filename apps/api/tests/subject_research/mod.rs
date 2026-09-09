@@ -30,6 +30,20 @@ async fn discover_subject(f: &Fixture, admission: &Value, targets: Vec<Value>) -
 fn reviewed(source: &Value) -> Value {
     json!({"entry_ref":source["entry_ref"],"version":source["version"],"start_line":3,"end_line":3})
 }
+fn assert_same_source_headers(actual: &Value, expected: &Value) {
+    // SQL may reorder supporting sources on reload. Compare every complete
+    // header while preserving the explicit canonical-first contract.
+    let mut actual = actual.as_array().unwrap().iter().collect::<Vec<_>>();
+    let mut expected = expected.as_array().unwrap().iter().collect::<Vec<_>>();
+    assert_eq!(actual.len(), expected.len());
+    assert_eq!(actual.first(), expected.first());
+    for sources in [&mut actual, &mut expected] {
+        sources.sort_by(|left, right| left["entry_ref"].as_str().cmp(&right["entry_ref"].as_str()));
+    }
+    for (actual, expected) in actual.into_iter().zip(expected) {
+        assert_eq!(actual, expected, "retain each source's exact header");
+    }
+}
 fn progress_body(admission: &Value, selectors: Vec<Value>, status: &str, notes: &str) -> Value {
     let mut body = research_request(admission);
     body["notes"] = json!(notes);
@@ -43,6 +57,371 @@ fn subject_candidate(admission: &Value, selectors: Vec<Value>) -> Value {
     json!({"kind":"summary","title":"Radley overview","summary":"A current person overview with one unresolved detail.","reason":"Retain independently supported facts despite one missing specification.",
         "subject_ref":admission["research"]["subject_ref"],"path":admission["research"]["output_path"],"expected_version":admission["research"]["output_version"],
         "content":"# Radley\n\nRadley is the canonical person.[^s1]\nThe current outcome is complete; one equipment detail remains unresolved.[^s2]\n", "sources":selectors})
+}
+
+#[tokio::test]
+async fn compact_research_checkpoint_retains_64_large_ranges_across_additions_replay_and_reload() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let mut sources = Vec::new();
+    let mut hydrated_bytes = 0;
+    for index in 0..64 {
+        let path = if index == 0 {
+            "sources/People/Orchid.md".to_owned()
+        } else {
+            format!("sources/Checkpoint/Source-{index:02}.md")
+        };
+        let title = if index == 0 {
+            "Orchid".to_owned()
+        } else {
+            format!("Evidence {index}")
+        };
+        let content = format!(
+            "# {title}\n\nSynthetic observation {index}.\nRecord-{index:02}: {}\n",
+            "Retained source detail. ".repeat(190)
+        );
+        let excerpt = content.lines().skip(2).collect::<Vec<_>>().join("\n");
+        assert!(excerpt.len() < 32 * 1024);
+        hydrated_bytes += excerpt.len();
+        sources.push(write(&f, &path, &content, 0).await);
+    }
+    assert!(
+        hydrated_bytes > 192 * 1024,
+        "the previous excerpt-bearing checkpoint must exceed the existing job cap"
+    );
+    let extra = imported_link_source(&f, "sources/Checkpoint/Additional.md").await;
+    let mut selected = next_subject(&f, &admit(&f).await).await;
+    assert_eq!(selected["research"]["subject_ref"], sources[0]["entry_ref"]);
+    for page in sources[1..].chunks(32) {
+        (_, selected) = discover_subject(
+            &f,
+            &selected,
+            page.iter().map(|s| s["entry_ref"].clone()).collect(),
+        )
+        .await;
+    }
+    let selectors = sources.iter().map(|s|json!({"entry_ref":s["entry_ref"],"version":s["version"],"start_line":3,"end_line":4})).collect::<Vec<_>>();
+    let expected = sources.iter().map(|s|json!({"entry_ref":s["entry_ref"],"version":s["version"],"start_line":3,"end_line":4,"path":s["path"]})).collect::<Vec<_>>();
+    let notes = format!("All 64 exact source ranges were checked.\n\n{}", "Keep the checked observations and their unresolved follow-up leads available for later research.\n".repeat(80));
+    assert!(notes.len() > 6 * 1024 && notes.len() < 12 * 1024);
+    let original = progress_body(&selected, selectors.clone(), "researching", &notes);
+    let saved = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        original.clone(),
+    )
+    .await)["data"]
+        .clone();
+    assert_eq!(saved["research"]["notes"], notes);
+    assert_eq!(saved["research"]["reviewed_sources"], json!(expected));
+    assert_eq!(saved["inputs"], selected["inputs"]);
+    let research_path = format!(
+        "dreams/research/{}.md",
+        sources[0]["entry_ref"]
+            .as_str()
+            .unwrap()
+            .trim_start_matches("entry:")
+    );
+    let durable = current(&f, &research_path).await.unwrap();
+    assert_eq!(
+        durable.2["dreamer_research"]["reviewed_sources"],
+        json!(expected)
+    );
+    assert_eq!(durable.2["dreamer_research"]["notes"], notes);
+    assert!(serde_json::to_vec(&durable.2).unwrap().len() < 192 * 1024);
+    let (_, expanded) = discover_subject(&f, &saved, vec![extra["entry_ref"].clone()]).await;
+    assert_eq!(
+        expanded["research"]["sources"].as_array().unwrap().len(),
+        65
+    );
+    assert_eq!(expanded["research"]["reviewed_sources"], json!(expected));
+    assert_eq!(expanded["research"]["notes"], notes);
+    let later_notes = format!("{notes}\nThe additional source remains an unreviewed lead.");
+    let later = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        progress_body(&expanded, selectors.clone(), "researching", &later_notes),
+    )
+    .await)["data"]
+        .clone();
+    let durable = current(&f, &research_path).await.unwrap();
+    let replay = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        original,
+    )
+    .await);
+    assert_eq!(replay["no_op"], true);
+    assert_eq!(replay["data"]["research"]["notes"], later_notes);
+    assert_eq!(
+        replay["data"]["research"]["reviewed_sources"],
+        json!(expected)
+    );
+    assert_eq!(
+        replay["data"]["research"]["version"],
+        later["research"]["version"]
+    );
+    assert_eq!(
+        current(&f, &research_path).await.unwrap(),
+        durable,
+        "replay must not rewrite or duplicate stored progress"
+    );
+    finish(
+        &f,
+        &later,
+        later["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
+    let restarted = ok(post(&f, &f.runner, "/v1/workspace/dreamer/admit", json!({"attempt_id":Uuid::now_v7(),"date":date(),"kind":"manual","lease_seconds":60,"requested_subject_refs":[sources[0]["entry_ref"]]})).await);
+    assert_eq!(restarted["research"]["notes"], later_notes);
+    let resumed = next_subject(&f, &restarted).await;
+    assert_eq!(resumed["research"]["subject_ref"], sources[0]["entry_ref"]);
+    assert_eq!(resumed["research"]["reviewed_sources"], json!(expected));
+    assert_eq!(resumed["research"]["notes"], later_notes);
+
+    let mut oversized = research_request(&resumed);
+    oversized["candidates"] = json!([subject_candidate(&resumed, selectors)]);
+    oversized["processed_inputs"] = json!([]);
+    let durable = current(&f, &research_path).await.unwrap();
+    let state = current(&f, "dreams/state.md").await.unwrap();
+    let rejected = post(&f, &f.runner, "/v1/workspace/dreamer/candidates", oversized).await;
+    assert_eq!(rejected.status, StatusCode::BAD_REQUEST);
+    assert!(
+        rejected
+            .body
+            .to_string()
+            .contains("candidate exceeds 32 KiB"),
+        "{}",
+        rejected.body
+    );
+    assert_eq!(current(&f, &research_path).await.unwrap(), durable);
+    assert_eq!(current(&f, "dreams/state.md").await.unwrap(), state);
+    let mut candidate =
+        subject_candidate(&resumed, vec![reviewed(&sources[0]), reviewed(&sources[1])]);
+    candidate["title"] = json!("Orchid source observations");
+    candidate["content"] = json!(
+        "# Orchid\n\nThe canonical source records an observation.[^s1]\nA supporting source records another observation.[^s2]\n"
+    );
+    let mut request = research_request(&resumed);
+    request["candidates"] = json!([candidate]);
+    request["processed_inputs"] = json!([]);
+    let accepted = ok(post(&f, &f.runner, "/v1/workspace/dreamer/candidates", request).await);
+    assert_eq!(
+        accepted["accepted_candidate_ids"].as_array().unwrap().len(),
+        1
+    );
+    assert_eq!(accepted["research"]["reviewed_sources"], json!(expected));
+    let run: Value = sqlx::query_scalar(
+        "SELECT metadata FROM brunn.entry_versions WHERE user_id=$1 AND entry_id=$2 AND version=$3",
+    )
+    .bind(f.owner.user)
+    .bind(
+        Uuid::parse_str(
+            accepted["run_entry_ref"]
+                .as_str()
+                .unwrap()
+                .trim_start_matches("entry:"),
+        )
+        .unwrap(),
+    )
+    .bind(accepted["run_version"].as_i64().unwrap())
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    let item = run["dreamer_run"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == accepted["accepted_candidate_ids"][0])
+        .unwrap();
+    assert_eq!(
+        item["candidate"]["sources"][0]["excerpt"],
+        "Synthetic observation 0."
+    );
+    assert_eq!(
+        item["candidate"]["sources"][1]["excerpt"],
+        "Synthetic observation 1."
+    );
+    assert_eq!(item["candidate"]["sources"][0]["path"], sources[0]["path"]);
+}
+
+#[tokio::test]
+async fn compact_research_checkpoint_loads_legacy_excerpts_and_preserves_validation() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let canonical = write(
+        &f,
+        "sources/People/Orchid.md",
+        "# Orchid\n\nThe original canonical observation.\n",
+        0,
+    )
+    .await;
+    let support = imported_link_source(&f, "sources/Notes/Support.md").await;
+    let selected = next_subject(&f, &admit(&f).await).await;
+    let (_, admitted) = discover_subject(&f, &selected, vec![support["entry_ref"].clone()]).await;
+    let notes = "LEGACY_RESEARCH_NOTES: both exact sources were checked.";
+    let original = progress_body(
+        &admitted,
+        vec![reviewed(&canonical), reviewed(&support)],
+        "researching",
+        notes,
+    );
+    let saved = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        original.clone(),
+    )
+    .await)["data"]
+        .clone();
+    let research_path = format!(
+        "dreams/research/{}.md",
+        canonical["entry_ref"]
+            .as_str()
+            .unwrap()
+            .trim_start_matches("entry:")
+    );
+    let mut legacy = current(&f, &research_path).await.unwrap().2;
+    legacy["dreamer_research"]["reviewed_sources"][0]["excerpt"] =
+        json!("The original canonical observation.");
+    legacy["dreamer_research"]["reviewed_sources"][1]["excerpt"] =
+        json!("A synthetic source observation.");
+    sqlx::query("UPDATE brunn.entry_versions v SET metadata=$3 FROM brunn.entries e WHERE e.user_id=$1 AND e.path=$2 AND v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version")
+        .bind(f.owner.user).bind(&research_path).bind(&legacy).execute(&f.pool).await.unwrap();
+    let replay = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        original,
+    )
+    .await);
+    assert_eq!(replay["no_op"], true);
+    assert_eq!(replay["data"]["research"]["notes"], notes);
+    assert_eq!(
+        replay["data"]["research"]["reviewed_sources"],
+        saved["research"]["reviewed_sources"]
+    );
+    assert!(
+        replay["data"]["research"]["reviewed_sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|s| s.get("excerpt").is_none())
+    );
+    assert_eq!(
+        current(&f, &research_path).await.unwrap().2,
+        legacy,
+        "reading an old record must not rewrite its stored version"
+    );
+    let read = ok(post(
+        &f,
+        &f.model,
+        "/v1/workspace/read",
+        json!({"requests":[{"path":research_path,"view":"full"}]}),
+    )
+    .await);
+    assert!(read.to_string().contains(notes));
+    let mut checkpoint = research_request(&replay["data"]);
+    checkpoint["status"] = json!("researching");
+    let compact = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        checkpoint.clone(),
+    )
+    .await)["data"]
+        .clone();
+    let stored = current(&f, &research_path).await.unwrap();
+    assert!(stored.0 > saved["research"]["version"].as_i64().unwrap());
+    assert_eq!(stored.2["dreamer_research"]["notes"], notes);
+    assert_eq!(
+        stored.2["dreamer_research"]["reviewed_sources"],
+        saved["research"]["reviewed_sources"]
+    );
+    let corrected = write(
+        &f,
+        "sources/People/Orchid.md",
+        "# Orchid\n\nThe corrected canonical observation.\n",
+        1,
+    )
+    .await;
+    let stale = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        checkpoint,
+    )
+    .await);
+    assert!(
+        stale["data"]["research"].is_null(),
+        "a changed canonical source withholds the whole saved research view"
+    );
+    assert!(!stale.to_string().contains(notes));
+    let (_, refreshed) = discover_subject(&f, &compact, vec![]).await;
+    let revoked_notes = "REVOKED_LEGACY_RESEARCH_NOTES: the current evidence was checked.";
+    let checkpoint = progress_body(
+        &refreshed,
+        vec![reviewed(&corrected), reviewed(&support)],
+        "researching",
+        revoked_notes,
+    );
+    let checked = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        checkpoint.clone(),
+    )
+    .await)["data"]
+        .clone();
+    let mut legacy = current(&f, &research_path).await.unwrap().2;
+    legacy["dreamer_research"]["reviewed_sources"][0]["excerpt"] =
+        json!("The corrected canonical observation.");
+    legacy["dreamer_research"]["reviewed_sources"][1]["excerpt"] =
+        json!("A synthetic source observation.");
+    sqlx::query("UPDATE brunn.entry_versions v SET metadata=$3 FROM brunn.entries e WHERE e.user_id=$1 AND e.path=$2 AND v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version")
+        .bind(f.owner.user).bind(&research_path).bind(legacy).execute(&f.pool).await.unwrap();
+    sqlx::query(
+        "UPDATE brunn.entries SET path='.brunn/tasks/'||id::text||'.md' WHERE user_id=$1 AND id=$2",
+    )
+    .bind(f.owner.user)
+    .bind(
+        Uuid::parse_str(
+            support["entry_ref"]
+                .as_str()
+                .unwrap()
+                .trim_start_matches("entry:"),
+        )
+        .unwrap(),
+    )
+    .execute(&f.pool)
+    .await
+    .unwrap();
+    let withheld = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        checkpoint,
+    )
+    .await);
+    assert_eq!(
+        withheld["data"]["research"]["version"],
+        checked["research"]["version"]
+    );
+    assert_eq!(withheld["data"]["research"]["notes"], "");
+    assert_eq!(withheld["data"]["research"]["reviewed_sources"], json!([]));
+    assert!(!withheld.to_string().contains(revoked_notes));
+    let read = ok(post(
+        &f,
+        &f.model,
+        "/v1/workspace/read",
+        json!({"requests":[{"path":research_path,"view":"full"}]}),
+    )
+    .await);
+    assert!(!read.to_string().contains(revoked_notes));
 }
 
 async fn imported_link_source(f: &Fixture, path: &str) -> Value {
@@ -161,9 +540,9 @@ async fn imported_link_targets_preserve_directories_exact_precedence_receipts_an
     )
     .await);
     assert_eq!(replay["no_op"], true);
-    assert_eq!(
-        replay["data"]["research"]["sources"],
-        expanded["research"]["sources"]
+    assert_same_source_headers(
+        &replay["data"]["research"]["sources"],
+        &expanded["research"]["sources"],
     );
     assert_eq!(replay["data"]["research"]["notes"], notes);
     assert_eq!(
@@ -324,28 +703,10 @@ async fn imported_link_target_stays_unresolved_when_the_unique_source_exceeds_th
         capped["research"]["coverage"]["unresolved_targets"],
         json!(["Bulk/000256"])
     );
-    // Discovery appends headers in SQL order; refresh may reorder the retained
-    // batch. The cap must preserve every complete header, not that query order.
-    let mut before = selected["research"]["sources"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .collect::<Vec<_>>();
-    let mut after = capped["research"]["sources"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .collect::<Vec<_>>();
-    for sources in [&mut before, &mut after] {
-        sources.sort_by(|left, right| left["entry_ref"].as_str().cmp(&right["entry_ref"].as_str()));
-    }
-    assert_eq!(after.len(), before.len());
-    for (before, after) in before.into_iter().zip(after) {
-        assert_eq!(
-            after, before,
-            "the cap must retain each source's exact header"
-        );
-    }
+    assert_same_source_headers(
+        &capped["research"]["sources"],
+        &selected["research"]["sources"],
+    );
     assert_eq!(
         capped["research"]["sources"][0]["entry_ref"],
         canonical["entry_ref"]
@@ -533,17 +894,12 @@ async fn checkpoint_eof_normalization_preserves_all_progress_and_replay_but_cand
         assert_eq!(normalized[0]["start_line"], 1);
         assert_eq!(normalized[0]["end_line"], 25);
         assert_eq!(normalized[0]["path"], canonical["path"]);
-        assert_eq!(
-            normalized[0]["excerpt"],
-            content.lines().collect::<Vec<_>>().join("\n")
-        );
+        assert!(normalized[0].get("excerpt").is_none());
         assert_eq!(normalized[1]["entry_ref"], supporting["entry_ref"]);
         assert_eq!(normalized[1]["start_line"], 1);
         assert_eq!(normalized[1]["end_line"], 3);
-        assert_eq!(
-            normalized[1]["excerpt"],
-            "# Support\n\nA supporting source observation."
-        );
+        assert_eq!(normalized[1]["path"], supporting["path"]);
+        assert!(normalized[1].get("excerpt").is_none());
         assert_eq!(
             saved["inputs"], admitted["inputs"],
             "a checkpoint does not consume input"
@@ -873,9 +1229,9 @@ async fn linked_primary_second_round_replay_after_interleaving_and_exact_candida
         replay["data"]["research"]["version"],
         third["research"]["version"]
     );
-    assert_eq!(
-        replay["data"]["research"]["sources"],
-        third["research"]["sources"]
+    assert_same_source_headers(
+        &replay["data"]["research"]["sources"],
+        &third["research"]["sources"],
     );
     let mut mismatched = request_a;
     mismatched["targets"] = json!(["sources/People/Radley.md"]);

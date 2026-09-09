@@ -442,6 +442,8 @@ def run_subject_cycle(owner, runner, reader, report):
             and [{key: row.get(key) for key in ("entry_ref", "version", "start_line", "end_line")}
                  for row in checked_selectors] == initial_selectors,
             "research checkpoint did not preserve notes with exact end-of-document selectors")
+    require(all("excerpt" not in row for row in checked_selectors),
+            "research checkpoint copied source excerpts instead of retaining compact selectors")
     # The imported display title is a section label, not another project name.
     unrelated_path = "sources/Elsewhere/Unrelated.md"
     unrelated = write(owner, unrelated_path, "## Purpose\n\nA separate fixture task has unrelated evidence.\n", 0)
@@ -568,6 +570,7 @@ def run_subject_cycle(owner, runner, reader, report):
         "discovery_rounds": len(requests), "replay_after_newer_round": True, "newer_primary_version": primary["version"],
         "supported_progress_checkpoint": True,
         "checkpoint_eof_normalized": True,
+        "checkpoint_selectors_compact": True,
         "publication_eof_remains_strict": True,
         "imported_wiki_links_resolved": True,
         "changed_scope_refresh_signal": True,

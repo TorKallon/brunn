@@ -189,6 +189,7 @@ class DreamerProductionCanaryTests(unittest.TestCase):
     def test_subject_cycle_requires_current_replay_full_dependencies_and_stale_fallback(self):
         for fault, error in ((None, None), ("protocol", "research_protocol 1"),
                              ("checkpoint_eof", "exact end-of-document selectors"),
+                             ("checkpoint_excerpt", "copied source excerpts"),
                              ("publication_eof", "publication accepted an out-of-range"),
                              ("link_receipt", "imported link resolution receipt"),
                              ("refresh_signal", "typed refresh-required rejection"),
@@ -212,10 +213,7 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                        "output_path": "derived/entities/canary-aster.md", "output_version": 0,
                        "notes": "", "reviewed_sources": [], "coverage": {"unresolved_targets": []}}
                 initial_selectors = [{"entry_ref": canonical["entry_ref"], "version": 1,
-                                      "start_line": 3, "end_line": 203, "path": canonical["path"],
-                                      "excerpt": "Canary Aster has a project trail at [[CanaryResearch/Trail]].\n"
-                                      + "\nSynthetic padding for the fixture read comparison.\n" * 99
-                                      + "\nSynthetic padding for the fixture read comparison."}]
+                                      "start_line": 3, "end_line": 203, "path": canonical["path"]}]
                 admissions = [{**admitted, "state_version": 2 if index == 0 else index + 3,
                                "research": {**job, "version": 1 if index == 0 else index + 2, "sources": sources,
                                             "snapshot_generation": 4 if index == 3 else 3}}
@@ -227,6 +225,9 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                 if fault == "checkpoint_eof":
                     initial_progress["research"]["reviewed_sources"] = [
                         {**initial_selectors[0], "end_line": 204}]
+                elif fault == "checkpoint_excerpt":
+                    initial_progress["research"]["reviewed_sources"] = [
+                        {**initial_selectors[0], "excerpt": "Unnecessary copied source body."}]
                 for item in admissions[1:3]:
                     item["research"].update(notes=initial_progress["research"]["notes"],
                                             reviewed_sources=deepcopy(initial_selectors))
@@ -306,6 +307,7 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                         self.assertEqual(report["subject_cycle"]["uncited_cross_directory_invalidation"], "passed")
                         self.assertTrue(report["subject_cycle"]["saved_progress_survives_additive_discovery"])
                         self.assertTrue(report["subject_cycle"]["checkpoint_eof_normalized"])
+                        self.assertTrue(report["subject_cycle"]["checkpoint_selectors_compact"])
                         self.assertTrue(report["subject_cycle"]["publication_eof_remains_strict"])
                         self.assertTrue(report["subject_cycle"]["imported_wiki_links_resolved"])
                         self.assertTrue(report["subject_cycle"]["changed_scope_refresh_signal"])
