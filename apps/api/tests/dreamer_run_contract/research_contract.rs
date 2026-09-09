@@ -3,45 +3,63 @@ use super::*;
 
 pub(super) async fn next(State(shared): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
     assert_operation(&body);
-    let mut s = shared.lock().unwrap();
-    s.state_version += 1;
-    let mut current = s.current_admission.clone().unwrap();
-    current["state_version"] = json!(s.state_version);
-    current["research"] = s
-        .research_jobs
-        .get(s.research_next_count)
-        .cloned()
-        .unwrap_or(Value::Null);
-    s.research_next_count += 1;
-    s.current_admission = Some(current.clone());
+    let (current, delay) = {
+        let mut s = shared.lock().unwrap();
+        s.state_version += 1;
+        let mut current = s.current_admission.clone().unwrap();
+        current["state_version"] = json!(s.state_version);
+        current["research"] = s
+            .research_jobs
+            .get(s.research_next_count)
+            .cloned()
+            .unwrap_or(Value::Null);
+        s.research_next_count += 1;
+        s.current_admission = Some(current.clone());
+        (current, s.research_next_delay)
+    };
+    if !delay.is_zero() {
+        tokio::time::sleep(delay).await;
+    }
     Json(json!({"data":current}))
 }
 
 pub(super) async fn progress(State(shared): State<Shared>, Json(body): Json<Value>) -> Response {
     assert_operation(&body);
-    let mut s = shared.lock().unwrap();
-    s.research_progress.push(body.clone());
-    if body["status"] == "researching"
-        && let Some(Some((status, response))) = s.research_progress_replies.pop_front()
-    {
-        return (status, response).into_response();
-    }
-    s.state_version += 1;
-    let mut current = s.current_admission.clone().unwrap();
-    current["state_version"] = json!(s.state_version);
-    current["research"]["version"] = json!(current["research"]["version"].as_i64().unwrap() + 1);
-    for key in [
-        "notes",
-        "reviewed_sources",
-        "pending_queries",
-        "pending_targets",
-        "status",
-    ] {
-        if let Some(value) = body.get(key) {
-            current["research"][key] = value.clone();
+    let (current, delay) = {
+        let mut s = shared.lock().unwrap();
+        s.research_progress.push(body.clone());
+        if body["status"] == "researching"
+            && let Some(Some((status, response))) = s.research_progress_replies.pop_front()
+        {
+            return (status, response).into_response();
         }
+        s.state_version += 1;
+        let mut current = s.current_admission.clone().unwrap();
+        current["state_version"] = json!(s.state_version);
+        current["research"]["version"] =
+            json!(current["research"]["version"].as_i64().unwrap() + 1);
+        for key in [
+            "notes",
+            "reviewed_sources",
+            "pending_queries",
+            "pending_targets",
+            "status",
+        ] {
+            if let Some(value) = body.get(key) {
+                current["research"][key] = value.clone();
+            }
+        }
+        s.current_admission = Some(current.clone());
+        let delay = if body["status"] == "waiting" {
+            s.research_waiting_delay
+        } else {
+            Duration::ZERO
+        };
+        (current, delay)
+    };
+    if !delay.is_zero() {
+        tokio::time::sleep(delay).await;
     }
-    s.current_admission = Some(current.clone());
     Json(json!({"data":current})).into_response()
 }
 
@@ -247,6 +265,180 @@ esac
             "forced yield must preserve {key}"
         );
     }
+    assert_eq!(report.auth_persistence, "verified");
+}
+
+#[tokio::test]
+async fn selection_margin_stops_the_geometric_subject_tail_before_another_rpc() {
+    let behavior = r#"
+if grep -q 'single word READY' "$DIR/prompt"; then echo READY; exit 0; fi
+exec sleep 30
+"#;
+    let (shared, dreamer, dir) = build_with_budget(behavior, Duration::from_secs(6)).await;
+    enable(&shared);
+    {
+        let mut s = shared.lock().unwrap();
+        s.research_enabled = true;
+        s.research_jobs = (0..16)
+            .map(|_| job(&format!("entry:{}", uuid::Uuid::now_v7())))
+            .collect();
+    }
+    let report = dreamer.run_once(today(), RunKind::Manual).await;
+    assert!(
+        matches!(report.outcome, RunOutcome::Partial { .. }),
+        "{report:?}"
+    );
+    assert_eq!(report.research["stop_reason"], "time_exhausted");
+    assert_eq!(report.research["subjects_completed"], 0);
+    let rounds = report.research["rounds"].as_u64().unwrap() as usize;
+    // Halving the remaining time crosses a fixed 10% entry margin after four
+    // subjects. Recomputing that margin each turn would keep selecting jobs.
+    assert!((2..=4).contains(&rounds), "{report:?}");
+    assert_eq!(report.research["subjects_yielded"], rounds);
+    let calls = std::fs::read_to_string(dir.path().join("calls")).unwrap();
+    assert_eq!(
+        calls
+            .lines()
+            .filter(|name| name.starts_with("research-"))
+            .count(),
+        rounds
+    );
+    let s = shared.lock().unwrap();
+    assert_eq!(
+        s.research_next_count, rounds,
+        "no extra selection in the remaining tail"
+    );
+    assert_eq!(s.research_progress.len(), rounds);
+    assert!(
+        s.research_progress
+            .iter()
+            .all(|body| body["status"] == "waiting")
+    );
+    assert_eq!(s.runs[0]["expected_state_version"], s.state_version);
+    assert_eq!(s.runs[0]["research"]["stop_reason"], "time_exhausted");
+    assert_eq!(report.auth_persistence, "verified");
+    assert_eq!(report.receipt_persistence, "accepted");
+}
+
+#[tokio::test]
+async fn selection_margin_merges_slow_selection_without_starting_or_yielding_a_subject() {
+    // The usable budget is 5.4s and its fixed margin is about 0.54s. A 5s
+    // acknowledged selection crosses the margin but remains before timeout.
+    for exhausted in [false, true] {
+        let behavior = r#"
+if grep -q 'single word READY' "$DIR/prompt"; then echo READY; exit 0; fi
+exit 99
+"#;
+        let (shared, dreamer, dir) = build_with_budget(behavior, Duration::from_secs(6)).await;
+        enable(&shared);
+        let mut selected = job(SOURCE);
+        selected["notes"] =
+            json!("Previously checked evidence stays available for the next attempt.");
+        {
+            let mut s = shared.lock().unwrap();
+            s.research_enabled = true;
+            s.research_next_delay = Duration::from_secs(5);
+            if !exhausted {
+                s.research_jobs = vec![selected.clone()];
+            }
+        }
+        let report = dreamer.run_once(today(), RunKind::Manual).await;
+        if exhausted {
+            assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
+            assert_eq!(report.research["stop_reason"], "selected_work_complete");
+        } else {
+            assert!(
+                matches!(report.outcome, RunOutcome::Partial { .. }),
+                "{report:?}"
+            );
+            assert_eq!(report.research["stop_reason"], "time_exhausted");
+        }
+        for counter in [
+            "rounds",
+            "subjects_completed",
+            "subjects_yielded",
+            "processed_inputs",
+            "new_review_items",
+        ] {
+            assert_eq!(report.research[counter], 0, "{counter}: {report:?}");
+        }
+        let calls = std::fs::read_to_string(dir.path().join("calls")).unwrap();
+        assert!(!calls.lines().any(|name| name.starts_with("research-")));
+        let s = shared.lock().unwrap();
+        assert_eq!(s.research_next_count, 1);
+        assert!(
+            s.research_progress.is_empty(),
+            "no waiting mutation for a subject never started"
+        );
+        assert!(s.submitted.is_empty());
+        assert!(s.narrative_discoveries.is_empty());
+        assert_eq!(
+            s.runs[0]["expected_state_version"], s.state_version,
+            "finish uses acknowledged selection version"
+        );
+        if !exhausted {
+            assert_eq!(s.current_admission.as_ref().unwrap()["research"], selected);
+        }
+        assert_eq!(report.auth_persistence, "verified");
+        assert_eq!(report.receipt_persistence, "accepted");
+    }
+}
+
+#[tokio::test]
+async fn selection_margin_does_not_relabel_an_uncertain_checkpoint_as_exhaustion() {
+    let behavior = r#"
+if grep -q 'single word READY' "$DIR/prompt"; then echo READY; exit 0; fi
+exec sleep 30
+"#;
+    let (shared, dreamer, dir) = build_with_budget(behavior, Duration::from_secs(6)).await;
+    enable(&shared);
+    {
+        let mut s = shared.lock().unwrap();
+        s.research_enabled = true;
+        s.research_jobs = vec![
+            job(SOURCE),
+            job("entry:019fba27-687b-7582-8b99-e9371dbe2ce6"),
+        ];
+        // Persist the forced waiting operation, then delay its acknowledgement
+        // past the deadline so the client cannot know that it committed.
+        s.research_waiting_delay = Duration::from_secs(30);
+    }
+    let report = dreamer.run_once(today(), RunKind::Manual).await;
+    let RunOutcome::Partial { detail } = &report.outcome else {
+        panic!("{report:?}");
+    };
+    assert!(
+        detail.contains("research continuation could not be checkpointed"),
+        "{detail}"
+    );
+    assert!(detail.contains("research-progress timed out"), "{detail}");
+    assert!(detail.contains("retained for reconciliation"), "{detail}");
+    assert_eq!(report.research["stop_reason"], "operation_failed");
+    assert_eq!(report.research["rounds"], 1);
+    assert_eq!(
+        report.research["subjects_yielded"], 0,
+        "the checkpoint was not acknowledged"
+    );
+    assert_eq!(report.research["subjects_completed"], 0);
+    assert!(dir.path().join("prompt-research-1-1-answer.md").exists());
+    assert!(!dir.path().join("prompt-research-2-1-answer.md").exists());
+    let s = shared.lock().unwrap();
+    assert_eq!(s.research_next_count, 1);
+    assert_eq!(s.research_progress.len(), 1);
+    assert_eq!(s.research_progress[0]["status"], "waiting");
+    assert_eq!(
+        s.current_admission.as_ref().unwrap()["research"]["status"],
+        "waiting"
+    );
+    assert_eq!(s.runs[0]["research"]["stop_reason"], "operation_failed");
+    assert_eq!(
+        s.runs[0]["expected_state_version"],
+        s.research_progress[0]["expected_state_version"]
+    );
+    assert_ne!(
+        s.runs[0]["expected_state_version"], s.state_version,
+        "an uncertain acknowledgement must not advance local state"
+    );
     assert_eq!(report.auth_persistence, "verified");
 }
 

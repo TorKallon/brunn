@@ -32,6 +32,8 @@ If a discover step's checkpoint is definitively rejected because a cited source 
 
 Continue while time, quota and useful progress remain. Checkpoint each meaningful round and deduplicate unchanged work. Give each subject at most ten minutes or half the remaining run time, preserving room for other work. Seed direct People notes and registered project hubs with durable pagination, then use existing pending input for other topics. Persist service order and requested priorities across restarts. Expose model rounds, reconciled change pages, completed subject passes and continuations separately from remaining historical backlog. Omitted progress fields preserve saved conclusions and leads; an explicit empty value clears them.
 
+At research-loop entry, reserve a fixed selection margin of the smaller of sixty seconds or one tenth of the time remaining. Stop selecting or starting another subject once remaining time reaches that margin. Always merge an acknowledged selection response first, and honor an exhausted queue before applying the second time check. A selected subject stays durably available without an extra waiting checkpoint when the model has not started. Already dispatched operations retain their existing timeout, failure and replay handling.
+
 ## Canonical views and freshness
 
 Published metadata contains server-validated `subject_ref` and `subject_scope`. A canonical source's current-state read prefers its subject overview over a newer narrow summary that merely cites the source. Exact source reads remain exact; current reads fall back to source material when freshness cannot be proven.

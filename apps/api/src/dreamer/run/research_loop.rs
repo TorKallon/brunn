@@ -75,6 +75,10 @@ impl Dreamer {
         deadline: tokio::time::Instant,
         location_outcome: Option<RunOutcome>,
     ) -> RunOutcome {
+        let initial_remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        // A fixed entry-time margin stops repeated half-budget subject turns
+        // from selecting ever smaller work at the end of the run.
+        let selection_margin = Duration::from_secs(60).min(initial_remaining / 10);
         let mut current = admission.clone();
         current["state_version"] = json!(*state_version);
         let mut rounds = 0usize;
@@ -90,7 +94,7 @@ impl Dreamer {
         let mut subjects_seen = std::collections::BTreeSet::new();
 
         'subjects: loop {
-            if tokio::time::Instant::now() >= deadline {
+            if deadline.saturating_duration_since(tokio::time::Instant::now()) <= selection_margin {
                 stop = "time_exhausted".into();
                 break;
             }
@@ -111,6 +115,10 @@ impl Dreamer {
                 exhausted = true;
                 break;
             };
+            if deadline.saturating_duration_since(tokio::time::Instant::now()) <= selection_margin {
+                stop = "time_exhausted".into();
+                break;
+            }
             // A faulty or old server must not cause an endless same-job loop.
             if !subjects_seen.insert(subject.clone()) {
                 failure = Some("research selection repeated a subject already serviced in this attempt; progress retained".into());

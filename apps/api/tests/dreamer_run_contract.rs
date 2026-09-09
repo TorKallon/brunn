@@ -59,7 +59,9 @@ struct Mock {
     research_jobs: Vec<Value>,
     research_enabled: bool,
     research_next_count: usize,
+    research_next_delay: Duration,
     research_progress: Vec<Value>,
+    research_waiting_delay: Duration,
     research_progress_replies: VecDeque<Option<(StatusCode, String)>>,
     research_discovery_sources: VecDeque<Vec<Value>>,
 }
