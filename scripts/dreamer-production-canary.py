@@ -422,9 +422,12 @@ def run_subject_cycle(owner, runner, reader, report):
     require(admitted.get("admitted") is True and admitted.get("mode") == "full"
             and admitted.get("research_protocol") == 1, "release requires admitted full-mode research_protocol 1")
     expected = {row["entry_ref"]: row["version"] for row in (canonical, trail, primary)}
-    require(not admitted.get("location_work") and len(admitted["inputs"]) == 3
-            and {row["entry_ref"]: row["version"] for row in admitted["inputs"]} == expected,
-            "subject admission escaped the three synthetic sources")
+    # Raw intake retains the evaluation fixture; subject research applies the
+    # additional evidence policy verified below. Keep both identity sets exact.
+    expected_inputs = {**expected, excluded["entry_ref"]: excluded["version"]}
+    require(not admitted.get("location_work") and len(admitted["inputs"]) == 4
+            and {row["entry_ref"]: row["version"] for row in admitted["inputs"]} == expected_inputs,
+            "subject admission escaped the four synthetic raw inputs")
     next_body = research_body(admitted)
     reader.request("POST", "/v1/workspace/dreamer/research-next", next_body, expected=(403,))
     current = unwrap(runner.request("POST", "/v1/workspace/dreamer/research-next", next_body))

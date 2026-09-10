@@ -188,6 +188,9 @@ class DreamerProductionCanaryTests(unittest.TestCase):
 
     def test_subject_cycle_requires_current_replay_full_dependencies_and_stale_fallback(self):
         for fault, error in ((None, None), ("protocol", "research_protocol 1"),
+                             ("raw_input_missing", "four synthetic raw inputs"),
+                             ("raw_input_extra", "four synthetic raw inputs"),
+                             ("raw_input_wrong_version", "four synthetic raw inputs"),
                              ("source_origin_protocol", "source-origin follow-up protocol"),
                              ("discovery_audit", "current bounded discovery audit"),
                              ("excluded_index", "excluded search fixture was not lexically indexed"),
@@ -222,9 +225,16 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                 excluded = {"entry_ref": "entry:excluded", "version": 1,
                             "path": "sources/CanaryResearch/Excluded Aster.md"}
                 headers = [canonical, trail, primary]
+                raw_inputs = [*headers, excluded]
                 admitted = {"admitted": True, "mode": "full", "research_protocol": 0 if fault == "protocol" else 1,
                             "attempt_id": "fixture-attempt", "fence": "fixture-fence", "state_version": 1,
-                            "inputs": headers, "frozen_generation": 3, "processed_generation": 0}
+                            "inputs": raw_inputs, "frozen_generation": 3, "processed_generation": 0}
+                if fault == "raw_input_missing":
+                    admitted["inputs"] = headers
+                elif fault == "raw_input_extra":
+                    admitted["inputs"] = [*raw_inputs, {"entry_ref": "entry:unexpected", "version": 1}]
+                elif fault == "raw_input_wrong_version":
+                    admitted["inputs"] = [*headers, {**excluded, "version": 2}]
                 job = {"subject_ref": canonical["entry_ref"], "subject_path": canonical["path"],
                        "output_path": "derived/entities/canary-aster.md", "output_version": 0,
                        "follow_up_protocol": None if fault == "source_origin_protocol" else "dream.research.follow_up.v1",
@@ -372,6 +382,7 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                     else:
                         canary.run_subject_cycle(owner, runner, reader, report)
                         self.assertEqual(report["subject_cycle"]["research_dependencies"], 3)
+                        self.assertEqual(report["subject_cycle"]["original_inputs_retained"], 4)
                         self.assertEqual(report["subject_cycle"]["claim_sources"], 2)
                         self.assertEqual(report["subject_cycle"]["uncited_cross_directory_invalidation"], "passed")
                         self.assertTrue(report["subject_cycle"]["saved_progress_survives_additive_discovery"])
