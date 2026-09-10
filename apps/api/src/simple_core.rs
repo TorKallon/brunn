@@ -4674,7 +4674,7 @@ async fn lexical_candidates(
 
 // Included in durable discovery keys. Bump when retrieval semantics change so
 // a retained miss from an older policy cannot suppress the improved search.
-pub(crate) const DREAMER_LEXICAL_POLICY_VERSION: u8 = 2;
+pub(crate) const DREAMER_LEXICAL_POLICY_VERSION: u8 = 3;
 
 /// Reuse the normal lexical index for the narrow Dreamer context endpoint.
 /// Validate the stored credential before adding server-owned read authority;
@@ -4710,14 +4710,26 @@ pub(crate) async fn search_headers_for_dreamer(
                     .map(|anchor| format!("\"{}\"", anchor.replace('"', " ")))
                     .collect::<Vec<_>>()
                     .join(" OR ");
-                let found =
-                    fetch_dreamer_lexical_candidates(&mut tx, &consolidated, query, sort).await?;
+                let found = fetch_dreamer_lexical_candidates(
+                    &mut tx,
+                    auth.user_id.0,
+                    &consolidated,
+                    query,
+                    sort,
+                )
+                .await?;
                 anchor_hit = !found.is_empty();
                 candidates.extend(found);
             } else {
                 for anchor in &anchors {
-                    let found =
-                        fetch_dreamer_lexical_candidates(&mut tx, anchor, query, sort).await?;
+                    let found = fetch_dreamer_lexical_candidates(
+                        &mut tx,
+                        auth.user_id.0,
+                        anchor,
+                        query,
+                        sort,
+                    )
+                    .await?;
                     anchor_hit |= !found.is_empty();
                     candidates.extend(found);
                 }
@@ -4727,7 +4739,14 @@ pub(crate) async fn search_headers_for_dreamer(
                 // a first hit must not hide evidence matching a later pair.
                 for focused in bounded_lexical_fallback_queries(query) {
                     candidates.extend(
-                        fetch_dreamer_lexical_candidates(&mut tx, &focused, query, sort).await?,
+                        fetch_dreamer_lexical_candidates(
+                            &mut tx,
+                            auth.user_id.0,
+                            &focused,
+                            query,
+                            sort,
+                        )
+                        .await?,
                     );
                 }
             }
@@ -4750,23 +4769,40 @@ pub(crate) async fn search_headers_for_dreamer(
 
 async fn fetch_dreamer_lexical_candidates(
     tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
     retrieval_query: &str,
     scoring_query: &str,
     sort: SearchSort,
 ) -> ApiResult<Vec<Candidate>> {
-    // Generated editions are excluded before the SQL sampling limits. Apply
-    // ordinary source path policy before anchor-hit detection and final caps;
-    // research admission still validates exact current source metadata.
+    // Hydrate policy in the same statement snapshot as the bounded lexical
+    // fetch. Static exclusions must not look like post-search source changes.
+    // Keep commit-time exact ID/version validation in research::discover: a
+    // later change or loss of access still invalidates that search's audit.
     let rows = sqlx::query(DREAMER_LEXICAL_CANDIDATES_SQL)
         .bind(retrieval_query)
         .bind(sort.as_str())
+        .bind(user_id)
         .fetch_all(&mut **tx)
         .await?;
-    let mut candidates = lexical_candidate_rows(rows, scoring_query, None, false, 0.0);
-    candidates.retain(|candidate| {
-        !crate::dreamer_review::research_source_excluded(&candidate.path, &Value::Null)
-    });
-    Ok(candidates)
+    // SQL still samples at most 64 entries / 192 sections per fetch. Filter
+    // full source policy before anchor-hit detection and the final eight
+    // headers; an underfilled bounded result is not proof of absence.
+    let rows = rows
+        .into_iter()
+        .filter(|row| {
+            !crate::dreamer_review::research_source_excluded(
+                row.get("path"),
+                &row.get::<Value, _>("research_metadata"),
+            )
+        })
+        .collect();
+    Ok(lexical_candidate_rows(
+        rows,
+        scoring_query,
+        None,
+        false,
+        0.0,
+    ))
 }
 
 async fn fetch_lexical_candidates(

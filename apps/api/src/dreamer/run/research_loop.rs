@@ -213,7 +213,9 @@ fn retained_repair(current: &Value) -> Option<research::RepairFeedback> {
 }
 
 fn subject_allowance(remaining: Duration) -> Duration {
-    Duration::from_secs(600).min(remaining / 2)
+    // Source review and final composition share this fixed allowance. Ultra
+    // reasoning needs room to finish after its discovery/checkpoint rounds.
+    Duration::from_secs(1_200).min(remaining / 2)
 }
 
 impl Dreamer {
@@ -904,6 +906,16 @@ impl Dreamer {
 #[cfg(test)]
 mod checkpoint_tests {
     use super::*;
+
+    #[test]
+    fn subject_allowance_bounds_each_turn_and_reserves_later_work() {
+        let minute = Duration::from_secs(60);
+        assert_eq!(subject_allowance(60 * minute), 20 * minute);
+        assert_eq!(subject_allowance(40 * minute), 20 * minute);
+        assert_eq!(subject_allowance(30 * minute), 15 * minute);
+        assert_eq!(subject_allowance(2 * minute), minute);
+        assert_eq!(subject_allowance(Duration::ZERO), Duration::ZERO);
+    }
 
     fn selectors(ranges: &[(u64, u64)]) -> Value {
         json!(

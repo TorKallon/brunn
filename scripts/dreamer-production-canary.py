@@ -410,6 +410,11 @@ def run_subject_cycle(owner, runner, reader, report):
     canonical = write(owner, canonical_path, canonical_text, 0)
     trail = write(owner, trail_path, trail_text, 0)
     primary = write(owner, primary_path, old_text, 0)
+    excluded = write(owner, "sources/CanaryResearch/Excluded Aster.md",
+                     "# Canary Aster evaluation\n\nCanary Aster has synthetic evaluation output.\n",
+                     0, metadata={"evaluation_output": True})
+    require(excluded.get("search_status") == "lexical_ready_semantic_queued",
+            "excluded search fixture was not lexically indexed")
     date = datetime.now(ZoneInfo("America/Los_Angeles")).date().isoformat()
     admitted = runner.request("POST", "/v1/workspace/dreamer/admit", {
         "attempt_id": str(uuid.uuid4()), "date": date, "kind": "manual", "lease_seconds": 600,
@@ -468,6 +473,8 @@ def run_subject_cycle(owner, runner, reader, report):
         body = {**research_body(current), "queries": ["Canary Aster"] if not requests else [], "targets": [target]}
         requests.append(body)
         current = unwrap(runner.request("POST", "/v1/workspace/dreamer/narrative-discover", body))
+        require(all(row["entry_ref"] != excluded["entry_ref"] for row in current["research"]["sources"]),
+                "ineligible search fixture entered research evidence")
         audit = current["research"].get("discovery_audit") or {}
         if len(requests) == 1:
             search = audit.get("last_search") or {}
@@ -487,6 +494,8 @@ def run_subject_cycle(owner, runner, reader, report):
                             for group in groups),
                     "actual query did not produce a current bounded discovery audit")
             search_audit = audit
+            require(all(group["returned"] == 1 for group in groups),
+                    "search audit counted the indexed ineligible fixture")
         elif len(requests) == 2:
             require(audit == search_audit, "target-only discovery changed the actual search audit")
         else:
@@ -635,6 +644,7 @@ def run_subject_cycle(owner, runner, reader, report):
         "imported_wiki_links_resolved": True,
         "subject_header_search_exercised": True,
         "current_discovery_audit_verified": True,
+        "static_ineligible_search_result_verified": True,
         "target_only_search_audit_preserved": True,
         "changed_evidence_invalidates_search_audit": True,
         "source_origin_protocol_advertised": True,

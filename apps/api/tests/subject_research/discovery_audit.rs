@@ -71,7 +71,7 @@ fn current_audit(admission: &Value) -> &Value {
     assert_eq!(audit(admission)["validity"], "current", "{admission}");
     let search = &audit(admission)["last_search"];
     assert_eq!(search["schema"], "dream.research.discovery.v1");
-    assert_eq!(search["retrieval_policy"], 2);
+    assert_eq!(search["retrieval_policy"], 3);
     assert!(search["searched_generation"].as_i64().unwrap() > 0);
     assert!(search["queries"].as_array().unwrap().len() <= 6);
     assert_eq!(
@@ -109,6 +109,128 @@ fn current_audit(admission: &Value) -> &Value {
 async fn replace_current_metadata(f: &Fixture, canonical: &Value, metadata: Value) {
     sqlx::query("UPDATE brunn.entry_versions v SET metadata=$3 FROM brunn.entries e WHERE e.user_id=$1 AND e.path=$2 AND v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version")
         .bind(f.owner.user).bind(job_path(canonical)).bind(metadata).execute(&f.pool).await.unwrap();
+}
+
+#[tokio::test]
+async fn discovery_audit_static_ineligible_hit_does_not_invalidate_successful_search() {
+    let Some(f) = fixture().await else { return };
+    // The exclusion is present before selection and searching. No source race,
+    // unavailable historical checkpoint, or scope reconciliation is involved.
+    let excluded = ok(post(
+        &f,
+        &f.owner,
+        "/v1/workspace/write",
+        json!({"path":"sources/Optics/Evaluation.md","expected_version":0,
+            "content":"# Evaluation\n\nThe detector schedule is synthetic evaluation output.\n",
+            "metadata":{"evaluation_output":true}}),
+    )
+    .await)["data"]
+        .clone();
+    let s = setup(&f).await;
+    let excluded_id = Uuid::parse_str(
+        excluded["entry_ref"]
+            .as_str()
+            .unwrap()
+            .trim_start_matches("entry:"),
+    )
+    .unwrap();
+    let (indexed, matches): (i64, Option<bool>) = sqlx::query_as(
+        "SELECT count(*),bool_or(search_vector @@ websearch_to_tsquery('english',$3)) FROM brunn.search_chunks WHERE user_id=$1 AND entry_id=$2",
+    )
+    .bind(f.owner.user)
+    .bind(excluded_id)
+    .bind(QUERY)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    assert!(indexed > 0);
+    assert_eq!(
+        matches,
+        Some(true),
+        "the excluded record is already indexed"
+    );
+    let excluded_before = current(&f, excluded["path"].as_str().unwrap())
+        .await
+        .unwrap();
+    let primary_before = current(&f, s.primary["path"].as_str().unwrap())
+        .await
+        .unwrap();
+    let (original, first) = search(&f, &s.selected, vec![QUERY]).await;
+    assert_eq!(first["no_op"], false);
+    for group in first["data"]["research"]["coverage"]["query_results"]
+        .as_array()
+        .unwrap()
+    {
+        assert_eq!(group["returned"], 1, "only the eligible primary is emitted");
+    }
+    let (_, repeated) = search(&f, &first["data"], vec![QUERY]).await;
+    for response in [&first, &repeated] {
+        let research = &response["data"]["research"];
+        assert_eq!(research["coverage"]["change_status"], "complete");
+        assert_eq!(research["checkpoint_context_status"], "available");
+        assert!(
+            research["checkpoint_contexts"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        let sources = research["sources"].as_array().unwrap();
+        assert!(
+            sources
+                .iter()
+                .any(|source| source["entry_ref"] == s.primary["entry_ref"])
+        );
+        assert!(
+            sources
+                .iter()
+                .all(|source| source["entry_ref"] != excluded["entry_ref"])
+        );
+        assert_eq!(response["data"]["inputs"], s.selected["inputs"]);
+    }
+    assert_eq!(
+        current(&f, excluded["path"].as_str().unwrap())
+            .await
+            .unwrap(),
+        excluded_before
+    );
+    assert_eq!(
+        current(&f, s.primary["path"].as_str().unwrap())
+            .await
+            .unwrap(),
+        primary_before
+    );
+
+    // Accepted operation replay keeps the later exact state; it must not be
+    // mistaken for a fresh execution that can repair an invalidated audit.
+    let notebook = current(&f, &job_path(&s.canonical)).await.unwrap();
+    let state = current(&f, "dreams/state.md").await.unwrap();
+    let replay = ok(post(&f, &f.runner, DISCOVER, original).await);
+    assert_eq!(replay["no_op"], true);
+    assert_eq!(audit(&replay["data"]), audit(&repeated["data"]));
+    assert_eq!(
+        current(&f, &job_path(&s.canonical)).await.unwrap(),
+        notebook
+    );
+    assert_eq!(current(&f, "dreams/state.md").await.unwrap(), state);
+    eprintln!(
+        "static eligibility audit: first={}, repeated={}, first_groups={}, repeated_no_op={}",
+        audit(&first["data"]),
+        audit(&repeated["data"]),
+        first["data"]["research"]["coverage"]["query_results"],
+        repeated["no_op"]
+    );
+    assert_eq!(
+        json!([
+            audit(&first["data"])["validity"],
+            audit(&repeated["data"])["validity"]
+        ]),
+        json!(["current", "current"]),
+        "a static policy-excluded search hit is not a source change during discovery"
+    );
+    assert_eq!(
+        repeated["no_op"], true,
+        "the current same-policy batch is reusable"
+    );
 }
 
 #[tokio::test]
@@ -180,7 +302,7 @@ async fn discovery_audit_legacy_hash_and_replaced_latest_batch_never_suppress_re
             "missing" => {
                 stored.as_object_mut().unwrap().remove("discovery_audit");
             }
-            "old_policy" => stored["discovery_audit"]["search"]["retrieval_policy"] = json!(0),
+            "old_policy" => stored["discovery_audit"]["search"]["retrieval_policy"] = json!(2),
             "malformed" => {
                 stored["discovery_audit"]["search"]["groups"][0]["query_index"] = json!(99)
             }
@@ -544,6 +666,189 @@ async fn discovery_audit_relevant_write_during_search_cannot_be_stamped_as_curre
             .as_i64()
             .unwrap()
             >= changed
+    );
+}
+
+#[tokio::test]
+async fn discovery_audit_source_excluded_after_search_still_invalidates_at_commit() {
+    let Some(mut f) = fixture().await else { return };
+    let s = setup(&f).await;
+    let url = std::env::var("BRUNN_TEST_DATABASE_URL").unwrap();
+    let mut config = Config::from_env().unwrap();
+    let mut rw = Url::parse(&url).unwrap();
+    rw.query_pairs_mut()
+        .append_pair("options", "-c role=app_rw");
+    let mut ro = Url::parse(&url).unwrap();
+    let tag = format!("audit-exclusion-race-{}", f.owner.user);
+    ro.query_pairs_mut()
+        .append_pair("options", "-c role=app_ro")
+        .append_pair("application_name", &tag);
+    config.database_url_rw = rw.to_string();
+    config.database_url_ro = ro.to_string();
+    config.database_url_admin = None;
+    config.apns_delivery_enabled = false;
+    config.messaging_enabled = false;
+    let mut state = AppState::connect(config).await.unwrap();
+    state.ro_pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(ro.as_str())
+        .await
+        .unwrap();
+    state.rw_pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(rw.as_str())
+        .await
+        .unwrap();
+    let (search_pid, application_name): (i32, String) =
+        sqlx::query_as("SELECT pg_backend_pid(),current_setting('application_name')")
+            .fetch_one(&state.ro_pool)
+            .await
+            .unwrap();
+    assert_eq!(application_name, tag);
+    let write_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&state.rw_pool)
+        .await
+        .unwrap();
+    f.app = router(state);
+
+    // First stop the actual read after the initial owner transaction. Once it
+    // is there, take the owner fence so its later commit transaction must wait.
+    let mut search_blocker = f.pool.begin().await.unwrap();
+    sqlx::query("LOCK TABLE brunn.search_chunks IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *search_blocker)
+        .await
+        .unwrap();
+    let app = f.app.clone();
+    let runner = Actor {
+        user: f.runner.user,
+        id: f.runner.id,
+        token: f.runner.token.clone(),
+    };
+    let operation = query_body(&s.selected, vec![QUERY]);
+    let original = operation.clone();
+    let task = tokio::spawn(async move {
+        request(&app, &runner, Method::POST, DISCOVER, Some(operation)).await
+    });
+    let mut searching = false;
+    for _ in 0..150 {
+        searching = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=$1 AND relation='brunn.search_chunks'::regclass AND NOT granted)")
+            .bind(search_pid).fetch_one(&f.pool).await.unwrap();
+        if searching {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    if !searching {
+        task.abort();
+        let _ = task.await;
+        search_blocker.rollback().await.unwrap();
+        panic!("verified search PID never reached the lexical-read barrier");
+    }
+    let mut commit_blocker = f.pool.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(format!("brunn-workspace-commit:{}", f.owner.user))
+        .execute(&mut *commit_blocker)
+        .await
+        .unwrap();
+    search_blocker.commit().await.unwrap();
+    let mut committing = false;
+    for _ in 0..150 {
+        committing = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=$1 AND locktype='advisory' AND NOT granted)")
+            .bind(write_pid).fetch_one(&f.pool).await.unwrap();
+        if committing {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    if !committing {
+        task.abort();
+        let _ = task.await;
+        commit_blocker.rollback().await.unwrap();
+        panic!("verified writer PID never reached the post-search owner fence");
+    }
+    let read_finished: bool = sqlx::query_scalar(
+        "SELECT state='idle' AND xact_start IS NULL FROM pg_stat_activity WHERE pid=$1",
+    )
+    .bind(search_pid)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    assert!(
+        read_finished,
+        "the search transaction must finish before the policy change"
+    );
+
+    // This was an eligible emitted hit, not a previously admitted dependency.
+    // Appending its exclusion only now must not be laundered by a later filter.
+    let primary_id = Uuid::parse_str(
+        s.primary["entry_ref"]
+            .as_str()
+            .unwrap()
+            .trim_start_matches("entry:"),
+    )
+    .unwrap();
+    sqlx::query("INSERT INTO brunn.entry_versions(user_id,entry_id,version,content_sha256,content,size_bytes,metadata,created_by_credential_id) SELECT user_id,entry_id,2,content_sha256,content,size_bytes,'{\"evaluation_output\":true}'::jsonb,$3 FROM brunn.entry_versions WHERE user_id=$1 AND entry_id=$2 AND version=1")
+        .bind(f.owner.user).bind(primary_id).bind(f.owner.id).execute(&mut *commit_blocker).await.unwrap();
+    sqlx::query("UPDATE brunn.entries SET current_version=2 WHERE user_id=$1 AND id=$2")
+        .bind(f.owner.user)
+        .bind(primary_id)
+        .execute(&mut *commit_blocker)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO brunn.workspace_changes(user_id,entry_id,entry_version,operation,path,content_sha256) SELECT e.user_id,e.id,2,'update',e.path,v.content_sha256 FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=2 WHERE e.user_id=$1 AND e.id=$2")
+        .bind(f.owner.user).bind(primary_id).execute(&mut *commit_blocker).await.unwrap();
+    commit_blocker.commit().await.unwrap();
+
+    let response = ok(task.await.unwrap());
+    assert_eq!(response["no_op"], false);
+    for group in response["data"]["research"]["coverage"]["query_results"]
+        .as_array()
+        .unwrap()
+    {
+        assert_eq!(
+            group["returned"], 1,
+            "the source was emitted while eligible"
+        );
+    }
+    assert_eq!(
+        response["data"]["research"]["coverage"]["change_status"],
+        "complete"
+    );
+    assert!(
+        response["data"]["research"]["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|source| source["entry_ref"] != s.primary["entry_ref"])
+    );
+    assert_eq!(
+        audit(&response["data"]),
+        &json!({"validity":"outdated","last_search":null})
+    );
+    assert_eq!(response["data"]["inputs"], s.selected["inputs"]);
+    let (_, rerun) = search(&f, &response["data"], vec![QUERY]).await;
+    assert_eq!(rerun["no_op"], false);
+    for group in current_audit(&rerun["data"])["groups"].as_array().unwrap() {
+        assert_eq!(
+            group["returned"], 0,
+            "the next stable search filters the exclusion"
+        );
+    }
+    let notebook = current(&f, &job_path(&s.canonical)).await.unwrap();
+    let retained_state = current(&f, "dreams/state.md").await.unwrap();
+    let replay = ok(post(&f, &f.runner, DISCOVER, original).await);
+    assert_eq!(replay["no_op"], true);
+    assert_eq!(
+        current_audit(&replay["data"]),
+        current_audit(&rerun["data"])
+    );
+    assert_eq!(
+        current(&f, &job_path(&s.canonical)).await.unwrap(),
+        notebook
+    );
+    assert_eq!(
+        current(&f, "dreams/state.md").await.unwrap(),
+        retained_state
     );
 }
 

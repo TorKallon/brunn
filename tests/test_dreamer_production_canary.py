@@ -190,6 +190,9 @@ class DreamerProductionCanaryTests(unittest.TestCase):
         for fault, error in ((None, None), ("protocol", "research_protocol 1"),
                              ("source_origin_protocol", "source-origin follow-up protocol"),
                              ("discovery_audit", "current bounded discovery audit"),
+                             ("excluded_index", "excluded search fixture was not lexically indexed"),
+                             ("excluded_admitted", "ineligible search fixture entered"),
+                             ("excluded_counted", "counted the indexed ineligible fixture"),
                              ("audit_target_refresh", "target-only discovery changed"),
                              ("audit_source_change", "changed evidence retained"),
                              ("checkpoint_eof", "exact end-of-document selectors"),
@@ -216,6 +219,8 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                 trail = {"entry_ref": "entry:trail", "version": 1, "path": "sources/CanaryResearch/Trail.md"}
                 primary = {"entry_ref": "entry:primary", "version": 1, "path": "sources/CanaryResearch/Outcome.md"}
                 changed = {**primary, "version": 2}
+                excluded = {"entry_ref": "entry:excluded", "version": 1,
+                            "path": "sources/CanaryResearch/Excluded Aster.md"}
                 headers = [canonical, trail, primary]
                 admitted = {"admitted": True, "mode": "full", "research_protocol": 0 if fault == "protocol" else 1,
                             "attempt_id": "fixture-attempt", "fence": "fixture-fence", "state_version": 1,
@@ -242,6 +247,10 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                 admissions[3]["research"]["discovery_audit"] = {"validity": "outdated", "last_search": None}
                 if fault == "discovery_audit":
                     admissions[1]["research"]["discovery_audit"]["last_search"]["queries"] = ["unrelated query"]
+                elif fault == "excluded_admitted":
+                    admissions[1]["research"]["sources"].append(excluded)
+                elif fault == "excluded_counted":
+                    admissions[1]["research"]["discovery_audit"]["last_search"]["groups"][0]["returned"] = 2
                 elif fault == "audit_target_refresh":
                     admissions[2]["research"]["discovery_audit"]["last_search"]["searched_generation"] = 4
                 elif fault == "audit_source_change":
@@ -317,11 +326,15 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                     if path == briefing_path:
                         self.assertEqual(metadata, {"kind": "briefing_edition"} if version == 0 else
                                          {"kind": "briefing_edition", "briefing": {"schema": "briefing.v1"}})
+                    if path == excluded["path"]:
+                        self.assertEqual(metadata, {"evaluation_output": True})
                     writes.append(path)
                     documents[path, version + 1] = content
-                    source = next((row for row in [*headers, briefing] if row["path"] == path),
+                    source = next((row for row in [*headers, briefing, excluded] if row["path"] == path),
                                   {"entry_ref": "entry:unrelated" if path.endswith("/Unrelated.md") else "entry:update", "path": path})
-                    return {**source, "version": version + 1}
+                    return {**source, "version": version + 1, "search_status":
+                            "pending" if fault == "excluded_index" and source == excluded else
+                            "lexical_ready_semantic_queued"}
 
                 def fixture_read(client, **request):
                     self.assertIs(client, reader)
@@ -367,6 +380,7 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                         self.assertTrue(report["subject_cycle"]["publication_eof_remains_strict"])
                         self.assertTrue(report["subject_cycle"]["imported_wiki_links_resolved"])
                         self.assertTrue(report["subject_cycle"]["subject_header_search_exercised"])
+                        self.assertTrue(report["subject_cycle"]["static_ineligible_search_result_verified"])
                         self.assertTrue(report["subject_cycle"]["changed_scope_refresh_signal"])
                         self.assertTrue(report["subject_cycle"]["changed_dependency_invalidates_progress"])
                         self.assertTrue(report["subject_cycle"]["historical_revalidation_context_retained"])

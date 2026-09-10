@@ -5,8 +5,23 @@
 pub const SIMPLE_LEXICAL_CANDIDATES_SQL: &str =
     "SELECT * FROM brunn.workspace_lexical_candidates_v2($1,$2)";
 
-pub(crate) const DREAMER_LEXICAL_CANDIDATES_SQL: &str =
-    "SELECT * FROM brunn.dreamer_lexical_candidates($1,$2)";
+pub(crate) const DREAMER_LEXICAL_CANDIDATES_SQL: &str = r#"
+SELECT candidate.entry_id,e.path,candidate.heading,candidate.content,
+       candidate.score,candidate.title,candidate.current_version,
+       candidate.content_sha256,candidate.updated_at,v.metadata AS research_metadata
+FROM brunn.dreamer_lexical_candidates($1,$2) candidate
+JOIN brunn.entries e ON e.user_id=$3 AND e.id=candidate.entry_id
+    AND e.current_version=candidate.current_version
+JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id
+    AND v.version=candidate.current_version
+CROSS JOIN LATERAL (
+    SELECT operation FROM brunn.workspace_changes
+    WHERE user_id=e.user_id AND entry_id=e.id AND entry_version=candidate.current_version
+    ORDER BY generation DESC LIMIT 1
+) change
+WHERE e.deleted_at IS NULL AND e.kind='markdown' AND v.content IS NOT NULL
+    AND v.size_bytes<=1048576 AND change.operation<>'delete'
+"#;
 
 pub const SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL: &str = r#"
 WITH generation AS (

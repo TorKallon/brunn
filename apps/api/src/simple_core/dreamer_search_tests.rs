@@ -766,6 +766,7 @@ async fn dreamer_search_six_queries_exercise_every_fallback_within_client_deadli
                 let rows = sqlx::query(DREAMER_LEXICAL_CANDIDATES_SQL)
                     .bind(&focused)
                     .bind(sort.as_str())
+                    .bind(f.reader.user_id.0)
                     .fetch_all(&mut *tx)
                     .await
                     .unwrap();
