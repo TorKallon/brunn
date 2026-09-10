@@ -1,5 +1,6 @@
 //! Included by the real HTTP/database review fixture, not a standalone model.
 use super::*;
+mod checkpoint;
 mod comparison;
 mod repair;
 mod revalidation;

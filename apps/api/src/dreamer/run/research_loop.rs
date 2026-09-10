@@ -16,9 +16,14 @@ fn envelope(current: &Value, state_version: i64, operation_id: &str) -> Value {
         "research_version":current["research"]["version"]})
 }
 
-fn progress(step: &research::Step, status: &str) -> Value {
+fn progress(step: &research::Step, status: &str, current: &Value) -> Value {
     let mut value = json!({"notes":step.notes,"reviewed_sources":step.reviewed_sources,
         "pending_queries":step.pending_queries,"pending_targets":step.pending_targets,"status":status});
+    if research::checkpoints_enabled(current) {
+        value["checkpoint_protocol"] = json!(research::CHECKPOINT_PROTOCOL);
+        value["reconciled_checkpoints"] = json!(step.reconciled_checkpoints);
+        value["findings"] = json!(step.findings);
+    }
     if let Some(pointer) = &step.covers_existing {
         value["covers_existing"] = pointer.clone();
     }
@@ -29,6 +34,111 @@ fn progress(step: &research::Step, status: &str) -> Value {
         value["follow_up"] = follow_up.clone();
     }
     value
+}
+
+struct CheckpointAck {
+    new_source_coverage: bool,
+    reconciled: bool,
+    subject_complete: bool,
+    replayed: bool,
+}
+
+fn checkpoint_ack(
+    current: &Value,
+    operation_id: &str,
+    response: &Value,
+) -> Result<Option<CheckpointAck>, ClientError> {
+    if !research::checkpoints_enabled(current) {
+        return Ok(None);
+    }
+    let ack = &response["checkpoint_receipt"];
+    let booleans = (
+        ack["new_source_coverage"].as_bool(),
+        ack["reconciled"].as_bool(),
+        ack["subject_complete"].as_bool(),
+    );
+    if ack["operation_id"] == operation_id
+        && ack["protocol"] == research::CHECKPOINT_PROTOCOL
+        && ack["recorded"] == true
+        && (ack.get("replayed").is_none() || ack["replayed"].is_boolean())
+        && let (Some(new_source_coverage), Some(reconciled), Some(subject_complete)) = booleans
+    {
+        return Ok(Some(CheckpointAck {
+            new_source_coverage,
+            reconciled,
+            subject_complete,
+            replayed: ack["replayed"] == true,
+        }));
+    }
+    Err(ClientError::Failed(
+        "incremental research checkpoint was not acknowledged; work retained for reconciliation"
+            .into(),
+    ))
+}
+
+/// Compare reviewed line coverage across the whole selected turn. Reordering,
+/// splitting ranges or alternating earlier selectors cannot restart its budget.
+#[derive(Default)]
+struct ReviewedCoverage(BTreeMap<(String, i64), Vec<(u64, u64)>>);
+
+impl ReviewedCoverage {
+    fn include(&mut self, selectors: &Value) -> bool {
+        let mut novel = false;
+        for selector in selectors.as_array().into_iter().flatten() {
+            let (Some(reference), Some(version), Some(start), Some(end)) = (
+                selector["entry_ref"].as_str(),
+                selector["version"].as_i64(),
+                selector["start_line"].as_u64(),
+                selector["end_line"].as_u64(),
+            ) else {
+                continue;
+            };
+            if start == 0 || end < start {
+                continue;
+            }
+            let ranges = self.0.entry((reference.to_owned(), version)).or_default();
+            novel |= !ranges.iter().any(|(a, b)| *a <= start && *b >= end);
+            ranges.push((start, end));
+            ranges.sort_unstable();
+            let mut merged: Vec<(u64, u64)> = Vec::with_capacity(ranges.len());
+            for &(a, b) in ranges.iter() {
+                if let Some(previous) = merged.last_mut()
+                    && a <= previous.1.saturating_add(1)
+                {
+                    previous.1 = previous.1.max(b);
+                } else {
+                    merged.push((a, b));
+                }
+            }
+            *ranges = merged;
+        }
+        novel
+    }
+
+    fn acknowledged_progress(
+        &mut self,
+        before: &Value,
+        response: &Value,
+        step: &research::Step,
+        ack: Option<&CheckpointAck>,
+    ) -> bool {
+        let novel = self.include(&json!(step.reviewed_sources));
+        let unresolved = |value: &Value| -> Option<usize> {
+            (value["research"]["checkpoint_context_status"] == "available").then(|| {
+                value["research"]["checkpoint_contexts"]
+                    .as_array()
+                    .map_or(0, Vec::len)
+                    + usize::from(value["research"]["current_checkpoint"].is_object())
+            })
+        };
+        let reduced = match (unresolved(before), unresolved(response)) {
+            (Some(before), Some(after)) => after < before,
+            _ => false,
+        };
+        ack.is_some_and(|ack| {
+            !ack.replayed && ((ack.new_source_coverage && novel) || (ack.reconciled && reduced))
+        })
+    }
 }
 
 fn add_fields(body: &mut Value, fields: Value) {
@@ -194,6 +304,8 @@ impl Dreamer {
             let mut no_progress = 0usize;
             let mut subject_round = 0usize;
             let mut routed_attempted = std::collections::BTreeSet::new();
+            let mut reviewed_coverage = ReviewedCoverage::default();
+            reviewed_coverage.include(&current["research"]["reviewed_sources"]);
             // Leave time for another subject even if this model invocation
             // stalls. Evidence already admitted survives the bounded turn.
             let now = tokio::time::Instant::now();
@@ -409,11 +521,96 @@ impl Dreamer {
                 };
                 let mut body =
                     envelope(&current, *state_version, &uuid::Uuid::now_v7().to_string());
+                let operation_id = body["operation_id"]
+                    .as_str()
+                    .expect("operation id")
+                    .to_owned();
                 match step.action {
+                    research::Action::Checkpoint => {
+                        add_fields(&mut body, progress(&step, "researching", &current));
+                        body["processed_inputs"] = json!([]);
+                        report.stage = "research_checkpoint".into();
+                        match self
+                            .research_request("research-progress", body, deadline)
+                            .await
+                        {
+                            Ok(value) => {
+                                let ack = match checkpoint_ack(&current, &operation_id, &value) {
+                                    Ok(ack) => ack,
+                                    Err(error) => {
+                                        failure = Some(error.to_string());
+                                        break 'subjects;
+                                    }
+                                };
+                                let made_progress = reviewed_coverage.acknowledged_progress(
+                                    &current,
+                                    &value,
+                                    &step,
+                                    ack.as_ref(),
+                                );
+                                merge(&mut current, &value, state_version);
+                                if !ack.as_ref().is_some_and(|ack| ack.replayed) {
+                                    repairs = 0;
+                                    refresh_rejections = 0;
+                                }
+                                if made_progress {
+                                    no_progress = 0;
+                                    feedback.clear();
+                                } else {
+                                    no_progress += 1;
+                                    feedback = "The checkpoint is retained, but it adds no new reviewed coverage or reduction of unresolved checkpoints. Continue with the next useful source, submit the supported overview, or yield.".into();
+                                }
+                            }
+                            Err(ClientError::ResearchRefreshRequired(detail)) => {
+                                refresh_rejections += 1;
+                                let message = format!(
+                                    "The previous research checkpoint was not saved: {detail}. Reread the refreshed sources and reconsider the rejected conclusions before saving them."
+                                );
+                                pending_repair = Some(research::RepairFeedback::new(
+                                    research::RepairPhase::CheckpointValidation,
+                                    &message,
+                                ));
+                                feedback = message;
+                                let mut refresh = envelope(
+                                    &current,
+                                    *state_version,
+                                    &uuid::Uuid::now_v7().to_string(),
+                                );
+                                add_fields(&mut refresh, json!({"queries":[],"targets":[]}));
+                                report.stage = "research_reconciliation".into();
+                                // The server identified stale evidence. Refresh
+                                // its headers before another child, preserving
+                                // the rejected work's repair and retry bounds.
+                                match self
+                                    .research_request("narrative-discover", refresh, deadline)
+                                    .await
+                                {
+                                    Ok(value) => {
+                                        merge(&mut current, &value, state_version);
+                                        change_pages += 1;
+                                    }
+                                    Err(error) => {
+                                        feedback = format!(
+                                            "{feedback} Evidence refresh remains unresolved: {error}"
+                                        );
+                                        repairs += 1;
+                                    }
+                                }
+                            }
+                            Err(error) => {
+                                if let ClientError::ResearchValidation(repair) = &error {
+                                    pending_repair = Some(repair.clone());
+                                }
+                                feedback = error.to_string();
+                                repairs += 1;
+                            }
+                        }
+                    }
                     research::Action::Discover => {
                         let mut rejected_checkpoint = None;
+                        let mut checkpoint_progress = false;
                         if !step.reviewed_sources.is_empty() {
-                            add_fields(&mut body, progress(&step, "researching"));
+                            add_fields(&mut body, progress(&step, "researching", &current));
                             body["processed_inputs"] = json!([]);
                             body["findings"] = json!(step.findings);
                             match self
@@ -421,9 +618,25 @@ impl Dreamer {
                                 .await
                             {
                                 Ok(value) => {
+                                    let ack = match checkpoint_ack(&current, &operation_id, &value)
+                                    {
+                                        Ok(ack) => ack,
+                                        Err(error) => {
+                                            failure = Some(error.to_string());
+                                            break 'subjects;
+                                        }
+                                    };
+                                    checkpoint_progress = reviewed_coverage.acknowledged_progress(
+                                        &current,
+                                        &value,
+                                        &step,
+                                        ack.as_ref(),
+                                    );
                                     merge(&mut current, &value, state_version);
-                                    repairs = 0;
-                                    refresh_rejections = 0;
+                                    if !ack.as_ref().is_some_and(|ack| ack.replayed) {
+                                        repairs = 0;
+                                        refresh_rejections = 0;
+                                    }
                                 }
                                 Err(ClientError::ResearchRefreshRequired(detail)) => {
                                     refresh_rejections += 1;
@@ -460,7 +673,7 @@ impl Dreamer {
                         {
                             Ok(value) => {
                                 merge(&mut current, &value, state_version);
-                                if discovery_progress(&current) == before {
+                                if discovery_progress(&current) == before && !checkpoint_progress {
                                     no_progress += 1;
                                     feedback = "The last discovery added no new source versions. Inspect its receipt for unavailable/capped targets. Use different supported references, produce the supported overview, or yield with the specific missing evidence.".into();
                                 } else {
@@ -484,11 +697,18 @@ impl Dreamer {
                             &mut body,
                             json!({"candidates":step.candidates,
                             "processed_inputs":step.processed_inputs,"findings":step.findings,
-                            "research_progress":progress(&step,"waiting")}),
+                            "research_progress":progress(&step,"waiting",&current)}),
                         );
                         report.stage = "research_validation".into();
                         match self.research_request("candidates", body, deadline).await {
                             Ok(value) => {
+                                let ack = match checkpoint_ack(&current, &operation_id, &value) {
+                                    Ok(ack) => ack,
+                                    Err(error) => {
+                                        failure = Some(error.to_string());
+                                        break 'subjects;
+                                    }
+                                };
                                 let count = value["accepted_candidate_ids"]
                                     .as_array()
                                     .map_or(0, Vec::len);
@@ -501,7 +721,12 @@ impl Dreamer {
                                         value["run_version"].clone();
                                 }
                                 merge(&mut current, &value, state_version);
-                                completed_subjects += 1;
+                                if count > 0 && ack.as_ref().is_none_or(|ack| ack.subject_complete)
+                                {
+                                    completed_subjects += 1;
+                                } else {
+                                    yielded_subjects += 1;
+                                }
                                 break;
                             }
                             Err(error) => {
@@ -521,7 +746,7 @@ impl Dreamer {
                         } else {
                             "waiting"
                         };
-                        add_fields(&mut body, progress(&step, status));
+                        add_fields(&mut body, progress(&step, status, &current));
                         body["processed_inputs"] = json!(step.processed_inputs);
                         body["findings"] = json!(step.findings);
                         match self
@@ -529,9 +754,18 @@ impl Dreamer {
                             .await
                         {
                             Ok(value) => {
+                                let ack = match checkpoint_ack(&current, &operation_id, &value) {
+                                    Ok(ack) => ack,
+                                    Err(error) => {
+                                        failure = Some(error.to_string());
+                                        break 'subjects;
+                                    }
+                                };
                                 processed += step.processed_inputs.len();
                                 merge(&mut current, &value, state_version);
-                                if step.action == research::Action::Done {
+                                if step.action == research::Action::Done
+                                    && ack.as_ref().is_none_or(|ack| ack.subject_complete)
+                                {
                                     completed_subjects += 1;
                                 } else {
                                     yielded_subjects += 1;
@@ -602,5 +836,36 @@ impl Dreamer {
                 ),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod checkpoint_tests {
+    use super::*;
+
+    fn selectors(ranges: &[(u64, u64)]) -> Value {
+        json!(
+            ranges
+                .iter()
+                .map(
+                    |(start, end)| json!({"entry_ref":"entry:source","version":1,
+            "start_line":start,"end_line":end})
+                )
+                .collect::<Vec<_>>()
+        )
+    }
+
+    #[test]
+    fn reviewed_coverage_ignores_reordering_splits_and_alternation() {
+        let mut coverage = ReviewedCoverage::default();
+        assert!(coverage.include(&selectors(&[(1, 10), (15, 20)])));
+        assert!(!coverage.include(&selectors(&[(17, 20), (15, 16), (1, 5), (6, 10)])));
+        assert!(coverage.include(&selectors(&[(8, 17)])));
+        assert!(!coverage.include(&selectors(&[(1, 20)])));
+        assert!(!coverage.include(&selectors(&[(1, 10)])));
+        assert!(!coverage.include(&selectors(&[(15, 20)])));
+        let mut changed = selectors(&[(1, 10)]);
+        changed[0]["version"] = json!(2);
+        assert!(coverage.include(&changed));
     }
 }

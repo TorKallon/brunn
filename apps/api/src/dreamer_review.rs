@@ -2182,6 +2182,7 @@ pub async fn candidates(
             }
             response["state_version"] = json!(version);
             response["no_op"] = json!(true);
+            research::checkpoints::replay(&mut response["checkpoint_receipt"]);
             return Ok(Json(response));
         }
         research::check_job(&data, &body, &job, job_version)?;
@@ -2745,6 +2746,7 @@ pub async fn candidates(
     }
     let mut response = json!({"state_version":version+1,"run_entry_ref":run["entry_ref"],"run_version":run["version"],"accepted_candidate_ids":ids,"pending_count":data.items.iter().filter(|i|pending(i)).count()});
     if let Some((mut job, job_version)) = research_job {
+        let before_job = job.clone();
         if let Some(progress) = body.get("research_progress") {
             research::apply_progress(&mut tx, &auth, &mut job, job_version, progress).await?;
         } else {
@@ -2752,11 +2754,28 @@ pub async fn candidates(
             job.retry_at = Utc::now() + Duration::hours(24);
         }
         job.accepted_candidate_ids = ids.clone();
+        let mut progress = body.get("research_progress").cloned().unwrap_or(json!({}));
+        if progress.get("findings").is_none() {
+            progress["findings"] = body["findings"].clone();
+        }
+        let mut checkpoint_receipt = research::checkpoints::apply(
+            &mut tx,
+            &auth,
+            &before_job,
+            &mut job,
+            job_version,
+            &progress,
+            !ids.is_empty(),
+            !ids.is_empty(),
+        )
+        .await?;
+        let subject_complete =
+            !ids.is_empty() && (job.schema != "dream.research.v2" || job.status != "researching");
         if !ids.is_empty() {
             job.repair_feedback = None;
             research::clear_revalidation(&mut job);
         }
-        if !ids.is_empty() && !research_comparison::retains_priority(&data, &job.subject_ref) {
+        if subject_complete && !research_comparison::retains_priority(&data, &job.subject_ref) {
             data.research
                 .requested_subject_refs
                 .retain(|reference| reference != &job.subject_ref);
@@ -2764,8 +2783,12 @@ pub async fn candidates(
                 .follow_up_priorities
                 .retain(|reference| reference != &job.subject_ref);
         }
-        data.research.completed += usize::from(!ids.is_empty());
+        data.research.completed += usize::from(subject_complete);
         let (operation_id, hash) = research_operation.expect("research operation");
+        if let Some(ack) = &mut checkpoint_receipt {
+            ack["operation_id"] = json!(operation_id);
+            response["checkpoint_receipt"] = ack.clone();
+        }
         research::remember(
             &mut job.receipts,
             &auth,

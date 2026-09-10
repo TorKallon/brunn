@@ -4,6 +4,13 @@ use super::*;
 #[path = "repair_contract.rs"]
 mod repair_contract;
 
+#[path = "checkpoint_contract.rs"]
+mod checkpoint_contract;
+
+pub(super) fn apply_checkpoint_fixture(s: &mut Mock, body: &Value, current: &mut Value) {
+    checkpoint_contract::acknowledge(s, body, current);
+}
+
 pub(super) async fn next(State(shared): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
     assert_operation(&body);
     let (current, delay) = {
@@ -74,6 +81,7 @@ pub(super) async fn progress(State(shared): State<Shared>, Json(body): Json<Valu
         {
             current["research"]["repair_feedback"] = Value::Null;
         }
+        apply_checkpoint_fixture(&mut s, &body, &mut current);
         if let Some(job) = s
             .research_jobs
             .iter_mut()

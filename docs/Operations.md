@@ -358,16 +358,22 @@ does not clear the correction or reset the rejection limit. Deploy the API
 before the runner so its explicit correction receipt is available.
 
 Source changes can invalidate current conclusions while research is running.
-Dreamer retains a pointer to the last accepted notebook version before clearing
-those conclusions, including when a slow subject yields. The next model sees
-that version only as audited historical context to recheck against current
-sources. Existing empty legacy jobs can recover from the latest sixteen prior
-notebook versions without a migration or manual data repair. Deleted,
-inaccessible or excluded original dependencies withhold the entire context,
-even after the active source list is pruned. A fresh explicit notebook
-replacement, supported no-change result or accepted candidate clears the
-pointer; ordinary yields and rejected output do not. Publication and current
-reads continue to require fresh source evidence.
+With `dream.research.checkpoint.v1`, the model can save partial research and
+continue without requesting another search. V2 notebooks retain up to four
+unfinished immutable checkpoints, counting the current head, within 96 KiB.
+Source refresh preserves accepted work before clearing stale conclusions.
+Replacing a checkpoint or accepting a draft retires only explicitly reconciled
+work; a partial draft leaves the remaining research queued. Exact server
+acknowledgments distinguish saved progress from replay and full completion.
+
+Historical checkpoints remain audited context for rechecking current sources.
+An inaccessible original dependency withholds the historical collection even
+after the active source list is pruned; independently supported current work
+can continue. Legacy recovery retains its bounded sixteen-version lookup.
+Deploy the API before the runner. Once notebooks use `dream.research.v2`,
+older APIs reject them rather than discard the new custody fields. Preserve
+v2 API support on rollback. Publication and current reads still require fresh
+source evidence.
 
 Manual `/run` requests may include at most 16 `requested_subject_refs` containing
 exact canonical entry references. Those identity-only requests are durably

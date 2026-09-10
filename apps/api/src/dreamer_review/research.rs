@@ -4,6 +4,7 @@ use super::*;
 use crate::dreamer::research::{MAX_RESEARCH_NOTES_BYTES, RepairFeedback, RepairPhase};
 use crate::dreamer_subject::{SubjectScope, check_scope, create_scope, research_change_page};
 use std::collections::{BTreeMap, BTreeSet};
+pub(super) mod checkpoints;
 
 const MAX_SOURCES: usize = 256;
 const MAX_RECEIPTS: usize = 24;
@@ -61,6 +62,8 @@ pub(super) struct Job {
     // checkpoint. Only the server may select an immutable notebook version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revalidation_checkpoint: Option<RevalidationCheckpoint>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint_versions: Option<Vec<i64>>,
     pub pending_queries: Vec<String>,
     pub pending_targets: Vec<String>,
     pub status: String,
@@ -132,7 +135,12 @@ pub(super) async fn load(
         serde_json::from_value(entry.metadata["dreamer_research"].clone()).map_err(|_| {
             ApiError::invalid("Retained research is invalid; refusing to discard progress")
         })?;
-    if job.schema != "dream.research.v1" || job.subject_ref != reference {
+    if !matches!(
+        job.schema.as_str(),
+        "dream.research.v1" | "dream.research.v2"
+    ) || job.subject_ref != reference
+        || (job.schema == "dream.research.v2" && job.checkpoint_versions.is_none())
+    {
         return Err(ApiError::invalid("Retained research identity is invalid"));
     }
     Ok(Some((job, entry.version)))
@@ -145,6 +153,7 @@ pub(super) async fn save(
     job: &Job,
     version: i64,
 ) -> ApiResult<i64> {
+    checkpoints::reserve(tx, auth, job, version + 1).await?;
     let metadata = json!({"kind":"dreamer_research","dreamer_research":job});
     if serde_json::to_vec(&metadata)?.len() > MAX_JOB_BYTES {
         return Err(ApiError::invalid(
@@ -160,13 +169,30 @@ pub(super) async fn save(
 }
 
 pub(super) fn clear_revalidation(job: &mut Job) {
+    if job.schema == "dream.research.v2" {
+        return;
+    }
     job.revalidation_checkpoint = Some(RevalidationCheckpoint::None);
 }
 
-fn capture_revalidation(job: &mut Job, version: i64) {
+fn capture_revalidation(job: &mut Job, version: i64) -> ApiResult<()> {
     if version > 0 && !job.notes.trim().is_empty() && !job.reviewed_sources.is_empty() {
-        job.revalidation_checkpoint = Some(RevalidationCheckpoint::Retained { version });
+        if job.schema == "dream.research.v2" {
+            let versions = job
+                .checkpoint_versions
+                .as_mut()
+                .ok_or_else(checkpoints::capacity)?;
+            if !versions.contains(&version) {
+                versions.push(version);
+            }
+            if versions.len() > 4 {
+                return Err(checkpoints::capacity());
+            }
+        } else {
+            job.revalidation_checkpoint = Some(RevalidationCheckpoint::Retained { version });
+        }
     }
+    Ok(())
 }
 
 async fn initialize_revalidation(
@@ -431,6 +457,7 @@ async fn safe_view(
         "last_served",
         "retry_at",
         "revalidation_checkpoint",
+        "checkpoint_versions",
     ] {
         object.remove(field);
     }
@@ -459,8 +486,9 @@ async fn safe_view(
             return Ok(Value::Null);
         }
     }
-    let origin = if !scope_fresh && !job.notes.trim().is_empty() && !job.reviewed_sources.is_empty()
-    {
+    let origin = if job.schema == "dream.research.v2" {
+        None
+    } else if !scope_fresh && !job.notes.trim().is_empty() && !job.reviewed_sources.is_empty() {
         Some(version)
     } else {
         match job.revalidation_checkpoint {
@@ -484,6 +512,7 @@ async fn safe_view(
         .unwrap_or(Value::Null),
         None => Value::Null,
     };
+    checkpoints::project(tx, auth, job, version, scope_fresh, &mut view).await?;
     Ok(view)
 }
 
@@ -535,6 +564,7 @@ async fn create(
         notes: String::new(),
         repair_feedback: None,
         revalidation_checkpoint: Some(RevalidationCheckpoint::None),
+        checkpoint_versions: None,
         pending_queries: Vec::new(),
         pending_targets: Vec::new(),
         status: "researching".into(),
@@ -820,7 +850,7 @@ async fn refresh(
     let prior_evidence_changed = job.sources.iter().any(|source| !current.contains(source));
     let scope_changed = !fresh(tx, auth, job).await?;
     if prior_evidence_changed || scope_changed {
-        capture_revalidation(job, job_version);
+        capture_revalidation(job, job_version)?;
         job.notes.clear();
         job.reviewed_sources.clear();
         job.discoveries.clear();
@@ -1143,7 +1173,17 @@ pub(super) async fn apply_progress(
     job_version: i64,
     body: &Value,
 ) -> ApiResult<()> {
-    if body.get("revalidation_checkpoint").is_some() || body.get("revalidation_context").is_some() {
+    if [
+        "revalidation_checkpoint",
+        "revalidation_context",
+        "checkpoint_versions",
+        "checkpoint_contexts",
+        "current_checkpoint",
+        "checkpoint_receipt",
+    ]
+    .iter()
+    .any(|field| body.get(field).is_some())
+    {
         return Err(ApiError::invalid(
             "research revalidation context is server-owned",
         ));
@@ -1162,7 +1202,7 @@ pub(super) async fn apply_progress(
     let status = string(body, "status")?;
     if status == "waiting" && !fresh(tx, auth, job).await? {
         initialize_revalidation(tx, auth, job, job_version).await?;
-        capture_revalidation(job, job_version);
+        capture_revalidation(job, job_version)?;
         // Yielding unavailable/unchecked evidence is scheduling, not a claim.
         // Clear conclusions and cached leads; keep durable evidence/cursors so
         // another subject can proceed and this interval can be retried later.
@@ -1294,6 +1334,10 @@ pub(super) async fn progress(
         if let Some(ack) = replay["result"].get("repair_feedback_receipt") {
             response["repair_feedback_receipt"] = ack.clone();
         }
+        if let Some(ack) = replay["result"].get("checkpoint_receipt") {
+            response["checkpoint_receipt"] = ack.clone();
+            checkpoints::replay(&mut response["checkpoint_receipt"]);
+        }
         return Ok(Json(json!({"data":response,"no_op":true})));
     }
     check_job(&data, &body, &job, job_version)?;
@@ -1314,7 +1358,23 @@ pub(super) async fn progress(
         tx.commit().await?;
         return Ok(Json(json!({"data":response})));
     }
+    let before_job = job.clone();
     apply_progress(&mut tx, &auth, &mut job, job_version, &body).await?;
+    let completing = job.status == "no_change";
+    let mut checkpoint_receipt = checkpoints::apply(
+        &mut tx,
+        &auth,
+        &before_job,
+        &mut job,
+        job_version,
+        &body,
+        true,
+        completing,
+    )
+    .await?;
+    if let Some(ack) = &mut checkpoint_receipt {
+        ack["operation_id"] = json!(operation_id);
+    }
     let processed = body
         .get("processed_inputs")
         .and_then(Value::as_array)
@@ -1390,11 +1450,14 @@ pub(super) async fn progress(
         &auth,
         &operation_id,
         &hash,
-        json!({"status":job.status,"follow_up_dispositions":dispositions}),
+        json!({"status":job.status,"follow_up_dispositions":dispositions,"checkpoint_receipt":checkpoint_receipt}),
     );
     save(&state, &mut tx, &auth, &job, job_version).await?;
     let version = save_state(&state, &mut tx, &auth, &data, version).await?;
-    let response = admission_response(&mut tx, &auth, &data, version).await?;
+    let mut response = admission_response(&mut tx, &auth, &data, version).await?;
+    if let Some(ack) = checkpoint_receipt {
+        response["checkpoint_receipt"] = ack;
+    }
     tx.commit().await?;
     Ok(Json(json!({"data":response})))
 }
@@ -1595,7 +1658,7 @@ pub(super) async fn discover(
     // an earlier header changed or disappeared; refresh separately invalidates
     // conclusions when newer relevant corpus changes affect the subject scope.
     if before.iter().any(|source| !job.sources.contains(source)) {
-        capture_revalidation(&mut job, job_version);
+        capture_revalidation(&mut job, job_version)?;
         job.notes.clear();
         job.reviewed_sources.clear();
     }

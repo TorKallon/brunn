@@ -65,6 +65,7 @@ struct Mock {
     research_progress_replies: VecDeque<Option<(StatusCode, String)>>,
     research_repair_replies: VecDeque<(StatusCode, String)>,
     research_candidate_replies: VecDeque<(StatusCode, String)>,
+    research_checkpoint_replies: VecDeque<Value>,
     omit_repair_ack: bool,
     research_discovery_sources: VecDeque<Vec<Value>>,
     research_comparisons: Vec<Value>,
@@ -157,6 +158,20 @@ async fn narrative_discover(State(shared): State<Shared>, Json(body): Json<Value
             s.research_discovery_sources
                 .pop_front()
                 .unwrap_or_else(|| s.narrative_context.clone())
+        );
+        let source_generation = value["research"]["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|source| source["generation"].as_i64())
+            .max()
+            .unwrap_or(0);
+        value["research"]["snapshot_generation"] = json!(
+            source_generation.max(
+                value["research"]["snapshot_generation"]
+                    .as_i64()
+                    .unwrap_or(0)
+            )
         );
         if body["queries"] == json!([])
             && body["targets"] == json!([])
@@ -288,6 +303,7 @@ async fn candidates(State(shared): State<Shared>, Json(body): Json<Value>) -> Re
         if !ids.is_empty() {
             current["research"]["repair_feedback"] = Value::Null;
         }
+        research_contract::apply_checkpoint_fixture(&mut s, &body, &mut current);
         result
             .as_object_mut()
             .unwrap()

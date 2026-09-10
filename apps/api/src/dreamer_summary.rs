@@ -688,7 +688,10 @@ async fn audit_access(
             // reads. Every retained dependency must remain visible. Research
             // may hold more source headers than one publication's citations.
             source_limit = MAX_RESEARCH_SOURCES;
-            if research["schema"] != "dream.research.v1" {
+            if !matches!(
+                research["schema"].as_str(),
+                Some("dream.research.v1" | "dream.research.v2")
+            ) {
                 return Ok(false);
             }
             for key in ["sources", "reviewed_sources"] {
@@ -903,8 +906,10 @@ pub(crate) fn research_revalidation_candidate(metadata: &Value, subject_ref: &st
     else {
         return false;
     };
-    if notebook["schema"] != "dream.research.v1"
-        || notebook["subject_ref"] != subject_ref
+    if !matches!(
+        notebook["schema"].as_str(),
+        Some("dream.research.v1" | "dream.research.v2")
+    ) || notebook["subject_ref"] != subject_ref
         || !serde_json::to_vec(metadata).is_ok_and(|bytes| bytes.len() <= 192 * 1024)
         || !notebook["notes"].as_str().is_some_and(|notes| {
             !notes.trim().is_empty() && notes.len() <= MAX_RESEARCH_NOTES_BYTES
@@ -1032,7 +1037,7 @@ pub(crate) async fn research_revalidation_context(
     {
         return Ok(None);
     }
-    let Some(notes) = notebook["notes"]
+    let Some(_notes) = notebook["notes"]
         .as_str()
         .filter(|notes| !notes.trim().is_empty() && notes.len() <= MAX_RESEARCH_NOTES_BYTES)
     else {
@@ -1106,70 +1111,50 @@ pub(crate) async fn research_revalidation_context(
         Err(crate::error::ApiError::Public { .. }) => return Ok(None),
         Err(error) => return Err(error),
     }
-    let bounded_strings = |field: &str, count: usize, bytes: usize| -> Option<Vec<String>> {
-        let values = notebook[field]
-            .as_array()
-            .filter(|values| values.len() <= count)?;
-        values
-            .iter()
-            .map(|value| {
-                value
-                    .as_str()
-                    .filter(|value| {
-                        !value.trim().is_empty()
-                            && value.len() <= bytes
-                            && !value.contains(['\n', '\r'])
-                    })
-                    .map(ToOwned::to_owned)
-            })
-            .collect()
-    };
-    let Some(pending_queries) = bounded_strings("pending_queries", 12, 160) else {
-        return Ok(None);
-    };
-    let Some(pending_targets) = bounded_strings("pending_targets", 32, 1024) else {
-        return Ok(None);
-    };
-    let Some(round) = notebook["round"].as_u64() else {
-        return Ok(None);
-    };
-    let mut groups = Vec::new();
-    if let Some(results) = notebook["coverage"]["query_results"].as_array() {
-        if results.len() > 12 {
-            return Ok(None);
-        }
-        for result in results {
-            let Some(id) = result["id"]
-                .as_str()
-                .filter(|id| !id.is_empty() && id.len() <= 64 && !id.contains(['\n', '\r']))
-            else {
-                return Ok(None);
-            };
-            let Some(returned) = result["returned"].as_u64().filter(|count| *count <= 8) else {
-                return Ok(None);
-            };
-            let status = result["query_status"].as_str().unwrap_or("unknown");
-            if status.len() > 64 || status.contains(['\n', '\r']) {
-                return Ok(None);
-            }
-            groups.push(json!({"id":id,"returned":returned,"query_status":status}));
-        }
-    } else if !notebook["coverage"]["query_results"].is_null() {
-        return Ok(None);
+    Ok(research_checkpoint_projection(
+        &selected.metadata,
+        subject_ref,
+        id,
+        version,
+    ))
+}
+
+/// A pure, compact representation used both for byte reservation and audited
+/// exposure. Calling this builder does not authorize exposing its result.
+pub(crate) fn research_checkpoint_projection(
+    metadata: &Value,
+    subject_ref: &str,
+    id: Uuid,
+    version: i64,
+) -> Option<Value> {
+    if version < 1 || !research_revalidation_candidate(metadata, subject_ref) {
+        return None;
     }
+    let notebook = &metadata["dreamer_research"];
+    let reviewed = notebook["reviewed_sources"].as_array()?;
+    let sources = notebook["sources"].as_array()?;
+    let groups = notebook["coverage"]["query_results"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|group| {
+            json!({"id":group["id"],"returned":group["returned"],
+            "query_status":group["query_status"].as_str().unwrap_or("unknown")})
+        })
+        .collect::<Vec<_>>();
     let context = json!({
         "status":"historical_revalidation_only",
-        "origin":{"entry_ref":format!("entry:{id}"),"version":version,"snapshot_generation":snapshot},
-        "notes":notes,
+        "origin":{"entry_ref":format!("entry:{id}"),"version":version,"snapshot_generation":notebook["snapshot_generation"]},
+        "notes":notebook["notes"],
         "prior_reviewed_sources":reviewed.iter().map(|source| json!({
-            "entry_ref":source.entry_ref,"version":source.version,"start_line":source.start_line,"end_line":source.end_line
+            "entry_ref":source["entry_ref"],"version":source["version"],"start_line":source["start_line"],"end_line":source["end_line"]
         })).collect::<Vec<_>>(),
-        "prior_pending_queries":pending_queries,"prior_pending_targets":pending_targets,
-        "prior_progress":{"round":round,"admitted_source_count":sources.len(),"reviewed_selector_count":reviewed.len(),
+        "prior_pending_queries":notebook["pending_queries"],"prior_pending_targets":notebook["pending_targets"],
+        "prior_progress":{"round":notebook["round"],"admitted_source_count":sources.len(),"reviewed_selector_count":reviewed.len(),
             "source_cap_reached":sources.len()>=MAX_RESEARCH_SOURCES || notebook["coverage"]["source_cap_reached"]==true,
             "latest_discovery_groups":groups}
     });
-    Ok((serde_json::to_vec(&context)?.len() <= 96 * 1024).then_some(context))
+    (serde_json::to_vec(&context).ok()?.len() <= 96 * 1024).then_some(context)
 }
 
 fn withheld(id: Uuid, version: Option<i64>, reason: &str, generation: i64) -> Value {
