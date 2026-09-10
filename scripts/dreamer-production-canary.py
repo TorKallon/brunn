@@ -426,6 +426,11 @@ def run_subject_cycle(owner, runner, reader, report):
     require(current["research"]["subject_ref"] == canonical["entry_ref"]
             and current["research"]["subject_path"] == canonical_path,
             "requested canonical identity was not selected")
+    require(current["research"].get("follow_up_protocol") == "dream.research.follow_up.v1",
+            "source-origin follow-up protocol was not advertised")
+    require(current["research"].get("discovery_audit") ==
+            {"validity": "legacy_or_unknown", "last_search": None},
+            "new subject claimed an existing audited search")
     canonical_read = read_one(reader, ref=canonical["entry_ref"], version=canonical["version"], view="full", max_chars=100_000)
     require(canonical_read["text"] == canonical_text, "canonical exact source changed before research")
     initial_notes = "Canary Aster has a project trail."
@@ -447,7 +452,7 @@ def run_subject_cycle(owner, runner, reader, report):
     # The imported display title is a section label, not another project name.
     unrelated_path = "sources/Elsewhere/Unrelated.md"
     unrelated = write(owner, unrelated_path, "## Purpose\n\nA separate fixture task has unrelated evidence.\n", 0)
-    requests = []
+    requests, search_audit = [], None
     # Follow two source links, then re-read a changed primary within this attempt.
     for target, source, text in ((trail_target, trail, trail_text), (primary_target, primary, old_text),
                                 (primary["entry_ref"], primary, new_text)):
@@ -463,6 +468,30 @@ def run_subject_cycle(owner, runner, reader, report):
         body = {**research_body(current), "queries": ["Canary Aster"] if not requests else [], "targets": [target]}
         requests.append(body)
         current = unwrap(runner.request("POST", "/v1/workspace/dreamer/narrative-discover", body))
+        audit = current["research"].get("discovery_audit") or {}
+        if len(requests) == 1:
+            search = audit.get("last_search") or {}
+            groups = search.get("groups") or []
+            require(audit.get("validity") == "current"
+                    and search.get("schema") == "dream.research.discovery.v1"
+                    and type(search.get("retrieval_policy")) is int and search["retrieval_policy"] > 0
+                    and type(search.get("searched_generation")) is int
+                    and 0 <= search["searched_generation"] <= current["research"]["snapshot_generation"]
+                    and search.get("queries") == ["canary aster"]
+                    and len(groups) == 2
+                    and {group.get("sort") for group in groups} == {"best_match", "last_modified"}
+                    and all(group.get("query_index") == 0 and group.get("limit") == 8
+                            and type(group.get("returned")) is int and 0 <= group["returned"] <= 8
+                            and group.get("execution_status") == "bounded"
+                            and group.get("output_limit_reached") is (group["returned"] == 8)
+                            for group in groups),
+                    "actual query did not produce a current bounded discovery audit")
+            search_audit = audit
+        elif len(requests) == 2:
+            require(audit == search_audit, "target-only discovery changed the actual search audit")
+        else:
+            require(audit.get("validity") == "outdated" and audit.get("last_search") is None,
+                    "changed evidence retained a current search audit")
         if len(requests) < 3:
             require(current["research"]["notes"] == initial_notes
                     and current["research"]["reviewed_sources"] == checked_selectors,
@@ -605,6 +634,10 @@ def run_subject_cycle(owner, runner, reader, report):
         "publication_eof_remains_strict": True,
         "imported_wiki_links_resolved": True,
         "subject_header_search_exercised": True,
+        "current_discovery_audit_verified": True,
+        "target_only_search_audit_preserved": True,
+        "changed_evidence_invalidates_search_audit": True,
+        "source_origin_protocol_advertised": True,
         "changed_scope_refresh_signal": True,
         "saved_progress_survives_additive_discovery": True,
         "changed_dependency_invalidates_progress": True,

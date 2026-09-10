@@ -57,6 +57,7 @@ struct Mock {
     narrative_context: Vec<Value>,
     current_admission: Option<Value>,
     research_jobs: Vec<Value>,
+    research_inputs: Option<Vec<Value>>,
     research_enabled: bool,
     research_next_count: usize,
     research_next_delay: Duration,
@@ -66,8 +67,10 @@ struct Mock {
     research_repair_replies: VecDeque<(StatusCode, String)>,
     research_candidate_replies: VecDeque<(StatusCode, String)>,
     research_checkpoint_replies: VecDeque<Value>,
+    research_follow_up_replies: VecDeque<Value>,
     omit_repair_ack: bool,
     research_discovery_sources: VecDeque<Vec<Value>>,
+    research_discovery_audits: VecDeque<Value>,
     research_comparisons: Vec<Value>,
 }
 #[path = "dreamer_run_contract/research_contract.rs"]
@@ -159,6 +162,9 @@ async fn narrative_discover(State(shared): State<Shared>, Json(body): Json<Value
                 .pop_front()
                 .unwrap_or_else(|| s.narrative_context.clone())
         );
+        if let Some(audit) = s.research_discovery_audits.pop_front() {
+            value["research"]["discovery_audit"] = audit;
+        }
         let source_generation = value["research"]["sources"]
             .as_array()
             .unwrap()
@@ -223,6 +229,9 @@ async fn admit(State(shared): State<Shared>, Json(body): Json<Value>) -> Json<Va
     if s.research_enabled {
         response["research_protocol"] = json!(1);
         response["comparison_proposals"] = json!(s.research_comparisons);
+        if let Some(inputs) = &s.research_inputs {
+            response["inputs"] = json!(inputs);
+        }
     }
     s.current_admission = Some(response.clone());
     Json(response)
@@ -304,6 +313,7 @@ async fn candidates(State(shared): State<Shared>, Json(body): Json<Value>) -> Re
             current["research"]["repair_feedback"] = Value::Null;
         }
         research_contract::apply_checkpoint_fixture(&mut s, &body, &mut current);
+        research_contract::apply_source_route_fixture(&mut s, &body, &mut current);
         result
             .as_object_mut()
             .unwrap()

@@ -22,6 +22,10 @@ Discovery uses ordinary Brunn search anchors and bounded lexical fallback pairs 
 
 Discovery deduplication includes a stable retrieval-policy version. A retained query from an older policy can run once under improved search even when its sources have not changed. Repeating that query under the same policy remains bounded, and exact operation-receipt replay still returns its saved acknowledgement without repeating search or writes.
 
+The current research view also carries a bounded, server-owned `discovery_audit`. It identifies the latest actual query batch, the retrieval policy, its search generation, and the result counts and limits for each query/sort. Validity is `current`, `outdated`, or `legacy_or_unknown`; only a relevant current audit can justify reusing a prior search. Counts and a notebook's claim that a search completed do not establish current search coverage. Output limits and internal sampling mean even a completed query with few results can miss evidence.
+
+An audit persists through operations that perform no search, while source, scope or historical-authority changes invalidate it. Its generation precedes actual search, with bounded relevant-change checks through commit and read; unrelated/generated changes do not by themselves invalidate it. A query-bearing duplicate request requires a matching current latest audit. An old hash without an audit, or an A query after its audit was replaced by B, executes again. Exact operation replay still executes no search. The audit is excluded from historical checkpoint projection and does not count as source review or runner progress.
+
 Research checkpoint ranges use the same end-of-document behavior as source reads: an in-bounds start with a bounded requested end past EOF records the actual last source line and validates the exact excerpt. All sources and notes commit together only after admission, current-version, permission and freshness checks. Empty sources, invalid starts/order and oversized original spans still fail. Candidate and publication citations remain strict, and saved normalized checkpoints are revalidated strictly.
 
 Research checkpoints persist compact selectors (entry reference, version, line range and validated path). Validation reopens exact source bodies, but their hydrated excerpts are omitted from the research record and admission so a broad evidence set cannot fill the notebook with duplicate source text. Existing excerpt-bearing records remain readable and become compact on their next save; immutable historical versions remain unchanged. Candidate and publication evidence still retains its exact hydrated excerpts and existing byte limits.
@@ -38,7 +42,7 @@ The existing `candidates` endpoint additionally accepts top-level `subject_ref`,
 
 Use one model response envelope, `dream.research.step.v1`, with `action` (`checkpoint`, `discover`, `submit`, `yield`, `done`), `queries`, `targets`, `notes`, `reviewed_sources`, `pending_queries`, `pending_targets`, `candidates`, `processed_inputs`, and `findings`. `checkpoint` is offered only when the API advertises `research.checkpoint_protocol: dream.research.checkpoint.v1`. It saves a nonempty source-backed partial result through `research-progress` and continues without a discovery request. It cannot submit candidates, process inputs or route/retire proposals. `submit` uses the existing candidate format and validators. `discover` requests missing evidence; `yield` retains a specific unresolved need; `done` records a supported no-change result. The wrapper forwards precise validation feedback for bounded local correction before yielding a repeatedly failing subject.
 
-Before submitting, the model makes a focused later-outcome check for unresolved information material to the current overview, unless equivalent valid research is already retained. Queries use the subject and current-state domain rather than requiring an older plan's date or vocabulary; returned exact sources must be read. Negative or capped results do not prove absence. This check should lead to a supported overview with dated state and local uncertainty, while peripheral leads remain pending; it does not require resolving every caveat or repeating equivalent searches.
+Before submitting, the model makes a focused later-outcome check for unresolved information material to the current overview. It may reuse an equivalent check only with a relevant current discovery audit, or an exact current primary-source link it followed and read. Queries use the subject and current-state domain rather than requiring an older plan's date or vocabulary; returned exact sources must be read. Negative or capped results do not prove absence. This check should lead to a supported overview with dated state and local uncertainty, while peripheral leads remain pending; it does not require resolving every caveat or repeating verified equivalent searches.
 
 If a progress save is definitively rejected because a cited source changed (`409 dreamer_source_changed`) or subject coverage needs refresh (`400 research_refresh_required`), a discover step still performs its requested discovery; a checkpoint step performs a header refresh with empty queries and targets. The new fenced discovery operation carries no rejected conclusions or dispositions. The next model turn receives the safe current admission and retained correction. These two typed errors are recognized only on `research-progress`. Other validation, permission, fencing and uncertain transport failures retain their existing handling. Repeated refresh rejections count toward the repair limit; discovery success alone does not reset them, while an acknowledged accepted evidence checkpoint does.
 
@@ -100,6 +104,41 @@ route, and queues the destination's existing canonical subject. It does not
 change either canonical identity, proposal bytes, destination or approval.
 Self-routing, cycles, conflicting destinations and capacity failures retain
 all work atomically.
+
+When `research.follow_up_protocol` advertises `dream.research.follow_up.v1`,
+the same route may instead use `origin_source: {entry_ref, version}` from
+current admitted and explicitly reviewed primary evidence. Exactly one origin
+kind is allowed. This supports consolidation of existing proposals when no new
+input event exists. The source route does not create or resurrect an input and
+never increments processed-input counts. It remains in the same durable
+follow-up collection, with the originating subject and snapshot recorded by
+the server. Older APIs cannot deserialize a retained source route and fail
+closed rather than discard it.
+
+Source routes have server-issued `route_id` and `revision` values. An offered
+completion token also binds the current destination comparison pointer.
+`resolved_follow_ups` may acknowledge these exact tokens only with `submit`
+or `done`, accompanied by a disposition finding. The server validates the
+tokens before changing a candidate and resolves work only after an accepted
+destination summary cites the current origin, or a fresh source-backed
+no-change result. Both require review of the current origin/replacement and
+every routed target. A pending stale destination can receive the revision
+that repairs it; it cannot justify no-change. Merging targets changes the
+route revision, so an old token cannot discard added work.
+
+Missing acknowledgments, source access uncertainty, rejected or zero-ID
+submissions and operational checkpoints retain source routes. Resolution
+returns operation-bound evidence and preserves the original route, reviewed
+replacement and destination in its immutable disposition. After enrichment,
+the originating retained job becomes due for an ordinary later comparison,
+without resetting its attempt fence. Duplicate retirement remains a separate
+whole-draft decision; routing never selects a survivor automatically.
+
+Ordinary current and historical state/run reads omit internal follow-up routes
+and route-bearing dispositions. Those records may reference primary evidence
+outside a proposal's dependency manifest. The current typed research view
+checks route access before exposing actionable work; projection does not
+delete the retained server records.
 
 Routes live independently of model-written pending leads. Admission exposes
 safe `research.routed_work` and `research.routed_targets`; the wrapper sends

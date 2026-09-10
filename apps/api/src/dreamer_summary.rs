@@ -492,9 +492,39 @@ fn render(document: &Document, request: &ReadItem, max_chars: usize) -> Value {
         value["metadata_omitted"] = json!(true);
         value["metadata_omitted_reason"] = json!("evidence_available_separately");
     } else if document.metadata != json!({}) {
+        let mut metadata = document.metadata.clone();
+        // Only research.safe_view may expose a current, freshly checked search
+        // audit. Ordinary current/historical snapshots do not recursively
+        // audit the checkpoint authority from which its queries may derive.
+        if let Some(coverage) = metadata
+            .get_mut("dreamer_research")
+            .and_then(|research| research.get_mut("coverage"))
+            .and_then(Value::as_object_mut)
+        {
+            coverage.remove("discovery_audit");
+        }
+        // Route authority is checked by the typed current routed_view, not by
+        // the ordinary proposal/run audit. A reviewed source can be routed
+        // before any proposal includes it in an immutable dependency manifest.
+        // Keep the durable identities and findings server-side on every old
+        // or current audit snapshot, including completed/excluded routes.
+        for key in ["dreamer_state", "dreamer_run"] {
+            if let Some(container) = metadata.get_mut(key) {
+                if let Some(research) = container.get_mut("research").and_then(Value::as_object_mut)
+                {
+                    research.remove("follow_ups");
+                }
+                if let Some(dispositions) = container
+                    .get_mut("source_dispositions")
+                    .and_then(Value::as_array_mut)
+                {
+                    dispositions.retain(|disposition| disposition.get("route").is_none());
+                }
+            }
+        }
         let remaining = max_chars.saturating_sub(selected.chars().count().min(max_chars));
-        if document.metadata.to_string().chars().count() <= remaining {
-            value["metadata"] = document.metadata.clone();
+        if metadata.to_string().chars().count() <= remaining {
+            value["metadata"] = metadata;
         } else {
             value["metadata_omitted"] = json!(true);
             value["metadata_omitted_reason"] = json!("response_budget");

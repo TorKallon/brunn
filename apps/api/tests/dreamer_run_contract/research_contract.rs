@@ -7,6 +7,16 @@ mod repair_contract;
 #[path = "checkpoint_contract.rs"]
 mod checkpoint_contract;
 
+#[path = "discovery_audit_contract.rs"]
+mod discovery_audit_contract;
+
+#[path = "source_origin_contract.rs"]
+mod source_origin_contract;
+
+pub(super) fn apply_source_route_fixture(s: &mut Mock, body: &Value, current: &mut Value) {
+    source_origin_contract::acknowledge(s, body, current);
+}
+
 pub(super) fn apply_checkpoint_fixture(s: &mut Mock, body: &Value, current: &mut Value) {
     checkpoint_contract::acknowledge(s, body, current);
 }
@@ -82,6 +92,7 @@ pub(super) async fn progress(State(shared): State<Shared>, Json(body): Json<Valu
             current["research"]["repair_feedback"] = Value::Null;
         }
         apply_checkpoint_fixture(&mut s, &body, &mut current);
+        apply_source_route_fixture(&mut s, &body, &mut current);
         if let Some(job) = s
             .research_jobs
             .iter_mut()

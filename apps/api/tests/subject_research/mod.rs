@@ -2,8 +2,11 @@
 use super::*;
 mod checkpoint;
 mod comparison;
+mod discovery_audit;
 mod repair;
 mod revalidation;
+mod source_origin;
+mod source_route_audit;
 
 fn research_request(admission: &Value) -> Value {
     let mut body = attempt(admission, admission["state_version"].as_i64().unwrap());

@@ -2,6 +2,10 @@
 //! Follow-ups retain identities only and are independent of model-written notes.
 use super::*;
 use std::collections::BTreeSet;
+mod source_routes;
+pub(super) use source_routes::{prepare_resolutions, resolve_sources};
+
+pub(super) const FOLLOW_UP_PROTOCOL: &str = "dream.research.follow_up.v1";
 
 const MAX_COMPARISONS: usize = 4;
 const MAX_COMPARISON_BYTES: usize = 64 * 1024;
@@ -33,20 +37,109 @@ impl InputIdentity {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SourceIdentity {
+    entry_ref: String,
+    version: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RouteIdentity {
+    route_id: Uuid,
+    revision: i64,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(try_from = "FollowUpWire")]
 pub(super) struct FollowUp {
     comparison: Pointer,
     subject_ref: String,
     origin_subject_ref: String,
-    origin_input: InputIdentity,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    origin_input: Option<InputIdentity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    origin_source: Option<SourceIdentity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    route: Option<RouteIdentity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    origin_snapshot_generation: Option<i64>,
     targets: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FollowUpWire {
+    comparison: Pointer,
+    subject_ref: String,
+    origin_subject_ref: String,
+    #[serde(default)]
+    origin_input: Option<InputIdentity>,
+    #[serde(default)]
+    origin_source: Option<SourceIdentity>,
+    #[serde(default)]
+    route: Option<RouteIdentity>,
+    #[serde(default)]
+    origin_snapshot_generation: Option<i64>,
+    targets: Vec<String>,
+}
+
+impl TryFrom<FollowUpWire> for FollowUp {
+    type Error = &'static str;
+
+    fn try_from(value: FollowUpWire) -> Result<Self, Self::Error> {
+        let event = value.origin_input.is_some()
+            && value.origin_source.is_none()
+            && value.route.is_none()
+            && value.origin_snapshot_generation.is_none();
+        let source = value.origin_input.is_none()
+            && value
+                .origin_source
+                .as_ref()
+                .is_some_and(|source| source.version > 0 && entry_id(&source.entry_ref).is_ok())
+            && value.route.as_ref().is_some_and(|route| route.revision > 0)
+            && value
+                .origin_snapshot_generation
+                .is_some_and(|generation| generation >= 0);
+        if !event && !source {
+            return Err("retained follow-up requires exactly one valid origin kind");
+        }
+        Ok(Self {
+            comparison: value.comparison,
+            subject_ref: value.subject_ref,
+            origin_subject_ref: value.origin_subject_ref,
+            origin_input: value.origin_input,
+            origin_source: value.origin_source,
+            route: value.route,
+            origin_snapshot_generation: value.origin_snapshot_generation,
+            targets: value.targets,
+        })
+    }
+}
+
+impl FollowUp {
+    fn origin_ref(&self) -> &str {
+        self.origin_input
+            .as_ref()
+            .map(|origin| origin.entry_ref.as_str())
+            .or_else(|| {
+                self.origin_source
+                    .as_ref()
+                    .map(|origin| origin.entry_ref.as_str())
+            })
+            .expect("validated follow-up origin")
+    }
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FollowUpRequest {
     comparison: Pointer,
-    origin_input: InputIdentity,
+    #[serde(default)]
+    origin_input: Option<InputIdentity>,
+    #[serde(default)]
+    origin_source: Option<SourceIdentity>,
     targets: Vec<String>,
 }
 
@@ -64,6 +157,11 @@ fn optional<'a>(body: &'a Value, field: &str) -> Option<&'a Value> {
 }
 
 pub(super) fn reject_candidate_fields(body: &Value) -> ApiResult<()> {
+    if body.get("resolved_follow_ups").is_some() || body.get("follow_up_protocol").is_some() {
+        return Err(ApiError::invalid(
+            "source route acknowledgements belong in research_progress",
+        ));
+    }
     if [body, &body["research_progress"]].iter().any(|body| {
         optional(body, "covers_existing").is_some()
             || optional(body, "follow_up").is_some()
@@ -245,6 +343,7 @@ pub(super) async fn validate_progress(
     body: &Value,
     processed: &[Value],
 ) -> ApiResult<()> {
+    source_routes::check_protocol(body)?;
     let covers = optional(body, "covers_existing");
     let follow_up = optional(body, "follow_up");
     let supersedes = optional(body, "supersedes_existing");
@@ -350,7 +449,30 @@ pub(super) async fn validate_progress(
                 "follow_up requires waiting progress with no processed inputs",
             ));
         }
-        let request: FollowUpRequest = serde_json::from_value(value.clone())?;
+        let mut request: FollowUpRequest = serde_json::from_value(value.clone())?;
+        if request.origin_input.is_some() == request.origin_source.is_some() {
+            return Err(ApiError::invalid(
+                "follow-up requires exactly one origin_input or origin_source",
+            ));
+        }
+        if let Some(origin) = &mut request.origin_source {
+            source_routes::require_protocol(body)?;
+            origin.entry_ref = format!("entry:{}", entry_id(&origin.entry_ref)?);
+            let reviewed: Vec<Source> = serde_json::from_value(body["reviewed_sources"].clone())?;
+            if origin.version < 1
+                || !job.sources.iter().any(|source| {
+                    source.entry_ref == origin.entry_ref && source.version == origin.version
+                })
+                || !reviewed.iter().any(|source| {
+                    source.entry_ref == origin.entry_ref && source.version == origin.version
+                })
+                || !source_routes::has_finding(body)
+            {
+                return Err(ApiError::invalid(
+                    "follow-up source origin requires exact admitted reviewed evidence and an explicit finding",
+                ));
+            }
+        }
         if request.targets.len() > MAX_TARGETS {
             return Err(ApiError::invalid("follow-up targets exceed 16 references"));
         }
@@ -383,16 +505,14 @@ pub(super) async fn validate_progress(
                 break;
             }
         }
-        if !data
-            .inputs
-            .iter()
-            .any(|input| request.origin_input.matches(input))
-        {
-            return Err(ApiError::invalid(
-                "follow-up origin must be an exact retained input",
-            ));
+        if let Some(origin) = &request.origin_input {
+            if !data.inputs.iter().any(|input| origin.matches(input)) {
+                return Err(ApiError::invalid(
+                    "follow-up origin must be an exact retained input",
+                ));
+            }
+            research::validate_processed(job, &[json!(origin)], Some(body))?;
         }
-        research::validate_processed(job, &[json!(request.origin_input)], Some(body))?;
         // Waiting can safely checkpoint a stale job, but it cannot transfer a
         // conclusion about another proposal without checked primary evidence.
         if !research::fresh(tx, auth, job).await? {
@@ -400,12 +520,19 @@ pub(super) async fn validate_progress(
                 "follow-up requires current exact research evidence",
             ));
         }
+        let origin_ref = request
+            .origin_input
+            .as_ref()
+            .map(|origin| &origin.entry_ref)
+            .or_else(|| {
+                request
+                    .origin_source
+                    .as_ref()
+                    .map(|origin| &origin.entry_ref)
+            })
+            .expect("one checked origin");
         let mut targets = BTreeSet::new();
-        for reference in request
-            .targets
-            .iter()
-            .chain(std::iter::once(&request.origin_input.entry_ref))
-        {
+        for reference in request.targets.iter().chain(std::iter::once(origin_ref)) {
             let reference = format!("entry:{}", entry_id(reference)?);
             if !job
                 .sources
@@ -430,7 +557,8 @@ pub(super) async fn validate_progress(
             ));
         }
         if data.research.follow_ups.iter().any(|route| {
-            route.origin_input.entry_ref == request.origin_input.entry_ref
+            route.origin_ref() == origin_ref
+                && route.origin_input.is_some() == request.origin_input.is_some()
                 && route.subject_ref != destination
         }) {
             return Err(ApiError::invalid(
@@ -438,7 +566,9 @@ pub(super) async fn validate_progress(
             ));
         }
         if let Some(route) = data.research.follow_ups.iter_mut().find(|route| {
-            route.origin_input == request.origin_input && route.subject_ref == destination
+            route.origin_input == request.origin_input
+                && route.origin_source == request.origin_source
+                && route.subject_ref == destination
         }) {
             targets.extend(route.targets.iter().cloned());
             if targets.len() > MAX_TARGETS {
@@ -446,7 +576,16 @@ pub(super) async fn validate_progress(
                     "retained follow-up targets exceed 16 references",
                 ));
             }
-            route.targets = targets.into_iter().collect();
+            let targets: Vec<_> = targets.into_iter().collect();
+            if route.targets != targets {
+                if let Some(identity) = &mut route.route {
+                    identity.revision = identity
+                        .revision
+                        .checked_add(1)
+                        .ok_or_else(|| ApiError::invalid("follow-up revision is exhausted"))?;
+                }
+                route.targets = targets;
+            }
         } else {
             if data.research.follow_ups.len() >= MAX_FOLLOW_UPS || targets.len() > MAX_TARGETS {
                 return Err(ApiError::invalid(
@@ -457,7 +596,16 @@ pub(super) async fn validate_progress(
                 comparison: request.comparison,
                 subject_ref: destination.clone(),
                 origin_subject_ref: job.subject_ref.clone(),
+                route: request.origin_source.as_ref().map(|_| RouteIdentity {
+                    route_id: Uuid::now_v7(),
+                    revision: 1,
+                }),
+                origin_snapshot_generation: request
+                    .origin_source
+                    .as_ref()
+                    .map(|_| job.snapshot_generation),
                 origin_input: request.origin_input,
+                origin_source: request.origin_source,
                 targets: targets.into_iter().collect(),
             });
         }
@@ -481,6 +629,19 @@ pub(super) fn retains_priority(data: &RunState, subject_ref: &str) -> bool {
         .any(|route| route.subject_ref == subject_ref)
 }
 
+pub(super) fn retains_source_work(data: &RunState, subject_ref: &str) -> bool {
+    data.research
+        .follow_ups
+        .iter()
+        .any(|route| route.subject_ref == subject_ref && route.origin_source.is_some())
+}
+
+pub(super) fn replay_resolution(ack: &mut Value) {
+    if ack.is_object() {
+        ack["replayed"] = json!(true);
+    }
+}
+
 /// A proven intake exclusion retires an obligation, not model work. Neither a
 /// missing input nor temporary inability to read a source is such a proof.
 pub(super) async fn retire_excluded(
@@ -491,15 +652,31 @@ pub(super) async fn retire_excluded(
 ) -> ApiResult<()> {
     let mut retired = Vec::new();
     for route in &data.research.follow_ups {
+        if route.origin_source.is_some() {
+            if let Some(disposition) = source_routes::policy_exclusion(tx, auth, route).await? {
+                let path = format!(
+                    "dreams/reviews/research-exclusion-{}.md",
+                    digest(&disposition)
+                );
+                if load_entry(tx, auth.user_id.0, &path).await?.is_none() {
+                    put_entry(state, tx, auth, &path,
+                        "# Research source exclusion\n\nAn explicit current source-policy exclusion retired routing without model completion.\n".into(),
+                        json!({"kind":"dreamer_review","dreamer_review":{"schema":"dream.review.v1","disposition":disposition}}), 0).await?;
+                }
+                retired.push((route.clone(), disposition));
+            }
+            continue;
+        }
+        let origin_input = route.origin_input.as_ref().expect("event route");
         if data
             .inputs
             .iter()
-            .any(|input| input.entry_ref == route.origin_input.entry_ref)
+            .any(|input| input.entry_ref == origin_input.entry_ref)
         {
             continue;
         }
         let Some(exclusion) = data.source_dispositions.iter().find(|disposition| {
-            disposition["entry_ref"] == route.origin_input.entry_ref
+            disposition["entry_ref"] == origin_input.entry_ref
                 && matches!(
                     disposition["disposition"].as_str(),
                     Some(
@@ -522,18 +699,17 @@ pub(super) async fn retire_excluded(
                 "# Research source exclusion\n\nAn explicit source policy exclusion retired retained routing. No model completion or input processing is claimed.\n".into(),
                 json!({"kind":"dreamer_review","dreamer_review":{"schema":"dream.review.v1","disposition":disposition}}), 0).await?;
         }
-        retired.push((
-            route.origin_input.clone(),
-            route.subject_ref.clone(),
-            disposition,
-        ));
+        retired.push((route.clone(), disposition));
     }
     data.research.follow_ups.retain(|route| {
-        !retired.iter().any(|(origin, destination, _)| {
-            route.origin_input == *origin && route.subject_ref == *destination
+        !retired.iter().any(|(old, _)| {
+            route.origin_input == old.origin_input
+                && route.origin_source == old.origin_source
+                && route.subject_ref == old.subject_ref
         })
     });
-    for (_, destination, disposition) in retired {
+    for (route, disposition) in retired {
+        let destination = route.subject_ref;
         data.source_dispositions.push(disposition);
         if !retains_priority(data, &destination)
             && data.research.follow_up_priorities.contains(&destination)
@@ -551,9 +727,11 @@ pub(super) async fn retire_excluded(
 
 pub(super) fn validate_legacy_processing(data: &RunState, processed: &[Value]) -> ApiResult<()> {
     if data.research.follow_ups.iter().any(|route| {
-        processed
-            .iter()
-            .any(|input| input["entry_ref"] == route.origin_input.entry_ref)
+        route.origin_input.as_ref().is_some_and(|origin| {
+            processed
+                .iter()
+                .any(|input| input["entry_ref"] == origin.entry_ref)
+        })
     }) {
         return Err(ApiError::invalid(
             "routed inputs require disposition by their canonical research destination",
@@ -583,9 +761,12 @@ pub(super) async fn resolve_processed(
     // Do not consume the origin and leave a dangling route. A reviewed header
     // alone is insufficient evidence that an accepted overview uses it.
     for route in &data.research.follow_ups {
+        let Some(origin_input) = &route.origin_input else {
+            continue;
+        };
         for input in processed
             .iter()
-            .filter(|input| input["entry_ref"] == route.origin_input.entry_ref)
+            .filter(|input| input["entry_ref"] == origin_input.entry_ref)
         {
             let destination = data
                 .items
@@ -636,12 +817,13 @@ pub(super) async fn resolve_processed(
         }
     }
     data.research.follow_ups.retain(|route| {
+        let Some(origin_input) = &route.origin_input else { return true };
         if route.subject_ref != job.subject_ref {
             return true;
         }
-        let replacement = processed.iter().find(|input| input["entry_ref"] == route.origin_input.entry_ref
-            && input["version"].as_i64().is_some_and(|version| version >= route.origin_input.version)
-            && input["generation"].as_i64().is_some_and(|generation| generation >= route.origin_input.generation));
+        let replacement = processed.iter().find(|input| input["entry_ref"] == origin_input.entry_ref
+            && input["version"].as_i64().is_some_and(|version| version >= origin_input.version)
+            && input["generation"].as_i64().is_some_and(|generation| generation >= origin_input.generation));
         let reviewed_all = route.targets.iter().all(|reference| job.sources.iter().any(|head|
             &head.entry_ref == reference && reviewed.iter().any(|source|
                 source.entry_ref == head.entry_ref && source.version == head.version)));
@@ -671,6 +853,13 @@ pub(super) async fn routed_view(
         .iter()
         .filter(|route| route.subject_ref == job.subject_ref)
     {
+        if route.origin_source.is_some() {
+            let (view, missing) = source_routes::view(tx, auth, data, job, route).await?;
+            work.push(view);
+            targets.extend(missing);
+            continue;
+        }
+        let origin_input = route.origin_input.as_ref().expect("event route");
         let ids = route
             .targets
             .iter()
@@ -679,7 +868,7 @@ pub(super) async fn routed_view(
         let heads = research::headers(tx, auth, &ids, i64::MAX).await?;
         let origin = heads
             .iter()
-            .find(|head| head.entry_ref == route.origin_input.entry_ref);
+            .find(|head| head.entry_ref == origin_input.entry_ref);
         let current = data.inputs.iter().find(|input| {
             origin.is_some_and(|head| {
                 head.entry_ref == input.entry_ref && head.version == input.version
@@ -701,7 +890,7 @@ pub(super) async fn routed_view(
             "source_unavailable"
         } else if current.is_none() {
             "input_not_retained"
-        } else if !current.is_some_and(|input| route.origin_input.matches(input)) {
+        } else if !current.is_some_and(|input| origin_input.matches(input)) {
             "source_changed"
         } else {
             "pending"
@@ -735,4 +924,49 @@ pub(super) async fn routed_view(
             "targets":visible_targets,"status":status}));
     }
     Ok((work, targets.into_iter().collect()))
+}
+
+#[cfg(test)]
+mod origin_wire_tests {
+    use super::*;
+
+    #[test]
+    fn source_origin_wire_fails_closed_on_old_reader_and_rejects_ambiguous_origins() {
+        #[derive(Deserialize)]
+        struct OldFollowUp {
+            origin_input: InputIdentity,
+        }
+        let source = "entry:019fba27-687b-7582-8b99-e9371dbe2ce8";
+        let mut event = json!({"comparison":{"item_id":"2030-01-01/1","candidate_hash":"a".repeat(64),
+            "run_entry_ref":source,"run_version":1},"subject_ref":source,"origin_subject_ref":source,
+            "origin_input":{"entry_ref":source,"version":1,"generation":1},"targets":[source]});
+        let legacy: FollowUp = serde_json::from_value(event.clone()).unwrap();
+        assert_eq!(serde_json::to_value(legacy).unwrap(), event);
+        assert_eq!(
+            serde_json::from_value::<OldFollowUp>(event.clone())
+                .unwrap()
+                .origin_input
+                .version,
+            1
+        );
+        let input = event
+            .as_object_mut()
+            .unwrap()
+            .remove("origin_input")
+            .unwrap();
+        event["origin_source"] = json!({"entry_ref":source,"version":1});
+        event["origin_snapshot_generation"] = json!(1);
+        event["route"] = json!({"route_id":Uuid::now_v7(),"revision":1});
+        let retained: FollowUp = serde_json::from_value(event.clone()).unwrap();
+        let serialized = serde_json::to_value(retained).unwrap();
+        assert!(serialized.get("origin_input").is_none());
+        assert!(serde_json::from_value::<OldFollowUp>(serialized).is_err());
+        event["origin_input"] = input;
+        assert!(serde_json::from_value::<FollowUp>(event.clone()).is_err());
+        event.as_object_mut().unwrap().remove("origin_input");
+        event["route"]["revision"] = json!(0);
+        assert!(serde_json::from_value::<FollowUp>(event.clone()).is_err());
+        event.as_object_mut().unwrap().remove("origin_source");
+        assert!(serde_json::from_value::<FollowUp>(event).is_err());
+    }
 }

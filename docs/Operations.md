@@ -357,6 +357,15 @@ consume inputs or change a review decision. Successful source discovery alone
 does not clear the correction or reset the rejection limit. Deploy the API
 before the runner so its explicit correction receipt is available.
 
+The current research `discovery_audit` identifies the latest actual query
+batch and retrieval policy. A current relevant audit can justify reusing a
+search; old notebook assertions or result counts cannot. Empty refreshes and
+target-only discovery preserve the last real search without claiming a new
+one. Source/scope/authority changes invalidate it; unrelated generated writes
+do not. Search result limits remain explicit, and audit-only changes earn no
+research progress. This disposable audit stays outside historical checkpoint
+projections.
+
 Source changes can invalidate current conclusions while research is running.
 With `dream.research.checkpoint.v1`, the model can save partial research and
 continue without requesting another search. V2 notebooks retain up to four
@@ -409,6 +418,15 @@ whole-draft coverage assessment and transactional checks of both proposals and
 all durable owner-decision audits. Its bytes and history remain intact, and an
 old client cannot approve a superseded card. See the subject-research design
 for the comparison, follow-up and retirement contracts.
+
+The advertised `dream.research.follow_up.v1` capability also permits routing
+from reviewed primary evidence when no input event remains. Source-origin
+routes have exact completion tokens and resolve only with accepted supported
+enrichment or fresh no-change; they do not manufacture or consume events.
+The origin job remains available for a later duplicate comparison. Keep an
+API with source-origin support while any such route is retained: older state
+readers reject the new origin rather than erase its obligation. Preserve
+immutable route dispositions during recovery, along with v2 notebook support.
 
 The server atomically publishes the accepted terminal run and the deterministic
 `dreams/latest-receipt.md` projection using `dream.latest-receipt.v2`. The latter

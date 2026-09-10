@@ -188,6 +188,10 @@ class DreamerProductionCanaryTests(unittest.TestCase):
 
     def test_subject_cycle_requires_current_replay_full_dependencies_and_stale_fallback(self):
         for fault, error in ((None, None), ("protocol", "research_protocol 1"),
+                             ("source_origin_protocol", "source-origin follow-up protocol"),
+                             ("discovery_audit", "current bounded discovery audit"),
+                             ("audit_target_refresh", "target-only discovery changed"),
+                             ("audit_source_change", "changed evidence retained"),
                              ("checkpoint_eof", "exact end-of-document selectors"),
                              ("checkpoint_excerpt", "copied source excerpts"),
                              ("publication_eof", "publication accepted an out-of-range"),
@@ -218,6 +222,8 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                             "inputs": headers, "frozen_generation": 3, "processed_generation": 0}
                 job = {"subject_ref": canonical["entry_ref"], "subject_path": canonical["path"],
                        "output_path": "derived/entities/canary-aster.md", "output_version": 0,
+                       "follow_up_protocol": None if fault == "source_origin_protocol" else "dream.research.follow_up.v1",
+                       "discovery_audit": {"validity": "legacy_or_unknown", "last_search": None},
                        "notes": "", "reviewed_sources": [], "coverage": {"unresolved_targets": []}}
                 initial_selectors = [{"entry_ref": canonical["entry_ref"], "version": 1,
                                       "start_line": 3, "end_line": 203, "path": canonical["path"]}]
@@ -225,6 +231,21 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                                "research": {**job, "version": 1 if index == 0 else index + 2, "sources": sources,
                                             "snapshot_generation": 4 if index == 3 else 3}}
                               for index, sources in enumerate(([canonical], headers[:2], headers, [canonical, trail, changed]))]
+                search_audit = {"validity": "current", "last_search": {
+                    "schema": "dream.research.discovery.v1", "retrieval_policy": 2, "searched_generation": 3,
+                    "queries": ["canary aster"], "groups": [
+                        {"query_index": 0, "sort": sort, "returned": 1, "limit": 8,
+                         "execution_status": "bounded", "output_limit_reached": False}
+                        for sort in ["best_match", "last_modified"]]}}
+                for item in admissions[1:3]:
+                    item["research"]["discovery_audit"] = deepcopy(search_audit)
+                admissions[3]["research"]["discovery_audit"] = {"validity": "outdated", "last_search": None}
+                if fault == "discovery_audit":
+                    admissions[1]["research"]["discovery_audit"]["last_search"]["queries"] = ["unrelated query"]
+                elif fault == "audit_target_refresh":
+                    admissions[2]["research"]["discovery_audit"]["last_search"]["searched_generation"] = 4
+                elif fault == "audit_source_change":
+                    admissions[3]["research"]["discovery_audit"] = deepcopy(search_audit)
                 initial_progress = deepcopy(admissions[0])
                 initial_progress["state_version"] = 3
                 initial_progress["research"].update(version=2, notes="Canary Aster has a project trail.",

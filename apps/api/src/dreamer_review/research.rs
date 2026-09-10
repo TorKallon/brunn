@@ -5,6 +5,7 @@ use crate::dreamer::research::{MAX_RESEARCH_NOTES_BYTES, RepairFeedback, RepairP
 use crate::dreamer_subject::{SubjectScope, check_scope, create_scope, research_change_page};
 use std::collections::{BTreeMap, BTreeSet};
 pub(super) mod checkpoints;
+mod discovery_audit;
 
 const MAX_SOURCES: usize = 256;
 const MAX_RECEIPTS: usize = 24;
@@ -153,7 +154,9 @@ pub(super) async fn save(
     job: &Job,
     version: i64,
 ) -> ApiResult<i64> {
-    checkpoints::reserve(tx, auth, job, version + 1).await?;
+    let mut job = job.clone();
+    discovery_audit::invalidate_changed_authority(&mut job);
+    checkpoints::reserve(tx, auth, &job, version + 1).await?;
     let metadata = json!({"kind":"dreamer_research","dreamer_research":job});
     if serde_json::to_vec(&metadata)?.len() > MAX_JOB_BYTES {
         return Err(ApiError::invalid(
@@ -513,6 +516,7 @@ async fn safe_view(
         None => Value::Null,
     };
     checkpoints::project(tx, auth, job, version, scope_fresh, &mut view).await?;
+    discovery_audit::project(tx, auth, job, version, &mut view).await?;
     Ok(view)
 }
 
@@ -530,6 +534,7 @@ pub(super) async fn view_active(
     let mut view = safe_view(tx, auth, &job, version).await?;
     if !view.is_null() {
         let (work, targets) = research_comparison::routed_view(tx, auth, data, &job).await?;
+        view["follow_up_protocol"] = json!(research_comparison::FOLLOW_UP_PROTOCOL);
         view["routed_work"] = json!(work);
         view["routed_targets"] = json!(targets);
     }
@@ -850,6 +855,7 @@ async fn refresh(
     let prior_evidence_changed = job.sources.iter().any(|source| !current.contains(source));
     let scope_changed = !fresh(tx, auth, job).await?;
     if prior_evidence_changed || scope_changed {
+        discovery_audit::invalidate(job);
         capture_revalidation(job, job_version)?;
         job.notes.clear();
         job.reviewed_sources.clear();
@@ -1180,6 +1186,7 @@ pub(super) async fn apply_progress(
         "checkpoint_contexts",
         "current_checkpoint",
         "checkpoint_receipt",
+        "discovery_audit",
     ]
     .iter()
     .any(|field| body.get(field).is_some())
@@ -1201,6 +1208,7 @@ pub(super) async fn apply_progress(
     };
     let status = string(body, "status")?;
     if status == "waiting" && !fresh(tx, auth, job).await? {
+        discovery_audit::invalidate(job);
         initialize_revalidation(tx, auth, job, job_version).await?;
         capture_revalidation(job, job_version)?;
         // Yielding unavailable/unchecked evidence is scheduling, not a claim.
@@ -1338,9 +1346,15 @@ pub(super) async fn progress(
             response["checkpoint_receipt"] = ack.clone();
             checkpoints::replay(&mut response["checkpoint_receipt"]);
         }
+        if let Some(ack) = replay["result"].get("follow_up_receipt") {
+            response["follow_up_receipt"] = ack.clone();
+            research_comparison::replay_resolution(&mut response["follow_up_receipt"]);
+        }
         return Ok(Json(json!({"data":response,"no_op":true})));
     }
     check_job(&data, &body, &job, job_version)?;
+    let source_resolutions =
+        research_comparison::prepare_resolutions(&mut tx, &auth, &data, &job, &body, false).await?;
     if body.get("repair_feedback").is_some() {
         apply_repair_feedback(&mut job, &body)?;
         let ack = json!({"operation_id":operation_id,"recorded":true});
@@ -1415,6 +1429,18 @@ pub(super) async fn progress(
     } else {
         Vec::new()
     };
+    let follow_up_receipt = research_comparison::resolve_sources(
+        &state,
+        &mut tx,
+        &auth,
+        &mut data,
+        &job,
+        source_resolutions,
+        &body,
+        None,
+        &operation_id,
+    )
+    .await?;
     let before = data.inputs.len();
     data.inputs.retain(|i| {
         !processed.iter().any(|p| {
@@ -1431,6 +1457,15 @@ pub(super) async fn progress(
         .min()
         .unwrap_or(data.scanned_generation)
         .min(data.scanned_generation);
+    if job.status == "no_change"
+        && research_comparison::retains_source_work(&data, &job.subject_ref)
+    {
+        job.status = "researching".into();
+        job.retry_at = Utc::now();
+        if let Some(ack) = &mut checkpoint_receipt {
+            ack["subject_complete"] = json!(false);
+        }
+    }
     if job.status == "no_change" {
         if !research_comparison::retains_priority(&data, &job.subject_ref) {
             data.research
@@ -1450,13 +1485,16 @@ pub(super) async fn progress(
         &auth,
         &operation_id,
         &hash,
-        json!({"status":job.status,"follow_up_dispositions":dispositions,"checkpoint_receipt":checkpoint_receipt}),
+        json!({"status":job.status,"follow_up_dispositions":dispositions,"checkpoint_receipt":checkpoint_receipt,"follow_up_receipt":follow_up_receipt}),
     );
     save(&state, &mut tx, &auth, &job, job_version).await?;
     let version = save_state(&state, &mut tx, &auth, &data, version).await?;
     let mut response = admission_response(&mut tx, &auth, &data, version).await?;
     if let Some(ack) = checkpoint_receipt {
         response["checkpoint_receipt"] = ack;
+    }
+    if let Some(ack) = follow_up_receipt {
+        response["follow_up_receipt"] = ack;
     }
     tx.commit().await?;
     Ok(Json(json!({"data":response})))
@@ -1520,6 +1558,11 @@ pub(super) async fn discover(
 ) -> ApiResult<Json<Value>> {
     let auth = runner_auth(&auth)?;
     let reference = string(&body, "subject_ref")?.to_owned();
+    if body.get("resolved_follow_ups").is_some() || body.get("follow_up_protocol").is_some() {
+        return Err(ApiError::invalid(
+            "source follow-up acknowledgements are not supported during discovery",
+        ));
+    }
     let (operation_id, hash) = operation(&body, "narrative-discover")?;
     let queries = strings(&body, "queries", 6, 160)?;
     let targets = strings(&body, "targets", 32, 1024)?;
@@ -1547,15 +1590,7 @@ pub(super) async fn discover(
         ));
     }
     check_job(&data, &body, &job, job_version)?;
-    let normalized = queries
-        .iter()
-        .map(|q| {
-            q.split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ")
-                .to_lowercase()
-        })
-        .collect::<BTreeSet<_>>();
+    let normalized = discovery_audit::normalize(&queries)?;
     let target_set = targets
         .iter()
         .map(|t| t.trim().to_owned())
@@ -1563,16 +1598,21 @@ pub(super) async fn discover(
     let query_hash = digest(&json!({"queries":normalized,"targets":target_set,
         "retrieval_policy":simple_core::DREAMER_LEXICAL_POLICY_VERSION}));
     let prior_fresh = fresh(&mut tx, &auth, &job).await?;
-    let duplicate = job
-        .discoveries
-        .iter()
-        .any(|d| d["query_hash"] == query_hash)
-        && prior_fresh;
+    let duplicate = if normalized.is_empty() {
+        job.discoveries
+            .iter()
+            .any(|d| d["query_hash"] == query_hash)
+            && prior_fresh
+    } else {
+        discovery_audit::matches(&mut tx, &auth, &job, job_version, &normalized).await?
+    };
+    let searched_generation = generation(&mut tx, &auth).await?;
+    let search_basis = job.clone();
     tx.commit().await?;
     // Search is read-only and does not hold the owner write lock. Exact targets
     // are resolved again under RLS when the operation commits.
-    let results = if !duplicate && !queries.is_empty() {
-        simple_core::search_headers_for_dreamer(&state, &auth, &queries).await?
+    let results = if !duplicate && !normalized.is_empty() {
+        simple_core::search_headers_for_dreamer(&state, &auth, &normalized).await?
     } else {
         Vec::new()
     };
@@ -1626,6 +1666,11 @@ pub(super) async fn discover(
     }
     refresh(&mut tx, &auth, &mut job, job_version, upper).await?;
     let admitted = headers(&mut tx, &auth, &leads, upper).await?;
+    let search_results_current = expected.iter().all(|(id, version)| {
+        admitted
+            .iter()
+            .any(|input| input.entry_ref == format!("entry:{id}") && input.version == *version)
+    });
     let before = job.sources.clone();
     for input in admitted {
         let id = entry_id(&input.entry_ref)?;
@@ -1658,6 +1703,7 @@ pub(super) async fn discover(
     // an earlier header changed or disappeared; refresh separately invalidates
     // conclusions when newer relevant corpus changes affect the subject scope.
     if before.iter().any(|source| !job.sources.contains(source)) {
+        discovery_audit::invalidate(&mut job);
         capture_revalidation(&mut job, job_version)?;
         job.notes.clear();
         job.reviewed_sources.clear();
@@ -1667,6 +1713,23 @@ pub(super) async fn discover(
     job.coverage = json!({"change_status":change_coverage["change_status"],"change_reason":change_coverage["change_reason"],"changed_source_count":change_coverage["changed_source_count"],"change_cursor":change_coverage["change_cursor"],"change_upper":change_coverage["change_upper"],"pending_source_refs":change_coverage["pending_source_refs"],"query_results":results.iter().map(|r|json!({"id":r["id"],"returned":r["candidates"].as_array().map_or(0,Vec::len),"query_status":r.get("query_status").cloned().unwrap_or(json!("complete"))})).collect::<Vec<_>>(),
         "source_cap_reached":job.sources.len()>=MAX_SOURCES,"unresolved_targets":unresolved,
         "meaning":"Bounded matching evidence; unresolved targets and search limits are not proof of absence."});
+    if let Some(audit) = change_coverage.get("discovery_audit") {
+        job.coverage["discovery_audit"] = audit.clone();
+    }
+    if !duplicate && !normalized.is_empty() {
+        discovery_audit::record(
+            &mut tx,
+            &auth,
+            &search_basis,
+            &mut job,
+            job_version,
+            searched_generation,
+            normalized,
+            &results,
+            search_results_current,
+        )
+        .await?;
+    }
     if job.discoveries.len() >= 64 {
         job.discoveries.remove(0);
     }

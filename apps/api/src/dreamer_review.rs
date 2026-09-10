@@ -2183,6 +2183,7 @@ pub async fn candidates(
             response["state_version"] = json!(version);
             response["no_op"] = json!(true);
             research::checkpoints::replay(&mut response["checkpoint_receipt"]);
+            research_comparison::replay_resolution(&mut response["follow_up_receipt"]);
             return Ok(Json(response));
         }
         research::check_job(&data, &body, &job, job_version)?;
@@ -2199,6 +2200,30 @@ pub async fn candidates(
     }
     let subject_submission = research_job.is_some();
     let a = active(&data, &body, &auth, version)?;
+    let source_resolutions = if let Some((job, _)) = &research_job {
+        research_comparison::prepare_resolutions(
+            &mut tx,
+            &auth,
+            &data,
+            job,
+            body.get("research_progress").unwrap_or(&Value::Null),
+            true,
+        )
+        .await?
+    } else {
+        if body["research_progress"]
+            .get("resolved_follow_ups")
+            .is_some()
+            || body["research_progress"]
+                .get("follow_up_protocol")
+                .is_some()
+        {
+            return Err(ApiError::invalid(
+                "source routes require the selected research subject",
+            ));
+        }
+        Vec::new()
+    };
     let list: Vec<Candidate> =
         serde_json::from_value(body.get("candidates").cloned().unwrap_or(json!([])))?;
     if list.len() > 16 {
@@ -2769,8 +2794,32 @@ pub async fn candidates(
             !ids.is_empty(),
         )
         .await?;
-        let subject_complete =
-            !ids.is_empty() && (job.schema != "dream.research.v2" || job.status != "researching");
+        let (operation_id, hash) = research_operation.expect("research operation");
+        if let Some(ack) = research_comparison::resolve_sources(
+            &state,
+            &mut tx,
+            &auth,
+            &mut data,
+            &job,
+            source_resolutions,
+            &progress,
+            Some(&ids),
+            &operation_id,
+        )
+        .await?
+        {
+            response["follow_up_receipt"] = ack;
+        }
+        if research_comparison::retains_source_work(&data, &job.subject_ref) {
+            job.status = "researching".into();
+            job.retry_at = Utc::now();
+            if let Some(ack) = &mut checkpoint_receipt {
+                ack["subject_complete"] = json!(false);
+            }
+        }
+        let subject_complete = !ids.is_empty()
+            && !research_comparison::retains_source_work(&data, &job.subject_ref)
+            && (job.schema != "dream.research.v2" || job.status != "researching");
         if !ids.is_empty() {
             job.repair_feedback = None;
             research::clear_revalidation(&mut job);
@@ -2784,7 +2833,6 @@ pub async fn candidates(
                 .retain(|reference| reference != &job.subject_ref);
         }
         data.research.completed += usize::from(subject_complete);
-        let (operation_id, hash) = research_operation.expect("research operation");
         if let Some(ack) = &mut checkpoint_receipt {
             ack["operation_id"] = json!(operation_id);
             response["checkpoint_receipt"] = ack.clone();

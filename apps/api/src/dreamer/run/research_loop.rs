@@ -33,7 +33,54 @@ fn progress(step: &research::Step, status: &str, current: &Value) -> Value {
     if let Some(follow_up) = &step.follow_up {
         value["follow_up"] = follow_up.clone();
     }
+    if step
+        .follow_up
+        .as_ref()
+        .is_some_and(|route| route.get("origin_source").is_some())
+        || step.resolved_follow_ups.is_some()
+    {
+        value["follow_up_protocol"] = json!(research::FOLLOW_UP_PROTOCOL);
+        value["findings"] = json!(step.findings);
+    }
+    if let Some(resolved) = &step.resolved_follow_ups {
+        value["resolved_follow_ups"] = json!(resolved);
+    }
     value
+}
+
+fn follow_up_ack(
+    step: &research::Step,
+    operation_id: &str,
+    response: &Value,
+    accepted: bool,
+) -> Result<(), ClientError> {
+    if step
+        .follow_up
+        .as_ref()
+        .is_none_or(|route| route.get("origin_source").is_none())
+        && step.resolved_follow_ups.is_none()
+    {
+        return Ok(());
+    }
+    let ack = &response["follow_up_receipt"];
+    let expected = if accepted {
+        step.resolved_follow_ups
+            .as_ref()
+            .map_or(json!([]), |resolved| json!(resolved))
+    } else {
+        json!([])
+    };
+    if ack["protocol"] != research::FOLLOW_UP_PROTOCOL
+        || ack["operation_id"] != operation_id
+        || ack["recorded"] != true
+        || ack["replayed"].as_bool().is_none()
+        || ack["resolved_follow_ups"] != expected
+    {
+        return Err(ClientError::Failed(
+            "source follow-up acknowledgement was missing or did not match the operation".into(),
+        ));
+    }
+    Ok(())
 }
 
 struct CheckpointAck {
@@ -712,6 +759,12 @@ impl Dreamer {
                                 let count = value["accepted_candidate_ids"]
                                     .as_array()
                                     .map_or(0, Vec::len);
+                                if let Err(error) =
+                                    follow_up_ack(&step, &operation_id, &value, count > 0)
+                                {
+                                    failure = Some(error.to_string());
+                                    break 'subjects;
+                                }
                                 accepted += count;
                                 processed += step.processed_inputs.len();
                                 if count > 0 {
@@ -754,6 +807,15 @@ impl Dreamer {
                             .await
                         {
                             Ok(value) => {
+                                if let Err(error) = follow_up_ack(
+                                    &step,
+                                    &operation_id,
+                                    &value,
+                                    step.action == research::Action::Done,
+                                ) {
+                                    failure = Some(error.to_string());
+                                    break 'subjects;
+                                }
                                 let ack = match checkpoint_ack(&current, &operation_id, &value) {
                                     Ok(ack) => ack,
                                     Err(error) => {
