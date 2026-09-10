@@ -528,11 +528,11 @@ async fn draft_replacement_requires_exact_offered_identity_and_preserves_immutab
         )
         .await;
     }
-    let mut no_finding = custody(&a, replacement.clone(), Some(a_ptr.clone()));
-    no_finding["findings"] = json!(["   "]);
-    rejected_unchanged(&f, &s.canonical, PROGRESS, no_finding).await;
     let before = current(&f, "dreams/state.md").await.unwrap();
-    let second_op = custody(&a, replacement.clone(), Some(a_ptr.clone()));
+    let mut second_op = custody(&a, replacement.clone(), Some(a_ptr.clone()));
+    // A boilerplate sentence is not a retention check. Exact wrapper-owned
+    // identity is still mandatory, and the earlier draft version remains.
+    second_op["findings"] = json!([]);
     let b = save(&f, second_op.clone()).await;
     let b_ptr = pointer(&b);
     assert_eq!(

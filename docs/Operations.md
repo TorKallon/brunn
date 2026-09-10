@@ -363,9 +363,12 @@ accepted research notes and holds no approval or input-completion authority.
 The runner checks an exact operation, version and content-hash receipt before
 submitting. Source changes trigger bounded evidence refresh; a later attempt can
 revise the preserved draft using its original context and current source deltas.
-The model must explicitly identify a different draft's replacement and explain
-how useful work was incorporated. Only acceptance of the matching candidate
-retires it. Failed, interrupted, duplicate and ambiguous submissions retain it.
+The wrapper supplies the currently offered replacement identity; the model
+revises prose and evidence without copying custody versions or hashes. A model
+explanation of incorporation is not proof that useful content was retained.
+The server still checks the exact replacement identity and preserves immutable
+earlier versions. Only acceptance of the matching candidate retires it. Failed,
+interrupted, duplicate and ambiguous submissions retain it.
 
 Draft recovery audits the full original source manifest and historical notebook
 dependencies, including uncited sources no longer in the current research set.
@@ -376,6 +379,14 @@ destination versions, owner decisions or publication mode. Drafts are bounded to
 32 KiB, findings to 16,000 serialized bytes and the whole protected record to
 64 KiB. Deploy the API before the runner; older clients omit custody without
 removing retained work.
+
+For a rejected subject freshness check, correlate the API log's `item_id` and
+`candidate_hash` span with `subject freshness rejected`. A changed available
+dependency reports its exact reference and expected/current versions. A scope
+change reports the first relevant generation for ordinary authorized change
+header lookup; incomplete coverage distinguishes missing version visibility
+from the byte or row limit. These diagnostics do not log source bodies or
+unavailable source identities and do not change acceptance or publication rules.
 
 The current research `discovery_audit` identifies the latest actual query
 batch and retrieval policy. A current relevant audit can justify reusing a

@@ -153,8 +153,6 @@ pub struct Step {
     pub follow_up: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_follow_ups: Option<Vec<FollowUpResolution>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub replaces_draft: Option<DraftPointer>,
 }
 
 /// A whitelist keeps location packets, prior itineraries and unrelated audit
@@ -198,6 +196,14 @@ pub fn admission(value: &Value) -> Value {
         // The new API keeps the singular view for legacy clients. Do not send
         // the same historical notebook twice to a protocol-aware researcher.
         fields.remove("revalidation_context");
+    }
+    if let Some(draft) = research
+        .get_mut("unaccepted_draft")
+        .and_then(Value::as_object_mut)
+    {
+        // Custody identity belongs to the wrapper. The model needs the saved
+        // prose and evidence delta, not a token to copy into its response.
+        draft.remove("pointer");
     }
     json!({"session_id":value["session_id"],"attempt_id":value["attempt_id"],
         "frozen_generation":value["research"]["snapshot_generation"],
@@ -438,19 +444,6 @@ fn validate_comparison_action(step: &Step, value: &Value) -> Result<(), String> 
 }
 
 fn validate_draft_action(step: &Step, value: &Value) -> Result<(), String> {
-    if let Some(pointer) = &step.replaces_draft
-        && (!drafts_enabled(value)
-            || step.action != Action::Submit
-            || !pointer.valid()
-            || value["research"]["unaccepted_draft"]["status"] != "unaccepted_revalidation_only"
-            || value["research"]["unaccepted_draft"]["pointer"] != json!(pointer)
-            || step
-                .findings
-                .iter()
-                .all(|finding| finding.trim().is_empty()))
-    {
-        return Err("replaces_draft requires submit, the exact visible unaccepted draft pointer, and an incorporation finding".into());
-    }
     if drafts_enabled(value) && step.action == Action::Submit {
         if serde_json::to_vec(&step.findings)
             .map_or(true, |bytes| bytes.len() > MAX_DRAFT_FINDINGS_BYTES)
@@ -465,13 +458,6 @@ fn validate_draft_action(step: &Step, value: &Value) -> Result<(), String> {
             .map_or(true, |bytes| bytes.len() > MAX_DRAFT_CANDIDATE_BYTES)
         {
             return Err("the unaccepted candidate exceeds the 32 KiB draft bound".into());
-        }
-        let prior = &value["research"]["unaccepted_draft"];
-        if prior["status"] == "unaccepted_revalidation_only"
-            && prior["pointer"]["candidate_hash"] != draft_hash(candidate)
-            && step.replaces_draft.is_none()
-        {
-            return Err("revise the existing unaccepted draft using its exact replaces_draft pointer and a finding preserving useful work".into());
         }
     }
     Ok(())
@@ -591,7 +577,7 @@ pub fn prompt(value: &Value, feedback: &str, remaining_subject_seconds: u64) -> 
     let draft_rules = if drafts_enabled(value) {
         r#"The wrapper retains one unaccepted candidate before attempting Review submission. research.unaccepted_draft, when available, is that earlier model-authored draft, marked unaccepted_revalidation_only. It has not passed Review validation, is not a factual source, and contains no approval or completed-input authority. Use it to repair the same useful overview rather than reconstruct its prose from scratch. Start with source_delta and current change coverage, then read the exact admitted primary evidence needed to verify retained and changed claims. Incomplete or truncated deltas do not prove the rest of the subject is current. Never rewrite citation versions automatically or treat old prose as primary evidence.
 
-When submitting a different candidate, include optional replaces_draft by copying the exact supplied pointer {entry_ref,version,candidate_hash}, and state in findings how the useful existing draft has been incorporated or deliberately revised after source review. Preserve its supported breadth and unfinished issues. An identical candidate may reuse the same custody identity, but still requires all ordinary current validation. Submit exactly one complete candidate per response. Only a matching accepted candidate retires that draft; rejected, zero-ID, interrupted and uncertain submissions leave it retained. A checkpoint, discovery, yield or done cannot retire it. When the draft status is unavailable, continue independently supported current work without guessing its contents or pointer. Do not return draft_protocol, draft_candidate, draft_pointer or other custody fields; the wrapper handles them."#
+Revise the saved prose and evidence after source review, preserving its supported breadth and unfinished issues. Explain material changes in findings; that explanation alone does not establish that the claims are supported or useful content was retained. Submit exactly one complete candidate per response. The wrapper supplies the currently offered draft identity, version, hash and replacement fields, and the server checks them. Only a matching accepted candidate retires that draft; rejected, zero-ID, interrupted and uncertain submissions leave it retained. A checkpoint, discovery, yield or done cannot retire it. When the draft status is unavailable, continue independently supported current work without guessing its contents. Do not return replaces_draft, draft_protocol, draft_candidate, draft_pointer or other custody fields; the wrapper handles them."#
     } else {
         ""
     };
@@ -684,7 +670,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn draft_replacement_is_exact_capability_gated_and_not_source_authority() {
+    fn draft_revision_needs_prose_and_evidence_without_model_custody_identity() {
         let mut value = fixture();
         let candidate = json!({"kind":"summary","subject_ref":"entry:a", "title":"A overview",
             "summary":"The supported current observation.","reason":"Consolidates checked context.",
@@ -703,9 +689,13 @@ mod tests {
         value["research"]["unaccepted_draft"] = json!({"status":"unaccepted_revalidation_only",
             "pointer":pointer,"candidate":{"content":"UNACCEPTED_CANARY", "sources":[{"entry_ref":"entry:old","version":1}]},
             "source_delta":{"changed":[],"new":[],"missing":[],"coverage_complete":false,"truncated":true}});
-        assert!(parse(&step.to_string(), &value).is_err());
-        step["replaces_draft"] = pointer.clone();
         assert!(parse(&step.to_string(), &value).is_ok());
+        assert!(
+            admission(&value)["research"]["unaccepted_draft"]
+                .get("pointer")
+                .is_none()
+        );
+        assert_eq!(value["research"]["unaccepted_draft"]["pointer"], pointer);
         let prompt = prompt(&value, "", 600);
         assert!(prompt.contains("UNACCEPTED_CANARY"));
         assert!(prompt.contains("not a factual source"));
@@ -716,20 +706,19 @@ mod tests {
             ("entry_ref", json!("entry:invented")),
         ] {
             let mut invalid = step.clone();
+            invalid["replaces_draft"] = pointer.clone();
             invalid["replaces_draft"][field] = wrong;
             assert!(parse(&invalid.to_string(), &value).is_err(), "{field}");
         }
         let mut invalid = step.clone();
         invalid["findings"] = json!([]);
-        assert!(parse(&invalid.to_string(), &value).is_err());
+        assert!(parse(&invalid.to_string(), &value).is_ok());
         invalid = step.clone();
         invalid["reviewed_sources"] =
             json!([{"entry_ref":"entry:old","version":1,"start_line":1,"end_line":2}]);
         assert!(parse(&invalid.to_string(), &value).is_err());
         value["research"]["unaccepted_draft"] = json!({"status":"unavailable"});
         assert!(!draft_custody_required(&value));
-        assert!(parse(&step.to_string(), &value).is_err());
-        step.as_object_mut().unwrap().remove("replaces_draft");
         assert!(parse(&step.to_string(), &value).is_ok());
         step["candidates"] = json!([candidate, candidate]);
         assert!(parse(&step.to_string(), &value).is_err());

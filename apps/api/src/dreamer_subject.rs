@@ -50,6 +50,9 @@ pub(crate) struct SubjectChanges {
 }
 
 fn result(status: &'static str, reason: &'static str) -> SubjectCheck {
+    if status != "fresh" {
+        tracing::info!(status, reason, "subject freshness rejected");
+    }
     SubjectCheck { status, reason }
 }
 
@@ -290,6 +293,7 @@ fn dependency_set(
     Some(merged.into_iter().collect())
 }
 
+#[tracing::instrument(skip_all, fields(checked_generation = scope.checked_generation))]
 pub(crate) async fn check_scope(
     tx: &mut Transaction<'_, Postgres>,
     auth: &AuthContext,
@@ -334,12 +338,20 @@ pub(crate) async fn check_scope(
             return Ok(result("stale", "subject_source_unavailable"));
         };
         if head.get::<i64, _>("current_version") != *version {
+            // All dependencies passed the availability check above. Do not
+            // log identities from an unavailable or protected manifest.
+            tracing::info!(dependency_ref = %format!("entry:{id}"), expected_version = version,
+                current_version = head.get::<i64, _>("current_version"), change = "version",
+                "subject dependency changed");
             return Ok(result("stale", "subject_source_changed"));
         }
         if scope.dependencies.iter().any(|source| {
             subject_id(&source.entry_ref) == Some(*id)
                 && source.path != head.get::<String, _>("path")
         }) {
+            tracing::info!(dependency_ref = %format!("entry:{id}"), expected_version = version,
+                current_version = head.get::<i64, _>("current_version"), change = "path",
+                "subject dependency changed");
             return Ok(result("stale", "subject_source_changed"));
         }
         if !source_path(head.get("path"))
@@ -383,6 +395,7 @@ pub(crate) async fn research_changes(
     research_change_page(tx, auth, scope, dependencies, i64::MAX).await
 }
 
+#[tracing::instrument(skip_all, fields(checked_generation = scope.checked_generation))]
 pub(crate) async fn research_change_page(
     tx: &mut Transaction<'_, Postgres>,
     auth: &AuthContext,
@@ -472,7 +485,9 @@ pub(crate) async fn research_change_page(
             LEFT JOIN brunn.entry_versions v ON v.user_id=page.user_id AND v.entry_id=page.entry_id AND v.version=page.entry_version
             LEFT JOIN brunn.entry_versions previous_v ON previous_v.user_id=page.user_id AND previous_v.entry_id=page.entry_id AND previous_v.version=page.previous_version
         )
-        SELECT sizes.generation,sizes.entry_id,
+        SELECT sizes.generation,sizes.entry_id,sizes.scanned_bytes,
+            visible_entry IS NULL OR visible_version IS NULL OR previous_version IS NOT NULL AND visible_previous IS NULL AS version_unavailable,
+            scanned_bytes>$5 AS byte_limit_exceeded,
             visible_entry IS NULL OR visible_version IS NULL OR previous_version IS NOT NULL AND visible_previous IS NULL
                 OR scanned_bytes>$5 AS incomplete,
             entry_id=ANY($6) OR path ~* $4 OR coalesce(previous_path ~* $4,false) OR coalesce(title ~* $4,false)
@@ -513,6 +528,37 @@ pub(crate) async fn research_change_page(
             .last()
             .map_or(scope.checked_generation, |row| row.get("generation"))
     };
+    let first_relevant = rows
+        .iter()
+        .take(MAX_CHANGES as usize)
+        .find(|row| row.get::<bool, _>("relevant"));
+    let first_incomplete = rows
+        .iter()
+        .take(MAX_CHANGES as usize)
+        .find(|row| row.get::<bool, _>("incomplete"));
+    if first_relevant.is_some() || status != "complete" {
+        // Generations identify the exact ordinary change for authorized header
+        // lookup. Never log source text, paths or unavailable entry identities.
+        tracing::info!(
+            status,
+            reason,
+            through_generation = generation,
+            scanned_generation,
+            first_relevant_generation = first_relevant.map(|row| row.get::<i64, _>("generation")),
+            first_incomplete_generation =
+                first_incomplete.map(|row| row.get::<i64, _>("generation")),
+            version_unavailable =
+                first_incomplete.map(|row| row.get::<bool, _>("version_unavailable")),
+            byte_limit_exceeded =
+                first_incomplete.map(|row| row.get::<bool, _>("byte_limit_exceeded")),
+            scanned_bytes_at_incomplete =
+                first_incomplete.map(|row| row.get::<i64, _>("scanned_bytes")),
+            change_count = rows.len(),
+            row_limit = MAX_CHANGES,
+            byte_limit = MAX_CHANGE_BYTES,
+            "subject change coverage checked"
+        );
+    }
     Ok(SubjectChanges {
         status,
         reason,

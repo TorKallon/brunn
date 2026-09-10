@@ -269,7 +269,19 @@ impl Dreamer {
                 "draft_candidate":step.candidates[0],"findings":step.findings,
                 "processed_inputs":[]}),
         );
-        if let Some(pointer) = &step.replaces_draft {
+        let offered = &current["research"]["unaccepted_draft"];
+        if offered["status"] == "unaccepted_revalidation_only" {
+            let pointer: research::DraftPointer =
+                serde_json::from_value(offered["pointer"].clone()).map_err(|_| {
+                    ClientError::Failed(
+                        "the offered draft identity is invalid; draft retained".into(),
+                    )
+                })?;
+            if !pointer.valid() {
+                return Err(ClientError::Failed(
+                    "the offered draft identity is invalid; draft retained".into(),
+                ));
+            }
             body["replaces_draft"] = json!(pointer);
         }
         let response = self

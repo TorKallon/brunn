@@ -3182,6 +3182,7 @@ fn withhold_item(item: &Item) -> Item {
     shown.status = "stale".into();
     shown
 }
+#[tracing::instrument(skip_all, fields(item_id = %item.id, candidate_hash = %item.candidate_hash))]
 async fn item_stale(
     tx: &mut Transaction<'_, Postgres>,
     auth: &AuthContext,
@@ -3194,6 +3195,10 @@ async fn item_stale(
     // Apply source-class changes before location/subject branches can return
     // early. Old immutable proposals retain every dependency and need review.
     if item.candidate.sources.len() > 64 {
+        tracing::info!(
+            reason = "candidate_source_limit",
+            "review freshness rejected"
+        );
         return Ok(true);
     }
     if !item.candidate.sources.is_empty() {
@@ -3232,6 +3237,10 @@ async fn item_stale(
         .fetch_one(&mut **tx)
         .await?;
         if generated {
+            tracing::info!(
+                reason = "generated_briefing_source",
+                "review freshness rejected"
+            );
             return Ok(true);
         }
     }
@@ -3258,10 +3267,17 @@ async fn item_stale(
         }
         return Ok(false);
     }
-    for source in &item.candidate.sources {
+    for (citation_index, source) in item.candidate.sources.iter().enumerate() {
         let current:Option<i64>=sqlx::query_scalar("SELECT current_version FROM brunn.entries WHERE user_id=$1 AND id=$2 AND deleted_at IS NULL")
             .bind(user).bind(entry_id(&source.entry_ref)?).fetch_optional(&mut **tx).await?;
         if current != Some(source.version) {
+            // Full source authority has not passed yet. Identify the existing
+            // citation by index, without disclosing a revoked head or identity.
+            tracing::info!(
+                citation_index,
+                reason = "cited_source_changed_or_unavailable",
+                "review freshness rejected"
+            );
             return Ok(true);
         }
     }
@@ -3269,6 +3285,10 @@ async fn item_stale(
         && item.candidate.expected_version
             != Some(load_entry(tx, user, path).await?.map_or(0, |e| e.version))
     {
+        tracing::info!(
+            reason = "candidate_target_changed",
+            "review freshness rejected"
+        );
         return Ok(true);
     }
     if let Some(scope) = &item.candidate.subject_scope {

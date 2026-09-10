@@ -415,11 +415,9 @@ pub(super) async fn custody(
             }
             active.record.clone()
         } else {
-            if replaces.as_ref() != Some(&pointer(active))
-                || !findings.iter().any(|value| !value.trim().is_empty())
-            {
+            if replaces.as_ref() != Some(&pointer(active)) {
                 return Err(ApiError::invalid(
-                    "replace a draft only with its exact offered pointer and an incorporation finding",
+                    "replace a draft only with its exact offered pointer",
                 ));
             }
             new_record(

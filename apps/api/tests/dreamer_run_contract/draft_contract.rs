@@ -57,7 +57,6 @@ pub(super) fn custody(s: &mut Mock, body: &Value) -> Response {
             old["pointer"].clone()
         } else {
             assert_eq!(body["replaces_draft"], old["pointer"]);
-            assert!(!body["findings"].as_array().unwrap().is_empty());
             pointer(candidate, old["pointer"]["version"].as_i64().unwrap() + 1)
         }
     } else {
@@ -106,16 +105,15 @@ fn enabled_job() -> Value {
 }
 
 #[tokio::test]
-async fn stale_draft_survives_timeout_and_restarts_as_exact_replacement() {
+async fn stale_draft_survives_timeout_and_wrapper_supplies_exact_replacement() {
     let mut initial = candidate_step();
     initial["candidates"][0]["content"] =
         json!("UNACCEPTED_ORIGINAL_DRAFT remains supported.[^s1]");
     let mut revised = candidate_step();
-    revised["candidates"][0]["content"] =
-        json!("The project is active after checking the added scope.[^s1]");
-    revised["replaces_draft"] = pointer(&initial["candidates"][0], 1);
-    revised["findings"] =
-        json!(["The initial draft was incorporated after reviewing newly admitted scope."]);
+    revised["candidates"][0]["content"] = json!(
+        "UNACCEPTED_ORIGINAL_DRAFT remains supported. The project is active after checking the added scope.[^s1]"
+    );
+    revised["findings"] = json!([]);
     let behavior = format!(
         r#"
 if grep -q 'single word READY' "$DIR/prompt"; then echo READY; exit 0; fi
@@ -191,7 +189,48 @@ esac
         s.submitted[1]["operation_id"]
     );
     assert_eq!(s.submitted[1]["candidates"][0], revised["candidates"][0]);
+    let saves: Vec<_> = s
+        .research_progress
+        .iter()
+        .filter(|body| body.get("draft_candidate").is_some())
+        .collect();
+    assert_eq!(saves.len(), 2);
+    assert_eq!(
+        saves[1]["replaces_draft"],
+        pointer(&initial["candidates"][0], 1)
+    );
+    assert_eq!(saves[1]["findings"], json!([]));
     assert!(s.research_jobs[0]["unaccepted_draft"].is_null());
+}
+
+#[tokio::test]
+async fn malformed_offered_draft_identity_is_retained_without_submission() {
+    let (shared, dreamer, _dir) = build(&one_step_behavior(&candidate_step())).await;
+    enable(&shared);
+    {
+        let mut s = shared.lock().unwrap();
+        s.research_enabled = true;
+        let mut job = enabled_job();
+        let mut invalid = pointer(&candidate_step()["candidates"][0], 1);
+        invalid["version"] = json!(0);
+        job["unaccepted_draft"] = json!({"status":"unaccepted_revalidation_only",
+            "pointer":invalid,"candidate":candidate_step()["candidates"][0]});
+        s.research_jobs = vec![job];
+    }
+    let report = dreamer.run_once(today(), RunKind::Manual).await;
+    assert_ne!(report.outcome, RunOutcome::Completed, "{report:?}");
+    assert_eq!(report.research["new_review_items"], 0);
+    let s = shared.lock().unwrap();
+    assert!(s.submitted.is_empty());
+    assert!(
+        !s.research_progress
+            .iter()
+            .any(|body| body.get("draft_candidate").is_some())
+    );
+    assert_eq!(
+        s.research_jobs[0]["unaccepted_draft"]["pointer"]["version"],
+        0
+    );
 }
 
 #[tokio::test]
