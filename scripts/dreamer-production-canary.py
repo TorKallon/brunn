@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -35,10 +36,32 @@ RECEIPT_FIELDS = {
     "entering_veto_window_today", "pending_owner", "pending_review_surfaces", "next_run_at",
 }
 MAX_RESPONSE = 4 * 1024 * 1024
+DRAFT_PROTOCOL = "dream.research.draft.v1"
 
 
 class CanaryError(Exception):
     """Only locally authored, credential-free errors may escape to the report."""
+
+
+def draft_receipt(response, operation, candidate, *, replayed, retired, pointer=None):
+    expected_hash = hashlib.sha256(json.dumps(candidate, sort_keys=True, ensure_ascii=False,
+                                             separators=(",", ":")).encode()).hexdigest()
+    ack = response.get("draft_receipt")
+    require(isinstance(ack, dict) and isinstance(ack.get("pointer"), dict),
+            "draft custody receipt did not match the exact operation")
+    actual = ack["pointer"]
+    try:
+        reference = actual.get("entry_ref", "")
+        valid_ref = isinstance(reference, str) and reference.startswith("entry:") and bool(uuid.UUID(reference[6:]))
+    except ValueError:
+        valid_ref = False
+    require(ack.get("protocol") == DRAFT_PROTOCOL and ack.get("operation_id") == operation
+            and ack.get("recorded") is True and ack.get("replayed") is replayed
+            and ack.get("retired") is retired and actual.get("candidate_hash") == expected_hash
+            and valid_ref and set(actual) == {"entry_ref", "version", "candidate_hash"}
+            and type(actual.get("version")) is int and actual["version"] > 0
+            and (pointer is None or actual == pointer), "draft custody receipt did not match the exact operation")
+    return actual
 
 
 def require(condition, message):
@@ -436,6 +459,8 @@ def run_subject_cycle(owner, runner, reader, report):
             "requested canonical identity was not selected")
     require(current["research"].get("follow_up_protocol") == "dream.research.follow_up.v1",
             "source-origin follow-up protocol was not advertised")
+    require(current["research"].get("draft_protocol") == DRAFT_PROTOCOL,
+            "unaccepted draft custody protocol was not advertised")
     require(current["research"].get("discovery_audit") ==
             {"validity": "legacy_or_unknown", "last_search": None},
             "new subject claimed an existing audited search")
@@ -571,8 +596,39 @@ def run_subject_cycle(owner, runner, reader, report):
     invalid_submission["candidates"][0]["sources"][1]["end_line"] = len(new_text.splitlines()) + 1
     rejected = runner.request("POST", "/v1/workspace/dreamer/candidates", invalid_submission, expected=(400,))
     require(rejected.get("http_status") == 400, "publication accepted an out-of-range source selector")
+    proposed = submission["candidates"][0]
+    custody = {**research_body(current), "draft_protocol": DRAFT_PROTOCOL,
+               "draft_candidate": proposed, "processed_inputs": [], "findings": []}
+    saved = unwrap(runner.request("POST", "/v1/workspace/dreamer/research-progress", custody))
+    pointer = draft_receipt(saved, custody["operation_id"], proposed, replayed=False, retired=False)
+    require(saved["state_version"] == current["state_version"]
+            and saved["research"]["version"] == current["research"]["version"]
+            and saved["inputs"] == current["inputs"]
+            and saved["processed_generation"] == current["processed_generation"]
+            and saved["research"]["subject_ref"] == canonical["entry_ref"]
+            and saved["research"]["unaccepted_draft"]["status"] == "unaccepted_revalidation_only"
+            and saved["research"]["unaccepted_draft"]["pointer"] == pointer
+            and saved["research"]["unaccepted_draft"]["candidate"] == proposed,
+            "unaccepted draft custody changed research progress or lost the exact candidate")
+    replayed = runner.request("POST", "/v1/workspace/dreamer/research-progress", custody)
+    replay_data = unwrap(replayed)
+    draft_receipt(replay_data, custody["operation_id"], proposed, replayed=True, retired=False, pointer=pointer)
+    require(replayed.get("no_op") is True and replay_data["state_version"] == current["state_version"]
+            and replay_data["research"]["version"] == current["research"]["version"]
+            and replay_data["research"]["subject_ref"] == canonical["entry_ref"]
+            and replay_data["inputs"] == current["inputs"]
+            and replay_data["processed_generation"] == current["processed_generation"]
+            and replay_data["research"]["unaccepted_draft"] == saved["research"]["unaccepted_draft"],
+            "unaccepted draft replay changed progress")
+    submission.update(draft_protocol=DRAFT_PROTOCOL, draft_pointer=pointer)
     submitted = runner.request("POST", "/v1/workspace/dreamer/candidates", submission)
     require(len(submitted["accepted_candidate_ids"]) == 1, "subject candidate was not accepted exactly once")
+    draft_receipt(submitted, submission["operation_id"], proposed, replayed=False, retired=True, pointer=pointer)
+    require(isinstance(submitted.get("research"), dict)
+            and submitted["research"].get("subject_ref") == canonical["entry_ref"]
+            and "unaccepted_draft" in submitted["research"]
+            and submitted["research"]["unaccepted_draft"] is None,
+            "accepted subject candidate did not retire its unaccepted draft")
     terminal = {key: admitted[key] for key in ("attempt_id", "fence")}
     terminal.update(expected_state_version=submitted["state_version"], outcome="partial",
                     detail="Synthetic subject completed; original inputs retained.",
@@ -651,6 +707,7 @@ def run_subject_cycle(owner, runner, reader, report):
         "target_only_search_audit_preserved": True,
         "changed_evidence_invalidates_search_audit": True,
         "source_origin_protocol_advertised": True,
+        "unaccepted_draft_custody_replay_and_retirement": True,
         "changed_scope_refresh_signal": True,
         "saved_progress_survives_additive_discovery": True,
         "changed_dependency_invalidates_progress": True,

@@ -3,6 +3,7 @@ use super::*;
 mod checkpoint;
 mod comparison;
 mod discovery_audit;
+mod drafts;
 mod repair;
 mod revalidation;
 mod source_origin;

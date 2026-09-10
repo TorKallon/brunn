@@ -357,6 +357,26 @@ consume inputs or change a review decision. Successful source discovery alone
 does not clear the correction or reset the rejection limit. Deploy the API
 before the runner so its explicit correction receipt is available.
 
+With `dream.research.draft.v1`, the wrapper saves one exact unaccepted candidate
+before submitting it to Review. Its protected immutable record is separate from
+accepted research notes and holds no approval or input-completion authority.
+The runner checks an exact operation, version and content-hash receipt before
+submitting. Source changes trigger bounded evidence refresh; a later attempt can
+revise the preserved draft using its original context and current source deltas.
+The model must explicitly identify a different draft's replacement and explain
+how useful work was incorporated. Only acceptance of the matching candidate
+retires it. Failed, interrupted, duplicate and ambiguous submissions retain it.
+
+Draft recovery audits the full original source manifest and historical notebook
+dependencies, including uncited sources no longer in the current research set.
+If that authority is unavailable, the draft and its identity remain withheld;
+independently supported current work can continue through ordinary validation.
+Custody and replay earn no progress credit and cannot bypass current evidence,
+destination versions, owner decisions or publication mode. Drafts are bounded to
+32 KiB, findings to 16,000 serialized bytes and the whole protected record to
+64 KiB. Deploy the API before the runner; older clients omit custody without
+removing retained work.
+
 The current research `discovery_audit` identifies the latest actual query
 batch and retrieval policy. A current relevant audit can justify reusing a
 search; old notebook assertions or result counts cannot. Empty refreshes and

@@ -13,6 +13,13 @@ mod discovery_audit_contract;
 #[path = "source_origin_contract.rs"]
 mod source_origin_contract;
 
+#[path = "draft_contract.rs"]
+mod draft_contract;
+
+pub(super) fn apply_draft_fixture(s: &mut Mock, body: &Value, current: &mut Value, accepted: bool) {
+    draft_contract::accepted(s, body, current, accepted);
+}
+
 pub(super) fn apply_source_route_fixture(s: &mut Mock, body: &Value, current: &mut Value) {
     source_origin_contract::acknowledge(s, body, current);
 }
@@ -48,6 +55,9 @@ pub(super) async fn progress(State(shared): State<Shared>, Json(body): Json<Valu
     let (current, delay) = {
         let mut s = shared.lock().unwrap();
         s.research_progress.push(body.clone());
+        if body.get("draft_candidate").is_some() {
+            return draft_contract::custody(&mut s, &body);
+        }
         let repair_only = body.get("repair_feedback").is_some();
         if repair_only && let Some((status, response)) = s.research_repair_replies.pop_front() {
             return (status, response).into_response();

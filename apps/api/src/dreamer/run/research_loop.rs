@@ -83,6 +83,33 @@ fn follow_up_ack(
     Ok(())
 }
 
+fn draft_ack(
+    operation_id: &str,
+    response: &Value,
+    candidate_hash: &str,
+    expected_pointer: Option<&research::DraftPointer>,
+    retired: bool,
+) -> Result<research::DraftPointer, ClientError> {
+    let ack = &response["draft_receipt"];
+    let pointer = serde_json::from_value::<research::DraftPointer>(ack["pointer"].clone())
+        .ok()
+        .filter(research::DraftPointer::valid);
+    if ack["protocol"] == research::DRAFT_PROTOCOL
+        && ack["operation_id"] == operation_id
+        && ack["recorded"] == true
+        && ack["replayed"].as_bool().is_some()
+        && ack["retired"] == retired
+        && let Some(pointer) = pointer
+        && pointer.candidate_hash == candidate_hash
+        && expected_pointer.is_none_or(|expected| expected == &pointer)
+    {
+        return Ok(pointer);
+    }
+    Err(ClientError::Failed(
+        "unaccepted draft custody acknowledgement is missing or mismatched; reconcile before claiming acceptance".into(),
+    ))
+}
+
 struct CheckpointAck {
     new_source_coverage: bool,
     reconciled: bool,
@@ -219,6 +246,46 @@ fn subject_allowance(remaining: Duration) -> Duration {
 }
 
 impl Dreamer {
+    async fn retain_research_draft(
+        &self,
+        current: &mut Value,
+        state_version: &mut i64,
+        step: &research::Step,
+        deadline: tokio::time::Instant,
+    ) -> Result<Option<research::DraftPointer>, ClientError> {
+        if !research::draft_custody_required(current) {
+            return Ok(None);
+        }
+        if step.candidates.len() != 1 {
+            return Err(ClientError::Failed(
+                "draft custody requires one complete candidate".into(),
+            ));
+        }
+        let operation_id = uuid::Uuid::now_v7().to_string();
+        let mut body = envelope(current, *state_version, &operation_id);
+        add_fields(
+            &mut body,
+            json!({"draft_protocol":research::DRAFT_PROTOCOL,
+                "draft_candidate":step.candidates[0],"findings":step.findings,
+                "processed_inputs":[]}),
+        );
+        if let Some(pointer) = &step.replaces_draft {
+            body["replaces_draft"] = json!(pointer);
+        }
+        let response = self
+            .research_request("research-progress", body, deadline)
+            .await?;
+        let pointer = draft_ack(
+            &operation_id,
+            &response,
+            &research::draft_hash(&step.candidates[0]),
+            None,
+            false,
+        )?;
+        merge(current, &response, state_version);
+        Ok(Some(pointer))
+    }
+
     async fn record_research_repair(
         &self,
         current: &mut Value,
@@ -276,6 +343,21 @@ impl Dreamer {
                     "{operation} timed out; server progress remains retained for reconciliation"
                 )))
             })
+    }
+
+    async fn refresh_research_evidence(
+        &self,
+        current: &mut Value,
+        state_version: &mut i64,
+        deadline: tokio::time::Instant,
+    ) -> Result<(), ClientError> {
+        let mut body = envelope(current, *state_version, &uuid::Uuid::now_v7().to_string());
+        add_fields(&mut body, json!({"queries":[],"targets":[]}));
+        let response = self
+            .research_request("narrative-discover", body, deadline)
+            .await?;
+        merge(current, &response, state_version);
+        Ok(())
     }
 
     pub(super) async fn research_loop(
@@ -620,24 +702,19 @@ impl Dreamer {
                                     &message,
                                 ));
                                 feedback = message;
-                                let mut refresh = envelope(
-                                    &current,
-                                    *state_version,
-                                    &uuid::Uuid::now_v7().to_string(),
-                                );
-                                add_fields(&mut refresh, json!({"queries":[],"targets":[]}));
                                 report.stage = "research_reconciliation".into();
                                 // The server identified stale evidence. Refresh
                                 // its headers before another child, preserving
                                 // the rejected work's repair and retry bounds.
                                 match self
-                                    .research_request("narrative-discover", refresh, deadline)
+                                    .refresh_research_evidence(
+                                        &mut current,
+                                        state_version,
+                                        deadline,
+                                    )
                                     .await
                                 {
-                                    Ok(value) => {
-                                        merge(&mut current, &value, state_version);
-                                        change_pages += 1;
-                                    }
+                                    Ok(()) => change_pages += 1,
                                     Err(error) => {
                                         feedback = format!(
                                             "{feedback} Evidence refresh remains unresolved: {error}"
@@ -742,12 +819,37 @@ impl Dreamer {
                         }
                     }
                     research::Action::Submit => {
+                        report.stage = "research_draft_custody".into();
+                        let draft_pointer = match self
+                            .retain_research_draft(&mut current, state_version, &step, deadline)
+                            .await
+                        {
+                            Ok(pointer) => pointer,
+                            Err(ClientError::ResearchValidation(repair)) => {
+                                feedback = format!(
+                                    "The draft was not acknowledged and no candidate was submitted: {}",
+                                    repair.message
+                                );
+                                pending_repair = Some(repair);
+                                repairs += 1;
+                                continue;
+                            }
+                            Err(error) => {
+                                failure = Some(error.to_string());
+                                break 'subjects;
+                            }
+                        };
+                        body = envelope(&current, *state_version, &operation_id);
                         add_fields(
                             &mut body,
                             json!({"candidates":step.candidates,
                             "processed_inputs":step.processed_inputs,"findings":step.findings,
                             "research_progress":progress(&step,"waiting",&current)}),
                         );
+                        if let Some(pointer) = &draft_pointer {
+                            body["draft_protocol"] = json!(research::DRAFT_PROTOCOL);
+                            body["draft_pointer"] = json!(pointer);
+                        }
                         report.stage = "research_validation".into();
                         match self.research_request("candidates", body, deadline).await {
                             Ok(value) => {
@@ -761,6 +863,18 @@ impl Dreamer {
                                 let count = value["accepted_candidate_ids"]
                                     .as_array()
                                     .map_or(0, Vec::len);
+                                if let Some(pointer) = &draft_pointer
+                                    && let Err(error) = draft_ack(
+                                        &operation_id,
+                                        &value,
+                                        &pointer.candidate_hash,
+                                        Some(pointer),
+                                        count > 0,
+                                    )
+                                {
+                                    failure = Some(error.to_string());
+                                    break 'subjects;
+                                }
                                 if let Err(error) =
                                     follow_up_ack(&step, &operation_id, &value, count > 0)
                                 {
@@ -783,6 +897,34 @@ impl Dreamer {
                                     yielded_subjects += 1;
                                 }
                                 break;
+                            }
+                            Err(ClientError::ResearchRefreshRequired(detail)) => {
+                                refresh_rejections += 1;
+                                let message = format!(
+                                    "The previous candidate was not accepted: {detail}. Review the refreshed evidence and revise the unaccepted draft before submitting it again."
+                                );
+                                pending_repair = Some(research::RepairFeedback::new(
+                                    research::RepairPhase::CandidateValidation,
+                                    &message,
+                                ));
+                                feedback = message;
+                                report.stage = "research_reconciliation".into();
+                                match self
+                                    .refresh_research_evidence(
+                                        &mut current,
+                                        state_version,
+                                        deadline,
+                                    )
+                                    .await
+                                {
+                                    Ok(()) => change_pages += 1,
+                                    Err(error) => {
+                                        feedback = format!(
+                                            "{feedback} Evidence refresh remains unresolved: {error}"
+                                        );
+                                        repairs += 1;
+                                    }
+                                }
                             }
                             Err(error) => {
                                 if let ClientError::ResearchValidation(repair) = &error {

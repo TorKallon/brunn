@@ -72,6 +72,9 @@ struct Mock {
     research_discovery_sources: VecDeque<Vec<Value>>,
     research_discovery_audits: VecDeque<Value>,
     research_comparisons: Vec<Value>,
+    draft_custody_fault: Option<String>,
+    draft_submit_fault: Option<String>,
+    draft_zero_ids: bool,
 }
 #[path = "dreamer_run_contract/research_contract.rs"]
 mod research_contract;
@@ -271,7 +274,7 @@ async fn candidates(State(shared): State<Shared>, Json(body): Json<Value>) -> Re
     if s.reject_candidates || (s.reject_narrative && s.submissions > 1) {
         return error(StatusCode::CONFLICT, "source changed");
     }
-    let ids: Vec<_> = body["candidates"]
+    let mut ids: Vec<_> = body["candidates"]
         .as_array()
         .unwrap()
         .iter()
@@ -291,6 +294,10 @@ async fn candidates(State(shared): State<Shared>, Json(body): Json<Value>) -> Re
             }
         })
         .collect();
+    if s.draft_zero_ids {
+        ids.clear();
+        s.pending.clear();
+    }
     s.state_version += 1;
     s.run_version += 1;
     s.writes += 2;
@@ -314,6 +321,7 @@ async fn candidates(State(shared): State<Shared>, Json(body): Json<Value>) -> Re
         }
         research_contract::apply_checkpoint_fixture(&mut s, &body, &mut current);
         research_contract::apply_source_route_fixture(&mut s, &body, &mut current);
+        research_contract::apply_draft_fixture(&mut s, &body, &mut current, !ids.is_empty());
         result
             .as_object_mut()
             .unwrap()

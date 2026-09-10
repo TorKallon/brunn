@@ -2184,6 +2184,7 @@ pub async fn candidates(
             response["no_op"] = json!(true);
             research::checkpoints::replay(&mut response["checkpoint_receipt"]);
             research_comparison::replay_resolution(&mut response["follow_up_receipt"]);
+            research::drafts::replay(&mut response["draft_receipt"]);
             return Ok(Json(response));
         }
         research::check_job(&data, &body, &job, job_version)?;
@@ -2200,6 +2201,16 @@ pub async fn candidates(
     }
     let subject_submission = research_job.is_some();
     let a = active(&data, &body, &auth, version)?;
+    let draft = if let Some((job, _)) = &research_job {
+        research::drafts::validate_submission(&mut tx, &auth, job, &body).await?
+    } else {
+        if body.get("draft_pointer").is_some() || body.get("draft_protocol").is_some() {
+            return Err(ApiError::invalid(
+                "draft submission requires the selected research subject",
+            ));
+        }
+        None
+    };
     let source_resolutions = if let Some((job, _)) = &research_job {
         research_comparison::prepare_resolutions(
             &mut tx,
@@ -2489,7 +2500,9 @@ pub async fn candidates(
                 }
             }
             if !research::fresh(&mut tx, &auth, job).await? {
-                return Err(ApiError::invalid(
+                return Err(ApiError::public(
+                    axum::http::StatusCode::BAD_REQUEST,
+                    "research_refresh_required",
                     "research evidence or relevant subject scope changed; rediscover before submitting",
                 ));
             }
@@ -2816,6 +2829,11 @@ pub async fn candidates(
             if let Some(ack) = &mut checkpoint_receipt {
                 ack["subject_complete"] = json!(false);
             }
+        }
+        if let Some(ack) =
+            research::drafts::accepted(&state, &mut tx, &auth, draft, &ids, &operation_id).await?
+        {
+            response["draft_receipt"] = ack;
         }
         let subject_complete = !ids.is_empty()
             && !research_comparison::retains_source_work(&data, &job.subject_ref)

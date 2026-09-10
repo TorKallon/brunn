@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from copy import deepcopy
+import hashlib
 import importlib.util
 import io
 import json
@@ -37,6 +38,46 @@ class StubClient:
 
 
 class DreamerProductionCanaryTests(unittest.TestCase):
+    def test_draft_receipt_requires_exact_typed_identity_and_canonical_candidate_hash(self):
+        candidate = {"content": "A synthetic café observation.[^s1]", "kind": "summary",
+                     "sources": [{"version": 2, "entry_ref": "entry:synthetic"}]}
+        pointer = {"entry_ref": "entry:00000000-0000-4000-8000-000000000044", "version": 3,
+                   "candidate_hash": hashlib.sha256(json.dumps(candidate, sort_keys=True,
+                       ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()}
+        ack = {"protocol": canary.DRAFT_PROTOCOL, "operation_id": "synthetic-operation",
+               "recorded": True, "replayed": False, "retired": False, "pointer": pointer}
+        response = {"draft_receipt": ack}
+        self.assertEqual(canary.draft_receipt(response, "synthetic-operation", candidate,
+                         replayed=False, retired=False), pointer)
+        for replayed, retired in [(True, False), (False, True), (True, True)]:
+            current = {"draft_receipt": {**ack, "replayed": replayed, "retired": retired}}
+            self.assertEqual(canary.draft_receipt(current, "synthetic-operation", candidate,
+                replayed=replayed, retired=retired, pointer=pointer), pointer)
+        faults = [("missing", {}), ("null", {"draft_receipt": None}),
+                  ("array", {"draft_receipt": [ack]})]
+        for field, wrong in [("protocol", "unknown"), ("operation_id", "other-operation"),
+                             ("recorded", 1), ("recorded", False), ("replayed", "false"),
+                             ("replayed", True), ("retired", True), ("retired", 0),
+                             ("pointer", []), ("pointer", None)]:
+            faults.append((f"ack:{field}:{wrong}", {"draft_receipt": {**ack, field: wrong}}))
+        for field, wrong in [("entry_ref", "entry:not-a-uuid"), ("entry_ref", "wrong:prefix"),
+                             ("entry_ref", None), ("entry_ref", 17), ("version", True),
+                             ("version", 0), ("version", "3"), ("candidate_hash", "0" * 64),
+                             ("extra", "unexpected")]:
+            faults.append((f"pointer:{field}:{wrong}",
+                           {"draft_receipt": {**ack, "pointer": {**pointer, field: wrong}}}))
+        for name, invalid in faults:
+            with self.subTest(fault=name), self.assertRaisesRegex(canary.CanaryError, "draft custody receipt"):
+                canary.draft_receipt(invalid, "synthetic-operation", candidate, replayed=False, retired=False)
+        for wrong_pointer in [{**pointer, "version": 4},
+                              {**pointer, "entry_ref": "entry:00000000-0000-4000-8000-000000000045"}]:
+            with self.subTest(pointer=wrong_pointer), self.assertRaises(canary.CanaryError):
+                canary.draft_receipt(response, "synthetic-operation", candidate,
+                                     replayed=False, retired=False, pointer=wrong_pointer)
+        with self.assertRaises(canary.CanaryError):
+            canary.draft_receipt(response, "synthetic-operation", {**candidate, "content": "Changed content"},
+                                 replayed=False, retired=False)
+
     def test_expected_http_error_retains_only_bounded_public_code(self):
         cases = [
             (json.dumps({"error": {"code": "research_refresh_required", "message": "PRIVATE_MESSAGE",
@@ -192,6 +233,21 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                              ("raw_input_extra", "four synthetic raw inputs"),
                              ("raw_input_wrong_version", "four synthetic raw inputs"),
                              ("source_origin_protocol", "source-origin follow-up protocol"),
+                             ("draft_protocol", "draft custody protocol"),
+                             ("draft_ack_missing", "draft custody receipt"),
+                             ("draft_ack_hash", "draft custody receipt"),
+                             ("draft_state_progress", "draft custody changed"),
+                             ("draft_job_progress", "draft custody changed"),
+                             ("draft_input_progress", "draft custody changed"),
+                             ("draft_processed_progress", "draft custody changed"),
+                             ("draft_raw_mutation", "draft custody changed"),
+                             ("draft_replay_ack", "draft custody receipt"),
+                             ("draft_replay_progress", "draft replay changed"),
+                             ("draft_replay_inputs", "draft replay changed"),
+                             ("draft_replay_retirement", "draft replay changed"),
+                             ("draft_retirement_ack", "draft custody receipt"),
+                             ("draft_not_retired", "did not retire"),
+                             ("draft_retirement_missing_projection", "did not retire"),
                              ("discovery_audit", "current bounded discovery audit"),
                              ("excluded_index", "excluded search fixture was not lexically indexed"),
                              ("excluded_admitted", "ineligible search fixture entered"),
@@ -238,6 +294,8 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                 job = {"subject_ref": canonical["entry_ref"], "subject_path": canonical["path"],
                        "output_path": "derived/entities/canary-aster.md", "output_version": 0,
                        "follow_up_protocol": None if fault == "source_origin_protocol" else "dream.research.follow_up.v1",
+                       "draft_protocol": None if fault == "draft_protocol" else canary.DRAFT_PROTOCOL,
+                       "unaccepted_draft": None,
                        "discovery_audit": {"validity": "legacy_or_unknown", "last_search": None},
                        "notes": "", "reviewed_sources": [], "coverage": {"unresolved_targets": []}}
                 initial_selectors = [{"entry_ref": canonical["entry_ref"], "version": 1,
@@ -315,13 +373,85 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                 elif fault == "revalidation_replay":
                     replay["research"]["revalidation_context"] = historical_context
                 runner = Mock()
-                runner.request.side_effect = [admitted, {"data": admissions[0]}, {"data": initial_progress},
+                before_custody = [admitted, {"data": admissions[0]}, {"data": initial_progress},
                     *({"data": item} for item in admissions[1:3]),
                     {"http_status": 400, "error": {"code": "invalid_request" if fault == "refresh_signal" else "research_refresh_required"}},
                     {"data": admissions[3]}, {"data": checkpoint}, {"no_op": True, "data": replay},
-                    {"http_status": 200 if fault == "publication_eof" else 400},
-                    {"accepted_candidate_ids": ["fixture-item"], "state_version": 8},
-                    {"latest_receipt": {"status": "partial", "mode": "full"}}]
+                    {"http_status": 200 if fault == "publication_eof" else 400}]
+                retained_draft, custody_calls = None, []
+
+                def draft_ack(body, ptr, replayed, retired):
+                    return {"protocol": canary.DRAFT_PROTOCOL, "operation_id": body["operation_id"],
+                            "recorded": True, "replayed": replayed, "retired": retired,
+                            "pointer": deepcopy(ptr)}
+
+                def runner_response(method, path, body=None, **kwargs):
+                    nonlocal retained_draft
+                    if before_custody:
+                        return deepcopy(before_custody.pop(0))
+                    self.assertEqual(method, "POST")
+                    if path.endswith("/research-progress"):
+                        self.assertEqual(body["draft_protocol"], canary.DRAFT_PROTOCOL)
+                        self.assertEqual(body["processed_inputs"], [])
+                        self.assertEqual(set(body), {"attempt_id", "fence", "expected_state_version",
+                            "operation_id", "subject_ref", "research_version", "draft_protocol",
+                            "draft_candidate", "processed_inputs", "findings"})
+                        custody_calls.append(deepcopy(body))
+                        is_replay = len(custody_calls) == 2
+                        if is_replay:
+                            self.assertEqual(body, custody_calls[0])
+                        candidate = body["draft_candidate"]
+                        ptr = {"entry_ref": "entry:00000000-0000-4000-8000-000000000044", "version": 1,
+                               "candidate_hash": hashlib.sha256(json.dumps(candidate, sort_keys=True,
+                                   ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()}
+                        retained_draft = {"status": "unaccepted_revalidation_only", "pointer": ptr,
+                                          "candidate": deepcopy(candidate)}
+                        response = deepcopy(checkpoint)
+                        response["research"]["unaccepted_draft"] = deepcopy(retained_draft)
+                        response["draft_receipt"] = draft_ack(body, ptr, is_replay, False)
+                        if not is_replay:
+                            if fault == "draft_ack_missing":
+                                response.pop("draft_receipt")
+                            elif fault == "draft_ack_hash":
+                                response["draft_receipt"]["pointer"]["candidate_hash"] = "0" * 64
+                            elif fault == "draft_state_progress":
+                                response["state_version"] += 1
+                            elif fault == "draft_job_progress":
+                                response["research"]["version"] += 1
+                            elif fault == "draft_input_progress":
+                                response["inputs"] = []
+                            elif fault == "draft_processed_progress":
+                                response["processed_generation"] += 1
+                            elif fault == "draft_raw_mutation":
+                                response["research"]["unaccepted_draft"]["candidate"]["content"] = "Changed draft"
+                        elif fault == "draft_replay_ack":
+                            response["draft_receipt"]["operation_id"] = "wrong-operation"
+                        elif fault == "draft_replay_progress":
+                            response["research"]["version"] += 1
+                        elif fault == "draft_replay_inputs":
+                            response["inputs"] = []
+                        elif fault == "draft_replay_retirement":
+                            response["research"]["unaccepted_draft"] = None
+                        return {"data": response, **({"no_op": True} if is_replay else {})}
+                    if path.endswith("/candidates"):
+                        self.assertEqual(body["draft_protocol"], canary.DRAFT_PROTOCOL)
+                        self.assertEqual(body["draft_pointer"], retained_draft["pointer"])
+                        self.assertEqual(body["candidates"], [retained_draft["candidate"]])
+                        response = {**deepcopy(checkpoint), "accepted_candidate_ids": ["fixture-item"],
+                                    "state_version": 8,
+                                    "draft_receipt": draft_ack(body, body["draft_pointer"], False, True)}
+                        response["research"]["unaccepted_draft"] = None
+                        if fault == "draft_retirement_ack":
+                            response["draft_receipt"]["retired"] = False
+                        elif fault == "draft_not_retired":
+                            response["research"]["unaccepted_draft"] = deepcopy(retained_draft)
+                        elif fault == "draft_retirement_missing_projection":
+                            response.pop("research")
+                        return response
+                    self.assertTrue(path.endswith("/finish"), path)
+                    return {"latest_receipt": {"status": "partial", "mode": "full"}}
+
+                runner.request.side_effect = runner_response
                 item = {"id": "fixture-item", "reviewable": True, "stale": False, "run_entry_ref": "entry:run",
                         "run_version": 1, "candidate_hash": "fixture-hash", "candidate": {"target_path": job["output_path"]}}
                 owner = Mock()
@@ -393,6 +523,7 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                         self.assertTrue(report["subject_cycle"]["subject_header_search_exercised"])
                         self.assertTrue(report["subject_cycle"]["static_ineligible_search_result_verified"])
                         self.assertTrue(report["subject_cycle"]["changed_scope_refresh_signal"])
+                        self.assertTrue(report["subject_cycle"]["unaccepted_draft_custody_replay_and_retirement"])
                         self.assertTrue(report["subject_cycle"]["changed_dependency_invalidates_progress"])
                         self.assertTrue(report["subject_cycle"]["historical_revalidation_context_retained"])
                         self.assertTrue(report["subject_cycle"]["fresh_replacement_and_replay_clear_revalidation"])
@@ -401,6 +532,7 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                         self.assertTrue(report["subject_cycle"]["generated_briefing_exact_reads_preserved"])
                         self.assertTrue(documents[canonical["path"], 1].startswith("## Purpose\n"))
                         calls = runner.request.call_args_list
+                        self.assertEqual(len(calls), 14, "custody and replay add exactly two runner requests")
                         self.assertEqual(calls[0].args[2]["requested_subject_refs"], [canonical["entry_ref"]])
                         self.assertEqual(calls[3].args[2]["targets"], ["CanaryResearch/Trail"])
                         self.assertEqual(calls[3].args[2]["queries"], ["Canary Aster"])
@@ -412,11 +544,15 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                         self.assertEqual(calls[5].kwargs["expected"], (400,))
                         self.assertEqual(calls[7].args[1], "/v1/workspace/dreamer/research-progress")
                         self.assertEqual(calls[2].args[2]["reviewed_sources"][0]["end_line"], 204)
-                        rejected, accepted = calls[-3], calls[-2]
+                        rejected, accepted = calls[-5], calls[-2]
                         self.assertEqual(rejected.kwargs["expected"], (400,))
                         self.assertEqual(rejected.args[2]["candidates"][0]["sources"][1]["end_line"], 4)
                         self.assertEqual(accepted.args[2]["candidates"][0]["sources"][1]["end_line"], 3)
                         self.assertNotEqual(rejected.args[2]["operation_id"], accepted.args[2]["operation_id"])
+                        self.assertEqual(len(custody_calls), 2)
+                        self.assertTrue(all(call.args[1] == "/v1/workspace/dreamer/research-progress"
+                                            for call in calls[-4:-2]))
+                        self.assertNotEqual(custody_calls[0]["operation_id"], accepted.args[2]["operation_id"])
                         self.assertEqual(accepted.args[2]["research_version"], 6)
                         self.assertEqual(accepted.args[2]["processed_inputs"], [])
                         self.assertNotIn("subject_scope", accepted.args[2]["candidates"][0])

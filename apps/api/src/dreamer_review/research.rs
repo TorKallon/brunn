@@ -6,6 +6,7 @@ use crate::dreamer_subject::{SubjectScope, check_scope, create_scope, research_c
 use std::collections::{BTreeMap, BTreeSet};
 pub(super) mod checkpoints;
 mod discovery_audit;
+pub(super) mod drafts;
 
 const MAX_SOURCES: usize = 256;
 const MAX_RECEIPTS: usize = 24;
@@ -273,7 +274,7 @@ pub(super) async fn receipt(
     let selector = if field == "dreamer_state" {
         json!({"dreamer_state":{"research":{"receipts":[{"operation_id":id}]}}})
     } else {
-        json!({"dreamer_research":{"receipts":[{"operation_id":id}]}})
+        json!({(field):{"receipts":[{"operation_id":id}]}})
     };
     let metadata: Option<Value> = sqlx::query_scalar(
         "SELECT v.metadata FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id WHERE e.user_id=$1 AND e.path=$2 AND e.deleted_at IS NULL AND v.metadata @> $3 ORDER BY v.version DESC LIMIT 1")
@@ -517,6 +518,7 @@ async fn safe_view(
     };
     checkpoints::project(tx, auth, job, version, scope_fresh, &mut view).await?;
     discovery_audit::project(tx, auth, job, version, &mut view).await?;
+    drafts::project(tx, auth, job, &mut view).await?;
     Ok(view)
 }
 
@@ -1187,6 +1189,12 @@ pub(super) async fn apply_progress(
         "current_checkpoint",
         "checkpoint_receipt",
         "discovery_audit",
+        "draft_candidate",
+        "draft_protocol",
+        "draft_pointer",
+        "replaces_draft",
+        "unaccepted_draft",
+        "draft_receipt",
     ]
     .iter()
     .any(|field| body.get(field).is_some())
@@ -1317,6 +1325,9 @@ pub(super) async fn progress(
     Json(body): Json<Value>,
 ) -> ApiResult<Json<Value>> {
     let auth = runner_auth(&auth)?;
+    if body.get("draft_candidate").is_some() {
+        return drafts::custody(&state, &auth, &body).await.map(Json);
+    }
     let reference = string(&body, "subject_ref")?;
     let (operation_id, hash) = operation(&body, "research-progress")?;
     let mut tx = begin_runner_write(&state, &auth).await?;

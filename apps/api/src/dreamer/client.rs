@@ -173,9 +173,11 @@ impl ApiClient {
                 }
             }
         }
-        if path == "/v1/workspace/dreamer/research-progress"
-            && ((status == StatusCode::BAD_REQUEST && code == Some("research_refresh_required"))
-                || (status == StatusCode::CONFLICT && code == Some("dreamer_source_changed")))
+        if matches!(
+            path,
+            "/v1/workspace/dreamer/research-progress" | "/v1/workspace/dreamer/candidates"
+        ) && ((status == StatusCode::BAD_REQUEST && code == Some("research_refresh_required"))
+            || (status == StatusCode::CONFLICT && code == Some("dreamer_source_changed")))
         {
             return Err(ClientError::ResearchRefreshRequired(message));
         }
@@ -627,11 +629,13 @@ mod tests {
                         "details":{"private_detail":"DETAIL_MUST_NOT_ENTER_FEEDBACK"}}})
                     .to_string();
                     let result = decode_fixture(path, status, &body).await;
-                    let expected = path == "/v1/workspace/dreamer/research-progress"
-                        && ((status == StatusCode::BAD_REQUEST
-                            && code == "research_refresh_required")
-                            || (status == StatusCode::CONFLICT
-                                && code == "dreamer_source_changed"));
+                    let expected = matches!(
+                        path,
+                        "/v1/workspace/dreamer/research-progress"
+                            | "/v1/workspace/dreamer/candidates"
+                    ) && ((status == StatusCode::BAD_REQUEST
+                        && code == "research_refresh_required")
+                        || (status == StatusCode::CONFLICT && code == "dreamer_source_changed"));
                     assert_eq!(
                         matches!(&result, Err(ClientError::ResearchRefreshRequired(_))),
                         expected,

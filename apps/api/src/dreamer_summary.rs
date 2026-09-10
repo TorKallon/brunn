@@ -929,6 +929,10 @@ async fn audit_access(
 /// authority are deliberately excluded: a failed audit must not select older
 /// prose with a smaller dependency manifest.
 pub(crate) fn research_revalidation_candidate(metadata: &Value, subject_ref: &str) -> bool {
+    research_authority_candidate(metadata, subject_ref, true)
+}
+
+fn research_authority_candidate(metadata: &Value, subject_ref: &str, require_head: bool) -> bool {
     let notebook = &metadata["dreamer_research"];
     let Some(subject) = subject_ref
         .strip_prefix("entry:")
@@ -942,7 +946,7 @@ pub(crate) fn research_revalidation_candidate(metadata: &Value, subject_ref: &st
     ) || notebook["subject_ref"] != subject_ref
         || !serde_json::to_vec(metadata).is_ok_and(|bytes| bytes.len() <= 192 * 1024)
         || !notebook["notes"].as_str().is_some_and(|notes| {
-            !notes.trim().is_empty() && notes.len() <= MAX_RESEARCH_NOTES_BYTES
+            (!require_head || !notes.trim().is_empty()) && notes.len() <= MAX_RESEARCH_NOTES_BYTES
         })
     {
         return false;
@@ -981,7 +985,7 @@ pub(crate) fn research_revalidation_candidate(metadata: &Value, subject_ref: &st
         return false;
     };
     if !dependencies.iter().any(|(id, _)| *id == subject)
-        || reviewed.is_empty()
+        || (require_head && reviewed.is_empty())
         || reviewed.len() > MAX_SOURCES
         || reviewed.iter().any(|source| {
             source.start_line == 0
@@ -1040,6 +1044,41 @@ pub(crate) async fn research_revalidation_context(
     subject_ref: &str,
     version: i64,
 ) -> ApiResult<Option<Value>> {
+    let Some((id, metadata)) =
+        research_notebook_authority_inner(tx, auth, notebook_path, subject_ref, version, true)
+            .await?
+    else {
+        return Ok(None);
+    };
+    Ok(research_checkpoint_projection(
+        &metadata,
+        subject_ref,
+        id,
+        version,
+    ))
+}
+
+/// Audit an exact notebook's complete original source authority, including an
+/// empty accepted head. Draft custody uses this without pretending its proposed
+/// text was an accepted notebook. No embedded history is followed implicitly.
+pub(crate) async fn research_notebook_authority(
+    tx: &mut Transaction<'_, Postgres>,
+    auth: &AuthContext,
+    notebook_path: &str,
+    subject_ref: &str,
+    version: i64,
+) -> ApiResult<Option<(Uuid, Value)>> {
+    research_notebook_authority_inner(tx, auth, notebook_path, subject_ref, version, false).await
+}
+
+async fn research_notebook_authority_inner(
+    tx: &mut Transaction<'_, Postgres>,
+    auth: &AuthContext,
+    notebook_path: &str,
+    subject_ref: &str,
+    version: i64,
+    require_head: bool,
+) -> ApiResult<Option<(Uuid, Value)>> {
     let Some(subject) = subject_ref
         .strip_prefix("entry:")
         .and_then(|id| Uuid::parse_str(id).ok())
@@ -1063,14 +1102,13 @@ pub(crate) async fn research_revalidation_context(
     };
     let notebook = &selected.metadata["dreamer_research"];
     if selected.path != notebook_path
-        || !research_revalidation_candidate(&selected.metadata, subject_ref)
+        || !research_authority_candidate(&selected.metadata, subject_ref, require_head)
     {
         return Ok(None);
     }
-    let Some(_notes) = notebook["notes"]
-        .as_str()
-        .filter(|notes| !notes.trim().is_empty() && notes.len() <= MAX_RESEARCH_NOTES_BYTES)
-    else {
+    let Some(_notes) = notebook["notes"].as_str().filter(|notes| {
+        (!require_head || !notes.trim().is_empty()) && notes.len() <= MAX_RESEARCH_NOTES_BYTES
+    }) else {
         return Ok(None);
     };
     let Some(snapshot) = notebook["snapshot_generation"].as_i64().filter(|v| *v >= 0) else {
@@ -1108,7 +1146,7 @@ pub(crate) async fn research_revalidation_context(
     ) else {
         return Ok(None);
     };
-    if reviewed.is_empty()
+    if (require_head && reviewed.is_empty())
         || reviewed.len() > MAX_SOURCES
         || reviewed.iter().any(|source| {
             source
@@ -1141,12 +1179,7 @@ pub(crate) async fn research_revalidation_context(
         Err(crate::error::ApiError::Public { .. }) => return Ok(None),
         Err(error) => return Err(error),
     }
-    Ok(research_checkpoint_projection(
-        &selected.metadata,
-        subject_ref,
-        id,
-        version,
-    ))
+    Ok(Some((id, selected.metadata)))
 }
 
 /// A pure, compact representation used both for byte reservation and audited
