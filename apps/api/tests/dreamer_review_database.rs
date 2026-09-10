@@ -242,6 +242,42 @@ async fn review(f: &Fixture) -> Value {
     );
     envelope["data"].clone()
 }
+
+#[tokio::test]
+async fn safe_child_diagnostic_survives_terminal_replay_and_owner_review() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let a = admit(&f).await;
+    let mut body = attempt(&a, a["state_version"].as_i64().unwrap());
+    let failure = brunn::dreamer::codex::execution_failure(
+        br#"{"type":"turn.failed","error":{"message":"unexpected status 502 Bad Gateway: Bearer SECRET https://private.invalid"}}"#,
+        b"PRIVATE_STDERR quota 429",
+        Some(1),
+    );
+    let detail = format!(
+        "Recent model failures (latest first): probe: {} (1200 ms);",
+        failure.summary()
+    );
+    body["outcome"] = json!("failed");
+    body["detail"] = json!(detail);
+    body["auth_persistence"] = json!("verified");
+    body["notification"] = json!({"status":"not_needed"});
+    let finished = ok(post(&f, &f.runner, "/v1/workspace/dreamer/finish", body.clone()).await);
+    assert_eq!(
+        ok(post(&f, &f.runner, "/v1/workspace/dreamer/finish", body).await),
+        finished
+    );
+    let view = review(&f).await;
+    assert_eq!(view["last_attempt"]["detail"], detail);
+    assert_eq!(view["last_attempt"]["outcome"], "failed");
+    assert_eq!(view["last_attempt"]["auth_persistence"], "verified");
+    assert!(view["items"].as_array().unwrap().is_empty());
+    let rendered = view.to_string();
+    for secret in ["PRIVATE_STDERR", "SECRET", "private.invalid", "Bearer"] {
+        assert!(!rendered.contains(secret));
+    }
+}
+
 fn decision(view: &Value, item: &Value, choice: &str) -> Value {
     json!({"item_id":item["id"],"decision":choice,"expected_decisions_version":view["decision_version"],"candidate_hash":item["candidate_hash"],"run_entry_ref":item["run_entry_ref"],"run_version":item["run_version"],"idempotency_key":format!("decision-fixture:{}",Uuid::now_v7()),"correction":if choice=="correct"{"Please preserve the original qualification."}else{""}})
 }

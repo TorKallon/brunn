@@ -118,6 +118,70 @@ pub struct RunReport {
     pub counts: Value,
     #[serde(default)]
     pub research: Value,
+    /// Recent runner-generated diagnostics, never raw model or tool output.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub model_failures: Vec<ModelFailureRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelFailureRecord {
+    pub stage: String,
+    pub elapsed_ms: u64,
+    pub failure: codex::ExecutionFailure,
+}
+
+impl RunReport {
+    fn record_model_failure(
+        &mut self,
+        stage: &str,
+        elapsed: Duration,
+        failure: codex::ExecutionFailure,
+    ) {
+        let stage = if stage.len() <= 64
+            && stage
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"-_.".contains(&byte))
+        {
+            stage
+        } else {
+            "model"
+        };
+        if self.model_failures.len() == 8 {
+            self.model_failures.remove(0);
+        }
+        self.model_failures.push(ModelFailureRecord {
+            stage: stage.to_owned(),
+            elapsed_ms: elapsed.as_millis().min(u128::from(u64::MAX)) as u64,
+            failure,
+        });
+    }
+
+    fn detail(&self) -> Option<String> {
+        let outcome = outcome_detail(&self.outcome);
+        if self.model_failures.is_empty() {
+            return outcome;
+        }
+        // The existing receipt API retains 2,000 characters. Reserve space
+        // for recent child failures even when the final outcome is lengthy.
+        let mut detail: String = outcome.unwrap_or_default().chars().take(512).collect();
+        if !detail.is_empty() {
+            detail.push(' ');
+        }
+        detail.push_str("Recent model failures (latest first):");
+        for record in self.model_failures.iter().rev() {
+            let diagnostic = format!(
+                " {}: {} ({} ms);",
+                record.stage,
+                record.failure.summary(),
+                record.elapsed_ms
+            );
+            if detail.chars().count() + diagnostic.chars().count() > 2_000 {
+                break;
+            }
+            detail.push_str(&diagnostic);
+        }
+        Some(detail)
+    }
 }
 
 /// `dreamer-runtime` vault record: connection identity and last-attempt
@@ -254,6 +318,7 @@ impl Dreamer {
             persistence_error: None,
             counts: json!({}),
             research: json!({}),
+            model_failures: Vec::new(),
         };
         let mut runtime = self.runtime_status().await;
         let control_file = match self.workspace.read_markdown(CONTROL_PATH).await {
@@ -366,7 +431,7 @@ impl Dreamer {
         let terminal_request = json!({
             "attempt_id": report.attempt_id,"fence":fence,"expected_state_version":state_version,
             "outcome":match &report.outcome { RunOutcome::Completed=>"completed",RunOutcome::Partial{..}=>"partial",RunOutcome::SkippedAuth{..}|RunOutcome::SkippedLimits|RunOutcome::SkippedAlreadyRan=>"skipped",_=>"failed" },
-            "detail": outcome_detail(&report.outcome), "execution_outcome":report.outcome,
+            "detail": report.detail(), "execution_outcome":report.outcome,
             "auth_persistence":report.auth_persistence,"notification":report.notification,
             "completed_at":report.completed_at,"model":self.config.codex_model,
             "codex_version":runtime.codex_version,"research":report.research
@@ -562,17 +627,18 @@ impl Dreamer {
             return RunOutcome::Failed { detail };
         }
         report.stage = "probe".into();
+        let probe_started = tokio::time::Instant::now();
         match self.probe(run_home, env).await {
             ProbeResult::Ready => {}
-            ProbeResult::RateLimited => return RunOutcome::SkippedLimits,
-            ProbeResult::Failed(detail) => {
+            ProbeResult::Failed(failure) => {
+                let kind = failure.kind;
+                let detail = failure.summary();
+                report.record_model_failure("probe", probe_started.elapsed(), failure);
+                if kind == codex::FailureKind::UsageLimit {
+                    return RunOutcome::SkippedLimits;
+                }
                 return RunOutcome::Failed {
-                    detail: if detail.contains("timed out") {
-                        "Codex capacity probe timed out"
-                    } else {
-                        "Codex capacity probe failed"
-                    }
-                    .into(),
+                    detail: format!("Codex capacity probe failed: {detail}"),
                 };
             }
         }
@@ -727,16 +793,9 @@ impl Dreamer {
                     detail: "model time budget elapsed; admitted inputs remain pending".into(),
                 };
             }
-            ExecResult::Failed(detail) => {
+            ExecResult::Failed(failure) => {
                 return RunOutcome::Failed {
-                    detail: if detail.starts_with("plan limits mid-run") {
-                        "model plan capacity exhausted mid-run; admitted inputs remain pending"
-                    } else if detail.starts_with("could not spawn") {
-                        "model process could not start; admitted inputs remain pending"
-                    } else {
-                        "model execution failed; admitted inputs remain pending"
-                    }
-                    .into(),
+                    detail: format!("{}; admitted inputs remain pending", failure.summary()),
                 };
             }
             ExecResult::Finished => {}
@@ -1248,7 +1307,7 @@ impl Dreamer {
             .get_or_insert_with(|| Utc::now().to_rfc3339());
         status.last_attempt_date = Some(report.date.clone());
         status.last_attempt_result = Some(report.outcome.label().into());
-        status.last_attempt_detail = outcome_detail(&report.outcome);
+        status.last_attempt_detail = report.detail();
         status.last_attempt = serde_json::to_value(&report).ok();
         if let Err(error) = self.store_runtime_status(status).await {
             report.persistence_error = Some(format!("runtime persistence failed: {error}"));
@@ -1266,17 +1325,19 @@ impl Dreamer {
             )
             .await
         {
-            RawExec::Finished { rendered, success } => {
-                if codex::looks_rate_limited(&rendered) {
-                    ProbeResult::RateLimited
-                } else if success {
-                    ProbeResult::Ready
-                } else {
-                    ProbeResult::Failed(first_lines(&rendered, 3))
-                }
+            RawExec::Finished { success: true, .. } => ProbeResult::Ready,
+            RawExec::Finished {
+                stdout,
+                stderr,
+                exit_code,
+                ..
+            } => ProbeResult::Failed(codex::execution_failure(&stdout, &stderr, exit_code)),
+            RawExec::TimedOut => {
+                ProbeResult::Failed(codex::ExecutionFailure::new(codex::FailureKind::Timeout))
             }
-            RawExec::TimedOut => ProbeResult::Failed("probe timed out".into()),
-            RawExec::SpawnFailed(detail) => ProbeResult::Failed(detail),
+            RawExec::SpawnFailed => {
+                ProbeResult::Failed(codex::ExecutionFailure::new(codex::FailureKind::Start))
+            }
         }
     }
 
@@ -1292,20 +1353,17 @@ impl Dreamer {
             .exec_codex_raw(run_home, env, dream_prompt, budget, answer_name)
             .await
         {
-            RawExec::Finished { rendered, success } => {
-                if success {
-                    ExecResult::Finished
-                } else if codex::looks_rate_limited(&rendered) {
-                    ExecResult::Failed(format!(
-                        "plan limits mid-run: {}",
-                        first_lines(&rendered, 2)
-                    ))
-                } else {
-                    ExecResult::Failed(first_lines(&rendered, 3))
-                }
-            }
+            RawExec::Finished { success: true, .. } => ExecResult::Finished,
+            RawExec::Finished {
+                stdout,
+                stderr,
+                exit_code,
+                ..
+            } => ExecResult::Failed(codex::execution_failure(&stdout, &stderr, exit_code)),
             RawExec::TimedOut => ExecResult::TimedOut,
-            RawExec::SpawnFailed(detail) => ExecResult::Failed(detail),
+            RawExec::SpawnFailed => {
+                ExecResult::Failed(codex::ExecutionFailure::new(codex::FailureKind::Start))
+            }
         }
     }
 
@@ -1322,7 +1380,7 @@ impl Dreamer {
         if let Err(error) = std::fs::remove_file(run_home.work_dir.join(answer_name))
             && error.kind() != std::io::ErrorKind::NotFound
         {
-            return RawExec::SpawnFailed("could not clear model output slot".into());
+            return RawExec::SpawnFailed;
         }
         let mut env = env.clone();
         // The MCP server codex spawns needs the model credential; it is
@@ -1371,7 +1429,7 @@ impl Dreamer {
         command.process_group(0);
         let mut child = match command.spawn() {
             Ok(child) => child,
-            Err(error) => return RawExec::SpawnFailed(format!("could not spawn codex: {error}")),
+            Err(_) => return RawExec::SpawnFailed,
         };
         #[cfg(unix)]
         let _process_group = ProcessGroup(child.id().map(|id| id as i32));
@@ -1391,13 +1449,11 @@ impl Dreamer {
         match tokio::time::timeout(budget, execution).await {
             Ok(Ok(output)) => RawExec::Finished {
                 success: output.status.success(),
-                rendered: format!(
-                    "{}\n{}",
-                    String::from_utf8_lossy(&output.stdout),
-                    String::from_utf8_lossy(&output.stderr)
-                ),
+                exit_code: output.status.code(),
+                stdout: output.stdout,
+                stderr: output.stderr,
             },
-            Ok(Err(error)) => RawExec::SpawnFailed(format!("codex did not finish: {error}")),
+            Ok(Err(_)) => RawExec::SpawnFailed,
             Err(_) => RawExec::TimedOut,
         }
     }
@@ -1420,20 +1476,24 @@ impl Drop for ProcessGroup {
 
 enum ProbeResult {
     Ready,
-    RateLimited,
-    Failed(String),
+    Failed(codex::ExecutionFailure),
 }
 
 enum RawExec {
-    Finished { success: bool, rendered: String },
+    Finished {
+        success: bool,
+        stdout: Vec<u8>,
+        stderr: Vec<u8>,
+        exit_code: Option<i32>,
+    },
     TimedOut,
-    SpawnFailed(String),
+    SpawnFailed,
 }
 
 enum ExecResult {
     Finished,
     TimedOut,
-    Failed(String),
+    Failed(codex::ExecutionFailure),
 }
 
 /// The ephemeral per-run home: auth.json lives here for the duration of the
@@ -1498,15 +1558,6 @@ impl Drop for RunHome {
     }
 }
 
-fn first_lines(rendered: &str, count: usize) -> String {
-    rendered
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .take(count)
-        .collect::<Vec<_>>()
-        .join(" | ")
-}
-
 /// Extract account and plan from a codex auth.json, best effort, for the
 /// settings card. Never logs or returns token material.
 pub fn auth_identity(auth_json: &str) -> (Option<String>, Option<String>) {
@@ -1539,6 +1590,59 @@ pub fn auth_identity(auth_json: &str) -> (Option<String>, Option<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recent_failure_details_are_bounded_and_old_reports_remain_readable() {
+        // Persisted reports from older runners omit the new optional field.
+        let mut report: RunReport = serde_json::from_value(json!({
+            "date":"2026-09-10","outcome":{"outcome":"completed"},
+            "mode_flipped":false,"confinement_violations":[],
+            "attempt_id":"fixture","stage":"terminal","started_at":"fixture",
+            "auth_persistence":"verified","receipt_persistence":"verified",
+            "notification":{},"counts":{}
+        }))
+        .unwrap();
+        assert!(report.model_failures.is_empty());
+        assert!(report.detail().is_none());
+        assert!(
+            serde_json::to_value(&report)
+                .unwrap()
+                .get("model_failures")
+                .is_none()
+        );
+        report.outcome = RunOutcome::Partial {
+            detail: "é".repeat(3_000),
+        };
+        for ordinal in 0..12 {
+            let mut failure = codex::ExecutionFailure::new(codex::FailureKind::Provider);
+            failure.event = Some(codex::FailureEvent::TurnFailed);
+            failure.http_status = Some(502);
+            failure.exit_code = Some(i32::MIN);
+            report.record_model_failure(
+                &format!("research-{ordinal}-{}", "x".repeat(50)),
+                Duration::MAX,
+                failure,
+            );
+        }
+        assert_eq!(report.model_failures.len(), 8);
+        let detail = report.detail().unwrap();
+        assert!(detail.chars().count() <= 2_000);
+        assert!(detail.contains("research-11-"));
+        assert!(!detail.contains("research-0-"));
+        assert!(detail.contains("HTTP 502"));
+        report.record_model_failure(
+            "invalid/stage?SECRET",
+            Duration::ZERO,
+            codex::ExecutionFailure::new(codex::FailureKind::Timeout),
+        );
+        assert_eq!(report.model_failures.last().unwrap().stage, "model");
+        assert!(!report.detail().unwrap().contains("SECRET"));
+        let serialized = serde_json::to_value(&report).unwrap();
+        assert_eq!(
+            serde_json::from_value::<RunReport>(serialized).unwrap(),
+            report
+        );
+    }
 
     #[tokio::test]
     async fn nonreading_child_cannot_block_the_prompt_deadline() {

@@ -10,6 +10,9 @@ use std::{collections::BTreeMap, path::Path, time::Duration};
 
 use tokio::process::Command;
 
+mod failure;
+pub use failure::{ExecutionFailure, FailureEvent, FailureKind, execution_failure};
+
 /// Environment variables that must never reach a codex subprocess.
 const EXPLICIT_DENIALS: &[&str] = &[
     "OPENAI_API_KEY",
@@ -244,21 +247,6 @@ pub fn restrict_to_location_evidence(args: &mut Vec<String>, discovery: bool) {
     );
 }
 
-/// Whether probe/exec output looks like plan-capacity exhaustion. Matched
-/// leniently on the strings codex emits for subscription limits.
-pub fn looks_rate_limited(rendered: &str) -> bool {
-    let lower = rendered.to_lowercase();
-    [
-        "rate limit",
-        "usage limit",
-        "quota",
-        "too many requests",
-        "429",
-    ]
-    .iter()
-    .any(|marker| lower.contains(marker))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,13 +381,6 @@ mod tests {
                     "web_search=\"disabled\""
                 }));
         }
-    }
-
-    #[test]
-    fn rate_limit_detection() {
-        assert!(looks_rate_limited("You've hit your usage limit."));
-        assert!(looks_rate_limited("HTTP 429 Too Many Requests"));
-        assert!(!looks_rate_limited("All good."));
     }
 
     fn write_stub(script: &str) -> tempfile::TempPath {

@@ -141,6 +141,136 @@ esac
 }
 
 #[tokio::test]
+async fn successful_probe_ignores_old_limit_events_and_source_text() {
+    let behavior = format!(
+        r#"
+if [ "$OUTPUT_NAME" = 'probe-answer.md' ]; then
+ cat <<'EVENTS'
+{{"type":"error","message":"You've hit your usage limit."}}
+{{"type":"item.completed","item":{{"type":"agent_message","text":"READY; quota 429 appears only in source content"}}}}
+{{"type":"turn.completed","usage":{{"input_tokens":1,"output_tokens":1}}}}
+EVENTS
+ exit 0
+fi
+{HAPPY}
+"#
+    );
+    let (shared, dreamer, _dir) = build(&behavior).await;
+    enable(&shared);
+    let report = dreamer.run_once(today(), RunKind::Manual).await;
+    assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
+    assert!(report.model_failures.is_empty());
+    assert_eq!(report.auth_persistence, "verified");
+}
+
+#[tokio::test]
+async fn failed_probe_classifies_terminal_error_and_persists_safe_diagnostic() {
+    let behavior = r#"
+cat <<'EVENTS'
+{"type":"item.completed","item":{"type":"mcp_tool_call","result":{"content":[{"text":"PRIVATE SOURCE quota 429 Bearer SECRET"}]}}}
+{"type":"turn.failed","error":{"message":"unexpected status 502 Bad Gateway: Bearer SECRET url: https://private.invalid/?token=SECRET"}}
+EVENTS
+exit 1
+"#;
+    let (shared, dreamer, _dir) = build(behavior).await;
+    enable(&shared);
+    let report = dreamer.run_once(today(), RunKind::Manual).await;
+    assert!(matches!(report.outcome, RunOutcome::Failed { .. }));
+    assert_eq!(report.model_failures.len(), 1);
+    let failure = &report.model_failures[0];
+    assert_eq!(failure.stage, "probe");
+    assert_eq!(failure.failure.http_status, Some(502));
+    assert_eq!(failure.failure.exit_code, Some(1));
+    assert_ne!(
+        failure.failure.kind,
+        brunn::dreamer::codex::FailureKind::UsageLimit
+    );
+    let state = shared.lock().unwrap();
+    assert_eq!(state.runs.len(), 1);
+    let detail = state.runs[0]["detail"].as_str().unwrap();
+    assert!(detail.contains("probe"));
+    assert!(detail.contains("502"));
+    for private in [
+        "PRIVATE SOURCE",
+        "Bearer",
+        "SECRET",
+        "private.invalid",
+        "429",
+    ] {
+        assert!(!detail.contains(private), "leaked {private}");
+        assert!(!serde_json::to_string(&report).unwrap().contains(private));
+    }
+    assert_eq!(report.auth_persistence, "verified");
+    assert_eq!(report.receipt_persistence, "accepted");
+}
+
+#[tokio::test]
+async fn research_timeout_then_throttle_retains_both_diagnostics_and_retries() {
+    use brunn::dreamer::codex::FailureKind;
+    let behavior = r#"
+if [ "$OUTPUT_NAME" = 'probe-answer.md' ]; then echo READY; exit 0; fi
+case "$OUTPUT_NAME" in
+ research-1-1-answer.md) sleep 10;;
+ research-2-1-answer.md)
+ cat <<'EVENTS'
+{"type":"item.completed","item":{"type":"reasoning","text":"PRIVATE REASONING quota 429"}}
+{"type":"error","message":"You've hit your usage limit."}
+{"type":"turn.failed","error":{"message":"unexpected status 429 Too Many Requests: private request payload"}}
+EVENTS
+ exit 1;;
+ research-2-2-answer.md)
+ cat > "$OUTPUT_PATH" <<'JSON'
+{"schema":"dream.research.step.v1","action":"yield","findings":["Required source is temporarily unavailable; retain the work."]}
+JSON
+ ;;
+ *) exit 99;;
+esac
+"#;
+    let (shared, dreamer, dir) = build_with_budget(behavior, Duration::from_secs(6)).await;
+    enable(&shared);
+    {
+        let mut state = shared.lock().unwrap();
+        state.research_enabled = true;
+        state.research_jobs = vec![job(SOURCE), job("entry:other")];
+    }
+    let report = dreamer.run_once(today(), RunKind::Manual).await;
+    assert!(
+        matches!(report.outcome, RunOutcome::Partial { .. }),
+        "{report:?}"
+    );
+    assert_eq!(report.model_failures.len(), 2, "{report:?}");
+    assert_eq!(report.model_failures[0].stage, "research-1-1-answer.md");
+    assert_eq!(report.model_failures[0].failure.kind, FailureKind::Timeout);
+    assert!(report.model_failures[0].elapsed_ms >= 2_000);
+    assert_eq!(report.model_failures[1].stage, "research-2-1-answer.md");
+    assert_eq!(
+        report.model_failures[1].failure.kind,
+        FailureKind::RateLimited
+    );
+    assert_eq!(report.model_failures[1].failure.http_status, Some(429));
+    assert_eq!(report.model_failures[1].failure.exit_code, Some(1));
+    assert_ne!(report.research["stop_reason"], "account_limits");
+    assert_eq!(report.research["new_review_items"], 0);
+    assert_eq!(report.research["processed_inputs"], 0);
+    assert!(
+        std::fs::read_to_string(dir.path().join("calls"))
+            .unwrap()
+            .contains("research-2-2-answer.md")
+    );
+    let state = shared.lock().unwrap();
+    let detail = state.runs[0]["detail"].as_str().unwrap();
+    for expected in ["research-1-1-answer.md", "research-2-1-answer.md", "429"] {
+        assert!(detail.contains(expected), "missing {expected}: {detail}");
+    }
+    for private in ["PRIVATE REASONING", "private request payload", "You've hit"] {
+        assert!(!detail.contains(private));
+    }
+    assert!(state.submitted.is_empty());
+    assert_eq!(report.auth_persistence, "verified");
+    assert_eq!(report.receipt_persistence, "accepted");
+}
+
+#[tokio::test]
 async fn source_research_forwards_exact_coverage_and_duplicate_retirement_pointers() {
     let covering = comparison();
     let mut duplicate = covering.clone();

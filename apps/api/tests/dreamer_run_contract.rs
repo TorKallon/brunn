@@ -660,7 +660,7 @@ async fn timeout_and_refresh_are_both_reported() {
 #[tokio::test]
 async fn failed_limits_probe_still_preserves_refresh() {
     let (s, d, _dir) = build(
-        "echo '{\"refreshed\":true}' > \"$CODEX_HOME/auth.json\"\necho 'usage limit'; exit 1",
+        "echo '{\"refreshed\":true}' > \"$CODEX_HOME/auth.json\"\ncat <<'JSON'\n{\"type\":\"turn.failed\",\"error\":{\"message\":\"You've hit your usage limit.\"}}\nJSON\nexit 1",
     )
     .await;
     enable(&s);
@@ -668,11 +668,16 @@ async fn failed_limits_probe_still_preserves_refresh() {
     assert_eq!(report.outcome, RunOutcome::SkippedLimits);
     assert_eq!(report.auth_persistence, "verified");
     assert_eq!(report.receipt_persistence, "accepted");
+    assert_eq!(
+        report.model_failures[0].failure.kind,
+        brunn::dreamer::codex::FailureKind::UsageLimit
+    );
+    assert!(s.lock().unwrap().runs[0]["detail"].is_string());
 }
 #[tokio::test]
 async fn auth_cas_failure_cannot_claim_clean_readiness() {
     let (s, d, _dir) = build(
-        "echo '{\"refreshed\":true}' > \"$CODEX_HOME/auth.json\"\necho 'usage limit'; exit 1",
+        "echo '{\"refreshed\":true}' > \"$CODEX_HOME/auth.json\"\ncat <<'JSON'\n{\"type\":\"turn.failed\",\"error\":{\"message\":\"You've hit your usage limit.\"}}\nJSON\nexit 1",
     )
     .await;
     enable(&s);
@@ -896,6 +901,36 @@ fn assert_canonical_evidence_inventory(candidate: &Value) {
     // needs to be duplicated in the primary answer to retain that evidence.
     assert_eq!(candidate["sources"][0]["start_line"], 1);
     assert_eq!(candidate["sources"][0]["end_line"], 2);
+}
+
+#[tokio::test]
+async fn location_audit_failure_does_not_treat_source_quota_words_as_limits() {
+    let behavior = r#"
+cat <<'JSON'
+{"type":"item.completed","item":{"type":"mcp_tool_call","result":"PRIVATE_SOURCE quota 429"}}
+{"type":"turn.failed","error":{"message":"unexpected status 502 Bad Gateway: PRIVATE_SOURCE Bearer SECRET"}}
+JSON
+exit 1
+"#;
+    let (s, d, _dir, _) = build_location_audit(behavior, "", Duration::from_secs(3)).await;
+    let report = d.run_once(today(), RunKind::Manual).await;
+    assert!(
+        matches!(report.outcome, RunOutcome::Failed { .. }),
+        "{report:?}"
+    );
+    assert_eq!(report.auth_persistence, "verified");
+    assert_eq!(report.receipt_persistence, "accepted");
+    assert_eq!(s.lock().unwrap().submissions, 0);
+    let public = serde_json::to_string(&report).unwrap();
+    for text in [
+        "PRIVATE_SOURCE",
+        "SECRET",
+        "Bearer",
+        "skipped_limits",
+        "account_limits",
+    ] {
+        assert!(!public.contains(text));
+    }
 }
 
 #[tokio::test]

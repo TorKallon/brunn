@@ -356,17 +356,18 @@ impl Dreamer {
                 report.stage = "subject_research".into();
                 let input = research::prompt(&current, &feedback, round_budget.as_secs());
                 let name = format!("research-{}-{subject_round}-answer.md", subjects_seen.len());
+                let model_started = tokio::time::Instant::now();
                 let result = self
                     .exec_codex(run_home, env, &input, round_budget, &name)
                     .await;
                 match result {
                     ExecResult::Finished => {}
-                    ExecResult::Failed(detail) if detail.starts_with("plan limits mid-run:") => {
-                        quota_limited = true;
-                        stop = "account_limits".into();
-                        break 'subjects;
-                    }
                     ExecResult::TimedOut => {
+                        report.record_model_failure(
+                            &name,
+                            model_started.elapsed(),
+                            codex::ExecutionFailure::new(codex::FailureKind::Timeout),
+                        );
                         let status = "The subject's time allowance ended. Its admitted evidence and saved conclusions remain available for another attempt.";
                         feedback = retained_repair(&current).map_or_else(
                             || status.to_owned(),
@@ -375,8 +376,18 @@ impl Dreamer {
                         repairs = 2;
                         continue;
                     }
-                    ExecResult::Failed(_) => {
-                        feedback = "The previous model process did not return a usable response. Resume from the persisted evidence and return the documented JSON object.".into();
+                    ExecResult::Failed(failure) => {
+                        let usage_limited = failure.kind == codex::FailureKind::UsageLimit;
+                        let diagnostic = failure.summary();
+                        report.record_model_failure(&name, model_started.elapsed(), failure);
+                        if usage_limited {
+                            quota_limited = true;
+                            stop = "account_limits".into();
+                            break 'subjects;
+                        }
+                        feedback = format!(
+                            "The previous model process did not return a usable response: {diagnostic}. Resume from the persisted evidence and return the documented JSON object."
+                        );
                         repairs += 1;
                         continue;
                     }
