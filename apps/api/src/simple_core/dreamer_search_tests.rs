@@ -134,6 +134,7 @@ async fn dreamer_search_filters_generated_editions_before_all_candidate_caps() {
     }
     assert_eq!(generated.len() * 32, 4480);
     let mut primary = HashSet::new();
+    let mut primary_order = Vec::new();
     for ordinal in 0..9 {
         let metadata = match ordinal % 3 {
             0 => json!({}),
@@ -153,7 +154,20 @@ async fn dreamer_search_filters_generated_editions_before_all_candidate_caps() {
             replace_metadata(&mut tx, user, id, json!({"kind":"ordinary_note"})).await;
         }
         primary.insert(id);
+        primary_order.push(id);
     }
+    // Creation uses wall-clock timestamps, so the primary entries above would
+    // otherwise be newer. The ordinary index pool is intentionally unordered:
+    // a primary chunk entering that pool must not win the last-modified lane
+    // merely because of fixture insertion order. Make the crowding explicit
+    // while retaining distinct primary dates for the normal ordering check.
+    sqlx::query("UPDATE brunn.entries SET updated_at=CASE WHEN id=ANY($2) THEN '2026-02-01T00:00:00Z'::timestamptz ELSE '2026-01-01T00:00:00Z'::timestamptz + array_position($3::uuid[],id) * interval '1 second' END WHERE user_id=$1")
+        .bind(user)
+        .bind(&generated)
+        .bind(&primary_order)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
     // Exceed the recent-change lane even after generated changes are removed;
     // finding the older primary sources then requires the filtered index pool.
     for ordinal in 0..300 {
