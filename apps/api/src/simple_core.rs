@@ -4672,6 +4672,10 @@ async fn lexical_candidates(
     Ok((merged.into_values().collect(), workspace_generation))
 }
 
+// Included in durable discovery keys. Bump when retrieval semantics change so
+// a retained miss from an older policy cannot suppress the improved search.
+pub(crate) const DREAMER_LEXICAL_POLICY_VERSION: u8 = 2;
+
 /// Reuse the normal lexical index for the narrow Dreamer context endpoint.
 /// Validate the stored credential before adding server-owned read authority;
 /// never pass augmented capabilities back through public authentication.

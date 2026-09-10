@@ -61,6 +61,243 @@ fn subject_candidate(admission: &Value, selectors: Vec<Value>) -> Value {
         "content":"# Radley\n\nRadley is the canonical person.[^s1]\nThe current outcome is complete; one equipment detail remains unresolved.[^s2]\n", "sources":selectors})
 }
 
+#[tokio::test]
+async fn discovery_policy_upgrade_retries_legacy_query_without_replaying_accepted_operations() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    let canonical = write(
+        &f,
+        "sources/People/Cedar.md",
+        "# Cedar\n\nCedar has a checked primary observation.\n",
+        0,
+    )
+    .await;
+    let primary = write(
+        &f,
+        "sources/Optics/Measurement.md",
+        "# Measurement\n\nThe detector schedule records the exposure interval.\n",
+        0,
+    )
+    .await;
+    let query = "Please inspect photometry calibration observatory detector schedule and explain what the current request should report.";
+    let primary_id = Uuid::parse_str(
+        primary["entry_ref"]
+            .as_str()
+            .unwrap()
+            .trim_start_matches("entry:"),
+    )
+    .unwrap();
+    let (indexed, strict_match): (i64, Option<bool>) = sqlx::query_as(
+        "SELECT count(*),bool_or(search_vector @@ websearch_to_tsquery('english',$3)) FROM brunn.search_chunks WHERE user_id=$1 AND entry_id=$2",
+    )
+    .bind(f.owner.user)
+    .bind(primary_id)
+    .bind(query)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    assert!(indexed > 0, "the primary is already searchable");
+    assert_eq!(strict_match, Some(false), "the old strict AND missed it");
+
+    let selected = next_subject(&f, &admit(&f).await).await;
+    assert_eq!(selected["research"]["subject_ref"], canonical["entry_ref"]);
+    assert_eq!(selected["research"]["sources"].as_array().unwrap().len(), 1);
+    assert!(
+        primary["workspace_generation"].as_i64().unwrap()
+            <= selected["research"]["snapshot_generation"]
+                .as_i64()
+                .unwrap()
+    );
+    let notes = "The canonical observation is checked; further source discovery remains open.";
+    let saved = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        progress_body(&selected, vec![reviewed(&canonical)], "researching", notes),
+    )
+    .await)["data"]
+        .clone();
+    let research_path = format!(
+        "dreams/research/{}.md",
+        canonical["entry_ref"]
+            .as_str()
+            .unwrap()
+            .trim_start_matches("entry:")
+    );
+    let mut legacy_request = research_request(&saved);
+    legacy_request["queries"] = json!([query]);
+    legacy_request["targets"] = json!([]);
+    let legacy_query_hash = hex::encode(Sha256::digest(
+        serde_json::to_vec(&json!({"queries":[query.to_lowercase()],"targets":[]})).unwrap(),
+    ));
+    let mut legacy_payload = legacy_request.clone();
+    legacy_payload
+        .as_object_mut()
+        .unwrap()
+        .remove("expected_state_version");
+    let legacy_request_hash = hex::encode(Sha256::digest(
+        serde_json::to_vec(&json!({"kind":"narrative-discover","payload":legacy_payload})).unwrap(),
+    ));
+    let mut legacy = current(&f, &research_path).await.unwrap().2;
+    legacy["dreamer_research"]["round"] = json!(1);
+    legacy["dreamer_research"]["discoveries"] = json!([{
+        "query_hash":legacy_query_hash,"generation":saved["research"]["snapshot_generation"]
+    }]);
+    legacy["dreamer_research"]["receipts"]
+        .as_array_mut()
+        .unwrap()
+        .push(
+            json!({"operation_id":legacy_request["operation_id"],"request_hash":legacy_request_hash,
+            "producer":f.runner.id,"result":{"round":1,"no_op":false}}),
+        );
+    // Model only this disposable fixture's pre-upgrade record. No source,
+    // generation or exact operation identity changes during the policy upgrade.
+    sqlx::query("UPDATE brunn.entry_versions v SET metadata=$3 FROM brunn.entries e WHERE e.user_id=$1 AND e.path=$2 AND v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version")
+        .bind(f.owner.user).bind(&research_path).bind(legacy).execute(&f.pool).await.unwrap();
+    let legacy_job = current(&f, &research_path).await.unwrap();
+    let legacy_state = current(&f, "dreams/state.md").await.unwrap();
+    let replay = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/narrative-discover",
+        legacy_request.clone(),
+    )
+    .await);
+    assert_eq!(replay["no_op"], true);
+    assert_eq!(replay["data"]["research"]["notes"], notes);
+    assert_ne!(replay["data"]["research"]["needs_refresh"], true);
+    assert_eq!(
+        replay["data"]["research"]["sources"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(current(&f, &research_path).await.unwrap(), legacy_job);
+    assert_eq!(current(&f, "dreams/state.md").await.unwrap(), legacy_state);
+
+    let mut discovery = research_request(&replay["data"]);
+    discovery["queries"] = json!([query]);
+    discovery["targets"] = json!([]);
+    let discovered = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/narrative-discover",
+        discovery.clone(),
+    )
+    .await);
+    assert_eq!(discovered["no_op"], false);
+    let discovered = discovered["data"].clone();
+    assert_eq!(discovered["research"]["round"], 2);
+    assert_eq!(
+        discovered["research"]["sources"].as_array().unwrap().len(),
+        2
+    );
+    assert!(
+        discovered["research"]["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["entry_ref"] == primary["entry_ref"] && s["version"] == primary["version"])
+    );
+    assert_eq!(discovered["research"]["notes"], notes);
+    assert_eq!(
+        discovered["research"]["reviewed_sources"],
+        saved["research"]["reviewed_sources"]
+    );
+    assert_eq!(discovered["inputs"], saved["inputs"]);
+    assert_eq!(
+        discovered["processed_generation"],
+        saved["processed_generation"]
+    );
+    let discovered_job = current(&f, &research_path).await.unwrap();
+    let discoveries = discovered_job.2["dreamer_research"]["discoveries"]
+        .as_array()
+        .unwrap();
+    assert_eq!(discoveries.len(), 2);
+    assert_eq!(discoveries[0]["query_hash"], legacy_query_hash);
+    assert_ne!(discoveries[1]["query_hash"], legacy_query_hash);
+
+    let mut repeated = research_request(&discovered);
+    repeated["queries"] = json!([format!(
+        "  {}  ",
+        query.to_uppercase().replacen(' ', "   ", 1)
+    )]);
+    repeated["targets"] = json!([]);
+    let repeated = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/narrative-discover",
+        repeated,
+    )
+    .await);
+    assert_eq!(repeated["no_op"], true);
+    let repeated = repeated["data"].clone();
+    assert_eq!(
+        repeated["research"]["round"],
+        discovered["research"]["round"]
+    );
+    assert_eq!(repeated["research"]["coverage"]["query_results"], json!([]));
+    assert_same_source_headers(
+        &repeated["research"]["sources"],
+        &discovered["research"]["sources"],
+    );
+    assert_eq!(repeated["research"]["notes"], notes);
+    assert_eq!(
+        repeated["research"]["reviewed_sources"],
+        saved["research"]["reviewed_sources"]
+    );
+
+    let later_notes =
+        "Both the canonical observation and the discovered measurement are now checked.";
+    let later = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        progress_body(
+            &repeated,
+            vec![reviewed(&canonical), reviewed(&primary)],
+            "researching",
+            later_notes,
+        ),
+    )
+    .await)["data"]
+        .clone();
+    let durable_job = current(&f, &research_path).await.unwrap();
+    let durable_state = current(&f, "dreams/state.md").await.unwrap();
+    for original in [legacy_request, discovery] {
+        let replay = ok(post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/narrative-discover",
+            original,
+        )
+        .await);
+        assert_eq!(replay["no_op"], true);
+        assert_eq!(replay["data"]["research"]["notes"], later_notes);
+        assert_eq!(
+            replay["data"]["research"]["version"],
+            later["research"]["version"]
+        );
+        assert_eq!(replay["data"]["state_version"], later["state_version"]);
+        assert_eq!(
+            replay["data"]["research"]["reviewed_sources"],
+            later["research"]["reviewed_sources"]
+        );
+        assert_same_source_headers(
+            &replay["data"]["research"]["sources"],
+            &later["research"]["sources"],
+        );
+        assert_eq!(
+            current(&f, &research_path).await.unwrap(),
+            durable_job,
+            "old-policy and current-policy operation replay must not rerun or rewrite history"
+        );
+        assert_eq!(current(&f, "dreams/state.md").await.unwrap(), durable_state);
+    }
+    f.pool.close().await;
+}
+
 async fn briefing_fixture_source(f: &Fixture, path: &str, version: i64, metadata: Value) -> Value {
     ok(post(f, &f.owner, "/v1/workspace/write", json!({
         "path":path,"content":format!("# Edition context\n\nOrchid has an established source observation.\n\nFixture revision {version}.\n"),

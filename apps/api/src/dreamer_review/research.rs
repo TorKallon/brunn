@@ -1382,7 +1382,8 @@ pub(super) async fn discover(
         .iter()
         .map(|t| t.trim().to_owned())
         .collect::<BTreeSet<_>>();
-    let query_hash = digest(&json!({"queries":normalized,"targets":target_set}));
+    let query_hash = digest(&json!({"queries":normalized,"targets":target_set,
+        "retrieval_policy":simple_core::DREAMER_LEXICAL_POLICY_VERSION}));
     let prior_fresh = fresh(&mut tx, &auth, &job).await?;
     let duplicate = job
         .discoveries
