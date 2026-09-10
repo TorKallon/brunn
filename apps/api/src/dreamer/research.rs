@@ -3,6 +3,43 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+pub const MAX_REPAIR_FEEDBACK_BYTES: usize = 4096;
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RepairPhase {
+    ResponseValidation,
+    CandidateValidation,
+    CheckpointValidation,
+}
+
+/// A public validation correction, never source evidence or model-authored work.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RepairFeedback {
+    pub phase: RepairPhase,
+    pub message: String,
+}
+
+impl RepairFeedback {
+    pub fn new(phase: RepairPhase, message: &str) -> Self {
+        let mut end = message.len().min(MAX_REPAIR_FEEDBACK_BYTES);
+        while !message.is_char_boundary(end) {
+            end -= 1;
+        }
+        Self {
+            phase,
+            message: message[..end].to_owned(),
+        }
+    }
+
+    pub fn valid(&self) -> bool {
+        !self.message.trim().is_empty()
+            && self.message.len() <= MAX_REPAIR_FEEDBACK_BYTES
+            && !self.message.contains('\0')
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
@@ -309,6 +346,8 @@ research.routed_work is server-retained enrichment work for this existing overvi
 
 research.notes is resumable work context only; its claims must be reopened in exact source records before use in a candidate. Return compact source-backed conclusions and unfinished leads after meaningful progress, never private reasoning. reviewed_sources lists actual exact {{entry_ref,version,start_line,end_line}} selectors you read, 1-based inclusive, at most 400 lines per selector. notes may be empty and is limited to 8,000 bytes; nonempty notes require reviewed_sources. Do not copy whole source text into notes. Search-only rounds leave reviewed_sources and processed_inputs empty.
 
+research.repair_feedback, when present, is the wrapper's retained public validation error from an earlier response. Use it to correct the next response; it is not factual evidence, a source, or permission to bypass current validation. A rejected response was not saved as a candidate or accepted research. Reopen primary evidence as usual and preserve the selected subject and review identity. Do not return repair_feedback in your response.
+
 Return ONLY one JSON object:
 {{"schema":"dream.research.step.v1","action":"discover|submit|yield|done","queries":[],"targets":[],"notes":"","reviewed_sources":[],"pending_queries":[],"pending_targets":[],"candidates":[],"processed_inputs":[],"findings":[]}}
 
@@ -341,6 +380,31 @@ INPUT:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repair_feedback_is_bounded_operational_context_not_a_model_field() {
+        let feedback = RepairFeedback::new(RepairPhase::CandidateValidation, &"é".repeat(4096));
+        assert_eq!(feedback.message.len(), MAX_REPAIR_FEEDBACK_BYTES);
+        assert!(feedback.valid());
+        assert!(!RepairFeedback::new(RepairPhase::ResponseValidation, " ").valid());
+        assert!(!RepairFeedback::new(RepairPhase::ResponseValidation, "bad\0value").valid());
+        assert!(
+            serde_json::from_value::<RepairFeedback>(json!({
+                "phase":"candidate_validation","message":"Fix the declared citation.",
+                "sources":[{"entry_ref":"entry:a"}]
+            }))
+            .is_err()
+        );
+        let step = json!({"schema":"dream.research.step.v1","action":"yield",
+            "repair_feedback":feedback});
+        assert!(parse(&step.to_string(), &fixture()).is_err());
+        let mut input = fixture();
+        input["research"]["repair_feedback"] = json!({"phase":"candidate_validation",
+            "message":"SYNTHETIC_SAVED_CORRECTION"});
+        let prompt = prompt(&input, "");
+        assert!(prompt.contains("SYNTHETIC_SAVED_CORRECTION"));
+        assert!(prompt.contains("not factual evidence"));
+    }
 
     fn fixture() -> Value {
         json!({"session_id":"session:fixture","inputs":[{"entry_ref":"entry:a","version":1,"generation":7}],

@@ -47,7 +47,51 @@ fn discovery_progress(current: &Value) -> Value {
     ])
 }
 
+fn retained_repair(current: &Value) -> Option<research::RepairFeedback> {
+    serde_json::from_value::<research::RepairFeedback>(
+        current["research"]["repair_feedback"].clone(),
+    )
+    .ok()
+    .filter(research::RepairFeedback::valid)
+}
+
+fn subject_allowance(remaining: Duration) -> Duration {
+    Duration::from_secs(600).min(remaining / 2)
+}
+
 impl Dreamer {
+    async fn record_research_repair(
+        &self,
+        current: &mut Value,
+        state_version: &mut i64,
+        repair: &research::RepairFeedback,
+        status: &str,
+        deadline: tokio::time::Instant,
+    ) -> Result<(), ClientError> {
+        let operation_id = uuid::Uuid::now_v7().to_string();
+        let mut body = envelope(current, *state_version, &operation_id);
+        add_fields(
+            &mut body,
+            json!({"status":status,"repair_feedback":repair,"processed_inputs":[]}),
+        );
+        let response = self
+            .research_request("research-progress", body, deadline)
+            .await?;
+        // Safe source projection may withhold the diagnostic. Its explicit
+        // receipt still confirms custody; an older API ignoring this field
+        // must not look like a successful repair checkpoint.
+        if response["repair_feedback_receipt"]["operation_id"] != operation_id
+            || response["repair_feedback_receipt"]["recorded"] != true
+        {
+            return Err(ClientError::Failed(
+                "research repair checkpoint was not acknowledged; work retained for reconciliation"
+                    .into(),
+            ));
+        }
+        merge(current, &response, state_version);
+        Ok(())
+    }
+
     /// Retry transport ambiguity with the exact operation identity/payload.
     /// Validation feedback is handled by another reasoning round, never by
     /// silently weakening or partially publishing a rejected candidate.
@@ -105,7 +149,9 @@ impl Dreamer {
         let mut subjects_seen = std::collections::BTreeSet::new();
 
         'subjects: loop {
-            if deadline.saturating_duration_since(tokio::time::Instant::now()) <= selection_margin {
+            if subject_allowance(deadline.saturating_duration_since(tokio::time::Instant::now()))
+                <= selection_margin
+            {
                 stop = "time_exhausted".into();
                 break;
             }
@@ -126,7 +172,9 @@ impl Dreamer {
                 exhausted = true;
                 break;
             };
-            if deadline.saturating_duration_since(tokio::time::Instant::now()) <= selection_margin {
+            if subject_allowance(deadline.saturating_duration_since(tokio::time::Instant::now()))
+                <= selection_margin
+            {
                 stop = "time_exhausted".into();
                 break;
             }
@@ -135,7 +183,10 @@ impl Dreamer {
                 failure = Some("research selection repeated a subject already serviced in this attempt; progress retained".into());
                 break;
             }
+            // Retained corrections are read from the current safe projection
+            // in each prompt, never cached across a source-access refresh.
             let mut feedback = String::new();
+            let mut pending_repair = None;
             let mut repairs = 0usize;
             // Successful discovery cannot erase a rejected checkpoint. Only a
             // subsequently accepted checkpoint resets this part of the budget.
@@ -146,21 +197,50 @@ impl Dreamer {
             // Leave time for another subject even if this model invocation
             // stalls. Evidence already admitted survives the bounded turn.
             let now = tokio::time::Instant::now();
-            let subject_deadline =
-                now + Duration::from_secs(600).min(deadline.saturating_duration_since(now) / 2);
+            let subject_deadline = now + subject_allowance(deadline.saturating_duration_since(now));
             loop {
                 let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
                 if remaining.is_zero() {
                     stop = "time_exhausted".into();
                     break 'subjects;
                 }
-                // Each subject retains its continuation if it needs more than
-                // one run. The next subject still gets an opportunity today.
-                if repairs + refresh_rejections >= 2
+                let yield_subject = repairs + refresh_rejections >= 2
                     || no_progress >= 2
                     || subject_round >= 32
-                    || tokio::time::Instant::now() >= subject_deadline
-                {
+                    || subject_deadline.saturating_duration_since(tokio::time::Instant::now())
+                        <= selection_margin;
+                if let Some(repair) = pending_repair.take() {
+                    let status = if yield_subject {
+                        "waiting"
+                    } else {
+                        "researching"
+                    };
+                    if let Err(error) = self
+                        .record_research_repair(
+                            &mut current,
+                            state_version,
+                            &repair,
+                            status,
+                            deadline,
+                        )
+                        .await
+                    {
+                        failure = Some(format!(
+                            "research correction could not be checkpointed: {error}"
+                        ));
+                        break 'subjects;
+                    }
+                    feedback.clear();
+                    // Custody is operational, not accepted model progress.
+                    // It does not reset either validation-repair counter.
+                    if yield_subject {
+                        yielded_subjects += 1;
+                        break;
+                    }
+                }
+                // Each subject retains its continuation if it needs more than
+                // one run. The next subject still gets an opportunity today.
+                if yield_subject {
                     let mut body =
                         envelope(&current, *state_version, &uuid::Uuid::now_v7().to_string());
                     add_fields(
@@ -264,12 +344,18 @@ impl Dreamer {
                     continue;
                 }
                 subject_round += 1;
+                let round_budget =
+                    subject_deadline.saturating_duration_since(tokio::time::Instant::now());
+                // Discovery or repair custody may have used the useful tail.
+                // Return through the normal yield checkpoint without a child.
+                if round_budget <= selection_margin {
+                    subject_round -= 1;
+                    continue;
+                }
                 rounds += 1;
                 report.stage = "subject_research".into();
                 let input = research::prompt(&current, &feedback);
                 let name = format!("research-{}-{subject_round}-answer.md", subjects_seen.len());
-                let round_budget =
-                    subject_deadline.saturating_duration_since(tokio::time::Instant::now());
                 let result = self
                     .exec_codex(run_home, env, &input, round_budget, &name)
                     .await;
@@ -281,7 +367,11 @@ impl Dreamer {
                         break 'subjects;
                     }
                     ExecResult::TimedOut => {
-                        feedback = "The subject's time allowance ended. Its admitted evidence and saved conclusions remain available for another attempt.".into();
+                        let status = "The subject's time allowance ended. Its admitted evidence and saved conclusions remain available for another attempt.";
+                        feedback = retained_repair(&current).map_or_else(
+                            || status.to_owned(),
+                            |repair| format!("{} {status}", repair.message),
+                        );
                         repairs = 2;
                         continue;
                     }
@@ -297,6 +387,10 @@ impl Dreamer {
                 let step = match parsed {
                     Ok(step) => step,
                     Err(error) => {
+                        pending_repair = Some(research::RepairFeedback::new(
+                            research::RepairPhase::ResponseValidation,
+                            &error,
+                        ));
                         feedback = error;
                         repairs += 1;
                         continue;
@@ -322,9 +416,18 @@ impl Dreamer {
                                 }
                                 Err(ClientError::ResearchRefreshRequired(detail)) => {
                                     refresh_rejections += 1;
+                                    pending_repair = Some(research::RepairFeedback::new(
+                                        research::RepairPhase::CheckpointValidation,
+                                        &format!(
+                                            "The previous research checkpoint was not saved: {detail}. Reread the refreshed sources and reconsider the rejected conclusions before saving them."
+                                        ),
+                                    ));
                                     rejected_checkpoint = Some(detail);
                                 }
                                 Err(error) => {
+                                    if let ClientError::ResearchValidation(repair) = &error {
+                                        pending_repair = Some(repair.clone());
+                                    }
                                     feedback = error.to_string();
                                     repairs += 1;
                                     continue;
@@ -358,7 +461,6 @@ impl Dreamer {
                                         "The previous research checkpoint was not saved: {detail}. Discovery has refreshed the admitted evidence. Reread the refreshed sources and reconsider the rejected conclusions before saving them. {feedback}"
                                     );
                                 }
-                                repairs = 0;
                             }
                             Err(error) => {
                                 feedback = error.to_string();
@@ -392,6 +494,9 @@ impl Dreamer {
                                 break;
                             }
                             Err(error) => {
+                                if let ClientError::ResearchValidation(repair) = &error {
+                                    pending_repair = Some(repair.clone());
+                                }
                                 feedback = format!(
                                     "Candidate was not accepted: {error}. Correct the same proposal using exact evidence. Request updated or missing sources if needed. Do not discard previously accepted work or mark rejected input processed."
                                 );
@@ -423,6 +528,9 @@ impl Dreamer {
                                 break;
                             }
                             Err(error) => {
+                                if let ClientError::ResearchValidation(repair) = &error {
+                                    pending_repair = Some(repair.clone());
+                                }
                                 feedback = error.to_string();
                                 repairs += 1;
                             }

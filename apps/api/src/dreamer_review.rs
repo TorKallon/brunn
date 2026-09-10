@@ -48,6 +48,12 @@ pub(crate) fn sensitive_input_path(path: &str) -> bool {
     PATTERN.is_match(path)
 }
 
+/// Keep historical research projections under the same source policy as live
+/// research admission, including generated and evaluation-only material.
+pub(crate) fn research_source_excluded(path: &str, metadata: &Value) -> bool {
+    location_discovery::excluded(path, metadata)
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Input {
     pub entry_ref: String,
@@ -2144,6 +2150,13 @@ pub async fn candidates(
     }
     let (mut data, version) = load_state(&mut tx, user).await?;
     research_comparison::reject_candidate_fields(&body)?;
+    if body.get("repair_feedback").is_some()
+        || body["research_progress"].get("repair_feedback").is_some()
+    {
+        return Err(ApiError::invalid(
+            "repair feedback requires an operational-only research-progress request",
+        ));
+    }
     let request_hash = digest(&body);
     let mut research_job = None;
     let mut research_operation = None;
@@ -2545,7 +2558,16 @@ pub async fn candidates(
         }
         let before_md = before.map(|e| e.content).unwrap_or_default();
         compile_related_candidate(&mut candidate, &before_md)?;
-        validate_candidate(&candidate, &before_md)?;
+        validate_candidate(&candidate, &before_md).map_err(|error| {
+            if subject_submission {
+                research::repair_error(
+                    error,
+                    crate::dreamer::research::RepairPhase::CandidateValidation,
+                )
+            } else {
+                error
+            }
+        })?;
         let hash = digest(&candidate);
         if data.items.iter().any(|i| i.candidate_hash == hash) {
             continue;
@@ -2730,6 +2752,9 @@ pub async fn candidates(
             job.retry_at = Utc::now() + Duration::hours(24);
         }
         job.accepted_candidate_ids = ids.clone();
+        if !ids.is_empty() {
+            job.repair_feedback = None;
+        }
         if !ids.is_empty() && !research_comparison::retains_priority(&data, &job.subject_ref) {
             data.research
                 .requested_subject_refs

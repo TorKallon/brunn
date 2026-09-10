@@ -349,6 +349,14 @@ Failed model output receives precise feedback before a bounded retry; a slow
 subject yields with saved progress so another subject can run. The older
 single-discovery protocol remains available to compatible older runners.
 
+Public validation corrections survive a timeout or restart in a separate
+bounded research field. The runner confirms that correction was saved before
+starting its retry and yields when too little time remains for a fresh model
+invocation. A rejected draft remains unaccepted; its correction does not
+consume inputs or change a review decision. Successful source discovery alone
+does not clear the correction or reset the rejection limit. Deploy the API
+before the runner so its explicit correction receipt is available.
+
 Manual `/run` requests may include at most 16 `requested_subject_refs` containing
 exact canonical entry references. Those identity-only requests are durably
 queued and survive selection, yields and restarts until dispositioned. Normal

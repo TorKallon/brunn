@@ -63,6 +63,9 @@ struct Mock {
     research_progress: Vec<Value>,
     research_waiting_delay: Duration,
     research_progress_replies: VecDeque<Option<(StatusCode, String)>>,
+    research_repair_replies: VecDeque<(StatusCode, String)>,
+    research_candidate_replies: VecDeque<(StatusCode, String)>,
+    omit_repair_ack: bool,
     research_discovery_sources: VecDeque<Vec<Value>>,
     research_comparisons: Vec<Value>,
 }
@@ -224,6 +227,11 @@ async fn candidates(State(shared): State<Shared>, Json(body): Json<Value>) -> Re
     }
     s.submissions += 1;
     s.submitted.push(body.clone());
+    if body["subject_ref"].is_string()
+        && let Some((status, response)) = s.research_candidate_replies.pop_front()
+    {
+        return (status, response).into_response();
+    }
     if s.review_conflicts > 0 {
         s.review_conflicts -= 1;
         s.state_version += 1;
@@ -277,6 +285,9 @@ async fn candidates(State(shared): State<Shared>, Json(body): Json<Value>) -> Re
             });
         }
         current["state_version"] = json!(s.state_version);
+        if !ids.is_empty() {
+            current["research"]["repair_feedback"] = Value::Null;
+        }
         result
             .as_object_mut()
             .unwrap()

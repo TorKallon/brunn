@@ -1,6 +1,7 @@
 //! Included by the real HTTP/database review fixture, not a standalone model.
 use super::*;
 mod comparison;
+mod repair;
 
 fn research_request(admission: &Value) -> Value {
     let mut body = attempt(admission, admission["state_version"].as_i64().unwrap());

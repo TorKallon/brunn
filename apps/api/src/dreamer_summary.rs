@@ -667,6 +667,7 @@ async fn audit_access(
     let mut queue = vec![(selected.id, selected.version)];
     let mut visited = std::collections::BTreeSet::new();
     let mut sources = std::collections::BTreeSet::new();
+    let mut research_sources = std::collections::BTreeSet::new();
     let mut targets = std::collections::BTreeSet::new();
     let mut raw_sources = std::collections::BTreeSet::new();
     let mut source_limit = MAX_SOURCES;
@@ -701,6 +702,7 @@ async fn audit_access(
                         return Ok(false);
                     };
                     sources.insert(reference);
+                    research_sources.insert(reference);
                 }
             }
         } else if let Some(receipt) = metadata.get("dreamer_receipt") {
@@ -841,6 +843,44 @@ async fn audit_access(
         .bind(auth.user_id.0).bind(ids).bind(versions).fetch_one(&mut **tx).await?;
     if visible != sources.len() as i64 {
         return Ok(false);
+    }
+    if !research_sources.is_empty() {
+        // Exact research notes and diagnostics are cached source-dependent
+        // text. Visibility alone is insufficient: a source can still be
+        // readable after becoming excluded from research. Check both its
+        // original metadata and its current head without rewriting history.
+        let (ids, versions): (Vec<_>, Vec<_>) = research_sources.iter().copied().unzip();
+        let rows = sqlx::query(
+            r#"
+            SELECT e.path, exact.metadata, head.metadata AS current_metadata
+            FROM unnest($2::uuid[],$3::bigint[]) AS required(id,version)
+            JOIN brunn.entries e ON e.user_id=$1 AND e.id=required.id
+                AND e.deleted_at IS NULL AND e.kind='markdown'
+            JOIN brunn.entry_versions exact ON exact.user_id=e.user_id
+                AND exact.entry_id=e.id AND exact.version=required.version
+                AND exact.content IS NOT NULL
+            JOIN brunn.entry_versions head ON head.user_id=e.user_id
+                AND head.entry_id=e.id AND head.version=e.current_version
+                AND head.content IS NOT NULL AND head.size_bytes<=1048576
+        "#,
+        )
+        .bind(auth.user_id.0)
+        .bind(ids)
+        .bind(versions)
+        .fetch_all(&mut **tx)
+        .await?;
+        if rows.len() != research_sources.len()
+            || rows.iter().any(|row| {
+                let path: &str = row.get("path");
+                crate::dreamer_review::research_source_excluded(path, &row.get("metadata"))
+                    || crate::dreamer_review::research_source_excluded(
+                        path,
+                        &row.get("current_metadata"),
+                    )
+            })
+        {
+            return Ok(false);
+        }
     }
     let (paths, versions): (Vec<_>, Vec<_>) = targets.iter().cloned().unzip();
     let targets_visible: i64 = sqlx::query_scalar("SELECT count(*) FROM unnest($2::text[],$3::bigint[]) AS required(path,version) JOIN brunn.entries e ON e.user_id=$1 AND e.path=required.path AND e.deleted_at IS NULL JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=required.version")

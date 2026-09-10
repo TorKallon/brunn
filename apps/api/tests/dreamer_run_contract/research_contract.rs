@@ -1,6 +1,9 @@
 //! Runner research: real subprocess/HTTP lifecycle, deterministic model fixture.
 use super::*;
 
+#[path = "repair_contract.rs"]
+mod repair_contract;
+
 pub(super) async fn next(State(shared): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
     assert_operation(&body);
     let (current, delay) = {
@@ -28,13 +31,22 @@ pub(super) async fn progress(State(shared): State<Shared>, Json(body): Json<Valu
     let (current, delay) = {
         let mut s = shared.lock().unwrap();
         s.research_progress.push(body.clone());
-        if body["status"] == "researching"
+        let repair_only = body.get("repair_feedback").is_some();
+        if repair_only && let Some((status, response)) = s.research_repair_replies.pop_front() {
+            return (status, response).into_response();
+        }
+        if !repair_only
+            && body["status"] == "researching"
             && let Some(Some((status, response))) = s.research_progress_replies.pop_front()
         {
             return (status, response).into_response();
         }
         s.state_version += 1;
         let mut current = s.current_admission.clone().unwrap();
+        current
+            .as_object_mut()
+            .unwrap()
+            .remove("repair_feedback_receipt");
         current["state_version"] = json!(s.state_version);
         current["research"]["version"] =
             json!(current["research"]["version"].as_i64().unwrap() + 1);
@@ -44,10 +56,30 @@ pub(super) async fn progress(State(shared): State<Shared>, Json(body): Json<Valu
             "pending_queries",
             "pending_targets",
             "status",
+            "repair_feedback",
         ] {
             if let Some(value) = body.get(key) {
                 current["research"][key] = value.clone();
             }
+        }
+        if repair_only && !s.omit_repair_ack {
+            current["repair_feedback_receipt"] =
+                json!({"operation_id":body["operation_id"],"recorded":true});
+        } else if !repair_only
+            && (body["status"] == "no_change"
+                || (body["reviewed_sources"]
+                    .as_array()
+                    .is_some_and(|s| !s.is_empty())
+                    && current["research"]["repair_feedback"]["phase"] != "candidate_validation"))
+        {
+            current["research"]["repair_feedback"] = Value::Null;
+        }
+        if let Some(job) = s
+            .research_jobs
+            .iter_mut()
+            .find(|job| job["subject_ref"] == current["research"]["subject_ref"])
+        {
+            *job = current["research"].clone();
         }
         s.current_admission = Some(current.clone());
         let delay = if body["status"] == "waiting" {
@@ -379,7 +411,18 @@ esac
     );
     assert_eq!(report.research["subjects_yielded"], 1);
     assert_eq!(report.research["subjects_completed"], 1);
-    assert_eq!(shared.lock().unwrap().research_progress.len(), 2);
+    let s = shared.lock().unwrap();
+    assert_eq!(s.research_progress.len(), 3);
+    assert!(
+        s.research_progress[..2]
+            .iter()
+            .all(
+                |body| body["repair_feedback"]["phase"] == "response_validation"
+                    && body["processed_inputs"] == json!([])
+            )
+    );
+    assert_eq!(s.research_progress[1]["status"], "waiting");
+    assert_eq!(s.research_progress[2]["subject_ref"], second);
     assert_eq!(report.auth_persistence, "verified");
 }
 
@@ -802,7 +845,12 @@ async fn typed_checkpoint_rejections_refresh_without_saving_or_consuming_rejecte
         assert_eq!(report.research["new_review_items"], 0);
         let s = shared.lock().unwrap();
         assert_eq!(s.narrative_discoveries.len(), 1);
-        assert_eq!(s.research_progress.len(), 2);
+        assert_eq!(s.research_progress.len(), 3);
+        assert_eq!(
+            s.research_progress[1]["repair_feedback"]["phase"],
+            "checkpoint_validation"
+        );
+        assert!(s.research_progress[1].get("notes").is_none());
         assert_eq!(s.research_progress[0]["notes"], "REJECTED_CHECKPOINT_NOTES");
         assert_eq!(s.research_progress[0]["findings"], discover["findings"]);
         assert_discovery_only(
@@ -826,7 +874,7 @@ async fn typed_checkpoint_rejections_refresh_without_saving_or_consuming_rejecte
         let input: Value =
             serde_json::from_str(prompt.split("\nINPUT:\n").nth(1).unwrap().trim()).unwrap();
         assert_eq!(input["research"]["sources"], json!(refreshed_sources(3)));
-        assert_eq!(input["research"]["version"], 2);
+        assert_eq!(input["research"]["version"], 3);
         assert_eq!(input["research"]["notes"], "");
         assert_eq!(input["research"]["reviewed_sources"], json!([]));
         assert_eq!(input["inputs"].as_array().unwrap().len(), 1);
@@ -967,12 +1015,17 @@ async fn repeated_refresh_rejections_yield_even_when_discovery_succeeds_and_next
     for index in 0..2 {
         assert_discovery_only(
             &s.narrative_discoveries[index],
-            &s.research_progress[index],
+            &s.research_progress[index * 2],
             &discover,
         );
     }
-    assert_eq!(s.research_progress[2]["status"], "waiting");
-    assert_eq!(s.research_progress[3]["subject_ref"], second);
+    assert_eq!(s.research_progress.len(), 5);
+    assert_eq!(s.research_progress[3]["status"], "waiting");
+    assert_eq!(
+        s.research_progress[3]["repair_feedback"]["phase"],
+        "checkpoint_validation"
+    );
+    assert_eq!(s.research_progress[4]["subject_ref"], second);
     assert!(s.submitted.is_empty());
 }
 
@@ -1005,6 +1058,13 @@ async fn accepted_evidence_checkpoint_resets_refresh_rejection_budget() {
     assert!(dir.path().join("prompt-research-1-5-answer.md").exists());
     let s = shared.lock().unwrap();
     assert_eq!(s.narrative_discoveries.len(), 4);
-    assert_eq!(s.research_progress.len(), 5);
+    assert_eq!(s.research_progress.len(), 7);
+    assert_eq!(
+        s.research_progress
+            .iter()
+            .filter(|body| body.get("repair_feedback").is_some())
+            .count(),
+        2
+    );
     assert!(s.submitted.is_empty());
 }

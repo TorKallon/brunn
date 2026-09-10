@@ -1,6 +1,7 @@
 //! Persistent, exact-evidence subject research. Only scheduling pointers live in
 //! the global run state; source bodies are never copied into research records.
 use super::*;
+use crate::dreamer::research::{RepairFeedback, RepairPhase};
 use crate::dreamer_subject::{SubjectScope, check_scope, create_scope, research_change_page};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -46,6 +47,8 @@ pub(super) struct Job {
     #[serde(serialize_with = "serialize_reviewed_selectors")]
     pub reviewed_sources: Vec<Source>,
     pub notes: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repair_feedback: Option<RepairFeedback>,
     pub pending_queries: Vec<String>,
     pub pending_targets: Vec<String>,
     pub status: String,
@@ -361,6 +364,7 @@ async fn safe_view(
     }
     if !scope_fresh {
         view["notes"] = json!("");
+        view["repair_feedback"] = Value::Null;
         view["reviewed_sources"] = json!([]);
         view["status"] = json!("researching");
         view["needs_refresh"] = json!(true);
@@ -432,6 +436,7 @@ async fn create(
         sources: vec![input],
         reviewed_sources: Vec::new(),
         notes: String::new(),
+        repair_feedback: None,
         pending_queries: Vec::new(),
         pending_targets: Vec::new(),
         status: "researching".into(),
@@ -658,6 +663,16 @@ async fn refresh(
         }
     }
     let mut current = headers(tx, auth, &ids, upper).await?;
+    // Keep operational corrections across eligible version changes, but never
+    // let a cached identity reappear after its inaccessible dependency is
+    // removed from the manifest used by later safe projections.
+    if job
+        .sources
+        .iter()
+        .any(|old| !current.iter().any(|head| head.entry_ref == old.entry_ref))
+    {
+        job.repair_feedback = None;
+    }
     let mut unresolved = Vec::new();
     for id in &ids {
         if current
@@ -931,12 +946,112 @@ fn strings(body: &Value, field: &str, count: usize, bytes: usize) -> ApiResult<V
     Ok(values)
 }
 
+/// Mark only an actual model contract failure after its authority checks.
+/// Source access, freshness, owner decisions and fences keep their own errors.
+pub(super) fn repair_error(mut error: ApiError, phase: RepairPhase) -> ApiError {
+    if let ApiError::Public {
+        status,
+        code: "invalid_request",
+        details,
+        ..
+    } = &mut error
+        && *status == axum::http::StatusCode::BAD_REQUEST
+    {
+        let details = details.get_or_insert_with(|| json!({}));
+        if let Some(fields) = details.as_object_mut() {
+            fields.insert("dreamer_repair_phase".into(), json!(phase));
+        }
+    }
+    error
+}
+
+fn apply_repair_feedback(job: &mut Job, body: &Value) -> ApiResult<()> {
+    let allowed = [
+        "attempt_id",
+        "fence",
+        "expected_state_version",
+        "operation_id",
+        "subject_ref",
+        "research_version",
+        "status",
+        "repair_feedback",
+        "processed_inputs",
+    ];
+    if body
+        .as_object()
+        .is_none_or(|fields| fields.keys().any(|key| !allowed.contains(&key.as_str())))
+        || body["processed_inputs"] != json!([])
+    {
+        return Err(ApiError::invalid(
+            "repair feedback requires operational-only progress with no evidence or input disposition",
+        ));
+    }
+    let mut feedback: RepairFeedback = serde_json::from_value(body["repair_feedback"].clone())
+        .map_err(|_| ApiError::invalid("repair feedback must have a valid phase and message"))?;
+    if !feedback.valid() {
+        return Err(ApiError::invalid(
+            "repair feedback exceeds its message bounds",
+        ));
+    }
+    let status = string(body, "status")?;
+    if !matches!(status, "researching" | "waiting") {
+        return Err(ApiError::invalid(
+            "repair feedback cannot complete a research subject",
+        ));
+    }
+    if let Some(prior) = &job.repair_feedback
+        && prior.phase == RepairPhase::CandidateValidation
+        && feedback.phase != RepairPhase::CandidateValidation
+    {
+        // A later notebook/JSON repair does not discharge the outstanding
+        // candidate defect. Retain both bounded corrections with candidate
+        // lifetime, including when the previous hint is currently withheld.
+        let mut prefix_end = prior.message.len().min(2048);
+        while !prior.message.is_char_boundary(prefix_end) {
+            prefix_end -= 1;
+        }
+        let phase = match feedback.phase {
+            RepairPhase::ResponseValidation => "response_validation",
+            RepairPhase::CheckpointValidation => "checkpoint_validation",
+            RepairPhase::CandidateValidation => unreachable!("lower-phase correction"),
+        };
+        feedback = RepairFeedback::new(
+            RepairPhase::CandidateValidation,
+            &format!(
+                "{}\n\nAdditional {phase} correction: {}",
+                &prior.message[..prefix_end],
+                feedback.message
+            ),
+        );
+    }
+    job.repair_feedback = Some(feedback);
+    job.status = status.into();
+    job.retry_at = Utc::now()
+        + if status == "waiting" {
+            Duration::hours(6)
+        } else {
+            Duration::hours(24)
+        };
+    Ok(())
+}
+
 pub(super) async fn apply_progress(
     tx: &mut Transaction<'_, Postgres>,
     auth: &AuthContext,
     job: &mut Job,
     body: &Value,
 ) -> ApiResult<()> {
+    if body.get("repair_feedback").is_some() {
+        return Err(ApiError::invalid(
+            "repair feedback requires an operational-only research-progress request",
+        ));
+    }
+    let invalid = |message| {
+        repair_error(
+            ApiError::invalid(message),
+            RepairPhase::CheckpointValidation,
+        )
+    };
     let status = string(body, "status")?;
     if status == "waiting" && !fresh(tx, auth, job).await? {
         // Yielding unavailable/unchecked evidence is scheduling, not a claim.
@@ -955,37 +1070,38 @@ pub(super) async fn apply_progress(
         .and_then(Value::as_str)
         .unwrap_or(&job.notes);
     if notes.len() > 12 * 1024 {
-        return Err(ApiError::invalid("research notes exceed 12 KiB"));
+        return Err(invalid("research notes exceed 12 KiB"));
     }
     let status = string(body, "status")?;
     if !matches!(status, "researching" | "waiting" | "no_change") {
-        return Err(ApiError::invalid("invalid research progress status"));
+        return Err(invalid("invalid research progress status"));
     }
     let mut reviewed: Vec<Source> = serde_json::from_value(
         body.get("reviewed_sources")
             .cloned()
             .unwrap_or_else(|| json!(job.reviewed_sources)),
     )?;
-    if reviewed.len() > 64
-        || reviewed.iter().any(|source| {
-            !job.sources
-                .iter()
-                .any(|input| input.entry_ref == source.entry_ref && input.version == source.version)
-        })
-    {
+    if reviewed.len() > 64 {
+        return Err(invalid(
+            "reviewed selectors must resolve in admitted research evidence",
+        ));
+    }
+    if reviewed.iter().any(|source| {
+        !job.sources
+            .iter()
+            .any(|input| input.entry_ref == source.entry_ref && input.version == source.version)
+    }) {
         return Err(ApiError::invalid(
             "reviewed selectors must resolve in admitted research evidence",
         ));
     }
     if !notes.trim().is_empty() && reviewed.is_empty() {
-        return Err(ApiError::invalid(
+        return Err(invalid(
             "research notes require reviewed exact source selectors",
         ));
     }
     if status == "no_change" && !reviewed.iter().any(|s| s.entry_ref == job.subject_ref) {
-        return Err(ApiError::invalid(
-            "no_change must review the canonical subject",
-        ));
+        return Err(invalid("no_change must review the canonical subject"));
     }
     source_versions_with_policy(
         tx,
@@ -1007,10 +1123,23 @@ pub(super) async fn apply_progress(
     job.notes = notes;
     job.reviewed_sources = reviewed;
     if body.get("pending_queries").is_some() {
-        job.pending_queries = strings(body, "pending_queries", 12, 160)?;
+        job.pending_queries = strings(body, "pending_queries", 12, 160)
+            .map_err(|error| repair_error(error, RepairPhase::CheckpointValidation))?;
     }
     if body.get("pending_targets").is_some() {
-        job.pending_targets = strings(body, "pending_targets", 32, 1024)?;
+        job.pending_targets = strings(body, "pending_targets", 32, 1024)
+            .map_err(|error| repair_error(error, RepairPhase::CheckpointValidation))?;
+    }
+    if status == "no_change"
+        || body["reviewed_sources"]
+            .as_array()
+            .is_some_and(|sources| !sources.is_empty())
+            && job
+                .repair_feedback
+                .as_ref()
+                .is_some_and(|feedback| feedback.phase != RepairPhase::CandidateValidation)
+    {
+        job.repair_feedback = None;
     }
     job.status = status.into();
     job.retry_at = Utc::now()
@@ -1048,12 +1177,31 @@ pub(super) async fn progress(
     )
     .await?;
     checked_attempt(&data, &body, &auth, version, replay.is_some())?;
-    if replay.is_some() {
-        return Ok(Json(
-            json!({"data":admission_response(&mut tx,&auth,&data,version).await?,"no_op":true}),
-        ));
+    if let Some(replay) = replay {
+        let mut response = admission_response(&mut tx, &auth, &data, version).await?;
+        if let Some(ack) = replay["result"].get("repair_feedback_receipt") {
+            response["repair_feedback_receipt"] = ack.clone();
+        }
+        return Ok(Json(json!({"data":response,"no_op":true})));
     }
     check_job(&data, &body, &job, job_version)?;
+    if body.get("repair_feedback").is_some() {
+        apply_repair_feedback(&mut job, &body)?;
+        let ack = json!({"operation_id":operation_id,"recorded":true});
+        remember(
+            &mut job.receipts,
+            &auth,
+            &operation_id,
+            &hash,
+            json!({"status":job.status,"repair_feedback_receipt":ack}),
+        );
+        save(&state, &mut tx, &auth, &job, job_version).await?;
+        let version = save_state(&state, &mut tx, &auth, &data, version).await?;
+        let mut response = admission_response(&mut tx, &auth, &data, version).await?;
+        response["repair_feedback_receipt"] = ack;
+        tx.commit().await?;
+        return Ok(Json(json!({"data":response})));
+    }
     apply_progress(&mut tx, &auth, &mut job, &body).await?;
     let processed = body
         .get("processed_inputs")

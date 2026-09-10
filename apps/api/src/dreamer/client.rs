@@ -10,10 +10,14 @@ use std::time::Duration;
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
+use super::research::{RepairFeedback, RepairPhase};
+
 #[derive(Debug)]
 pub enum ClientError {
     /// A research checkpoint was definitively rejected until evidence refresh.
     ResearchRefreshRequired(String),
+    /// A public error tagged at the checked research validation boundary.
+    ResearchValidation(RepairFeedback),
     /// The API rejected a CAS write because the entry moved.
     Conflict {
         actual_version: Option<i64>,
@@ -27,6 +31,7 @@ impl std::fmt::Display for ClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ClientError::ResearchRefreshRequired(detail) => write!(f, "{detail}"),
+            ClientError::ResearchValidation(feedback) => write!(f, "{}", feedback.message),
             ClientError::Conflict {
                 actual_version,
                 detail,
@@ -141,6 +146,33 @@ impl ApiClient {
             .take(1024)
             .collect();
         let code = body.pointer("/error/code").and_then(Value::as_str);
+        if status == StatusCode::BAD_REQUEST
+            && code == Some("invalid_request")
+            && body
+                .pointer("/error/message")
+                .and_then(Value::as_str)
+                .is_some()
+        {
+            let phase = body
+                .pointer("/error/details/dreamer_repair_phase")
+                .and_then(Value::as_str);
+            let phase = match (path, phase) {
+                ("/v1/workspace/dreamer/candidates", Some("candidate_validation")) => {
+                    Some(RepairPhase::CandidateValidation)
+                }
+                (
+                    "/v1/workspace/dreamer/candidates" | "/v1/workspace/dreamer/research-progress",
+                    Some("checkpoint_validation"),
+                ) => Some(RepairPhase::CheckpointValidation),
+                _ => None,
+            };
+            if let Some(phase) = phase {
+                let feedback = RepairFeedback::new(phase, &message);
+                if feedback.valid() {
+                    return Err(ClientError::ResearchValidation(feedback));
+                }
+            }
+        }
         if path == "/v1/workspace/dreamer/research-progress"
             && ((status == StatusCode::BAD_REQUEST && code == Some("research_refresh_required"))
                 || (status == StatusCode::CONFLICT && code == Some("dreamer_source_changed")))
@@ -499,6 +531,73 @@ mod tests {
             .body(body.to_owned())
             .unwrap();
         ApiClient::decode(path, response.into()).await
+    }
+
+    #[tokio::test]
+    async fn repair_decode_requires_checked_validation_marker_and_public_message() {
+        for path in [
+            "/v1/workspace/dreamer/candidates",
+            "/v1/workspace/dreamer/research-progress",
+            "/v1/workspace/dreamer/narrative-discover",
+        ] {
+            for status in [
+                StatusCode::BAD_REQUEST,
+                StatusCode::CONFLICT,
+                StatusCode::UNAUTHORIZED,
+                StatusCode::FORBIDDEN,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ] {
+                for code in [
+                    "invalid_request",
+                    "dreamer_attempt_conflict",
+                    "dreamer_research_conflict",
+                    "dreamer_state_conflict",
+                    "capability_denied",
+                ] {
+                    for phase in [
+                        "candidate_validation",
+                        "checkpoint_validation",
+                        "response_validation",
+                        "unknown",
+                    ] {
+                        let body = json!({"error":{"code":code,"message":"A declared citation is required.","details":{"dreamer_repair_phase":phase,"private":"DO_NOT_COPY_DETAIL"}}}).to_string();
+                        let result = decode_fixture(path, status, &body).await;
+                        let expected = status == StatusCode::BAD_REQUEST
+                            && code == "invalid_request"
+                            && ((path.ends_with("/candidates")
+                                && matches!(
+                                    phase,
+                                    "candidate_validation" | "checkpoint_validation"
+                                ))
+                                || (path.ends_with("/research-progress")
+                                    && phase == "checkpoint_validation"));
+                        assert_eq!(
+                            matches!(&result, Err(ClientError::ResearchValidation(_))),
+                            expected,
+                            "{path} {status} {code} {phase}: {result:?}"
+                        );
+                        if let Err(error) = result {
+                            assert!(!error.to_string().contains("DO_NOT_COPY_DETAIL"));
+                        }
+                    }
+                }
+            }
+        }
+        for body in [
+            "{bad json",
+            "null",
+            r#"{"error":{"code":"invalid_request","details":{"dreamer_repair_phase":"candidate_validation"}}}"#,
+            r#"{"error":{"code":"invalid_request","message":" ","details":{"dreamer_repair_phase":"candidate_validation"}}}"#,
+            r#"{"error":{"code":"invalid_request","message":"Valid message without validation marker"}}"#,
+        ] {
+            let result = decode_fixture(
+                "/v1/workspace/dreamer/candidates",
+                StatusCode::BAD_REQUEST,
+                body,
+            )
+            .await;
+            assert!(matches!(result, Err(ClientError::Failed(_))), "{result:?}");
+        }
     }
 
     #[tokio::test]

@@ -4697,17 +4697,42 @@ pub(crate) async fn search_headers_for_dreamer(
     let mut results = Vec::new();
     for (n, query) in queries.iter().enumerate() {
         for sort in [SearchSort::BestMatch, SearchSort::LastModified] {
-            // Filter generated editions inside the lexical query, before its
-            // bounded sampling and entry limits as well as this header limit.
-            let rows = sqlx::query(DREAMER_LEXICAL_CANDIDATES_SQL)
-                .bind(query)
-                .bind(sort.as_str())
-                .fetch_all(&mut *tx)
-                .await?;
-            let mut candidates = lexical_candidate_rows(rows, query, None, false, 0.0);
+            let anchors = search_anchors(query);
+            let mut candidates = Vec::new();
+            let mut anchor_hit = false;
+            if state.config.lexical_single_scan && !anchors.is_empty() {
+                let consolidated = anchors
+                    .iter()
+                    .map(|anchor| format!("\"{}\"", anchor.replace('"', " ")))
+                    .collect::<Vec<_>>()
+                    .join(" OR ");
+                let found =
+                    fetch_dreamer_lexical_candidates(&mut tx, &consolidated, query, sort).await?;
+                anchor_hit = !found.is_empty();
+                candidates.extend(found);
+            } else {
+                for anchor in &anchors {
+                    let found =
+                        fetch_dreamer_lexical_candidates(&mut tx, anchor, query, sort).await?;
+                    anchor_hit |= !found.is_empty();
+                    candidates.extend(found);
+                }
+            }
+            if !anchor_hit {
+                // Each normal-search fallback keeps its own bounded SQL sample;
+                // a first hit must not hide evidence matching a later pair.
+                for focused in bounded_lexical_fallback_queries(query) {
+                    candidates.extend(
+                        fetch_dreamer_lexical_candidates(&mut tx, &focused, query, sort).await?,
+                    );
+                }
+            }
+            let mut merged = HashMap::new();
+            for candidate in candidates {
+                merge_candidate(&mut merged, candidate);
+            }
+            let mut candidates: Vec<_> = merged.into_values().collect();
             sort_candidates(&mut candidates, sort);
-            let mut seen = std::collections::BTreeSet::new();
-            candidates.retain(|candidate| seen.insert(candidate.entry_id));
             let candidates: Vec<_> = candidates.into_iter().take(8).map(|candidate|
                 json!({"reference":format!("entry:{}",candidate.entry_id),"path":candidate.path,"version":candidate.version})
             ).collect();
@@ -4717,6 +4742,27 @@ pub(crate) async fn search_headers_for_dreamer(
     }
     tx.commit().await?;
     Ok(results)
+}
+
+async fn fetch_dreamer_lexical_candidates(
+    tx: &mut Transaction<'_, Postgres>,
+    retrieval_query: &str,
+    scoring_query: &str,
+    sort: SearchSort,
+) -> ApiResult<Vec<Candidate>> {
+    // Generated editions are excluded before the SQL sampling limits. Apply
+    // ordinary source path policy before anchor-hit detection and final caps;
+    // research admission still validates exact current source metadata.
+    let rows = sqlx::query(DREAMER_LEXICAL_CANDIDATES_SQL)
+        .bind(retrieval_query)
+        .bind(sort.as_str())
+        .fetch_all(&mut **tx)
+        .await?;
+    let mut candidates = lexical_candidate_rows(rows, scoring_query, None, false, 0.0);
+    candidates.retain(|candidate| {
+        !crate::dreamer_review::research_source_excluded(&candidate.path, &Value::Null)
+    });
+    Ok(candidates)
 }
 
 async fn fetch_lexical_candidates(
