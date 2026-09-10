@@ -357,6 +357,18 @@ consume inputs or change a review decision. Successful source discovery alone
 does not clear the correction or reset the rejection limit. Deploy the API
 before the runner so its explicit correction receipt is available.
 
+Source changes can invalidate current conclusions while research is running.
+Dreamer retains a pointer to the last accepted notebook version before clearing
+those conclusions, including when a slow subject yields. The next model sees
+that version only as audited historical context to recheck against current
+sources. Existing empty legacy jobs can recover from the latest sixteen prior
+notebook versions without a migration or manual data repair. Deleted,
+inaccessible or excluded original dependencies withhold the entire context,
+even after the active source list is pruned. A fresh explicit notebook
+replacement, supported no-change result or accepted candidate clears the
+pointer; ordinary yields and rejected output do not. Publication and current
+reads continue to require fresh source evidence.
+
 Manual `/run` requests may include at most 16 `requested_subject_refs` containing
 exact canonical entry references. Those identity-only requests are durably
 queued and survive selection, yields and restarts until dispositioned. Normal

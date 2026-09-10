@@ -50,6 +50,12 @@ Timeout or successful discovery does not erase a saved correction or reset the r
 
 Exact historical research reads check the same source exclusions against both the original and current dependency metadata. Withholding a cached note or diagnostic does not rewrite its immutable historical record.
 
+When source freshness invalidates working notes, the job retains one server-owned `revalidation_checkpoint` pointing to an existing immutable version of that same notebook. Selection, discovery and a stale waiting checkpoint capture previously accepted work before clearing current conclusions; rejected model output is never captured. The optional field distinguishes an uninitialized legacy job from an explicitly empty or retained pointer. Legacy empty jobs inspect only the latest sixteen earlier versions once, choosing the newest structurally valid notebook without searching around an access failure. Fresh replacement or completion initializes the pointer as empty so later selection cannot resurrect old work.
+
+The runner receives only an audited `research.revalidation_context`, never the raw pointer. Its notes, compact old selectors, unfinished leads and bounded prior discovery coverage are historical context for rechecking. Every original dependency must still pass exact historical access and original/current source-policy checks, including uncited sources removed from the active manifest. The projection validates original selectors against their exact snapshot, is limited to 96 KiB, and never follows an embedded checkpoint pointer. Missing or withheld context leaves ordinary current-source research available.
+
+Historical context does not admit sources, certify current facts, process input or authorize publication. The model must reopen currently admitted versions, reconcile changes, carry forward supported conclusions and unfinished leads, and check existing discovery coverage before repeating historical queries. An accepted progress checkpoint clears the pointer only when it explicitly replaces both notes and reviewed selectors with nonempty current-evidence work, or completes a supported no-change disposition. Candidate requests clear it only when at least one candidate is actually accepted. Empty progress, source refresh, timeout, repair-only writes, rejected or zero-result submissions, and exact replay preserve it. Replay still performs current access checks without rewriting durable state.
+
 ## Comparing overlapping inputs
 
 Separate imported files can describe the same subject or successive snapshots

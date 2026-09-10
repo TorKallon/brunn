@@ -452,6 +452,7 @@ def run_subject_cycle(owner, runner, reader, report):
     for target, source, text in ((trail_target, trail, trail_text), (primary_target, primary, old_text),
                                 (primary["entry_ref"], primary, new_text)):
         if len(requests) == 2:
+            invalidated_research = current["research"]
             primary = write(owner, primary_path, new_text, primary["version"])
             source = primary
             rejected = runner.request("POST", "/v1/workspace/dreamer/research-progress", {
@@ -469,6 +470,16 @@ def run_subject_cycle(owner, runner, reader, report):
         else:
             require(not current["research"]["notes"] and not current["research"]["reviewed_sources"],
                     "changed dependency did not invalidate checked progress")
+            context = current["research"].get("revalidation_context") or {}
+            require(context.get("status") == "historical_revalidation_only"
+                    and context.get("notes") == initial_notes
+                    and context.get("origin", {}).get("version") == invalidated_research["version"]
+                    and context.get("origin", {}).get("snapshot_generation") == invalidated_research["snapshot_generation"]
+                    and context.get("prior_reviewed_sources") == initial_selectors
+                    and context.get("prior_pending_targets") == [trail_target]
+                    and context.get("prior_progress", {}).get("admitted_source_count") == len(invalidated_research["sources"])
+                    and "revalidation_checkpoint" not in current["research"],
+                    "changed dependency lost or misidentified historical revalidation context")
         require(any(row["entry_ref"] == source["entry_ref"] and row["version"] == source["version"]
                     for row in current["research"]["sources"]), "linked exact source was not admitted at its current version")
         unresolved = current["research"].get("coverage", {}).get("unresolved_targets")
@@ -492,11 +503,15 @@ def run_subject_cycle(owner, runner, reader, report):
             and {(row["entry_ref"], row["version"]) for row in current["research"]["reviewed_sources"]}
                 == {(row["entry_ref"], row["version"]) for row in selectors},
             "research checkpoint lost its supported notes or exact source selectors")
+    require(current["research"].get("revalidation_context") is None,
+            "fresh explicit research replacement retained obsolete historical context")
     replay = runner.request("POST", "/v1/workspace/dreamer/narrative-discover", requests[0])
     latest = unwrap(replay)
     require(replay.get("no_op") is True and latest["research"]["version"] == current["research"]["version"]
             and latest["research"]["sources"] == current["research"]["sources"]
             and latest["state_version"] == current["state_version"], "old discovery replay rewound newer research")
+    require(latest["research"].get("revalidation_context") is None,
+            "old discovery replay resurrected historical research context")
     current, job = latest, latest["research"]
     expected[primary["entry_ref"]] = primary["version"]
     require(len(job["sources"]) == 3 and {row["entry_ref"]: row["version"] for row in job["sources"]} == expected,
@@ -593,6 +608,8 @@ def run_subject_cycle(owner, runner, reader, report):
         "changed_scope_refresh_signal": True,
         "saved_progress_survives_additive_discovery": True,
         "changed_dependency_invalidates_progress": True,
+        "historical_revalidation_context_retained": True,
+        "fresh_replacement_and_replay_clear_revalidation": True,
         "generic_section_heading_is_not_an_identity": True,
         "generated_briefing_editions_do_not_invalidate": True,
         "generated_briefing_exact_reads_preserved": True,

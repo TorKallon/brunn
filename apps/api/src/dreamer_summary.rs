@@ -891,6 +891,286 @@ async fn audit_access(
     raw_access(tx, auth, &raw_sources).await
 }
 
+/// Pure eligibility for the fixed legacy lookback window. Source policy and
+/// authority are deliberately excluded: a failed audit must not select older
+/// prose with a smaller dependency manifest.
+pub(crate) fn research_revalidation_candidate(metadata: &Value, subject_ref: &str) -> bool {
+    let notebook = &metadata["dreamer_research"];
+    let Some(subject) = subject_ref
+        .strip_prefix("entry:")
+        .and_then(|id| Uuid::parse_str(id).ok())
+    else {
+        return false;
+    };
+    if notebook["schema"] != "dream.research.v1"
+        || notebook["subject_ref"] != subject_ref
+        || !serde_json::to_vec(metadata).is_ok_and(|bytes| bytes.len() <= 192 * 1024)
+        || !notebook["notes"]
+            .as_str()
+            .is_some_and(|notes| !notes.trim().is_empty() && notes.len() <= 12 * 1024)
+    {
+        return false;
+    }
+    let Some(snapshot) = notebook["snapshot_generation"]
+        .as_i64()
+        .filter(|value| *value >= 0)
+    else {
+        return false;
+    };
+    let Some(sources) = notebook["sources"]
+        .as_array()
+        .filter(|sources| !sources.is_empty() && sources.len() <= MAX_RESEARCH_SOURCES)
+    else {
+        return false;
+    };
+    let mut dependencies = std::collections::BTreeSet::new();
+    for source in sources {
+        let Some(reference) = exact_ref(source, "entry_ref", "version") else {
+            return false;
+        };
+        if !dependencies.insert(reference)
+            || !source["generation"]
+                .as_i64()
+                .is_some_and(|generation| generation > 0 && generation <= snapshot)
+            || !source["path"]
+                .as_str()
+                .is_some_and(|path| !path.is_empty() && path.len() <= 1024)
+        {
+            return false;
+        }
+    }
+    let Ok(reviewed) = serde_json::from_value::<Vec<crate::dreamer_review::Source>>(
+        notebook["reviewed_sources"].clone(),
+    ) else {
+        return false;
+    };
+    if !dependencies.iter().any(|(id, _)| *id == subject)
+        || reviewed.is_empty()
+        || reviewed.len() > MAX_SOURCES
+        || reviewed.iter().any(|source| {
+            source.start_line == 0
+                || source.end_line < source.start_line
+                || source.end_line - source.start_line > 400
+                || source
+                    .entry_ref
+                    .strip_prefix("entry:")
+                    .and_then(|id| Uuid::parse_str(id).ok())
+                    .is_none_or(|id| !dependencies.contains(&(id, source.version)))
+        })
+    {
+        return false;
+    }
+    for (field, count, bytes) in [("pending_queries", 12, 160), ("pending_targets", 32, 1024)] {
+        if !notebook[field].as_array().is_some_and(|values| {
+            values.len() <= count
+                && values.iter().all(|value| {
+                    value.as_str().is_some_and(|value| {
+                        !value.trim().is_empty()
+                            && value.len() <= bytes
+                            && !value.contains(['\n', '\r'])
+                    })
+                })
+        }) {
+            return false;
+        }
+    }
+    if notebook["round"].as_u64().is_none() || !notebook["coverage"].is_object() {
+        return false;
+    }
+    let groups = &notebook["coverage"]["query_results"];
+    groups.is_null()
+        || groups.as_array().is_some_and(|groups| {
+            groups.len() <= 12
+                && groups.iter().all(|group| {
+                    group["id"].as_str().is_some_and(|id| {
+                        !id.is_empty() && id.len() <= 64 && !id.contains(['\n', '\r'])
+                    }) && group["returned"].as_u64().is_some_and(|count| count <= 8)
+                        && (group["query_status"].is_null()
+                            || group["query_status"].as_str().is_some_and(|status| {
+                                !status.is_empty()
+                                    && status.len() <= 64
+                                    && !status.contains(['\n', '\r'])
+                            }))
+                })
+        })
+}
+
+/// Reopen one immutable notebook as planning context, never current evidence.
+/// Its own manifest is audited; an embedded recovery pointer is not traversed.
+pub(crate) async fn research_revalidation_context(
+    tx: &mut Transaction<'_, Postgres>,
+    auth: &AuthContext,
+    notebook_path: &str,
+    subject_ref: &str,
+    version: i64,
+) -> ApiResult<Option<Value>> {
+    let Some(subject) = subject_ref
+        .strip_prefix("entry:")
+        .and_then(|id| Uuid::parse_str(id).ok())
+    else {
+        return Ok(None);
+    };
+    if version < 1 || notebook_path != format!("dreams/research/{subject}.md") {
+        return Ok(None);
+    }
+    let id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM brunn.entries WHERE user_id=$1 AND path=$2 AND deleted_at IS NULL AND current_version>=$3",
+    )
+    .bind(auth.user_id.0)
+    .bind(notebook_path)
+    .bind(version)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some(id) = id else { return Ok(None) };
+    let Some(selected) = document(tx, auth, id, Some(version)).await? else {
+        return Ok(None);
+    };
+    let notebook = &selected.metadata["dreamer_research"];
+    if selected.path != notebook_path
+        || !research_revalidation_candidate(&selected.metadata, subject_ref)
+    {
+        return Ok(None);
+    }
+    let Some(notes) = notebook["notes"]
+        .as_str()
+        .filter(|notes| !notes.trim().is_empty() && notes.len() <= 12 * 1024)
+    else {
+        return Ok(None);
+    };
+    let Some(snapshot) = notebook["snapshot_generation"].as_i64().filter(|v| *v >= 0) else {
+        return Ok(None);
+    };
+    let Some(sources) = notebook["sources"]
+        .as_array()
+        .filter(|sources| !sources.is_empty() && sources.len() <= MAX_RESEARCH_SOURCES)
+    else {
+        return Ok(None);
+    };
+    let mut dependencies = std::collections::BTreeSet::new();
+    for source in sources {
+        let Some(reference) = exact_ref(source, "entry_ref", "version") else {
+            return Ok(None);
+        };
+        if !dependencies.insert(reference)
+            || !source["generation"]
+                .as_i64()
+                .is_some_and(|generation| generation > 0 && generation <= snapshot)
+            || !source["path"].as_str().is_some_and(|path| {
+                !path.is_empty()
+                    && path.len() <= 1024
+                    && !crate::dreamer_review::research_source_excluded(path, &Value::Null)
+            })
+        {
+            return Ok(None);
+        }
+    }
+    if !dependencies.iter().any(|(id, _)| *id == subject) {
+        return Ok(None);
+    }
+    let Ok(mut reviewed) = serde_json::from_value::<Vec<crate::dreamer_review::Source>>(
+        notebook["reviewed_sources"].clone(),
+    ) else {
+        return Ok(None);
+    };
+    if reviewed.is_empty()
+        || reviewed.len() > MAX_SOURCES
+        || reviewed.iter().any(|source| {
+            source
+                .entry_ref
+                .strip_prefix("entry:")
+                .and_then(|id| Uuid::parse_str(id).ok())
+                .is_none_or(|id| !dependencies.contains(&(id, source.version)))
+        })
+        || !audit_access(tx, auth, &selected).await?
+    {
+        return Ok(None);
+    }
+    let (ids, versions): (Vec<_>, Vec<_>) = dependencies.iter().copied().unzip();
+    let in_snapshot: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM unnest($2::uuid[],$3::bigint[]) required(id,version) WHERE EXISTS(SELECT 1 FROM brunn.workspace_changes c WHERE c.user_id=$1 AND c.entry_id=required.id AND c.entry_version=required.version AND c.generation<=$4)",
+    )
+    .bind(auth.user_id.0)
+    .bind(ids)
+    .bind(versions)
+    .bind(snapshot)
+    .fetch_one(&mut **tx)
+    .await?;
+    if in_snapshot != dependencies.len() as i64 {
+        return Ok(None);
+    }
+    match crate::dreamer_review::source_versions(tx, auth.user_id.0, &mut reviewed, snapshot, false)
+        .await
+    {
+        Ok(()) => {}
+        Err(crate::error::ApiError::Public { .. }) => return Ok(None),
+        Err(error) => return Err(error),
+    }
+    let bounded_strings = |field: &str, count: usize, bytes: usize| -> Option<Vec<String>> {
+        let values = notebook[field]
+            .as_array()
+            .filter(|values| values.len() <= count)?;
+        values
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .filter(|value| {
+                        !value.trim().is_empty()
+                            && value.len() <= bytes
+                            && !value.contains(['\n', '\r'])
+                    })
+                    .map(ToOwned::to_owned)
+            })
+            .collect()
+    };
+    let Some(pending_queries) = bounded_strings("pending_queries", 12, 160) else {
+        return Ok(None);
+    };
+    let Some(pending_targets) = bounded_strings("pending_targets", 32, 1024) else {
+        return Ok(None);
+    };
+    let Some(round) = notebook["round"].as_u64() else {
+        return Ok(None);
+    };
+    let mut groups = Vec::new();
+    if let Some(results) = notebook["coverage"]["query_results"].as_array() {
+        if results.len() > 12 {
+            return Ok(None);
+        }
+        for result in results {
+            let Some(id) = result["id"]
+                .as_str()
+                .filter(|id| !id.is_empty() && id.len() <= 64 && !id.contains(['\n', '\r']))
+            else {
+                return Ok(None);
+            };
+            let Some(returned) = result["returned"].as_u64().filter(|count| *count <= 8) else {
+                return Ok(None);
+            };
+            let status = result["query_status"].as_str().unwrap_or("unknown");
+            if status.len() > 64 || status.contains(['\n', '\r']) {
+                return Ok(None);
+            }
+            groups.push(json!({"id":id,"returned":returned,"query_status":status}));
+        }
+    } else if !notebook["coverage"]["query_results"].is_null() {
+        return Ok(None);
+    }
+    let context = json!({
+        "status":"historical_revalidation_only",
+        "origin":{"entry_ref":format!("entry:{id}"),"version":version,"snapshot_generation":snapshot},
+        "notes":notes,
+        "prior_reviewed_sources":reviewed.iter().map(|source| json!({
+            "entry_ref":source.entry_ref,"version":source.version,"start_line":source.start_line,"end_line":source.end_line
+        })).collect::<Vec<_>>(),
+        "prior_pending_queries":pending_queries,"prior_pending_targets":pending_targets,
+        "prior_progress":{"round":round,"admitted_source_count":sources.len(),"reviewed_selector_count":reviewed.len(),
+            "source_cap_reached":sources.len()>=MAX_RESEARCH_SOURCES || notebook["coverage"]["source_cap_reached"]==true,
+            "latest_discovery_groups":groups}
+    });
+    Ok((serde_json::to_vec(&context)?.len() <= 96 * 1024).then_some(context))
+}
+
 fn withheld(id: Uuid, version: Option<i64>, reason: &str, generation: i64) -> Value {
     json!({"reference":format!("entry:{id}"),"version":version,"title":"Summary unavailable",
         "representation":"summary_withheld","text":"","freshness":{"status":"unchecked","reason":reason,"checked_generation":generation}})

@@ -196,6 +196,10 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                              ("additive_progress", "additive discovery lost checked progress"),
                              ("unreviewed_source", "marked new sources reviewed"),
                              ("changed_progress", "changed dependency did not invalidate"),
+                             ("missing_revalidation", "lost or misidentified historical revalidation"),
+                             ("wrong_revalidation_origin", "lost or misidentified historical revalidation"),
+                             ("revalidation_not_cleared", "retained obsolete historical context"),
+                             ("revalidation_replay", "resurrected historical research context"),
                              ("replay", "rewound"), ("manifest", "uncited research dependency"),
                              ("generic_heading", "unrelated section heading invalidated"),
                              ("generated_briefing_create", "generated briefing edition invalidated"),
@@ -243,14 +247,33 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                 elif fault == "changed_progress":
                     admissions[3]["research"].update(notes=initial_progress["research"]["notes"],
                                                     reviewed_sources=initial_selectors)
+                historical_context = {
+                    "status": "historical_revalidation_only",
+                    "origin": {"entry_ref": "entry:notebook", "version": admissions[2]["research"]["version"],
+                               "snapshot_generation": admissions[2]["research"]["snapshot_generation"]},
+                    "notes": initial_progress["research"]["notes"],
+                    "prior_reviewed_sources": [
+                        {key: row[key] for key in ("entry_ref", "version", "start_line", "end_line")}
+                        for row in initial_selectors],
+                    "prior_pending_targets": ["CanaryResearch/Trail"],
+                    "prior_progress": {"admitted_source_count": 3},
+                }
+                admissions[3]["research"]["revalidation_context"] = deepcopy(historical_context)
+                if fault == "missing_revalidation":
+                    admissions[3]["research"]["revalidation_context"] = None
+                elif fault == "wrong_revalidation_origin":
+                    admissions[3]["research"]["revalidation_context"]["origin"]["version"] = 1
                 checkpoint = deepcopy(admissions[-1])
                 checkpoint["state_version"] = 7
                 checkpoint["research"].update(version=6,
                     notes="The current outcome is complete; one equipment detail remains unresolved.",
-                    reviewed_sources=[canonical, changed])
+                    reviewed_sources=[canonical, changed],
+                    revalidation_context=historical_context if fault == "revalidation_not_cleared" else None)
                 replay = deepcopy(checkpoint)
                 if fault == "replay":
                     replay["research"]["version"] = 1
+                elif fault == "revalidation_replay":
+                    replay["research"]["revalidation_context"] = historical_context
                 runner = Mock()
                 runner.request.side_effect = [admitted, {"data": admissions[0]}, {"data": initial_progress},
                     *({"data": item} for item in admissions[1:3]),
@@ -325,6 +348,8 @@ class DreamerProductionCanaryTests(unittest.TestCase):
                         self.assertTrue(report["subject_cycle"]["subject_header_search_exercised"])
                         self.assertTrue(report["subject_cycle"]["changed_scope_refresh_signal"])
                         self.assertTrue(report["subject_cycle"]["changed_dependency_invalidates_progress"])
+                        self.assertTrue(report["subject_cycle"]["historical_revalidation_context_retained"])
+                        self.assertTrue(report["subject_cycle"]["fresh_replacement_and_replay_clear_revalidation"])
                         self.assertTrue(report["subject_cycle"]["generic_section_heading_is_not_an_identity"])
                         self.assertTrue(report["subject_cycle"]["generated_briefing_editions_do_not_invalidate"])
                         self.assertTrue(report["subject_cycle"]["generated_briefing_exact_reads_preserved"])

@@ -8,6 +8,14 @@ use std::collections::{BTreeMap, BTreeSet};
 const MAX_SOURCES: usize = 256;
 const MAX_RECEIPTS: usize = 24;
 const MAX_JOB_BYTES: usize = 192 * 1024;
+const REVALIDATION_LOOKBACK: i64 = 16;
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+pub(super) enum RevalidationCheckpoint {
+    None,
+    Retained { version: i64 },
+}
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(super) struct Scheduler {
@@ -49,6 +57,10 @@ pub(super) struct Job {
     pub notes: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repair_feedback: Option<RepairFeedback>,
+    // Absence is legacy/uninitialized, distinct from an intentionally cleared
+    // checkpoint. Only the server may select an immutable notebook version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revalidation_checkpoint: Option<RevalidationCheckpoint>,
     pub pending_queries: Vec<String>,
     pub pending_targets: Vec<String>,
     pub status: String,
@@ -145,6 +157,65 @@ pub(super) async fn save(
     Ok(receipt["version"]
         .as_i64()
         .expect("written research version"))
+}
+
+pub(super) fn clear_revalidation(job: &mut Job) {
+    job.revalidation_checkpoint = Some(RevalidationCheckpoint::None);
+}
+
+fn capture_revalidation(job: &mut Job, version: i64) {
+    if version > 0 && !job.notes.trim().is_empty() && !job.reviewed_sources.is_empty() {
+        job.revalidation_checkpoint = Some(RevalidationCheckpoint::Retained { version });
+    }
+}
+
+async fn initialize_revalidation(
+    tx: &mut Transaction<'_, Postgres>,
+    auth: &AuthContext,
+    job: &mut Job,
+    version: i64,
+) -> ApiResult<()> {
+    if job.revalidation_checkpoint.is_some() {
+        return Ok(());
+    }
+    clear_revalidation(job);
+    if !job.notes.trim().is_empty() && !job.reviewed_sources.is_empty() {
+        return Ok(());
+    }
+    // The index bounds versions before inspecting their metadata. Empty heads
+    // cannot cause an unbounded search for an older nonempty notebook.
+    let rows = sqlx::query(
+        "SELECT v.version,v.metadata FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id WHERE e.user_id=$1 AND e.path=$2 AND e.deleted_at IS NULL AND v.version<$3 ORDER BY v.version DESC LIMIT $4",
+    )
+    .bind(auth.user_id.0)
+    .bind(path(&job.subject_ref)?)
+    .bind(version)
+    .bind(REVALIDATION_LOOKBACK)
+    .fetch_all(&mut **tx)
+    .await?;
+    for row in rows {
+        let metadata: Value = row.get("metadata");
+        if crate::dreamer_summary::research_revalidation_candidate(&metadata, &job.subject_ref) {
+            // Retain the newest candidate once. Its complete access/contract
+            // audit happens at projection; do not search around a failed audit.
+            job.revalidation_checkpoint = Some(RevalidationCheckpoint::Retained {
+                version: row.get("version"),
+            });
+            break;
+        }
+    }
+    Ok(())
+}
+
+fn explicit_revalidation_replacement(job: &Job, body: &Value) -> bool {
+    !job.notes.trim().is_empty()
+        && !job.reviewed_sources.is_empty()
+        && body["notes"]
+            .as_str()
+            .is_some_and(|notes| !notes.trim().is_empty())
+        && body["reviewed_sources"]
+            .as_array()
+            .is_some_and(|sources| !sources.is_empty())
 }
 
 /// CAS may be refreshed after an owner decision. Every semantic field remains
@@ -359,6 +430,7 @@ async fn safe_view(
         "scope",
         "last_served",
         "retry_at",
+        "revalidation_checkpoint",
     ] {
         object.remove(field);
     }
@@ -387,6 +459,31 @@ async fn safe_view(
             return Ok(Value::Null);
         }
     }
+    let origin = if !scope_fresh && !job.notes.trim().is_empty() && !job.reviewed_sources.is_empty()
+    {
+        Some(version)
+    } else {
+        match job.revalidation_checkpoint {
+            Some(RevalidationCheckpoint::Retained { version: prior })
+                if prior > 0 && prior < version =>
+            {
+                Some(prior)
+            }
+            _ => None,
+        }
+    };
+    view["revalidation_context"] = match origin {
+        Some(origin) => crate::dreamer_summary::research_revalidation_context(
+            tx,
+            auth,
+            &path(&job.subject_ref)?,
+            &job.subject_ref,
+            origin,
+        )
+        .await?
+        .unwrap_or(Value::Null),
+        None => Value::Null,
+    };
     Ok(view)
 }
 
@@ -437,6 +534,7 @@ async fn create(
         reviewed_sources: Vec::new(),
         notes: String::new(),
         repair_feedback: None,
+        revalidation_checkpoint: Some(RevalidationCheckpoint::None),
         pending_queries: Vec::new(),
         pending_targets: Vec::new(),
         status: "researching".into(),
@@ -639,8 +737,10 @@ async fn refresh(
     tx: &mut Transaction<'_, Postgres>,
     auth: &AuthContext,
     job: &mut Job,
+    job_version: i64,
     upper: i64,
 ) -> ApiResult<()> {
+    initialize_revalidation(tx, auth, job, job_version).await?;
     let deps = dependencies(job)?;
     let mut scan = job.change_scan.clone().unwrap_or(ChangeScan {
         cursor: job.scope.checked_generation,
@@ -720,6 +820,7 @@ async fn refresh(
     let prior_evidence_changed = job.sources.iter().any(|source| !current.contains(source));
     let scope_changed = !fresh(tx, auth, job).await?;
     if prior_evidence_changed || scope_changed {
+        capture_revalidation(job, job_version);
         job.notes.clear();
         job.reviewed_sources.clear();
         job.discoveries.clear();
@@ -901,7 +1002,7 @@ pub(super) async fn next(
     if let Some(input) = selected {
         let (mut job, job_version) = match load(&mut tx, &auth, &input.entry_ref).await? {
             Some((mut job, version)) => {
-                refresh(&mut tx, &auth, &mut job, upper).await?;
+                refresh(&mut tx, &auth, &mut job, version, upper).await?;
                 (job, version)
             }
             None => (create(&mut tx, &auth, input, upper).await?, 0),
@@ -1039,8 +1140,14 @@ pub(super) async fn apply_progress(
     tx: &mut Transaction<'_, Postgres>,
     auth: &AuthContext,
     job: &mut Job,
+    job_version: i64,
     body: &Value,
 ) -> ApiResult<()> {
+    if body.get("revalidation_checkpoint").is_some() || body.get("revalidation_context").is_some() {
+        return Err(ApiError::invalid(
+            "research revalidation context is server-owned",
+        ));
+    }
     if body.get("repair_feedback").is_some() {
         return Err(ApiError::invalid(
             "repair feedback requires an operational-only research-progress request",
@@ -1054,6 +1161,8 @@ pub(super) async fn apply_progress(
     };
     let status = string(body, "status")?;
     if status == "waiting" && !fresh(tx, auth, job).await? {
+        initialize_revalidation(tx, auth, job, job_version).await?;
+        capture_revalidation(job, job_version);
         // Yielding unavailable/unchecked evidence is scheduling, not a claim.
         // Clear conclusions and cached leads; keep durable evidence/cursors so
         // another subject can proceed and this interval can be retried later.
@@ -1202,7 +1311,7 @@ pub(super) async fn progress(
         tx.commit().await?;
         return Ok(Json(json!({"data":response})));
     }
-    apply_progress(&mut tx, &auth, &mut job, &body).await?;
+    apply_progress(&mut tx, &auth, &mut job, job_version, &body).await?;
     let processed = body
         .get("processed_inputs")
         .and_then(Value::as_array)
@@ -1269,6 +1378,9 @@ pub(super) async fn progress(
                 .retain(|reference| reference != &job.subject_ref);
         }
         data.research.completed += 1;
+    }
+    if job.status == "no_change" || explicit_revalidation_replacement(&job, &body) {
+        clear_revalidation(&mut job);
     }
     remember(
         &mut job.receipts,
@@ -1446,7 +1558,7 @@ pub(super) async fn discover(
         leads.push(canonical);
         exact.insert(canonical);
     }
-    refresh(&mut tx, &auth, &mut job, upper).await?;
+    refresh(&mut tx, &auth, &mut job, job_version, upper).await?;
     let admitted = headers(&mut tx, &auth, &leads, upper).await?;
     let before = job.sources.clone();
     for input in admitted {
@@ -1480,6 +1592,7 @@ pub(super) async fn discover(
     // an earlier header changed or disappeared; refresh separately invalidates
     // conclusions when newer relevant corpus changes affect the subject scope.
     if before.iter().any(|source| !job.sources.contains(source)) {
+        capture_revalidation(&mut job, job_version);
         job.notes.clear();
         job.reviewed_sources.clear();
     }

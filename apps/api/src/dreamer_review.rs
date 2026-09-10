@@ -515,7 +515,7 @@ enum SourceSelectorPolicy {
     CheckpointEndOfDocument,
 }
 
-async fn source_versions(
+pub(crate) async fn source_versions(
     tx: &mut Transaction<'_, Postgres>,
     user: Uuid,
     sources: &mut [Source],
@@ -2746,7 +2746,7 @@ pub async fn candidates(
     let mut response = json!({"state_version":version+1,"run_entry_ref":run["entry_ref"],"run_version":run["version"],"accepted_candidate_ids":ids,"pending_count":data.items.iter().filter(|i|pending(i)).count()});
     if let Some((mut job, job_version)) = research_job {
         if let Some(progress) = body.get("research_progress") {
-            research::apply_progress(&mut tx, &auth, &mut job, progress).await?;
+            research::apply_progress(&mut tx, &auth, &mut job, job_version, progress).await?;
         } else {
             job.status = "waiting".into();
             job.retry_at = Utc::now() + Duration::hours(24);
@@ -2754,6 +2754,7 @@ pub async fn candidates(
         job.accepted_candidate_ids = ids.clone();
         if !ids.is_empty() {
             job.repair_feedback = None;
+            research::clear_revalidation(&mut job);
         }
         if !ids.is_empty() && !research_comparison::retains_priority(&data, &job.subject_ref) {
             data.research
