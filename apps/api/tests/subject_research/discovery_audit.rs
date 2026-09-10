@@ -397,7 +397,7 @@ async fn discovery_audit_relevant_scope_invalidates_but_unrelated_and_generated_
 }
 
 #[tokio::test]
-async fn discovery_audit_historical_authority_change_and_access_loss_never_rehydrate_query_text() {
+async fn discovery_audit_checkpoint_addition_preserves_search_but_access_loss_withholds_it() {
     let Some(f) = fixture().await else { return };
     let s = setup(&f).await;
     let (_, result) = search(&f, &s.selected, vec![QUERY]).await;
@@ -434,7 +434,7 @@ async fn discovery_audit_historical_authority_change_and_access_loss_never_rehyd
     )
     .await)["data"]
         .clone();
-    assert_eq!(audit(&second)["validity"], "outdated");
+    assert_eq!(current_audit(&second), current_audit(&first));
     assert_eq!(
         second["research"]["checkpoint_contexts"]
             .as_array()
@@ -464,6 +464,121 @@ async fn discovery_audit_historical_authority_change_and_access_loss_never_rehyd
         "a smaller active manifest cannot launder query provenance from denied historical work"
     );
     assert!(audit(&attempted["data"])["last_search"].is_null());
+}
+
+#[tokio::test]
+async fn discovery_audit_reconciled_history_keeps_original_authority_until_a_new_search() {
+    for exclude_by_policy in [false, true] {
+        let Some(f) = fixture().await else { return };
+        let s = setup(&f).await;
+        let (_, searched) = search(&f, &s.selected, vec![QUERY]).await;
+        let mut admission = searched["data"].clone();
+        for notes in [
+            "Earlier survey work retains an independent exposure lead.",
+            "The canonical survey identity is checked for the current overview.",
+        ] {
+            let mut progress = progress_body(
+                &admission,
+                vec![reviewed(&s.canonical)],
+                "researching",
+                notes,
+            );
+            progress["checkpoint_protocol"] = json!("dream.research.checkpoint.v1");
+            progress["reconciled_checkpoints"] = json!([]);
+            admission = ok(post(
+                &f,
+                &f.runner,
+                "/v1/workspace/dreamer/research-progress",
+                progress,
+            )
+            .await)["data"]
+                .clone();
+        }
+        assert_eq!(
+            admission["research"]["checkpoint_contexts"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+
+        // Isolate an uncited historical dependency from the active manifest.
+        // The real historical version retains its complete original sources.
+        let mut metadata = current(&f, &job_path(&s.canonical)).await.unwrap().2;
+        metadata["dreamer_research"]["sources"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|source| source["entry_ref"] == s.canonical["entry_ref"]);
+        replace_current_metadata(&f, &s.canonical, metadata).await;
+        let (operation, searched) = search(&f, &admission, vec!["historicalinsightprobe"]).await;
+        admission = searched["data"].clone();
+        let original_audit = current_audit(&admission).clone();
+        let mut origins = admission["research"]["checkpoint_contexts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|context| context["origin"].clone())
+            .collect::<Vec<_>>();
+        origins.push(admission["research"]["current_checkpoint"].clone());
+        let mut progress = progress_body(
+            &admission,
+            vec![reviewed(&s.canonical)],
+            "researching",
+            "The checked canonical identity supplies the bounded survey overview.",
+        );
+        progress["checkpoint_protocol"] = json!("dream.research.checkpoint.v1");
+        progress["reconciled_checkpoints"] = json!(origins);
+        progress["findings"] = json!([
+            "Both offered checkpoints are reconciled: retain the checked survey identity; the exposure lead is deliberately outside this bounded overview."
+        ]);
+        let reconciled = ok(post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/research-progress",
+            progress,
+        )
+        .await)["data"]
+            .clone();
+        assert!(
+            reconciled["research"]["checkpoint_contexts"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(current_audit(&reconciled), &original_audit);
+        let (_, repeated) = search(&f, &reconciled, vec!["historicalinsightprobe"]).await;
+        assert_eq!(
+            repeated["no_op"], true,
+            "retirement does not repeat a completed search"
+        );
+        assert_eq!(current_audit(&repeated["data"]), &original_audit);
+
+        if exclude_by_policy {
+            ok(post(&f, &f.owner, "/v1/workspace/write", json!({"path":s.primary["path"],"expected_version":1,"content":"# Measurement\n\nGenerated presentation now occupies this identity.\n","metadata":{"kind":"briefing_edition"}})).await);
+        } else {
+            ok(request_delete(&f, &s.primary).await);
+        }
+        let replay = ok(post(&f, &f.runner, DISCOVER, operation).await);
+        assert_eq!(
+            replay["no_op"], true,
+            "exact replay still executes no search"
+        );
+        assert_eq!(audit(&replay["data"])["validity"], "outdated");
+        assert!(audit(&replay["data"])["last_search"].is_null());
+        assert_eq!(
+            replay["data"]["research"]["sources"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        let (_, fresh) = search(&f, &replay["data"], vec!["historicalinsightprobe"]).await;
+        assert_eq!(
+            fresh["no_op"], false,
+            "retired-origin access loss prevents audit reuse"
+        );
+        current_audit(&fresh["data"]);
+    }
 }
 
 #[tokio::test]

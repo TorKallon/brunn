@@ -136,17 +136,12 @@ pub(super) fn invalidate(job: &mut Job) {
 }
 
 pub(super) fn invalidate_changed_authority(job: &mut Job) {
-    if let Some(Stored::Recorded {
-        dependencies,
-        historical_versions,
-        ..
-    }) = parse(job)
-        && (historical_versions != history(job)
-            || dependencies.iter().any(|(id, version)| {
-                !job.sources.iter().any(|source| {
-                    source.entry_ref == format!("entry:{id}") && source.version == *version
-                })
-            }))
+    if let Some(Stored::Recorded { dependencies, .. }) = parse(job)
+        && dependencies.iter().any(|(id, version)| {
+            !job.sources.iter().any(|source| {
+                source.entry_ref == format!("entry:{id}") && source.version == *version
+            })
+        })
     {
         invalidate(job);
     }
@@ -157,8 +152,12 @@ async fn historical_access(
     auth: &AuthContext,
     job: &Job,
     version: i64,
+    historical_versions: &[i64],
 ) -> ApiResult<bool> {
-    for origin in history(job) {
+    // Reconciliation changes unfinished work, not the authority of an earlier
+    // search. Its original immutable sources still need access checks after
+    // their checkpoint leaves the current frontier.
+    for origin in historical_versions.iter().copied() {
         if origin < 1
             || origin >= version
             || crate::dreamer_summary::research_revalidation_context(
@@ -194,14 +193,13 @@ async fn current(
         return Ok(false);
     };
     if search.retrieval_policy != simple_core::DREAMER_LEXICAL_POLICY_VERSION
-        || historical_versions != &history(job)
         || dependencies.iter().any(|(id, version)| {
             !job.sources.iter().any(|source| {
                 source.entry_ref == format!("entry:{id}") && source.version == *version
             })
         })
         || !fresh(tx, auth, job).await?
-        || !historical_access(tx, auth, job, version).await?
+        || !historical_access(tx, auth, job, version, historical_versions).await?
     {
         return Ok(false);
     }
