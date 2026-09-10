@@ -86,6 +86,171 @@ fn candidate_step() -> Value {
         "processed_inputs":[{"entry_ref":SOURCE,"version":2,"generation":17}],"findings":[]})
 }
 
+fn comparison() -> Value {
+    json!({"pointer":{"item_id":"2026-09-07/1","candidate_hash":"a".repeat(64),
+        "run_entry_ref":RUN,"run_version":1},"subject_ref":"entry:019fba27-687b-7582-8b99-e9371dbe2ce7",
+        "path":"derived/entities/overview.md","title":"Existing overview","content":"Comparison body only.",
+        "sources":[{"entry_ref":SOURCE,"version":2,"start_line":1,"end_line":2}]})
+}
+
+fn one_step_behavior(step: &Value) -> String {
+    format!(
+        r#"
+if grep -q 'single word READY' "$DIR/prompt"; then echo READY; exit 0; fi
+case "$OUTPUT_NAME" in
+ research-1-1-answer.md) cat > "$OUTPUT_PATH" <<'JSON'
+{step}
+JSON
+ ;;
+ *) exit 99;;
+esac
+"#
+    )
+}
+
+#[tokio::test]
+async fn source_research_forwards_exact_coverage_and_duplicate_retirement_pointers() {
+    let covering = comparison();
+    let mut duplicate = covering.clone();
+    duplicate["pointer"]["item_id"] = json!("2026-09-07/2");
+    duplicate["pointer"]["candidate_hash"] = json!("b".repeat(64));
+    duplicate["subject_ref"] = json!(SOURCE);
+    duplicate["retirable"] = json!(true);
+    let step = json!({"schema":"dream.research.step.v1","action":"done",
+        "covers_existing":covering["pointer"],"supersedes_existing":duplicate["pointer"],
+        "reviewed_sources":[{"entry_ref":SOURCE,"version":2,"start_line":1,"end_line":2}],
+        "processed_inputs":[{"entry_ref":SOURCE,"version":2,"generation":17}],
+        "findings":["The entire duplicate draft is supported and covered by the existing overview."]});
+    let (shared, dreamer, _dir) = build(&one_step_behavior(&step)).await;
+    enable(&shared);
+    {
+        let mut s = shared.lock().unwrap();
+        s.research_enabled = true;
+        s.research_jobs = vec![job(SOURCE)];
+        s.research_comparisons = vec![covering.clone(), duplicate.clone()];
+    }
+    let report = dreamer.run_once(today(), RunKind::Manual).await;
+    assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
+    let s = shared.lock().unwrap();
+    assert!(s.submitted.is_empty());
+    assert_eq!(s.research_progress.len(), 1);
+    assert_eq!(
+        s.research_progress[0]["covers_existing"],
+        covering["pointer"]
+    );
+    assert_eq!(
+        s.research_progress[0]["supersedes_existing"],
+        duplicate["pointer"]
+    );
+    assert_eq!(
+        s.research_progress[0]["processed_inputs"],
+        step["processed_inputs"]
+    );
+    assert_eq!(report.auth_persistence, "verified");
+}
+
+#[tokio::test]
+async fn source_research_yields_enrichment_without_consuming_its_origin() {
+    let covering = comparison();
+    let follow_up = json!({"comparison":covering["pointer"],
+        "origin_input":{"entry_ref":SOURCE,"version":2,"generation":17},"targets":[SOURCE]});
+    let step = json!({"schema":"dream.research.step.v1","action":"yield","follow_up":follow_up,
+        "reviewed_sources":[{"entry_ref":SOURCE,"version":2,"start_line":1,"end_line":2}],
+        "findings":["Retain this contribution for the existing overview."]});
+    let (shared, dreamer, _dir) = build(&one_step_behavior(&step)).await;
+    enable(&shared);
+    {
+        let mut s = shared.lock().unwrap();
+        s.research_enabled = true;
+        s.research_jobs = vec![job(SOURCE)];
+        s.research_comparisons = vec![covering];
+    }
+    let report = dreamer.run_once(today(), RunKind::Manual).await;
+    assert!(
+        matches!(report.outcome, RunOutcome::Partial { .. }),
+        "{report:?}"
+    );
+    let s = shared.lock().unwrap();
+    assert!(s.submitted.is_empty());
+    assert_eq!(s.research_progress.len(), 1);
+    assert_eq!(s.research_progress[0]["status"], "waiting");
+    assert_eq!(s.research_progress[0]["follow_up"], follow_up);
+    assert_eq!(s.research_progress[0]["processed_inputs"], json!([]));
+    assert_eq!(report.auth_persistence, "verified");
+}
+
+#[tokio::test]
+async fn source_research_admits_routed_references_before_the_first_model_turn() {
+    let target = "entry:019fba27-687b-7582-8b99-e9371dbe2ce6";
+    let step = candidate_step();
+    let (shared, dreamer, dir) = build(&one_step_behavior(&step)).await;
+    enable(&shared);
+    {
+        let mut s = shared.lock().unwrap();
+        s.research_enabled = true;
+        let mut research = job(SOURCE);
+        research["routed_targets"] = json!([target]);
+        research["routed_work"] = json!([{"origin_input":{"entry_ref":SOURCE,"version":2,"generation":17},
+            "targets":[target],"status":"pending"}]);
+        s.research_jobs = vec![research];
+        s.narrative_context = vec![
+            job(SOURCE)["sources"][0].clone(),
+            json!({"entry_ref":target,"version":1,"generation":16,"path":"sources/Project/Routed.md"}),
+        ];
+    }
+    let report = dreamer.run_once(today(), RunKind::Manual).await;
+    assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
+    assert_eq!(report.research["routed_discoveries"], 1);
+    assert_eq!(report.research["rounds"], 1);
+    let s = shared.lock().unwrap();
+    assert_eq!(s.narrative_discoveries.len(), 1);
+    assert_eq!(s.narrative_discoveries[0]["queries"], json!([]));
+    assert_eq!(s.narrative_discoveries[0]["targets"], json!([target]));
+    let prompt = std::fs::read_to_string(dir.path().join("prompt-research-1-1-answer.md")).unwrap();
+    assert!(prompt.contains("sources/Project/Routed.md"));
+    assert!(prompt.contains("routed_work"));
+}
+
+#[tokio::test]
+async fn source_research_does_not_spin_on_an_unavailable_routed_reference() {
+    let target = "entry:019fba27-687b-7582-8b99-e9371dbe2ce6";
+    let step = json!({"schema":"dream.research.step.v1","action":"yield",
+        "findings":["Routed evidence is still unavailable; preserve this input."]});
+    let (shared, dreamer, dir) = build(&one_step_behavior(&step)).await;
+    enable(&shared);
+    {
+        let mut s = shared.lock().unwrap();
+        s.research_enabled = true;
+        let mut research = job(SOURCE);
+        research["routed_targets"] = json!([target]);
+        research["routed_work"] = json!([{"origin_input":{"entry_ref":SOURCE,"version":2,"generation":17},
+            "targets":[target],"status":"pending"}]);
+        s.research_jobs = vec![research];
+        // Discovery deliberately does not admit the unavailable target and
+        // leaves routed_targets present in the returned server snapshot.
+        s.narrative_context = vec![job(SOURCE)["sources"][0].clone()];
+    }
+    let report = dreamer.run_once(today(), RunKind::Manual).await;
+    assert!(
+        matches!(report.outcome, RunOutcome::Partial { .. }),
+        "{report:?}"
+    );
+    assert_eq!(report.research["routed_discoveries"], 1);
+    assert_eq!(report.research["rounds"], 1);
+    let s = shared.lock().unwrap();
+    assert_eq!(s.narrative_discoveries.len(), 1);
+    assert!(s.submitted.is_empty());
+    assert_eq!(s.research_progress[0]["processed_inputs"], json!([]));
+    let prompt = std::fs::read_to_string(dir.path().join("prompt-research-1-1-answer.md")).unwrap();
+    let input: Value = serde_json::from_str(prompt.split("INPUT:\n").nth(1).unwrap()).unwrap();
+    assert_eq!(input["research"]["routed_targets"], json!([target]));
+    assert_eq!(
+        input["research"]["routed_work"][0]["origin_input"]["entry_ref"],
+        SOURCE
+    );
+    assert_eq!(report.auth_persistence, "verified");
+}
+
 #[tokio::test]
 async fn source_research_follows_missing_primary_reference_then_submits_in_same_run() {
     let discovery = json!({"schema":"dream.research.step.v1","action":"discover","targets":["sources/Project/Outcome.md"]});

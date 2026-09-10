@@ -17,8 +17,18 @@ fn envelope(current: &Value, state_version: i64, operation_id: &str) -> Value {
 }
 
 fn progress(step: &research::Step, status: &str) -> Value {
-    json!({"notes":step.notes,"reviewed_sources":step.reviewed_sources,
-        "pending_queries":step.pending_queries,"pending_targets":step.pending_targets,"status":status})
+    let mut value = json!({"notes":step.notes,"reviewed_sources":step.reviewed_sources,
+        "pending_queries":step.pending_queries,"pending_targets":step.pending_targets,"status":status});
+    if let Some(pointer) = &step.covers_existing {
+        value["covers_existing"] = pointer.clone();
+    }
+    if let Some(pointer) = &step.supersedes_existing {
+        value["supersedes_existing"] = pointer.clone();
+    }
+    if let Some(follow_up) = &step.follow_up {
+        value["follow_up"] = follow_up.clone();
+    }
+    value
 }
 
 fn add_fields(body: &mut Value, fields: Value) {
@@ -83,6 +93,7 @@ impl Dreamer {
         current["state_version"] = json!(*state_version);
         let mut rounds = 0usize;
         let mut change_pages = 0usize;
+        let mut routed_discoveries = 0usize;
         let mut completed_subjects = 0usize;
         let mut yielded_subjects = 0usize;
         let mut processed = 0usize;
@@ -131,6 +142,7 @@ impl Dreamer {
             let mut refresh_rejections = 0usize;
             let mut no_progress = 0usize;
             let mut subject_round = 0usize;
+            let mut routed_attempted = std::collections::BTreeSet::new();
             // Leave time for another subject even if this model invocation
             // stalls. Evidence already admitted survives the bounded turn.
             let now = tokio::time::Instant::now();
@@ -211,6 +223,42 @@ impl Dreamer {
                         Err(error) => {
                             feedback = error.to_string();
                             repairs = 2;
+                        }
+                    }
+                    continue;
+                }
+                // Routed enrichment is durable work, not a model-owned hint.
+                // Admit it through the normal evidence boundary before asking
+                // the model to assess it. Unavailable references stay retained
+                // and are tried at most once in this subject's bounded turn.
+                let targets: Vec<String> = current["research"]["routed_targets"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .filter(|reference| !routed_attempted.contains(*reference))
+                    .take(32)
+                    .map(str::to_owned)
+                    .collect();
+                if !targets.is_empty() {
+                    routed_attempted.extend(targets.iter().cloned());
+                    let mut body =
+                        envelope(&current, *state_version, &uuid::Uuid::now_v7().to_string());
+                    add_fields(&mut body, json!({"queries":[],"targets":targets}));
+                    report.stage = "research_follow_up_discovery".into();
+                    match self
+                        .research_request("narrative-discover", body, deadline)
+                        .await
+                    {
+                        Ok(value) => {
+                            merge(&mut current, &value, state_version);
+                            routed_discoveries += 1;
+                        }
+                        Err(error) => {
+                            feedback = format!(
+                                "Routed primary evidence could not be admitted: {error}. Keep unresolved routed input retained."
+                            );
+                            repairs += 1;
                         }
                     }
                     continue;
@@ -407,7 +455,7 @@ impl Dreamer {
                         "detail":"review notification remains retained for retry"}),
             };
         }
-        report.research = json!({"rounds":rounds,"change_pages":change_pages,"subjects_completed":completed_subjects,
+        report.research = json!({"rounds":rounds,"change_pages":change_pages,"routed_discoveries":routed_discoveries,"subjects_completed":completed_subjects,
             "subjects_yielded":yielded_subjects,"processed_inputs":processed,"new_review_items":accepted,
             "stop_reason":if failure.is_some(){"operation_failed"}else{&stop}});
         if let Some(detail) = failure {

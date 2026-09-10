@@ -24,6 +24,10 @@ pub(super) struct Scheduler {
     #[serde(default)]
     pub requested_subject_refs: Vec<String>,
     #[serde(default)]
+    pub follow_ups: Vec<research_comparison::FollowUp>,
+    #[serde(default)]
+    pub follow_up_priorities: Vec<String>,
+    #[serde(default)]
     pub skipped_subjects: Vec<Value>,
     #[serde(default)]
     pub receipts: Vec<Value>,
@@ -393,7 +397,13 @@ pub(super) async fn view_active(
     let Some((job, version)) = load(tx, auth, reference).await? else {
         return Ok(Value::Null);
     };
-    safe_view(tx, auth, &job, version).await
+    let mut view = safe_view(tx, auth, &job, version).await?;
+    if !view.is_null() {
+        let (work, targets) = research_comparison::routed_view(tx, auth, data, &job).await?;
+        view["routed_work"] = json!(work);
+        view["routed_targets"] = json!(targets);
+    }
+    Ok(view)
 }
 
 async fn create(
@@ -774,6 +784,10 @@ pub(super) async fn enqueue_requested(
     for reference in requested {
         let id = entry_id(&reference)?;
         let reference = format!("entry:{id}");
+        // An explicit owner request survives retirement of a routed source.
+        data.research
+            .follow_up_priorities
+            .retain(|routed| routed != &reference);
         if headers(tx, auth, &[id], upper).await?.is_empty() {
             return Err(ApiError::invalid(
                 "requested subject is not an accessible ordinary source",
@@ -1063,6 +1077,24 @@ pub(super) async fn progress(
             ));
         }
     }
+    research_comparison::validate_progress(
+        &state, &mut tx, &auth, &mut data, &job, &body, &processed,
+    )
+    .await?;
+    let dispositions = if job.status == "no_change" {
+        research_comparison::resolve_processed(
+            &mut tx,
+            &auth,
+            &mut data,
+            &job,
+            &processed,
+            Some(&body),
+            None,
+        )
+        .await?
+    } else {
+        Vec::new()
+    };
     let before = data.inputs.len();
     data.inputs.retain(|i| {
         !processed.iter().any(|p| {
@@ -1080,9 +1112,14 @@ pub(super) async fn progress(
         .unwrap_or(data.scanned_generation)
         .min(data.scanned_generation);
     if job.status == "no_change" {
-        data.research
-            .requested_subject_refs
-            .retain(|reference| reference != &job.subject_ref);
+        if !research_comparison::retains_priority(&data, &job.subject_ref) {
+            data.research
+                .requested_subject_refs
+                .retain(|reference| reference != &job.subject_ref);
+            data.research
+                .follow_up_priorities
+                .retain(|reference| reference != &job.subject_ref);
+        }
         data.research.completed += 1;
     }
     remember(
@@ -1090,7 +1127,7 @@ pub(super) async fn progress(
         &auth,
         &operation_id,
         &hash,
-        json!({"status":job.status}),
+        json!({"status":job.status,"follow_up_dispositions":dispositions}),
     );
     save(&state, &mut tx, &auth, &job, job_version).await?;
     let version = save_state(&state, &mut tx, &auth, &data, version).await?;

@@ -373,6 +373,17 @@ the existing managed path/version and original pending review identity when
 updating a view. Distinct candidates for one destination and replacement of
 held approvals are rejected. Publication mode and owner decisions still apply.
 
+Research compares overlapping imported inputs against bounded complete fresh
+pending overviews before producing another proposal. Exact-version coverage can
+finish an already-covered input; useful enrichment is retained and queued for
+the existing canonical subject. Routed work survives model lead replacement,
+restart and a submission that omits its origin. Comparison prose never becomes
+factual evidence. An untouched duplicate can become `superseded` only after a
+whole-draft coverage assessment and transactional checks of both proposals and
+all durable owner-decision audits. Its bytes and history remain intact, and an
+old client cannot approve a superseded card. See the subject-research design
+for the comparison, follow-up and retirement contracts.
+
 The server atomically publishes the accepted terminal run and the deterministic
 `dreams/latest-receipt.md` projection using `dream.latest-receipt.v2`. The latter
 contains the exact immutable run reference and version consumed by briefings.

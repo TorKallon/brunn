@@ -40,6 +40,71 @@ Continue while time, quota and useful progress remain. Checkpoint each meaningfu
 
 At research-loop entry, reserve a fixed selection margin of the smaller of sixty seconds or one tenth of the time remaining. Stop selecting or starting another subject once remaining time reaches that margin. Always merge an acknowledged selection response first, and honor an exhausted queue before applying the second time check. A selected subject stays durably available without an extra waiting checkpoint when the model has not started. Already dispatched operations retain their existing timeout, failure and replay handling.
 
+## Comparing overlapping inputs
+
+Separate imported files can describe the same subject or successive snapshots
+of one dataset. Admission therefore supplies `comparison_proposals`: at most
+four complete, accessible, fresh pending ordinary subject summaries, within a
+64 KiB serialized bound. Exact cited primary-source version overlap retrieves
+comparisons, with a citation of the selected canonical source ranked first.
+Overlap does not itself establish duplication. Oversized comparisons are
+omitted rather than truncated; absence from this bounded list is not proof of
+absence from the workspace.
+
+Each comparison carries its body, compact original source selectors, canonical
+identity and exact `pointer` (`item_id`, `candidate_hash`, `run_entry_ref`,
+`run_version`). Generated prose remains untrusted comparison context, outside
+admitted evidence and dependency manifests. The model must reopen primary
+sources before using any claim. Location proposals and owner-held decisions
+are excluded.
+
+For already-covered work, `done` may supply `covers_existing`. The progress
+transaction revalidates the exact comparison, availability, freshness and
+direct citations of the selected canonical source and every processed input
+at its admitted version. A concurrent correction or owner decision cannot be
+bypassed by retrying a state CAS. Ordinary source-based `done` is unchanged.
+
+For useful enrichment of an existing overview, `yield` may supply `follow_up`
+with the exact comparison pointer, one retained and explicitly reviewed
+`origin_input`, and up to sixteen admitted primary target references including
+the origin. The server retains the input, records a bounded identity-only
+route, and queues the destination's existing canonical subject. It does not
+change either canonical identity, proposal bytes, destination or approval.
+Self-routing, cycles, conflicting destinations and capacity failures retain
+all work atomically.
+
+Routes live independently of model-written pending leads. Admission exposes
+safe `research.routed_work` and `research.routed_targets`; the wrapper sends
+missing references through normal discovery before model work, once per
+reference per bounded subject turn. Discovery, cleared notes, restart or a
+submission omitting the routed origin cannot complete the route or remove its
+priority. An accepted destination summary must cite and explicitly disposition
+the exact originating input, or a supported `no_change` must disposition it
+while the current destination remains pending, accessible and fresh.
+A reviewed current replacement can resolve a changed original, with both
+identities retained in an immutable disposition. Owner holds and unavailable
+evidence retain unresolved work. A deterministic intake exclusion for a
+deleted, generated or sensitive origin can release its route only when no
+eligible retained replacement exists. Its immutable `excluded_by_source_policy`
+record preserves the route and exclusion reason with `model_processed: false`;
+it does not count as completed research. Independently requested subject
+priorities survive that cleanup. The once-per-attempt scheduling fence still
+applies.
+
+Existing duplicate drafts require a separate whole-draft comparison. With
+`done` and `covers_existing`, the model may provide `supersedes_existing` for
+a distinct complete proposal of the selected job that was offered as
+`retirable`. Useful additions must first reach the surviving view. The server
+rechecks both exact identities and source scope and proves the duplicate has
+never been owner-reviewed using all durable decision audit versions, not
+compact recent history. Incoming enrichment must be resolved before a later
+step can retire its destination. It changes only the duplicate's status to
+`superseded`, preserves its bytes, hash and run references, and records a
+server disposition naming both proposals. Superseded cards reject subsequent
+decisions, including from an old mobile view. This routes work and removes
+proven redundancy without defining permanent equivalence between source
+identities.
+
 ## Canonical views and freshness
 
 Published metadata contains server-validated `subject_ref` and `subject_scope`. A canonical source's current-state read prefers its subject overview over a newer narrow summary that merely cites the source. Exact source reads remain exact; current reads fall back to source material when freshness cannot be proven.

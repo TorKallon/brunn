@@ -64,6 +64,7 @@ struct Mock {
     research_waiting_delay: Duration,
     research_progress_replies: VecDeque<Option<(StatusCode, String)>>,
     research_discovery_sources: VecDeque<Vec<Value>>,
+    research_comparisons: Vec<Value>,
 }
 #[path = "dreamer_run_contract/research_contract.rs"]
 mod research_contract;
@@ -203,6 +204,7 @@ async fn admit(State(shared): State<Shared>, Json(body): Json<Value>) -> Json<Va
     }
     if s.research_enabled {
         response["research_protocol"] = json!(1);
+        response["comparison_proposals"] = json!(s.research_comparisons);
     }
     s.current_admission = Some(response.clone());
     Json(response)

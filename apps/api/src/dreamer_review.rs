@@ -28,6 +28,7 @@ const STATE_PATH: &str = "dreams/state.md";
 mod location_discovery;
 mod narrative_discovery;
 mod research;
+mod research_comparison;
 const MAX_INPUTS: usize = 128;
 const MAX_ITEMS: usize = 96;
 const MAX_LEGACY_ITEMS: usize = 96;
@@ -1548,6 +1549,7 @@ pub async fn admit(
     data.source_dispositions.clear();
     data.candidate_dispositions.clear();
     retain_inputs(&mut tx, user, &mut data, upper).await?;
+    research_comparison::retire_excluded(&state, &mut tx, &auth, &mut data).await?;
     research::enqueue_requested(&mut tx, &auth, &mut data, &body, upper).await?;
     let lease = body
         .get("lease_seconds")
@@ -1797,12 +1799,21 @@ async fn admission_response(
         }
     }
     let research = research::view_active(tx, auth, data).await?;
+    let comparison_proposals = if let Some(reference) = research["subject_ref"].as_str() {
+        if let Some((job, _)) = research::load(tx, auth, reference).await? {
+            research_comparison::proposals(tx, auth, data, &job).await?
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
     let decisions = load_entry(tx, user, "dreams/decisions.md").await?;
     let rows=sqlx::query("SELECT path,current_version FROM brunn.entries WHERE user_id=$1 AND deleted_at IS NULL AND (starts_with(path,'derived/entities/') OR starts_with(path,'derived/location/')) ORDER BY path LIMIT 256")
         .bind(user).fetch_all(&mut **tx).await?;
     let outputs=rows.iter().map(|r|json!({"path":r.get::<String,_>("path"),"version":r.get::<i64,_>("current_version")})).collect::<Vec<_>>();
     Ok(
-        json!({"research_protocol":1,"research":research,"research_progress":{"turns":data.research.service_sequence,"completed":data.research.completed},"admitted":true,"session_id":format!("session:{}",a.attempt_id),"attempt_id":a.attempt_id,"fence":a.fence,"state_version":version,"mode":a.mode,"frozen_generation":a.frozen_generation,"scanned_generation":data.scanned_generation,"processed_generation":data.processed_generation,"inputs":data.inputs,"outputs":outputs,"location_work":a.location_work,"location_evidence":location_evidence,"location_context":a.location_work.as_ref().and_then(|work|work.get("context_sources")).cloned().unwrap_or_else(||json!([])),"narrative_context":a.narrative_context,"narrative_discovery":a.narrative_discovery,"pending":pending_items,"pending_notifications":data.pending_notifications,"decisions":decisions.as_ref().map(|e|e.content.as_str()).unwrap_or(""),"decisions_version":decisions.map_or(0,|e|e.version)}),
+        json!({"research_protocol":1,"research":research,"comparison_proposals":comparison_proposals,"research_progress":{"turns":data.research.service_sequence,"completed":data.research.completed},"admitted":true,"session_id":format!("session:{}",a.attempt_id),"attempt_id":a.attempt_id,"fence":a.fence,"state_version":version,"mode":a.mode,"frozen_generation":a.frozen_generation,"scanned_generation":data.scanned_generation,"processed_generation":data.processed_generation,"inputs":data.inputs,"outputs":outputs,"location_work":a.location_work,"location_evidence":location_evidence,"location_context":a.location_work.as_ref().and_then(|work|work.get("context_sources")).cloned().unwrap_or_else(||json!([])),"narrative_context":a.narrative_context,"narrative_discovery":a.narrative_discovery,"pending":pending_items,"pending_notifications":data.pending_notifications,"decisions":decisions.as_ref().map(|e|e.content.as_str()).unwrap_or(""),"decisions_version":decisions.map_or(0,|e|e.version)}),
     )
 }
 pub async fn checkpoint(
@@ -2132,6 +2143,7 @@ pub async fn candidates(
         ));
     }
     let (mut data, version) = load_state(&mut tx, user).await?;
+    research_comparison::reject_candidate_fields(&body)?;
     let request_hash = digest(&body);
     let mut research_job = None;
     let mut research_operation = None;
@@ -2643,6 +2655,18 @@ pub async fn candidates(
     }
     if let Some((job, _)) = &research_job {
         research::validate_processed(job, &processed, body.get("research_progress"))?;
+        research_comparison::resolve_processed(
+            &mut tx,
+            &auth,
+            &mut data,
+            job,
+            &processed,
+            body.get("research_progress"),
+            Some(&ids),
+        )
+        .await?;
+    } else {
+        research_comparison::validate_legacy_processing(&data, &processed)?;
     }
     let before_count = data.inputs.len();
     data.inputs.retain(|i| {
@@ -2706,9 +2730,12 @@ pub async fn candidates(
             job.retry_at = Utc::now() + Duration::hours(24);
         }
         job.accepted_candidate_ids = ids.clone();
-        if !ids.is_empty() {
+        if !ids.is_empty() && !research_comparison::retains_priority(&data, &job.subject_ref) {
             data.research
                 .requested_subject_refs
+                .retain(|reference| reference != &job.subject_ref);
+            data.research
+                .follow_up_priorities
                 .retain(|reference| reference != &job.subject_ref);
         }
         data.research.completed += usize::from(!ids.is_empty());
@@ -2951,6 +2978,7 @@ pub async fn finish(
         "processed_inputs",
         "new_review_items",
         "change_pages",
+        "routed_discoveries",
     ] {
         if let Some(value) = body["research"][key].as_u64() {
             research_progress.insert(key.into(), json!(value));
@@ -3660,7 +3688,7 @@ pub async fn decide(
     if !matches!(decision, "approve" | "reject" | "defer" | "correct") {
         return Err(ApiError::invalid("invalid review decision"));
     }
-    if matches!(item.status.as_str(), "rejected" | "applied") {
+    if matches!(item.status.as_str(), "rejected" | "applied" | "superseded") {
         return Err(conflict(
             "This item already has a terminal disposition",
             version,
