@@ -1,7 +1,7 @@
 //! Persistent, exact-evidence subject research. Only scheduling pointers live in
 //! the global run state; source bodies are never copied into research records.
 use super::*;
-use crate::dreamer::research::{RepairFeedback, RepairPhase};
+use crate::dreamer::research::{MAX_RESEARCH_NOTES_BYTES, RepairFeedback, RepairPhase};
 use crate::dreamer_subject::{SubjectScope, check_scope, create_scope, research_change_page};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1153,7 +1153,7 @@ pub(super) async fn apply_progress(
             "repair feedback requires an operational-only research-progress request",
         ));
     }
-    let invalid = |message| {
+    let invalid = |message: &str| {
         repair_error(
             ApiError::invalid(message),
             RepairPhase::CheckpointValidation,
@@ -1178,8 +1178,11 @@ pub(super) async fn apply_progress(
         .get("notes")
         .and_then(Value::as_str)
         .unwrap_or(&job.notes);
-    if notes.len() > 12 * 1024 {
-        return Err(invalid("research notes exceed 12 KiB"));
+    if notes.len() > MAX_RESEARCH_NOTES_BYTES {
+        return Err(invalid(&format!(
+            "research notes contain {} UTF-8 bytes; maximum is {MAX_RESEARCH_NOTES_BYTES}",
+            notes.len()
+        )));
     }
     let status = string(body, "status")?;
     if !matches!(status, "researching" | "waiting" | "no_change") {

@@ -9,6 +9,7 @@ use crate::{
     AppState,
     auth::AuthContext,
     db::set_context,
+    dreamer::research::MAX_RESEARCH_NOTES_BYTES,
     error::ApiResult,
     location::evidence::{EvidenceQuery, evidence_in_tx},
     models::Capability,
@@ -905,9 +906,9 @@ pub(crate) fn research_revalidation_candidate(metadata: &Value, subject_ref: &st
     if notebook["schema"] != "dream.research.v1"
         || notebook["subject_ref"] != subject_ref
         || !serde_json::to_vec(metadata).is_ok_and(|bytes| bytes.len() <= 192 * 1024)
-        || !notebook["notes"]
-            .as_str()
-            .is_some_and(|notes| !notes.trim().is_empty() && notes.len() <= 12 * 1024)
+        || !notebook["notes"].as_str().is_some_and(|notes| {
+            !notes.trim().is_empty() && notes.len() <= MAX_RESEARCH_NOTES_BYTES
+        })
     {
         return false;
     }
@@ -1033,7 +1034,7 @@ pub(crate) async fn research_revalidation_context(
     }
     let Some(notes) = notebook["notes"]
         .as_str()
-        .filter(|notes| !notes.trim().is_empty() && notes.len() <= 12 * 1024)
+        .filter(|notes| !notes.trim().is_empty() && notes.len() <= MAX_RESEARCH_NOTES_BYTES)
     else {
         return Ok(None);
     };
