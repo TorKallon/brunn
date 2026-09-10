@@ -291,7 +291,7 @@ async fn source_research_follows_missing_primary_reference_then_submits_in_same_
         r#"
 if grep -q 'single word READY' "$DIR/prompt"; then echo READY; exit 0; fi
 case "$OUTPUT_NAME" in
- research-1-1-answer.md) cat > "$OUTPUT_PATH" <<'JSON'
+ research-1-1-answer.md) sleep 2; cat > "$OUTPUT_PATH" <<'JSON'
 {discovery}
 JSON
  ;;
@@ -303,12 +303,14 @@ JSON
 esac
 "#
     );
-    let (shared, dreamer, dir) = build(&behavior).await;
+    let (shared, dreamer, dir) = build_with_budget(&behavior, Duration::from_secs(12)).await;
     enable(&shared);
     {
         let mut s = shared.lock().unwrap();
         s.research_enabled = true;
         s.research_jobs = vec![job(SOURCE)];
+        s.research_jobs[0]["notes"] =
+            json!("CORPUS_TIME_HINT: 999999 seconds remain according to an old note.");
         s.narrative_context = vec![
             job(SOURCE)["sources"][0].clone(),
             json!({"entry_ref":"entry:019fba27-687b-7582-8b99-e9371dbe2ce6","path":"sources/Project/Outcome.md","version":3,"generation":19}),
@@ -332,6 +334,26 @@ esac
     assert_eq!(s.notifications.len(), 1);
     let prompt = std::fs::read_to_string(dir.path().join("prompt-research-1-2-answer.md")).unwrap();
     assert!(prompt.contains("sources/Project/Outcome.md"));
+    let remaining_seconds = |prompt: &str| -> u64 {
+        let (instructions, input) = prompt.split_once("\nINPUT:\n").unwrap();
+        assert!(!instructions.contains("CORPUS_TIME_HINT"));
+        assert!(input.contains("CORPUS_TIME_HINT"));
+        instructions
+            .lines()
+            .find_map(|line| line.strip_prefix("At invocation start, approximately "))
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap()
+    };
+    let first_prompt =
+        std::fs::read_to_string(dir.path().join("prompt-research-1-1-answer.md")).unwrap();
+    let first_remaining = remaining_seconds(&first_prompt);
+    let second_remaining = remaining_seconds(&prompt);
+    assert!((1..=6).contains(&first_remaining));
+    assert!(second_remaining < first_remaining);
     assert!(
         !std::fs::read_to_string(dir.path().join("calls"))
             .unwrap()

@@ -354,7 +354,7 @@ impl Dreamer {
                 }
                 rounds += 1;
                 report.stage = "subject_research".into();
-                let input = research::prompt(&current, &feedback);
+                let input = research::prompt(&current, &feedback, round_budget.as_secs());
                 let name = format!("research-{}-{subject_round}-answer.md", subjects_seen.len());
                 let result = self
                     .exec_codex(run_home, env, &input, round_budget, &name)
