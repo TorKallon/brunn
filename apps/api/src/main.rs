@@ -49,7 +49,7 @@ enum Command {
 
 #[derive(Debug, Subcommand)]
 enum DreamerCommand {
-    /// Always-on: private HTTP surface plus the 03:00 America/Los_Angeles
+    /// Always-on: private HTTP surface plus the 02:00 America/Los_Angeles
     /// nightly loop.
     Serve,
     /// One run now, then exit (dev/test and the manual first run).

@@ -14,7 +14,7 @@ use tokio::{io::AsyncReadExt as _, process::Child, sync::Mutex};
 
 use super::{
     codex::{self, AuthCheck},
-    run::{AUTH_SECRET, Dreamer, RUNTIME_SECRET, auth_identity},
+    run::{AUTH_SECRET, Dreamer, RUNTIME_SECRET, auth_email, auth_identity},
 };
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -250,11 +250,21 @@ impl ConnectFlow {
                 return Err("the account was stored but ChatGPT verification refused it".into());
             }
         };
+        let usage = codex::account_usage(&dreamer.config.codex_path, &env)
+            .await
+            .ok();
         let (account, plan) = auth_identity(&auth_json);
         let now = chrono::Utc::now().to_rfc3339();
         let mut status = dreamer.runtime_status().await;
         status.account = account.clone();
         status.plan = plan.clone();
+        status.account_email = usage
+            .as_ref()
+            .and_then(|usage| usage["email"].as_str().map(str::to_owned))
+            .or_else(|| auth_email(&auth_json));
+        if usage.is_some() {
+            status.usage = usage;
+        }
         status.connected_at = Some(now.clone());
         status.verified_at = Some(now);
         status.codex_version = Some(identity.version);

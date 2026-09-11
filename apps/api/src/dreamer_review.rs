@@ -495,18 +495,19 @@ fn counts(data: &RunState) -> Value {
 fn next_run(now: DateTime<Utc>) -> DateTime<Utc> {
     let local = now.with_timezone(&Los_Angeles);
     let mut date = local.date_naive();
-    let time = date.and_hms_opt(3, 0, 0).expect("3am");
+    let hour = crate::dreamer::http::NIGHTLY_HOUR;
+    let time = date.and_hms_opt(hour, 0, 0).expect("nightly hour");
     let today = Los_Angeles
         .from_local_datetime(&time)
         .earliest()
-        .expect("3am exists");
+        .expect("nightly hour exists");
     if today <= local {
         date = date.succ_opt().expect("next date");
     }
     Los_Angeles
-        .from_local_datetime(&date.and_hms_opt(3, 0, 0).expect("3am"))
+        .from_local_datetime(&date.and_hms_opt(hour, 0, 0).expect("nightly hour"))
         .earliest()
-        .expect("3am exists")
+        .expect("nightly hour exists")
         .with_timezone(&Utc)
 }
 
@@ -1561,7 +1562,7 @@ pub async fn admit(
         .get("lease_seconds")
         .and_then(Value::as_i64)
         .unwrap_or(2100)
-        .clamp(30, 7800);
+        .clamp(30, 14_400);
     let now = Utc::now();
     let fence = Uuid::now_v7().to_string();
     data.processed_count = 0;
@@ -1840,7 +1841,7 @@ pub async fn checkpoint(
         .get("lease_seconds")
         .and_then(Value::as_i64)
         .unwrap_or(2100)
-        .clamp(30, 7800);
+        .clamp(30, 14_400);
     data.active.as_mut().expect("active").lease_until = Utc::now() + Duration::seconds(lease);
     let version = save_state(&state, &mut tx, &auth, &data, version).await?;
     tx.commit().await?;

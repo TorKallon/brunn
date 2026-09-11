@@ -12,6 +12,10 @@ struct TodayView: View {
                         ConnectionBanner(message: message, isDemo: model.isDemo)
                     }
 
+                    if let status = model.dreamingStatus, status.accountLabel != nil || status.dreamer?.runtime?.usage != nil {
+                        DreamingUsageCard(status: status)
+                    }
+
                     if let briefing = model.latestBriefing {
                         BriefingReader(
                             briefing: briefing,
@@ -68,6 +72,61 @@ struct TodayView: View {
                 }
             }
         }
+    }
+}
+
+/// The Codex account Dreaming runs under and how much of its weekly plan
+/// allowance the last verified run observed.
+struct DreamingUsageCard: View {
+    let status: DreamingStatusData
+
+    private var weekly: DreamingStatusData.UsageWindow? { status.dreamer?.runtime?.usage?.weekly }
+
+    private var usedLabel: String {
+        guard let used = weekly?.usedPercent else { return "Unavailable" }
+        return "\(Int(used.rounded()))%"
+    }
+
+    private var detail: String {
+        var parts: [String] = []
+        if let account = status.accountLabel {
+            parts.append(status.planLabel.map { "\(account) (\($0))" } ?? account)
+        } else {
+            parts.append("No Dreaming account connected")
+        }
+        if let resets = weekly?.resetsAt, let date = ISO8601DateFormatter().date(from: resets) {
+            parts.append("resets " + date.formatted(date: .abbreviated, time: .shortened))
+        } else if status.accountLabel != nil, weekly?.usedPercent == nil {
+            parts.append("usage not observed yet")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: "moon.zzz")
+                .font(.title3)
+                .foregroundStyle(BrunnTheme.signal)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Dreaming weekly usage")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(usedLabel)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(BrunnTheme.ink)
+                Text(detail)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.background, in: RoundedRectangle(cornerRadius: 8))
+        .overlay { RoundedRectangle(cornerRadius: 8).stroke(BrunnTheme.line, lineWidth: 1) }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("today-dreaming-usage")
     }
 }
 

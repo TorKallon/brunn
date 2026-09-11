@@ -24,6 +24,9 @@ use super::{
     run::{Dreamer, RunKind, RunReport},
 };
 
+/// Local hour (America/Los_Angeles) of the nightly slot.
+pub const NIGHTLY_HOUR: u32 = 2;
+
 pub struct DreamerApp {
     pub dreamer: Dreamer,
     pub connect: Arc<ConnectFlow>,
@@ -76,7 +79,7 @@ impl DreamerApp {
     pub async fn nightly_loop(self: Arc<Self>) {
         let now = Utc::now().with_timezone(&Los_Angeles);
         let today = now.date_naive();
-        let due = if now.time() >= NaiveTime::from_hms_opt(3, 0, 0).unwrap() {
+        let due = if now.time() >= NaiveTime::from_hms_opt(NIGHTLY_HOUR, 0, 0).unwrap() {
             today
         } else {
             today.pred_opt().unwrap_or(today)
@@ -90,13 +93,13 @@ impl DreamerApp {
         }
         loop {
             let now = Utc::now().with_timezone(&Los_Angeles);
-            let three_am = NaiveTime::from_hms_opt(3, 0, 0).expect("03:00");
-            let mut next = now.date_naive().and_time(three_am);
-            if now.time() >= three_am {
+            let slot = NaiveTime::from_hms_opt(NIGHTLY_HOUR, 0, 0).expect("nightly hour");
+            let mut next = now.date_naive().and_time(slot);
+            if now.time() >= slot {
                 next += chrono::Duration::days(1);
             }
             // DST gaps/overlaps: take the earliest valid interpretation, or
-            // slide forward an hour if 03:00 does not exist that day.
+            // slide forward an hour if the slot does not exist that day.
             let next_local = match Los_Angeles.from_local_datetime(&next) {
                 chrono::LocalResult::Single(when) | chrono::LocalResult::Ambiguous(when, _) => when,
                 chrono::LocalResult::None => Los_Angeles
@@ -160,6 +163,8 @@ async fn status(State(app): State<Arc<DreamerApp>>, headers: HeaderMap) -> Respo
         "connect": connect,
         "runtime": runtime,
         "last_report": last_report,
+        "schedule": {"hour": NIGHTLY_HOUR, "timezone": "America/Los_Angeles",
+            "time_budget_seconds": RunKind::Nightly.time_budget().as_secs()},
     }))
     .into_response()
 }

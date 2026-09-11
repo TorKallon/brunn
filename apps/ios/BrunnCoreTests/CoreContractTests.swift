@@ -74,6 +74,25 @@ final class CoreContractTests: XCTestCase {
         XCTAssertEqual(envelope.data.coverage?.days, 7)
     }
 
+    func testDreamingStatusDecodesAccountAndWeeklyUsage() throws {
+        let json = """
+        {"control":{"enabled":true,"mode":"report-only"},
+         "dreamer":{"runtime":{"account":"acct_123","account_email":"dreamer@example.com","plan":"pro",
+           "last_attempt_date":"2026-09-10","last_attempt_result":"partial",
+           "usage":{"observed_at":"2026-09-11T09:01:00Z","email":"dreamer@example.com","plan_type":"pro",
+             "primary":{"used_percent":42.4,"window_minutes":10080,"resets_at":"2026-09-16T04:02:42Z"},
+             "secondary":null}}},
+         "schedule":{"hour":2,"timezone":"America/Los_Angeles"}}
+        """
+        let status = try JSONDecoder().decode(DreamingStatusData.self, from: Data(json.utf8))
+        XCTAssertEqual(status.accountLabel, "dreamer@example.com")
+        XCTAssertEqual(status.planLabel, "pro")
+        XCTAssertEqual(status.dreamer?.runtime?.usage?.weekly?.usedPercent, 42.4)
+        XCTAssertEqual(status.dreamer?.runtime?.usage?.weekly?.windowMinutes, 10080)
+        XCTAssertEqual(status.schedule?.hour, 2)
+        XCTAssertFalse(json.contains("token"))
+    }
+
     func testStructuredBriefingDecodesCurrentWorkspaceEnvelope() throws {
         let json = #"""
         {

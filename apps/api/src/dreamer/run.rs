@@ -46,7 +46,7 @@ pub struct DreamerConfig {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunKind {
-    /// The scheduled or manually triggered normal run: 40 writes, 60 minutes.
+    /// The scheduled or manually triggered normal run: 40 writes, 180 minutes.
     Nightly,
     /// Explicit same-day retry, independent of the scheduled-slot dedupe.
     Manual,
@@ -64,8 +64,8 @@ impl RunKind {
 
     pub fn time_budget(self) -> Duration {
         match self {
-            RunKind::Nightly | RunKind::Manual => Duration::from_secs(60 * 60),
-            RunKind::Backfill => Duration::from_secs(120 * 60),
+            RunKind::Nightly | RunKind::Manual => Duration::from_secs(180 * 60),
+            RunKind::Backfill => Duration::from_secs(180 * 60),
         }
     }
 }
@@ -197,6 +197,14 @@ pub struct RuntimeStatus {
     pub account: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<String>,
+    /// Display name of the connected ChatGPT account, from the app-server
+    /// account read or the login token's profile claim. Never a token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_email: Option<String>,
+    /// Latest plan usage observed through the Codex app-server: primary and
+    /// secondary window percentages, reset times and plan type.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub connected_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -616,6 +624,16 @@ impl Dreamer {
                     };
                 }
                 runtime.codex_version = Some(identity.version);
+                // Best effort: usage is display context, never a run gate.
+                match codex::account_usage(&self.config.codex_path, env).await {
+                    Ok(usage) => {
+                        if let Some(email) = usage["email"].as_str() {
+                            runtime.account_email = Some(email.to_owned());
+                        }
+                        runtime.usage = Some(usage);
+                    }
+                    Err(detail) => tracing::warn!(%detail, "codex account usage unavailable"),
+                }
             }
             AuthCheck::Refused { .. } => {
                 return RunOutcome::SkippedAuth {
@@ -1560,6 +1578,36 @@ impl Drop for RunHome {
 
 /// Extract account and plan from a codex auth.json, best effort, for the
 /// settings card. Never logs or returns token material.
+/// Decode the payload claims of a JWT without verifying it. The dreamer only
+/// displays the profile email and plan; it never trusts these claims for auth.
+fn jwt_claims(token: &str) -> Option<Value> {
+    use base64::Engine as _;
+    let payload = token.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload.trim_end_matches('='))
+        .ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// The connected account's display email from the login token, if present.
+pub fn auth_email(auth_json: &str) -> Option<String> {
+    let parsed: Value = serde_json::from_str(auth_json).ok()?;
+    if let Some(email) = parsed
+        .pointer("/tokens/id_token/email")
+        .or_else(|| parsed.pointer("/email"))
+        .and_then(Value::as_str)
+    {
+        return Some(email.to_owned());
+    }
+    let token = parsed.pointer("/tokens/id_token")?.as_str()?;
+    let claims = jwt_claims(token)?;
+    claims
+        .pointer("/https:~1~1api.openai.com~1profile/email")
+        .or_else(|| claims.get("email"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+}
+
 pub fn auth_identity(auth_json: &str) -> (Option<String>, Option<String>) {
     let parsed: Value = match serde_json::from_str(auth_json) {
         Ok(value) => value,
@@ -1682,9 +1730,9 @@ mod tests {
     #[test]
     fn run_kind_budgets_are_locked() {
         assert_eq!(RunKind::Nightly.write_budget(), 40);
-        assert_eq!(RunKind::Nightly.time_budget(), Duration::from_secs(3_600));
+        assert_eq!(RunKind::Nightly.time_budget(), Duration::from_secs(10_800));
         assert_eq!(RunKind::Backfill.write_budget(), 300);
-        assert_eq!(RunKind::Backfill.time_budget(), Duration::from_secs(7_200));
+        assert_eq!(RunKind::Backfill.time_budget(), Duration::from_secs(10_800));
     }
 
     #[test]
@@ -1694,6 +1742,25 @@ mod tests {
             "skipped(auth)"
         );
         assert_eq!(RunOutcome::SkippedLimits.label(), "skipped(limits)");
+    }
+
+    #[test]
+    fn auth_email_decodes_the_profile_claim_without_verifying_the_token() {
+        use base64::Engine as _;
+        let claims = json!({"https://api.openai.com/profile":{"email":"dreamer@example.com"},
+            "https://api.openai.com/auth":{"chatgpt_plan_type":"pro","chatgpt_account_id":"acct_1"}});
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims.to_string());
+        let auth = json!({"tokens":{"id_token":format!("eyJhbGciOiJub25lIn0.{payload}.sig"),
+            "access_token":"SECRET_ACCESS","refresh_token":"SECRET_REFRESH"}});
+        assert_eq!(
+            auth_email(&auth.to_string()).as_deref(),
+            Some("dreamer@example.com")
+        );
+        assert_eq!(
+            auth_email("{\"tokens\":{\"id_token\":\"not-a-jwt\"}}"),
+            None
+        );
+        assert_eq!(auth_email("not json"), None);
     }
 
     #[test]

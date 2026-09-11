@@ -8,7 +8,11 @@
 
 use std::{collections::BTreeMap, path::Path, time::Duration};
 
-use tokio::process::Command;
+use serde_json::{Value, json};
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    process::Command,
+};
 
 mod failure;
 pub use failure::{ExecutionFailure, FailureEvent, FailureKind, execution_failure};
@@ -168,6 +172,102 @@ fn first_line(rendered: &str) -> &str {
     rendered.lines().next().unwrap_or_default().trim()
 }
 
+/// Read the connected ChatGPT account identity and plan usage through the
+/// Codex app-server JSON-RPC surface in the same ephemeral home the run uses.
+/// Returns only the account email, plan and limit percentages; token material
+/// is never requested or returned.
+pub async fn account_usage(codex: &Path, env: &BTreeMap<String, String>) -> Result<Value, String> {
+    let mut command = Command::new(codex);
+    command
+        .arg("app-server")
+        .env_clear()
+        .envs(env)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("could not start codex app-server: {error}"))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or("codex app-server stdin unavailable")?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("codex app-server stdout unavailable")?;
+    let requests = [
+        json!({"method":"initialize","id":1,"params":{"clientInfo":{"name":"brunn-dreamer","title":"Brunn Dreamer","version":env!("CARGO_PKG_VERSION")}}}),
+        json!({"method":"initialized"}),
+        json!({"method":"account/read","id":2,"params":{"refreshToken":false}}),
+        json!({"method":"account/rateLimits/read","id":3}),
+    ];
+    let mut payload = String::new();
+    for request in requests {
+        payload.push_str(&request.to_string());
+        payload.push('\n');
+    }
+    let mut lines = BufReader::new(stdout).lines();
+    let exchange = async {
+        stdin
+            .write_all(payload.as_bytes())
+            .await
+            .map_err(|error| format!("could not write to codex app-server: {error}"))?;
+        let mut account = None;
+        let mut limits = None;
+        while let Ok(Some(line)) = lines.next_line().await {
+            let Ok(message) = serde_json::from_str::<Value>(&line) else {
+                continue;
+            };
+            match message["id"].as_i64() {
+                Some(2) => account = Some(message["result"]["account"].clone()),
+                Some(3) => limits = Some(message["result"]["rateLimits"].clone()),
+                _ => {}
+            }
+            if account.is_some() && limits.is_some() {
+                break;
+            }
+        }
+        Ok::<_, String>((account, limits))
+    };
+    let result = tokio::time::timeout(Duration::from_secs(25), exchange).await;
+    drop(stdin);
+    let _ = child.start_kill();
+    let _ = child.wait().await;
+    let (account, limits) =
+        result.map_err(|_| "codex app-server did not answer within 25 seconds".to_owned())??;
+    let limits = limits
+        .filter(Value::is_object)
+        .ok_or("codex app-server did not report rate limits")?;
+    Ok(usage_summary(account.as_ref(), &limits))
+}
+
+fn usage_window(window: &Value) -> Value {
+    let resets_at = window["resetsAt"]
+        .as_i64()
+        .and_then(|seconds| chrono::DateTime::<chrono::Utc>::from_timestamp(seconds, 0))
+        .map(|when| when.to_rfc3339());
+    json!({"used_percent":window["usedPercent"],"window_minutes":window["windowDurationMins"],"resets_at":resets_at})
+}
+
+/// Compact, display-safe usage record for the runtime status card.
+pub fn usage_summary(account: Option<&Value>, limits: &Value) -> Value {
+    let email = account.and_then(|account| account["email"].as_str());
+    let plan_type = limits["planType"]
+        .as_str()
+        .or_else(|| account.and_then(|account| account["planType"].as_str()));
+    json!({
+        "observed_at": chrono::Utc::now().to_rfc3339(),
+        "email": email,
+        "plan_type": plan_type,
+        "limit_id": limits["limitId"],
+        "primary": limits["primary"].is_object().then(|| usage_window(&limits["primary"])),
+        "secondary": limits["secondary"].is_object().then(|| usage_window(&limits["secondary"])),
+        "rate_limit_reached": limits["rateLimitReachedType"],
+    })
+}
+
 /// Arguments for one `codex exec` invocation with the Brunn MCP server
 /// on stdio. The MCP server authenticates with the scoped `dreamer` token via
 /// forwarded environment variables; codex itself never sees vault-capable
@@ -250,6 +350,23 @@ pub fn restrict_to_location_evidence(args: &mut Vec<String>, discovery: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn usage_summary_keeps_only_display_fields() {
+        let account = json!({"type":"chatgpt","email":"dreamer@example.com","planType":"pro"});
+        let limits = json!({"limitId":"codex","planType":"pro","rateLimitReachedType":null,
+            "primary":{"usedPercent":98,"windowDurationMins":10080,"resetsAt":1789584162},
+            "secondary":null,"credits":{"hasCredits":false,"balance":"0"}});
+        let summary = usage_summary(Some(&account), &limits);
+        assert_eq!(summary["email"], "dreamer@example.com");
+        assert_eq!(summary["plan_type"], "pro");
+        assert_eq!(summary["primary"]["used_percent"], 98);
+        assert_eq!(summary["primary"]["window_minutes"], 10080);
+        assert_eq!(summary["primary"]["resets_at"], "2026-09-16T18:42:42+00:00");
+        assert!(summary["secondary"].is_null());
+        assert!(summary.get("credits").is_none());
+        assert!(summary["observed_at"].is_string());
+    }
 
     fn env_of(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         pairs

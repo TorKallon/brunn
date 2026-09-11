@@ -432,6 +432,9 @@ fn stub(dir: &Path, behavior: &str) -> PathBuf {
 case "$1" in
  login) echo 'Logged in using ChatGPT'; exit 0;;
  --version) echo 'codex-cli 0.153.4'; exit 0;;
+ app-server)
+  printf '%s\n' '{{"id":1,"result":{{"userAgent":"stub"}}}}' '{{"id":2,"result":{{"account":{{"type":"chatgpt","email":"stub@example.com","planType":"pro"}}}}}}' '{{"id":3,"result":{{"rateLimits":{{"limitId":"codex","planType":"pro","primary":{{"usedPercent":12,"windowDurationMins":10080,"resetsAt":1789584162}},"secondary":null}}}}}}'
+  exit 0;;
 esac
 DIR='{dir}'
 export DIR
@@ -526,6 +529,23 @@ async fn accepted_candidates_have_exact_receipt_and_read_only_model() {
         Some("enabled: true\nmode: report-only\nadvance_after: 2020-01-01\n")
     );
 }
+#[tokio::test]
+async fn verified_runs_record_the_codex_account_and_weekly_usage_without_tokens() {
+    let (shared, dreamer, _dir) = build(HAPPY).await;
+    enable(&shared);
+    let report = dreamer.run_once(today(), RunKind::Manual).await;
+    assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
+    let s = shared.lock().unwrap();
+    let (runtime, _) = s.secrets.get("dreamer-runtime").expect("runtime custody");
+    let runtime: Value = serde_json::from_str(runtime).unwrap();
+    assert_eq!(runtime["account_email"], "stub@example.com");
+    assert_eq!(runtime["usage"]["plan_type"], "pro");
+    assert_eq!(runtime["usage"]["primary"]["used_percent"], 12);
+    assert_eq!(runtime["usage"]["primary"]["window_minutes"], 10080);
+    assert!(runtime["usage"]["primary"]["resets_at"].is_string());
+    assert!(!runtime.to_string().contains("token"));
+}
+
 #[tokio::test]
 async fn owner_review_race_retries_the_same_evidence_without_rerunning_the_model() {
     let (s, d, dir) = build(HAPPY).await;

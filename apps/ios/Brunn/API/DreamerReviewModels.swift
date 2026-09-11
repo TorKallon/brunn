@@ -142,6 +142,84 @@ public struct DreamerReviewCounts: Codable, Sendable, Equatable {
     }
 }
 
+/// Owner-only Dreaming status: the connected Codex account and the plan usage
+/// observed by the last verified run. Never contains token material.
+public struct DreamingStatusData: Decodable, Sendable, Equatable {
+    public struct UsageWindow: Decodable, Sendable, Equatable {
+        public let usedPercent: Double?
+        public let windowMinutes: Int?
+        public let resetsAt: String?
+
+        enum CodingKeys: String, CodingKey {
+            case usedPercent = "used_percent"
+            case windowMinutes = "window_minutes"
+            case resetsAt = "resets_at"
+        }
+    }
+
+    public struct Usage: Decodable, Sendable, Equatable {
+        public let observedAt: String?
+        public let email: String?
+        public let planType: String?
+        public let primary: UsageWindow?
+        public let secondary: UsageWindow?
+
+        enum CodingKeys: String, CodingKey {
+            case observedAt = "observed_at"
+            case email
+            case planType = "plan_type"
+            case primary
+            case secondary
+        }
+
+        /// The weekly window when Codex reports one; otherwise the primary.
+        public var weekly: UsageWindow? {
+            if let primary, (primary.windowMinutes ?? 0) >= 7 * 24 * 60 { return primary }
+            if let secondary, (secondary.windowMinutes ?? 0) >= 7 * 24 * 60 { return secondary }
+            return primary
+        }
+    }
+
+    public struct Runtime: Decodable, Sendable, Equatable {
+        public let account: String?
+        public let accountEmail: String?
+        public let plan: String?
+        public let lastAttemptDate: String?
+        public let lastAttemptResult: String?
+        public let usage: Usage?
+
+        enum CodingKeys: String, CodingKey {
+            case account
+            case accountEmail = "account_email"
+            case plan
+            case lastAttemptDate = "last_attempt_date"
+            case lastAttemptResult = "last_attempt_result"
+            case usage
+        }
+    }
+
+    public struct Dreamer: Decodable, Sendable, Equatable {
+        public let unavailable: Bool?
+        public let runtime: Runtime?
+    }
+
+    public struct Schedule: Decodable, Sendable, Equatable {
+        public let hour: Int?
+        public let timezone: String?
+    }
+
+    public let dreamer: Dreamer?
+    public let schedule: Schedule?
+
+    public var accountLabel: String? {
+        dreamer?.runtime?.accountEmail ?? dreamer?.runtime?.usage?.email ?? dreamer?.runtime?.account
+    }
+
+    public var planLabel: String? {
+        dreamer?.runtime?.usage?.planType ?? dreamer?.runtime?.plan
+    }
+}
+
 public struct DreamerReviewData: Codable, Sendable, Equatable {
     public let available: Bool
     public let mode: String?

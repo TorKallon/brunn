@@ -19,7 +19,7 @@ import {
   StatusBadge,
 } from "../components/StateViews";
 import { useApi } from "../lib/auth";
-import { useCurrent } from "../lib/current";
+import { useCapability, useCurrent } from "../lib/current";
 import {
   formatBytes,
   formatDate,
@@ -73,7 +73,10 @@ export function DashboardPage() {
             <ArrowRight size={16} aria-hidden="true" />
           </Link>
         ) : (
-          <Link className="button primary dashboard-primary-action" to="/briefings">
+          <Link
+            className="button primary dashboard-primary-action"
+            to="/briefings"
+          >
             <Sunrise size={17} aria-hidden="true" />
             Open briefings
           </Link>
@@ -102,13 +105,18 @@ export function DashboardPage() {
 
       {dashboard ? (
         <>
-          <section className="dashboard-section" aria-labelledby="storage-heading">
+          <section
+            className="dashboard-section"
+            aria-labelledby="storage-heading"
+          >
             <div className="dashboard-section-heading">
               <div>
                 <span className="dashboard-eyebrow">Storage</span>
                 <h2 id="storage-heading">What Brunn is holding</h2>
               </div>
-              <span>Generation {numberFormat.format(dashboard.workspace_generation)}</span>
+              <span>
+                Generation {numberFormat.format(dashboard.workspace_generation)}
+              </span>
             </div>
             <div className="storage-grid">
               <StorageCard
@@ -136,7 +144,10 @@ export function DashboardPage() {
             </div>
           </section>
 
-          <section className="dashboard-section" aria-labelledby="activity-heading">
+          <section
+            className="dashboard-section"
+            aria-labelledby="activity-heading"
+          >
             <div className="dashboard-section-heading">
               <div>
                 <span className="dashboard-eyebrow">Detailed Activity</span>
@@ -179,6 +190,7 @@ export function DashboardPage() {
                 detail={`${dashboard.access.length} credential${dashboard.access.length === 1 ? "" : "s"} listed`}
                 tone="neutral"
               />
+              <DreamingUsageMetric />
             </div>
             {dashboard.tracking && dashboard.tracking.status !== "enabled" ? (
               <p className="dashboard-coverage-note is-warning" role="status">
@@ -214,7 +226,10 @@ export function DashboardPage() {
             </p>
           </section>
 
-          <section className="dashboard-section" aria-labelledby="access-heading">
+          <section
+            className="dashboard-section"
+            aria-labelledby="access-heading"
+          >
             <div className="dashboard-section-heading">
               <div>
                 <span className="dashboard-eyebrow">Access</span>
@@ -267,13 +282,108 @@ function StorageCard({
       <div className="storage-card-icon">{icon}</div>
       <div className="storage-card-copy">
         <span>{label}</span>
-        <strong>{count === null ? "Unavailable" : numberFormat.format(count)}</strong>
+        <strong>
+          {count === null ? "Unavailable" : numberFormat.format(count)}
+        </strong>
         <small>{detail}</small>
       </div>
       <div className="storage-card-size">
         <span>{sizeLabel}</span>
         <strong>{size === null ? "Unavailable" : formatBytes(size)}</strong>
       </div>
+    </article>
+  );
+}
+
+interface DreamingUsageWindow {
+  used_percent?: number | null;
+  window_minutes?: number | null;
+  resets_at?: string | null;
+}
+
+interface DreamingStatusView {
+  dreamer?: {
+    unavailable?: boolean;
+    runtime?: {
+      account?: string;
+      account_email?: string;
+      plan?: string;
+      last_attempt_date?: string;
+      last_attempt_result?: string;
+      usage?: {
+        observed_at?: string;
+        email?: string | null;
+        plan_type?: string | null;
+        primary?: DreamingUsageWindow | null;
+        secondary?: DreamingUsageWindow | null;
+      } | null;
+    };
+  };
+  schedule?: { hour?: number; timezone?: string };
+}
+
+const resetFormat = new Intl.DateTimeFormat(undefined, {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+/// The Codex account Dreaming runs under and how much of its weekly plan
+/// allowance the last verified run observed. Owner-only: the status surface
+/// requires credential management.
+function DreamingUsageMetric() {
+  const api = useApi();
+  const isOwner = useCapability("credential:manage");
+  const statusQuery = useQuery({
+    queryKey: ["dreaming-status"],
+    queryFn: () => api.dreamingStatus(),
+    enabled: isOwner,
+    refetchInterval: 60_000,
+  });
+  if (!isOwner) {
+    return null;
+  }
+  const status = (statusQuery.data?.data ?? {}) as DreamingStatusView;
+  const runtime = status.dreamer?.runtime;
+  const usage = runtime?.usage ?? null;
+  const weekly =
+    usage?.primary && (usage.primary.window_minutes ?? 0) >= 7 * 24 * 60
+      ? usage.primary
+      : usage?.secondary && (usage.secondary.window_minutes ?? 0) >= 7 * 24 * 60
+        ? usage.secondary
+        : (usage?.primary ?? null);
+  const account =
+    runtime?.account_email ?? usage?.email ?? runtime?.account ?? null;
+  const plan = usage?.plan_type ?? runtime?.plan ?? null;
+  const used =
+    typeof weekly?.used_percent === "number"
+      ? Math.round(weekly.used_percent)
+      : null;
+  const resets = weekly?.resets_at
+    ? resetFormat.format(new Date(weekly.resets_at))
+    : null;
+  const detailParts: string[] = [];
+  if (account) {
+    detailParts.push(plan ? `${account} (${plan})` : account);
+  } else if (statusQuery.isPending) {
+    detailParts.push("Checking the Dreaming account…");
+  } else if (status.dreamer?.unavailable) {
+    detailParts.push("Dreamer status unavailable");
+  } else {
+    detailParts.push("No Dreaming account connected");
+  }
+  if (resets) {
+    detailParts.push(`resets ${resets}`);
+  } else if (account && used === null) {
+    detailParts.push("usage not observed yet");
+  }
+  return (
+    <article className="today-metric tone-neutral" data-testid="dreaming-usage">
+      <span>Dreaming weekly usage</span>
+      <strong>{used === null ? "Unavailable" : `${used}%`}</strong>
+      <small>{detailParts.join(" · ")}</small>
     </article>
   );
 }
@@ -292,7 +402,9 @@ function TodayMetric({
   return (
     <article className={`today-metric tone-${tone}`}>
       <span>{label}</span>
-      <strong>{value === null ? "Unavailable" : numberFormat.format(value)}</strong>
+      <strong>
+        {value === null ? "Unavailable" : numberFormat.format(value)}
+      </strong>
       <small>{detail}</small>
     </article>
   );
@@ -329,10 +441,7 @@ function UsageChart({
           <span className="legend-write">Writes</span>
         </div>
       </header>
-      <div
-        className="bar-chart"
-        aria-hidden="true"
-      >
+      <div className="bar-chart" aria-hidden="true">
         {points.map((point) => {
           const reads = readValue(point);
           const writes = writeValue(point);
@@ -356,7 +465,9 @@ function UsageChart({
         })}
       </div>
       <table className="sr-only">
-        <caption>{title} over the last {points.length} days</caption>
+        <caption>
+          {title} over the last {points.length} days
+        </caption>
         <thead>
           <tr>
             <th>Date</th>
@@ -388,7 +499,9 @@ function AccessRow({
   const operationsToday =
     client.read_operations_today + client.write_operations_today;
   return (
-    <article className={`access-row ${client.status !== "active" ? "is-revoked" : ""}`}>
+    <article
+      className={`access-row ${client.status !== "active" ? "is-revoked" : ""}`}
+    >
       <div className="access-row-icon">
         {client.kind === "web_ui" ? (
           <Monitor size={18} aria-hidden="true" />
@@ -452,7 +565,9 @@ function localDateKey(timezone: string): string {
       month: "2-digit",
       day: "2-digit",
     }).formatToParts(new Date());
-    const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    const value = Object.fromEntries(
+      parts.map((part) => [part.type, part.value]),
+    );
     return `${value.year}-${value.month}-${value.day}`;
   } catch {
     return new Date().toISOString().slice(0, 10);
@@ -462,7 +577,9 @@ function localDateKey(timezone: string): string {
 function shortDay(date: string): string {
   const parsed = new Date(`${date}T12:00:00`);
   if (Number.isNaN(parsed.valueOf())) return date.slice(5);
-  return new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(parsed);
+  return new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(
+    parsed,
+  );
 }
 
 function barStyle(value: number, ceiling: number): CSSProperties {

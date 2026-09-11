@@ -105,7 +105,7 @@ Exact historical source reads remain exact and access-controlled.
 Successful source writes are durable and available to exact/lexical retrieval
 without waiting for Dreamer. This means captured information is available, not
 that every real-world change was captured or that an older overview has already
-been rewritten. The normal schedule is 03:00 America/Los_Angeles; startup catch-up
+been rewritten. The normal schedule is 02:00 America/Los_Angeles with a three-hour attempt budget; startup catch-up
 and manual runs are not restricted to the night or gated on the owner being idle.
 
 For a current-state question, the answering agent uses the nightly overview as a

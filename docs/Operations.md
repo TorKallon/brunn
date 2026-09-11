@@ -297,7 +297,7 @@ Dreamer uses the schedule and authority described below.
 ## Production Codex Dreamer
 
 The private Railway `dreamer` service runs `brunn dreamer serve`. Its internal
-scheduler runs at 03:00 America/Los_Angeles; Railway cron stays unset. Startup
+scheduler runs at 02:00 America/Los_Angeles with a three-hour attempt budget; Railway cron stays unset. Startup
 attempts at most the newest due slot, and server admission suppresses duplicate
 successful nightly work. Manual attempts can retry the same date. Each accepted
 attempt receives a new version of `dreams/runs/YYYY-MM-DD.md`, preserving earlier

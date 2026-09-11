@@ -192,6 +192,12 @@ public actor BrunnAPI {
         }
     }
 
+    /// Owner-only Dreaming account and weekly usage; the API returns this
+    /// status without a workspace envelope.
+    public func dreamingStatus() async throws -> DreamingStatusData {
+        try await get(path: "workspace/dreaming/status")
+    }
+
     public func dreamerReview() async throws -> DreamerReviewData {
         let response: WorkspaceEnvelope<DreamerReviewData> = try await get(path: "dreamer/review")
         return response.data

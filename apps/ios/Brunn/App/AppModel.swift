@@ -77,6 +77,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var isConfiguringDeviceTaskAccess = false
     @Published private(set) var isDemo = false
     @Published private(set) var latestBriefing: BriefingEditionData?
+    /// Owner-only Dreaming account and usage shown under Today. Non-owner
+    /// sessions are refused by the API and simply show nothing.
+    @Published private(set) var dreamingStatus: DreamingStatusData?
     @Published private(set) var cachedAt: Date?
     @Published private(set) var cacheSavedAt: Date?
     @Published private(set) var connectionValidated = false
@@ -1470,9 +1473,17 @@ final class AppModel: ObservableObject {
             alerts = projectedAlerts(from: edition)
             briefingActivity = Self.projectNews(from: edition, uniqueIDs: false)
             await refreshBriefingIndexAndTopics()
+            await refreshDreamingStatus()
             await resumePendingRoute()
         } catch {
             connectionMessage = "Refresh failed. The last available briefing remains visible."
+        }
+    }
+
+    func refreshDreamingStatus() async {
+        guard !isDemo, phase == .ready, connectionValidated else { return }
+        if let status = try? await api.dreamingStatus() {
+            dreamingStatus = status
         }
     }
 

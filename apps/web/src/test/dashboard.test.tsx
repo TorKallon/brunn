@@ -41,7 +41,9 @@ describe("landing dashboard", () => {
     const shortcuts = await screen.findByRole("navigation", {
       name: "Dashboard shortcuts",
     });
-    expect(screen.getByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Dashboard" }),
+    ).toBeInTheDocument();
     const todayLink = await within(shortcuts).findByRole("link", {
       name: /Read today’s briefing/,
     });
@@ -49,15 +51,56 @@ describe("landing dashboard", () => {
       "href",
       "/briefings/2026-08-02?edition=morning",
     );
-    expect(within(shortcuts).getByRole("link", { name: "All briefings" })).toHaveAttribute(
-      "href",
-      "/briefings",
-    );
-    expect(within(shortcuts).getByRole("link", { name: "Search memory" })).toHaveAttribute(
-      "href",
-      "/explore",
-    );
-    expect(screen.queryByText(/A quiet view of what your memory is holding/)).not.toBeInTheDocument();
+    expect(
+      within(shortcuts).getByRole("link", { name: "All briefings" }),
+    ).toHaveAttribute("href", "/briefings");
+    expect(
+      within(shortcuts).getByRole("link", { name: "Search memory" }),
+    ).toHaveAttribute("href", "/explore");
+    expect(
+      screen.queryByText(/A quiet view of what your memory is holding/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the Dreaming account and weekly usage for the owner", async () => {
+    installApiMock({
+      "GET /api/v1/workspace/dreaming/status": {
+        status: "complete",
+        data: {
+          control: { enabled: true, mode: "report-only" },
+          dreamer: {
+            runtime: {
+              account: "acct_123",
+              account_email: "dreamer@example.com",
+              plan: "pro",
+              last_attempt_date: "2026-09-10",
+              last_attempt_result: "partial",
+              usage: {
+                observed_at: "2026-09-11T09:01:00Z",
+                email: "dreamer@example.com",
+                plan_type: "pro",
+                primary: {
+                  used_percent: 42.4,
+                  window_minutes: 10080,
+                  resets_at: "2026-09-16T04:02:42Z",
+                },
+                secondary: null,
+              },
+            },
+          },
+          schedule: { hour: 2, timezone: "America/Los_Angeles" },
+        },
+      },
+    });
+    renderApp("/dashboard");
+
+    const card = await screen.findByTestId("dreaming-usage");
+    expect(within(card).getByText("Dreaming weekly usage")).toBeInTheDocument();
+    expect(await within(card).findByText("42%")).toBeInTheDocument();
+    expect(
+      within(card).getByText(/dreamer@example.com \(pro\)/),
+    ).toBeInTheDocument();
+    expect(within(card).getByText(/resets/)).toBeInTheDocument();
   });
 
   it("shows separate storage, activity, charts, and access-client state", async () => {
@@ -74,7 +117,9 @@ describe("landing dashboard", () => {
     expect(within(textCard!).getByText("128")).toBeInTheDocument();
     expect(within(textCard!).getByText("2.5 MB")).toBeInTheDocument();
 
-    const binaryCard = screen.getByText("S3 object versions").closest("article");
+    const binaryCard = screen
+      .getByText("S3 object versions")
+      .closest("article");
     expect(binaryCard).not.toBeNull();
     expect(within(binaryCard!).getByText("14")).toBeInTheDocument();
     expect(within(binaryCard!).getByText("18 MB")).toBeInTheDocument();
@@ -115,13 +160,14 @@ describe("landing dashboard", () => {
     });
     renderApp("/dashboard");
 
-    expect(await screen.findByRole("link", { name: "Open briefings" })).toHaveAttribute(
-      "href",
-      "/briefings",
-    );
+    expect(
+      await screen.findByRole("link", { name: "Open briefings" }),
+    ).toHaveAttribute("href", "/briefings");
     expect(await screen.findByText("Text artifacts")).toBeInTheDocument();
     await waitFor(() => expect(dashboardRequest).toBeDefined());
-    expect(new URL(dashboardRequest!.url).searchParams.get("timezone")).toBeTruthy();
+    expect(
+      new URL(dashboardRequest!.url).searchParams.get("timezone"),
+    ).toBeTruthy();
   });
 
   it("does not present unavailable tracking or object inventory as trustworthy zeroes", async () => {
@@ -156,6 +202,8 @@ describe("landing dashboard", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(4);
-    expect(screen.getByText("Physical inventory unavailable")).toBeInTheDocument();
+    expect(
+      screen.getByText("Physical inventory unavailable"),
+    ).toBeInTheDocument();
   });
 });
