@@ -198,18 +198,20 @@ public struct DreamingStatusData: Decodable, Sendable, Equatable {
         }
     }
 
-    public struct Dreamer: Decodable, Sendable, Equatable {
-        public let unavailable: Bool?
-        public let runtime: Runtime?
-    }
-
     public struct Schedule: Decodable, Sendable, Equatable {
         public let hour: Int?
         public let timezone: String?
     }
 
+    public struct Dreamer: Decodable, Sendable, Equatable {
+        public let unavailable: Bool?
+        public let runtime: Runtime?
+        public let schedule: Schedule?
+    }
+
     public let dreamer: Dreamer?
-    public let schedule: Schedule?
+
+    public var schedule: Schedule? { dreamer?.schedule }
 
     public var accountLabel: String? {
         dreamer?.runtime?.accountEmail ?? dreamer?.runtime?.usage?.email ?? dreamer?.runtime?.account

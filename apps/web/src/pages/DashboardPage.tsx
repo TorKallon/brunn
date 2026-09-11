@@ -318,8 +318,12 @@ interface DreamingStatusView {
         secondary?: DreamingUsageWindow | null;
       } | null;
     };
+    schedule?: {
+      hour?: number;
+      timezone?: string;
+      time_budget_seconds?: number;
+    };
   };
-  schedule?: { hour?: number; timezone?: string };
 }
 
 const resetFormat = new Intl.DateTimeFormat(undefined, {

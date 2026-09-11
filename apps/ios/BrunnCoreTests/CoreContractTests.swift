@@ -81,8 +81,8 @@ final class CoreContractTests: XCTestCase {
            "last_attempt_date":"2026-09-10","last_attempt_result":"partial",
            "usage":{"observed_at":"2026-09-11T09:01:00Z","email":"dreamer@example.com","plan_type":"pro",
              "primary":{"used_percent":42.4,"window_minutes":10080,"resets_at":"2026-09-16T04:02:42Z"},
-             "secondary":null}}},
-         "schedule":{"hour":2,"timezone":"America/Los_Angeles"}}
+             "secondary":null}},
+           "schedule":{"hour":2,"timezone":"America/Los_Angeles","time_budget_seconds":10800}}}
         """
         let status = try JSONDecoder().decode(DreamingStatusData.self, from: Data(json.utf8))
         XCTAssertEqual(status.accountLabel, "dreamer@example.com")

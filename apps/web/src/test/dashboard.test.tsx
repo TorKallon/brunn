@@ -69,6 +69,7 @@ describe("landing dashboard", () => {
         data: {
           control: { enabled: true, mode: "report-only" },
           dreamer: {
+            schedule: { hour: 2, timezone: "America/Los_Angeles" },
             runtime: {
               account: "acct_123",
               account_email: "dreamer@example.com",
@@ -88,7 +89,6 @@ describe("landing dashboard", () => {
               },
             },
           },
-          schedule: { hour: 2, timezone: "America/Los_Angeles" },
         },
       },
     });
