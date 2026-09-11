@@ -2503,15 +2503,37 @@ pub async fn candidates(
                 return Err(ApiError::public(
                     axum::http::StatusCode::BAD_REQUEST,
                     "research_refresh_required",
-                    "research evidence or relevant subject scope changed; rediscover before submitting",
+                    "research evidence is unavailable or its change scan is unfinished; rediscover before submitting",
                 ));
             }
+            // Dependencies are the reliance set at this pass's evidence
+            // cutoff: canonical, cited and reviewed sources at their exact
+            // pinned versions. Admitted but unreviewed leads are not bound.
             let mut scope = job.scope.clone();
-            let dependencies = job
-                .sources
-                .iter()
-                .map(|source| Ok((entry_id(&source.entry_ref)?, source.version)))
-                .collect::<ApiResult<Vec<_>>>()?;
+            scope.checked_generation = research::cutoff(job);
+            let progress_reviewed: Vec<Source> = serde_json::from_value(
+                body["research_progress"]
+                    .get("reviewed_sources")
+                    .cloned()
+                    .unwrap_or(json!([])),
+            )
+            .unwrap_or_default();
+            let mut dependencies = std::collections::BTreeMap::new();
+            for source in &job.sources {
+                let relied = source.entry_ref == job.subject_ref
+                    || candidate
+                        .sources
+                        .iter()
+                        .chain(&job.reviewed_sources)
+                        .chain(&progress_reviewed)
+                        .any(|cite| {
+                            cite.entry_ref == source.entry_ref && cite.version == source.version
+                        });
+                if relied {
+                    dependencies.insert(entry_id(&source.entry_ref)?, source.version);
+                }
+            }
+            let dependencies = dependencies.into_iter().collect::<Vec<_>>();
             crate::dreamer_subject::bind_dependencies(&mut tx, &auth, &mut scope, &dependencies)
                 .await?;
             candidate.subject_scope = Some(scope);
@@ -2553,7 +2575,7 @@ pub async fn candidates(
             user,
             &mut candidate.sources,
             candidate_generation,
-            !location,
+            !location && research_job.is_none(),
         )
         .await?;
         if location {
@@ -2790,6 +2812,21 @@ pub async fn candidates(
         } else {
             job.status = "waiting".into();
             job.retry_at = Utc::now() + Duration::hours(24);
+        }
+        let cited = data
+            .items
+            .iter()
+            .filter(|item| ids.contains(&item.id))
+            .flat_map(|item| item.candidate.sources.clone())
+            .collect::<Vec<_>>();
+        if !ids.is_empty() {
+            research::require_changed_reviewed(&job, &cited)?;
+            let hash = data
+                .items
+                .iter()
+                .find(|item| ids.contains(&item.id) && item.candidate.kind == "summary")
+                .map(|item| item.candidate_hash.clone());
+            research::complete_pass(&mut job, "accepted", hash, &cited);
         }
         job.accepted_candidate_ids = ids.clone();
         let mut progress = body.get("research_progress").cloned().unwrap_or(json!({}));
@@ -3182,8 +3219,50 @@ fn withhold_item(item: &Item) -> Item {
     shown.status = "stale".into();
     shown
 }
-#[tracing::instrument(skip_all, fields(item_id = %item.id, candidate_hash = %item.candidate_hash))]
+pub(crate) struct ItemFreshness {
+    /// Evidence is unavailable, the identity changed or the target moved. A
+    /// stale item cannot be published as-is.
+    pub stale: bool,
+    /// Pinned reliance evidence has newer versions. The dated proposal stays
+    /// reviewable; refresh is background work for the next research pass.
+    pub refresh_pending: bool,
+}
+
 async fn item_stale(
+    tx: &mut Transaction<'_, Postgres>,
+    auth: &AuthContext,
+    item: &Item,
+) -> ApiResult<bool> {
+    Ok(item_freshness(tx, auth, item).await?.stale)
+}
+
+#[tracing::instrument(skip_all, fields(item_id = %item.id, candidate_hash = %item.candidate_hash))]
+async fn item_freshness(
+    tx: &mut Transaction<'_, Postgres>,
+    auth: &AuthContext,
+    item: &Item,
+) -> ApiResult<ItemFreshness> {
+    let stale = item_stale_inner(tx, auth, item).await?;
+    let mut refresh_pending = false;
+    if !stale && let Some(scope) = &item.candidate.subject_scope {
+        let dependencies = item
+            .candidate
+            .sources
+            .iter()
+            .map(|source| Ok((entry_id(&source.entry_ref)?, source.version)))
+            .collect::<ApiResult<Vec<_>>>()?;
+        refresh_pending = !crate::dreamer_subject::check_scope(tx, auth, scope, &dependencies)
+            .await?
+            .changed
+            .is_empty();
+    }
+    Ok(ItemFreshness {
+        stale,
+        refresh_pending,
+    })
+}
+
+async fn item_stale_inner(
     tx: &mut Transaction<'_, Postgres>,
     auth: &AuthContext,
     item: &Item,
@@ -3267,10 +3346,13 @@ async fn item_stale(
         }
         return Ok(false);
     }
+    // Subject proposals cite evidence pinned at their pass cutoff: a newer
+    // head is refresh work, not invalidation. Only lost access stales them.
+    let pinned = item.candidate.subject_scope.is_some();
     for (citation_index, source) in item.candidate.sources.iter().enumerate() {
         let current:Option<i64>=sqlx::query_scalar("SELECT current_version FROM brunn.entries WHERE user_id=$1 AND id=$2 AND deleted_at IS NULL")
             .bind(user).bind(entry_id(&source.entry_ref)?).fetch_optional(&mut **tx).await?;
-        if current != Some(source.version) {
+        if current.is_none() || (!pinned && current != Some(source.version)) {
             // Full source authority has not passed yet. Identify the existing
             // citation by index, without disclosing a revoked head or identity.
             tracing::info!(
@@ -3575,7 +3657,15 @@ async fn review_view(
             withhold_item(original)
         };
         let i = &shown;
-        let stale = !available || item_stale(tx, auth, original).await?;
+        let freshness = if available {
+            item_freshness(tx, auth, original).await?
+        } else {
+            ItemFreshness {
+                stale: true,
+                refresh_pending: false,
+            }
+        };
+        let stale = freshness.stale;
         let block = if !available {
             Some("Evidence is no longer available. Cached proposal text has been withheld.")
         } else if legacy {
@@ -3630,7 +3720,7 @@ async fn review_view(
         } else {
             &mut items
         };
-        destination.push(json!({"id":i.id,"kind":if i.candidate.kind=="question"{"question"}else{"proposal"},"legacy":legacy,"title":title,"body_md":body,"why_md":i.candidate.reason,"uncertainty_md":i.candidate.uncertainty,"run_id":i.run_id,"run_entry_ref":i.run_entry_ref,"run_version":i.run_version,"candidate_hash":i.candidate_hash,"candidate":preview,"sources":sources,"status":if stale{"stale"}else{&i.status},"reviewable":i.reviewable&&i.candidate.kind!="question","stale":stale,"blocked_reason":block}));
+        destination.push(json!({"id":i.id,"kind":if i.candidate.kind=="question"{"question"}else{"proposal"},"legacy":legacy,"title":title,"body_md":body,"why_md":i.candidate.reason,"uncertainty_md":i.candidate.uncertainty,"run_id":i.run_id,"run_entry_ref":i.run_entry_ref,"run_version":i.run_version,"candidate_hash":i.candidate_hash,"candidate":preview,"sources":sources,"status":if stale{"stale"}else{&i.status},"reviewable":i.reviewable&&i.candidate.kind!="question","stale":stale,"refresh_pending":freshness.refresh_pending,"evidence_cutoff":i.frozen_generation,"blocked_reason":block}));
     }
     // Put actionable candidates within reach before other current items;
     // stable sorting preserves the existing order and every decision identity.
@@ -3682,7 +3772,7 @@ async fn publish_item(
         user,
         &mut item.candidate.sources,
         item.frozen_generation,
-        !location,
+        !location && item.candidate.subject_scope.is_none(),
     )
     .await?;
     if location {

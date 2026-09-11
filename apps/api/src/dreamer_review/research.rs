@@ -2,7 +2,9 @@
 //! the global run state; source bodies are never copied into research records.
 use super::*;
 use crate::dreamer::research::{MAX_RESEARCH_NOTES_BYTES, RepairFeedback, RepairPhase};
-use crate::dreamer_subject::{SubjectScope, check_scope, create_scope, research_change_page};
+use crate::dreamer_subject::{
+    SubjectDependency, SubjectScope, check_scope, create_scope, research_change_page,
+};
 use std::collections::{BTreeMap, BTreeSet};
 pub(super) mod checkpoints;
 mod discovery_audit;
@@ -12,6 +14,57 @@ const MAX_SOURCES: usize = 256;
 const MAX_RECEIPTS: usize = 24;
 const MAX_JOB_BYTES: usize = 192 * 1024;
 const REVALIDATION_LOOKBACK: i64 = 16;
+/// Model rounds one pass may consume across interruptions and resumes. An
+/// exhausted pass keeps its notes and draft; the next selection starts a new
+/// pass at a newer cutoff instead of refilling the old allowance.
+pub(crate) const PASS_ROUND_LIMIT: usize = 48;
+const MAX_PASS_CHANGES: usize = 64;
+
+/// One bounded research pass. Its evidence cutoff is fixed when the pass
+/// starts and survives interruption: discovery rounds, retries and new writes
+/// never advance it. Evidence written after the cutoff waits for the next pass.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(super) struct Pass {
+    pub cutoff: i64,
+    pub started_at: DateTime<Utc>,
+    pub rounds: usize,
+    /// Reliance evidence that changed since the last completed review, plus
+    /// newly relevant leads. Bounded identities only; never source text.
+    #[serde(default)]
+    pub changed: Vec<PassChange>,
+    /// The model explicitly yielded. The next selection re-pins at a newer
+    /// cutoff so queued evidence becomes available, but the round allowance is
+    /// carried forward rather than refilled. A crash or timeout without a
+    /// yield resumes the same cutoff.
+    #[serde(default)]
+    pub yielded: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub(super) struct PassChange {
+    pub entry_ref: String,
+    pub path: String,
+    /// `version` (a reviewed or cited source moved), `new_relevant` (a lead
+    /// matching the subject appeared) or `unavailable`.
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_version: Option<i64>,
+    pub version: i64,
+    /// Required changes must be reviewed at `version` before the pass completes.
+    pub required: bool,
+}
+
+/// The last completed pass: what the retained overview was reviewed through.
+/// Foreground reads report this status; they never compute it.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(super) struct Reviewed {
+    pub generation: i64,
+    pub at: DateTime<Utc>,
+    pub disposition: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub candidate_hash: Option<String>,
+    pub dependencies: Vec<SubjectDependency>,
+}
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
@@ -82,6 +135,10 @@ pub(super) struct Job {
     pub change_scan: Option<ChangeScan>,
     #[serde(default)]
     pub pending_change_refs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pass: Option<Pass>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewed_through: Option<Reviewed>,
 }
 
 /// Research retains validated selectors, not another copy of source bodies.
@@ -370,21 +427,29 @@ pub(super) async fn headers(
     if ids.is_empty() {
         return Ok(Vec::new());
     }
+    // Pin each source at its latest version admitted no later than `upper`.
+    // With `upper` at the current generation this is the head; with a pass
+    // cutoff it is the exact evidence that pass may rely on.
     let rows = sqlx::query(r#"
-        SELECT e.id,e.path,e.current_version,v.metadata,v.content_sha256,c.generation
+        SELECT e.id,e.path,c.entry_version AS current_version,v.metadata,head.metadata AS head_metadata,v.content_sha256,c.generation
         FROM brunn.entries e
-        JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version
-        CROSS JOIN LATERAL (SELECT generation,operation FROM brunn.workspace_changes
-            WHERE user_id=e.user_id AND entry_id=e.id AND entry_version=e.current_version
+        CROSS JOIN LATERAL (SELECT entry_version,generation,operation FROM brunn.workspace_changes
+            WHERE user_id=e.user_id AND entry_id=e.id AND generation<=$3
             ORDER BY generation DESC LIMIT 1) c
+        JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=c.entry_version
+        JOIN brunn.entry_versions head ON head.user_id=e.user_id AND head.entry_id=e.id AND head.version=e.current_version
         WHERE e.user_id=$1 AND e.id=ANY($2) AND e.deleted_at IS NULL AND e.kind='markdown'
-          AND v.content IS NOT NULL AND v.size_bytes<=1048576 AND c.generation<=$3 AND c.operation<>'delete'
+          AND v.content IS NOT NULL AND v.size_bytes<=1048576 AND c.operation<>'delete'
     "#).bind(auth.user_id.0).bind(ids).bind(upper).fetch_all(&mut **tx).await?;
     Ok(rows
         .into_iter()
         .filter_map(|row| {
             let path: String = row.get("path");
-            if location_discovery::excluded(&path, &row.get::<Value, _>("metadata")) {
+            // Source policy applies to the record, not one version: a source
+            // excluded at its current head is not evidence at an older pin.
+            if location_discovery::excluded(&path, &row.get::<Value, _>("metadata"))
+                || location_discovery::excluded(&path, &row.get::<Value, _>("head_metadata"))
+            {
                 return None;
             }
             Some(Input {
@@ -406,17 +471,156 @@ fn dependencies(job: &Job) -> ApiResult<Vec<(Uuid, i64)>> {
         .collect()
 }
 
+pub(super) fn cutoff(job: &Job) -> i64 {
+    job.pass
+        .as_ref()
+        .map_or(job.snapshot_generation, |pass| pass.cutoff)
+}
+
+fn relied_on(job: &Job, source: &Input) -> bool {
+    source.entry_ref == job.subject_ref
+        || job.reviewed_sources.iter().any(|reviewed| {
+            reviewed.entry_ref == source.entry_ref && reviewed.version == source.version
+        })
+        || job.pass.is_none()
+            && job.reviewed_through.as_ref().is_some_and(|reviewed| {
+                reviewed
+                    .dependencies
+                    .iter()
+                    .any(|dependency| dependency.entry_ref == source.entry_ref)
+            })
+}
+
+/// Reliance evidence: the canonical subject and every source the retained
+/// work actually reviewed or cited, at its exact pinned version. Admitted but
+/// unreviewed discovery leads are not dependencies of that work.
+fn reliance(job: &Job) -> ApiResult<Vec<(Uuid, i64)>> {
+    let mut pins = BTreeMap::new();
+    if job.pass.is_none()
+        && let Some(reviewed) = &job.reviewed_through
+    {
+        for dependency in &reviewed.dependencies {
+            pins.insert(entry_id(&dependency.entry_ref)?, dependency.version);
+        }
+    }
+    for source in &job.sources {
+        if relied_on(job, source) {
+            pins.insert(entry_id(&source.entry_ref)?, source.version);
+        }
+    }
+    Ok(pins.into_iter().collect())
+}
+
+/// Reliance evidence remains available at its pinned versions and the bounded
+/// change scan for this pass has finished. Version drift after the cutoff is
+/// refresh work for a later pass, not a reason to reject supported work.
 pub(super) async fn fresh(
     tx: &mut Transaction<'_, Postgres>,
     auth: &AuthContext,
     job: &Job,
 ) -> ApiResult<bool> {
     Ok(job.change_scan.is_none()
-        && job.pending_change_refs.is_empty()
-        && check_scope(tx, auth, &job.scope, &dependencies(job)?)
+        && check_scope(tx, auth, &job.scope, &reliance(job)?)
             .await?
             .status
             == "fresh")
+}
+
+/// A completed subject is due again when its reliance evidence moved or lost
+/// access. This is one bounded header check, never a corpus scan.
+async fn refresh_due(
+    tx: &mut Transaction<'_, Postgres>,
+    auth: &AuthContext,
+    job: &Job,
+) -> ApiResult<bool> {
+    let check = check_scope(tx, auth, &job.scope, &reliance(job)?).await?;
+    Ok(job.change_scan.is_some() || check.status != "fresh" || !check.changed.is_empty())
+}
+
+/// Changed reliance evidence must be reread at its admitted version before a
+/// pass can complete; unchanged citations alone cannot certify it. Newly
+/// relevant leads are offered, not required, so peripheral churn cannot move
+/// the finish line indefinitely.
+pub(super) fn require_changed_reviewed(job: &Job, cited: &[Source]) -> ApiResult<()> {
+    let Some(pass) = &job.pass else {
+        return Ok(());
+    };
+    let missing = pass
+        .changed
+        .iter()
+        .filter(|change| {
+            change.required
+                && change.kind == "version"
+                && job.sources.iter().any(|source| {
+                    source.entry_ref == change.entry_ref && source.version == change.version
+                })
+                && !job.reviewed_sources.iter().chain(cited).any(|source| {
+                    source.entry_ref == change.entry_ref && source.version == change.version
+                })
+        })
+        .map(|change| format!("{} v{}", change.entry_ref, change.version))
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(repair_error(
+        ApiError::invalid(format!(
+            "changed reliance evidence must be reviewed at its current admitted version before this pass completes: {}",
+            missing.join(", ")
+        )),
+        RepairPhase::CandidateValidation,
+    ))
+}
+
+/// Finish the pass: record what the retained overview was reviewed through so
+/// reads and scheduling can report refresh status without model work.
+pub(super) fn complete_pass(
+    job: &mut Job,
+    disposition: &str,
+    candidate_hash: Option<String>,
+    cited: &[Source],
+) {
+    let generation = cutoff(job);
+    let mut dependencies = BTreeMap::new();
+    for source in &job.sources {
+        let relied = relied_on(job, source)
+            || cited
+                .iter()
+                .any(|cite| cite.entry_ref == source.entry_ref && cite.version == source.version)
+            || job.reviewed_through.as_ref().is_some_and(|reviewed| {
+                reviewed
+                    .dependencies
+                    .iter()
+                    .any(|dependency| dependency.entry_ref == source.entry_ref)
+            });
+        if relied {
+            dependencies.insert(
+                source.entry_ref.clone(),
+                SubjectDependency {
+                    entry_ref: source.entry_ref.clone(),
+                    version: source.version,
+                    path: source.path.clone(),
+                },
+            );
+        }
+    }
+    if let Some(pass) = job.pass.take() {
+        job.coverage["last_pass"] = json!({"cutoff":pass.cutoff,"rounds":pass.rounds,
+            "outcome":disposition,"changes_offered":pass.changed.len()});
+    }
+    job.reviewed_through = Some(Reviewed {
+        generation,
+        at: Utc::now(),
+        disposition: disposition.into(),
+        candidate_hash,
+        dependencies: dependencies.into_values().collect(),
+    });
+}
+
+fn count_round(job: &mut Job) {
+    if let Some(pass) = &mut job.pass {
+        pass.rounds += 1;
+    }
 }
 
 /// Rehydration is always preceded by checking the current exact headers and
@@ -431,9 +635,13 @@ async fn safe_view(
         .into_iter()
         .map(|(id, _)| id)
         .collect::<Vec<_>>();
-    let current = headers(tx, auth, &ids, i64::MAX).await?;
-    let valid = current.len() == job.sources.len()
-        && job.sources.iter().all(|s| current.iter().any(|c| c == s));
+    let current = headers(tx, auth, &ids, cutoff(job)).await?;
+    let available = |source: &Input| current.iter().any(|head| head == source);
+    let valid = job
+        .sources
+        .iter()
+        .filter(|source| relied_on(job, source))
+        .all(available);
     let mut reviewed = job.reviewed_sources.clone();
     let selectors_valid = valid
         && source_versions(
@@ -441,7 +649,7 @@ async fn safe_view(
             auth.user_id.0,
             &mut reviewed,
             job.snapshot_generation,
-            true,
+            false,
         )
         .await
         .is_ok();
@@ -474,21 +682,30 @@ async fn safe_view(
     }
     // Withhold inaccessible identities and cached titles as well as conclusions.
     // The next selection refreshes durable state; a read never advances coverage.
-    if !valid {
+    if !job.sources.iter().all(available) {
         view["sources"] = json!(
             current
                 .into_iter()
                 .filter(|c| job.sources.contains(c))
                 .collect::<Vec<_>>()
         );
-        view["pending_queries"] = json!([]);
-        view["pending_targets"] = json!([]);
+        if !valid {
+            view["pending_queries"] = json!([]);
+            view["pending_targets"] = json!([]);
+        }
         if !view["sources"]
             .as_array()
             .is_some_and(|sources| sources.iter().any(|s| s["entry_ref"] == job.subject_ref))
         {
             return Ok(Value::Null);
         }
+    }
+    if let Some(pass) = view.get_mut("pass").and_then(Value::as_object_mut) {
+        let rounds = pass["rounds"].as_u64().unwrap_or(0) as usize;
+        pass.insert(
+            "rounds_remaining".into(),
+            json!(PASS_ROUND_LIMIT.saturating_sub(rounds)),
+        );
     }
     let origin = if job.schema == "dream.research.v2" {
         None
@@ -582,9 +799,17 @@ async fn create(
         accepted_candidate_ids: Vec::new(),
         discoveries: Vec::new(),
         receipts: Vec::new(),
-        coverage: json!({}),
+        coverage: json!({"evidence_cutoff":upper}),
         change_scan: None,
         pending_change_refs: Vec::new(),
+        pass: Some(Pass {
+            cutoff: upper,
+            started_at: Utc::now(),
+            rounds: 0,
+            changed: Vec::new(),
+            yielded: false,
+        }),
+        reviewed_through: None,
     })
 }
 
@@ -640,7 +865,9 @@ async fn due(
     {
         return Ok(false);
     }
-    Ok(job.status == "researching" || job.retry_at <= Utc::now() || !fresh(tx, auth, &job).await?)
+    Ok(job.status == "researching"
+        || job.retry_at <= Utc::now()
+        || refresh_due(tx, auth, &job).await?)
 }
 
 async fn automatic_due(
@@ -770,23 +997,58 @@ async fn seed_lane(
     Ok(headers(tx, auth, &ids, upper).await?.into_iter().next())
 }
 
+/// Bring the retained job to its pass cutoff. A selection starts a new pass
+/// only when none is active or the active one exhausted its allowance;
+/// discovery rounds and resumed turns keep the pinned cutoff, so new writes
+/// cannot move the finish line. Changed reliance evidence is listed for the
+/// model to reread; unreviewed lead churn is queued without discarding work.
 async fn refresh(
     tx: &mut Transaction<'_, Postgres>,
     auth: &AuthContext,
     job: &mut Job,
     job_version: i64,
     upper: i64,
+    selection: bool,
 ) -> ApiResult<()> {
     initialize_revalidation(tx, auth, job, job_version).await?;
+    let exhausted = job
+        .pass
+        .as_ref()
+        .is_some_and(|pass| pass.rounds >= PASS_ROUND_LIMIT);
+    let yielded = job.pass.as_ref().is_some_and(|pass| pass.yielded);
+    let new_pass = job.pass.is_none() || (selection && (exhausted || yielded));
+    if new_pass {
+        let mut carried = Vec::new();
+        let mut rounds = 0;
+        let mut started_at = Utc::now();
+        if let Some(pass) = &job.pass {
+            if exhausted {
+                job.coverage["last_pass"] = json!({"cutoff":pass.cutoff,"rounds":pass.rounds,
+                    "outcome":"exhausted","changes_offered":pass.changed.len()});
+            } else {
+                rounds = pass.rounds;
+                started_at = pass.started_at;
+                carried = pass.changed.clone();
+            }
+        }
+        job.pass = Some(Pass {
+            cutoff: upper,
+            started_at,
+            rounds,
+            changed: carried,
+            yielded: false,
+        });
+    }
+    let cutoff = cutoff(job);
     let deps = dependencies(job)?;
     let mut scan = job.change_scan.clone().unwrap_or(ChangeScan {
         cursor: job.scope.checked_generation,
-        upper,
+        upper: cutoff,
     });
     let mut scan_scope = job.scope.clone();
-    scan_scope.checked_generation = scan.cursor;
-    let changes = research_change_page(tx, auth, &scan_scope, &deps, scan.upper).await?;
-    scan.upper = changes.through_generation;
+    scan_scope.checked_generation = scan.cursor.min(cutoff);
+    let changes = research_change_page(tx, auth, &scan_scope, &deps, cutoff).await?;
+    scan.upper = changes.through_generation.min(cutoff);
     let mut ids = deps.into_iter().map(|(id, _)| id).collect::<Vec<_>>();
     for reference in &job.pending_change_refs {
         let id = entry_id(reference)?;
@@ -799,7 +1061,7 @@ async fn refresh(
             ids.push(*id);
         }
     }
-    let mut current = headers(tx, auth, &ids, upper).await?;
+    let mut current = headers(tx, auth, &ids, cutoff).await?;
     // Keep operational corrections across eligible version changes, but never
     // let a cached identity reappear after its inaccessible dependency is
     // removed from the manifest used by later safe projections.
@@ -854,15 +1116,104 @@ async fn refresh(
     }
     job.pending_change_refs = pending;
     current.truncate(MAX_SOURCES);
-    let prior_evidence_changed = job.sources.iter().any(|source| !current.contains(source));
-    let scope_changed = !fresh(tx, auth, job).await?;
-    if prior_evidence_changed || scope_changed {
+    // Evidence delta against the previously pinned sources. Reliance loss
+    // withholds cached conclusions; reliance drift keeps the prose and lists
+    // the exact versions to reread; unreviewed lead churn is not a change to
+    // the retained work at all.
+    let mut delta = Vec::new();
+    let mut lost_reliance = false;
+    for old in &job.sources {
+        let relied = relied_on(job, old);
+        match current.iter().find(|head| head.entry_ref == old.entry_ref) {
+            None if relied => {
+                lost_reliance = true;
+                delta.push(PassChange {
+                    entry_ref: old.entry_ref.clone(),
+                    path: old.path.clone(),
+                    kind: "unavailable".into(),
+                    from_version: Some(old.version),
+                    version: old.version,
+                    required: false,
+                });
+            }
+            Some(head) if head.version != old.version => delta.push(PassChange {
+                entry_ref: old.entry_ref.clone(),
+                path: head.path.clone(),
+                kind: "version".into(),
+                from_version: Some(old.version),
+                version: head.version,
+                required: relied,
+            }),
+            _ => {}
+        }
+    }
+    for id in &changes.relevant_ids {
+        let reference = format!("entry:{id}");
+        if job.sources.iter().any(|old| old.entry_ref == reference) {
+            continue;
+        }
+        if let Some(head) = current.iter().find(|head| head.entry_ref == reference) {
+            delta.push(PassChange {
+                entry_ref: reference,
+                path: head.path.clone(),
+                kind: "new_relevant".into(),
+                from_version: None,
+                version: head.version,
+                required: false,
+            });
+        }
+    }
+    if lost_reliance {
         discovery_audit::invalidate(job);
         capture_revalidation(job, job_version)?;
         job.notes.clear();
         job.reviewed_sources.clear();
         job.discoveries.clear();
         job.status = "researching".into();
+    } else {
+        let surviving = job
+            .reviewed_sources
+            .iter()
+            .filter(|reviewed| {
+                current.iter().any(|head| {
+                    head.entry_ref == reviewed.entry_ref && head.version == reviewed.version
+                })
+            })
+            .count();
+        if surviving != job.reviewed_sources.len() {
+            discovery_audit::invalidate(job);
+        }
+        if surviving == 0 && !job.reviewed_sources.is_empty() && !job.notes.trim().is_empty() {
+            // Notes cannot outlive every selector that supported them; keep
+            // the immutable notebook version as reconcilable history instead.
+            capture_revalidation(job, job_version)?;
+            job.notes.clear();
+            job.reviewed_sources.clear();
+        } else {
+            job.reviewed_sources.retain(|reviewed| {
+                current.iter().any(|head| {
+                    head.entry_ref == reviewed.entry_ref && head.version == reviewed.version
+                })
+            });
+            if job.notes.trim().is_empty() {
+                job.reviewed_sources.clear();
+            }
+        }
+        if !delta.is_empty() {
+            job.status = "researching".into();
+        }
+    }
+    if let Some(pass) = &mut job.pass {
+        for change in delta {
+            if pass.changed.len() < MAX_PASS_CHANGES
+                && !pass
+                    .changed
+                    .iter()
+                    .any(|known| known.entry_ref == change.entry_ref)
+            {
+                pass.changed.push(change);
+            }
+        }
     }
     job.sources = current;
     let canonical = job
@@ -878,36 +1229,23 @@ async fn refresh(
     .bind(entry_id(&job.subject_ref)?)
     .fetch_one(&mut **tx)
     .await?;
-    job.snapshot_generation = upper;
-    scan.cursor = scan.cursor.max(changes.scanned_generation);
+    job.snapshot_generation = cutoff;
+    scan.cursor = scan.cursor.max(changes.scanned_generation).min(cutoff);
     let cap_reached = !job.pending_change_refs.is_empty();
-    let mut complete = changes.status == "complete" && !cap_reached;
-    // Heads can change after a pinned multi-round scan began. Finish a bounded
-    // tail before binding those newer versions; generated writes alone do not
-    // keep extending the target and prevent a quiet interval from completing.
-    if complete
-        && job
-            .sources
-            .iter()
-            .any(|source| source.generation > scan.upper)
-    {
-        scan.cursor = scan.upper;
-        scan.upper = upper;
-        complete = false;
-    }
+    let complete = changes.status == "complete";
     if complete {
-        job.scope = create_scope(tx, auth, &job.subject_ref, scan.upper).await?;
+        job.scope = create_scope(tx, auth, &job.subject_ref, cutoff).await?;
         job.change_scan = None;
     } else {
         job.change_scan = Some(scan.clone());
     }
     job.coverage["change_status"] = json!(if complete { "complete" } else { "unchecked" });
-    job.coverage["change_reason"] = json!(if !unresolved.is_empty() {
+    job.coverage["change_reason"] = json!(if !complete {
+        changes.reason
+    } else if !unresolved.is_empty() {
         "research_sources_unresolved"
     } else if cap_reached {
         "research_source_cap_reached"
-    } else if changes.status == "complete" && !complete {
-        "research_change_tail_pending"
     } else {
         changes.reason
     });
@@ -915,6 +1253,7 @@ async fn refresh(
     job.coverage["change_cursor"] = json!(scan.cursor);
     job.coverage["change_upper"] = json!(scan.upper);
     job.coverage["pending_source_refs"] = json!(job.pending_change_refs);
+    job.coverage["evidence_cutoff"] = json!(cutoff);
     Ok(())
 }
 
@@ -1040,7 +1379,7 @@ pub(super) async fn next(
     if let Some(input) = selected {
         let (mut job, job_version) = match load(&mut tx, &auth, &input.entry_ref).await? {
             Some((mut job, version)) => {
-                refresh(&mut tx, &auth, &mut job, version, upper).await?;
+                refresh(&mut tx, &auth, &mut job, version, upper, true).await?;
                 (job, version)
             }
             None => (create(&mut tx, &auth, input, upper).await?, 0),
@@ -1228,6 +1567,9 @@ pub(super) async fn apply_progress(
         job.pending_targets.clear();
         job.status = "waiting".into();
         job.retry_at = Utc::now() + Duration::hours(6);
+        if let Some(pass) = &mut job.pass {
+            pass.yielded = true;
+        }
         return Ok(());
     }
     let notes = body
@@ -1271,12 +1613,30 @@ pub(super) async fn apply_progress(
     if status == "no_change" && !reviewed.iter().any(|s| s.entry_ref == job.subject_ref) {
         return Err(invalid("no_change must review the canonical subject"));
     }
+    if status == "no_change"
+        && let Some(pass) = &job.pass
+        && pass.changed.iter().any(|change| {
+            change.required
+                && change.kind == "version"
+                && job.sources.iter().any(|source| {
+                    source.entry_ref == change.entry_ref && source.version == change.version
+                })
+                && !reviewed.iter().any(|source| {
+                    source.entry_ref == change.entry_ref && source.version == change.version
+                })
+        })
+    {
+        return Err(invalid(
+            "no_change must review every changed reliance source at its current admitted version",
+        ));
+    }
+    // Selectors resolve against the pass's pinned versions, not current heads.
     source_versions_with_policy(
         tx,
         auth.user_id.0,
         &mut reviewed,
         job.snapshot_generation,
-        true,
+        false,
         SourceSelectorPolicy::CheckpointEndOfDocument,
     )
     .await?;
@@ -1290,6 +1650,7 @@ pub(super) async fn apply_progress(
     let notes = notes.to_owned();
     job.notes = notes;
     job.reviewed_sources = reviewed;
+    count_round(job);
     if body.get("pending_queries").is_some() {
         job.pending_queries = strings(body, "pending_queries", 12, 160)
             .map_err(|error| repair_error(error, RepairPhase::CheckpointValidation))?;
@@ -1316,6 +1677,11 @@ pub(super) async fn apply_progress(
         } else {
             Duration::hours(24)
         };
+    if status == "waiting"
+        && let Some(pass) = &mut job.pass
+    {
+        pass.yielded = true;
+    }
     Ok(())
 }
 
@@ -1490,6 +1856,9 @@ pub(super) async fn progress(
     }
     if job.status == "no_change" || explicit_revalidation_replacement(&job, &body) {
         clear_revalidation(&mut job);
+    }
+    if job.status == "no_change" {
+        complete_pass(&mut job, "no_change", None, &[]);
     }
     remember(
         &mut job.receipts,
@@ -1675,8 +2044,8 @@ pub(super) async fn discover(
         leads.push(canonical);
         exact.insert(canonical);
     }
-    refresh(&mut tx, &auth, &mut job, job_version, upper).await?;
-    let admitted = headers(&mut tx, &auth, &leads, upper).await?;
+    refresh(&mut tx, &auth, &mut job, job_version, upper, false).await?;
+    let admitted = headers(&mut tx, &auth, &leads, cutoff(&job)).await?;
     let search_results_current = expected.iter().all(|(id, version)| {
         admitted
             .iter()
@@ -1685,7 +2054,9 @@ pub(super) async fn discover(
     let before = job.sources.clone();
     for input in admitted {
         let id = entry_id(&input.entry_ref)?;
-        if !exact.contains(&id) && expected.get(&id) != Some(&input.version) {
+        // A hit is admitted at its pinned version even when its head moved
+        // past the cutoff; the newer content is queued for a later pass.
+        if !exact.contains(&id) && !expected.contains_key(&id) {
             continue;
         }
         if let Some(old) = job
@@ -1713,13 +2084,19 @@ pub(super) async fn discover(
     // evidence supporting saved work. Preserve its notes and selectors unless
     // an earlier header changed or disappeared; refresh separately invalidates
     // conclusions when newer relevant corpus changes affect the subject scope.
-    if before.iter().any(|source| !job.sources.contains(source)) {
+    if before
+        .iter()
+        .any(|source| !job.sources.contains(source) && relied_on(&job, source))
+    {
         discovery_audit::invalidate(&mut job);
         capture_revalidation(&mut job, job_version)?;
         job.notes.clear();
         job.reviewed_sources.clear();
     }
     job.round += usize::from(!duplicate || changed);
+    if !normalized.is_empty() || !targets.is_empty() {
+        count_round(&mut job);
+    }
     let change_coverage = job.coverage.clone();
     job.coverage = json!({"change_status":change_coverage["change_status"],"change_reason":change_coverage["change_reason"],"changed_source_count":change_coverage["changed_source_count"],"change_cursor":change_coverage["change_cursor"],"change_upper":change_coverage["change_upper"],"pending_source_refs":change_coverage["pending_source_refs"],"query_results":results.iter().map(|r|json!({"id":r["id"],"returned":r["candidates"].as_array().map_or(0,Vec::len),"query_status":r.get("query_status").cloned().unwrap_or(json!("complete"))})).collect::<Vec<_>>(),
         "source_cap_reached":job.sources.len()>=MAX_SOURCES,"unresolved_targets":unresolved,

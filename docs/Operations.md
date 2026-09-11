@@ -423,7 +423,15 @@ and resumable jobs. Research cannot override fresh approvals, deferrals or
 rejections. A stale subject approval is marked as needing changes, preserving
 its candidate and decision history; revised content requires a new decision.
 
-The server validates exact citations, every admitted subject dependency,
+The following describes deployed `36d1da1` behavior, not the revised design.
+The owner requested a dated-summary/materiality-based refresh design, initially
+held implementation, then requested a Claude Code/Fable build-and-test handoff.
+Delegated implementation/testing may proceed; production rollout and mode changes
+remain separate. See the intended behavior and acceptance
+sections of [Dreamer Subject Research.md](Dreamer%20Subject%20Research.md).
+Do not change CONTROL, publication mode or production services for that handoff.
+
+The server currently validates exact citations, every admitted subject dependency,
 newly relevant source changes, permissions and destination versions at intake,
 publication and current-state reads. A current canonical read prefers its fresh
 subject overview. If freshness cannot be established it returns source

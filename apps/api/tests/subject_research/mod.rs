@@ -4,6 +4,7 @@ mod checkpoint;
 mod comparison;
 mod discovery_audit;
 mod drafts;
+mod passes;
 mod repair;
 mod revalidation;
 mod source_origin;
@@ -15,6 +16,37 @@ fn research_request(admission: &Value) -> Value {
     body["research_version"] = admission["research"]["version"].clone();
     body["operation_id"] = json!(Uuid::now_v7());
     body
+}
+async fn admit_requested(f: &Fixture, requested: Vec<Value>) -> Value {
+    ok(post(
+        f,
+        &f.runner,
+        "/v1/workspace/dreamer/admit",
+        json!({"attempt_id":Uuid::now_v7(),"date":date(),"kind":"manual","lease_seconds":60,
+            "requested_subject_refs":requested}),
+    )
+    .await)
+}
+async fn yield_and_finish(f: &Fixture, admission: &Value) -> Value {
+    let mut waiting = research_request(admission);
+    waiting["status"] = json!("waiting");
+    waiting["processed_inputs"] = json!([]);
+    let yielded = ok(post(
+        f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        waiting,
+    )
+    .await)["data"]
+        .clone();
+    finish(
+        f,
+        &yielded,
+        yielded["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
+    yielded
 }
 async fn next_subject(f: &Fixture, admission: &Value) -> Value {
     let mut body = attempt(admission, admission["state_version"].as_i64().unwrap());
@@ -1147,23 +1179,24 @@ async fn compact_research_checkpoint_loads_legacy_excerpts_and_preserves_validat
         1,
     )
     .await;
-    let stale = ok(post(
+    let pinned = ok(post(
         &f,
         &f.runner,
         "/v1/workspace/dreamer/research-progress",
         checkpoint,
     )
     .await);
-    assert!(
-        stale["data"]["research"].is_null(),
-        "a changed canonical source withholds the whole saved research view"
+    assert_eq!(
+        pinned["data"]["research"]["notes"], notes,
+        "a canonical version written after the pass cutoff is queued; pinned work stays served"
     );
-    assert!(!stale.to_string().contains(notes));
+    assert_eq!(pinned["data"]["research"]["sources"][0]["version"], 1);
+    assert_eq!(corrected["version"], 2);
     let (_, refreshed) = discover_subject(&f, &compact, vec![]).await;
     let revoked_notes = "REVOKED_LEGACY_RESEARCH_NOTES: the current evidence was checked.";
     let checkpoint = progress_body(
         &refreshed,
-        vec![reviewed(&corrected), reviewed(&support)],
+        vec![reviewed(&canonical), reviewed(&support)],
         "researching",
         revoked_notes,
     );
@@ -1369,8 +1402,16 @@ async fn imported_link_targets_preserve_directories_exact_precedence_receipts_an
     .await;
     let (_, refreshed) =
         discover_subject(&f, &checked, vec![json!("Projects/Orchid/Outline")]).await;
-    assert_eq!(refreshed["research"]["notes"], "");
-    assert_eq!(refreshed["research"]["reviewed_sources"], json!([]));
+    // The correction landed after this pass's cutoff: checked work is kept,
+    // the pinned version stays admitted, and the newer version waits.
+    assert_eq!(
+        refreshed["research"]["notes"],
+        "The canonical and imported outline have both been checked."
+    );
+    assert_eq!(
+        refreshed["research"]["reviewed_sources"],
+        checked["research"]["reviewed_sources"]
+    );
     assert_eq!(
         refreshed["research"]["coverage"]["unresolved_targets"],
         json!([])
@@ -1380,7 +1421,7 @@ async fn imported_link_targets_preserve_directories_exact_precedence_receipts_an
             .as_array()
             .unwrap()
             .iter()
-            .any(|s| s["entry_ref"] == corrected["entry_ref"] && s["version"] == 2)
+            .any(|s| s["entry_ref"] == corrected["entry_ref"] && s["version"] == 1)
     );
 }
 
@@ -1512,7 +1553,8 @@ async fn imported_link_target_stays_unresolved_when_the_unique_source_exceeds_th
 }
 
 #[tokio::test]
-async fn checkpoint_source_and_scope_changes_return_typed_recovery_errors_without_partial_writes() {
+async fn checkpoint_source_and_scope_changes_are_queued_for_the_next_pass_and_reread_before_completion()
+ {
     let Some(f) = fixture().await else { return };
     control(&f, "report-only", 0).await;
     let canonical = write(
@@ -1526,7 +1568,7 @@ async fn checkpoint_source_and_scope_changes_return_typed_recovery_errors_withou
     let selected = next_subject(&f, &admit(&f).await).await;
     let (_, admitted) =
         discover_subject(&f, &selected, vec![supporting["entry_ref"].clone()]).await;
-    let mut saved = ok(post(
+    let saved = ok(post(
         &f,
         &f.runner,
         "/v1/workspace/dreamer/research-progress",
@@ -1546,88 +1588,147 @@ async fn checkpoint_source_and_scope_changes_return_typed_recovery_errors_withou
             .unwrap()
             .trim_start_matches("entry:")
     );
-    for (cited_change, status, code) in [
-        (true, StatusCode::CONFLICT, "dreamer_source_changed"),
-        (false, StatusCode::BAD_REQUEST, "research_refresh_required"),
-    ] {
-        let changed = if cited_change {
-            write(
-                &f,
-                "sources/Notes/Support.md",
-                "# Evidence\n\nA corrected supporting observation.\n",
-                1,
-            )
-            .await
-        } else {
-            write(
-                &f,
-                "UnrelatedDirectory/Outcome.md",
-                "# Outcome\n\nOrchid has a newly relevant outcome.\n",
-                0,
-            )
-            .await
-        };
-        let persisted = current(&f, &research_path).await.unwrap();
-        let state = current(&f, "dreams/state.md").await.unwrap();
-        let selectors = saved["research"]["reviewed_sources"]
-            .as_array()
-            .unwrap()
-            .clone();
-        let rejected = post(
-            &f,
-            &f.runner,
-            "/v1/workspace/dreamer/research-progress",
-            progress_body(
-                &saved,
-                selectors,
-                "researching",
-                "The rejected checkpoint must not replace the prior notes.",
-            ),
-        )
-        .await;
-        assert_eq!(rejected.status, status, "{}", rejected.body);
-        assert_eq!(rejected.body["error"]["code"], code, "{}", rejected.body);
-        assert_eq!(
-            current(&f, &research_path).await.unwrap(),
-            persisted,
-            "rejection must preserve notes, job version and operation receipts"
-        );
-        assert_eq!(current(&f, "dreams/state.md").await.unwrap(), state);
-        let (_, refreshed) = discover_subject(&f, &saved, vec![]).await;
-        assert_eq!(refreshed["research"]["notes"], "");
-        assert_eq!(refreshed["research"]["reviewed_sources"], json!([]));
-        assert!(
-            refreshed["research"]["sources"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|s| s["entry_ref"] == changed["entry_ref"]
-                    && s["version"] == changed["version"])
-        );
-        let selectors = refreshed["research"]["sources"]
+    // Within a pass neither a moved cited source nor a newly relevant write
+    // rejects pinned progress. Both are queued: the next pass lists the moved
+    // source as a required reread and the outcome as a new lead.
+    let changed = write(
+        &f,
+        "sources/Notes/Support.md",
+        "# Evidence\n\nA corrected supporting observation.\n",
+        1,
+    )
+    .await;
+    let relevant = write(
+        &f,
+        "UnrelatedDirectory/Outcome.md",
+        "# Outcome\n\nOrchid has a newly relevant outcome.\n",
+        0,
+    )
+    .await;
+    let selectors = saved["research"]["reviewed_sources"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let progressed = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        progress_body(
+            &saved,
+            selectors,
+            "researching",
+            "Pinned exact sources were rechecked.",
+        ),
+    )
+    .await)["data"]
+        .clone();
+    assert_eq!(
+        progressed["research"]["notes"],
+        "Pinned exact sources were rechecked."
+    );
+    assert!(
+        progressed["research"]["sources"]
             .as_array()
             .unwrap()
             .iter()
-            .map(reviewed)
-            .collect();
-        saved = ok(post(
-            &f,
-            &f.runner,
-            "/v1/workspace/dreamer/research-progress",
-            progress_body(
-                &refreshed,
-                selectors,
-                "researching",
-                "Current exact source versions have been checked after reconciliation.",
-            ),
-        )
-        .await)["data"]
-            .clone();
-        assert_eq!(
-            saved["research"]["notes"],
-            "Current exact source versions have been checked after reconciliation."
-        );
-    }
+            .any(|s| s["entry_ref"] == supporting["entry_ref"] && s["version"] == 1)
+    );
+    let (_, refreshed) = discover_subject(&f, &progressed, vec![]).await;
+    assert_eq!(
+        refreshed["research"]["notes"],
+        progressed["research"]["notes"]
+    );
+    assert!(
+        !refreshed["research"]["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["entry_ref"] == relevant["entry_ref"]),
+        "post-cutoff leads wait for the next pass"
+    );
+    assert_eq!(
+        current(&f, &research_path).await.unwrap().2["dreamer_research"]["pass"]["changed"],
+        json!([])
+    );
+    yield_and_finish(&f, &refreshed).await;
+    let next = next_subject(
+        &f,
+        &admit_requested(&f, vec![canonical["entry_ref"].clone()]).await,
+    )
+    .await;
+    assert_eq!(next["research"]["subject_ref"], canonical["entry_ref"]);
+    assert_eq!(next["research"]["notes"], progressed["research"]["notes"]);
+    assert_eq!(
+        next["research"]["reviewed_sources"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1,
+        "selectors for a moved version are dropped until reread"
+    );
+    assert_eq!(
+        next["research"]["reviewed_sources"][0]["entry_ref"],
+        canonical["entry_ref"]
+    );
+    let queued = next["research"]["pass"]["changed"].as_array().unwrap();
+    assert!(
+        queued
+            .iter()
+            .any(|c| c["entry_ref"] == supporting["entry_ref"]
+                && c["kind"] == "version"
+                && c["required"] == true
+                && c["version"] == 2),
+        "{queued:?}"
+    );
+    assert!(
+        queued
+            .iter()
+            .any(|c| c["entry_ref"] == relevant["entry_ref"]
+                && c["kind"] == "new_relevant"
+                && c["required"] == false),
+        "{queued:?}"
+    );
+    assert!(
+        next["research"]["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["entry_ref"] == changed["entry_ref"] && s["version"] == 2)
+    );
+    // Completion must reread the moved reliance source; unchanged citations
+    // alone cannot certify it.
+    let refused = post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        progress_body(
+            &next,
+            vec![reviewed(&canonical)],
+            "no_change",
+            "Nothing changed.",
+        ),
+    )
+    .await;
+    assert_eq!(refused.status, StatusCode::BAD_REQUEST, "{}", refused.body);
+    assert!(refused.body.to_string().contains("changed reliance source"));
+    let done = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        progress_body(
+            &next,
+            vec![reviewed(&canonical), reviewed(&changed)],
+            "no_change",
+            "The corrected supporting observation does not alter the overview.",
+        ),
+    )
+    .await)["data"]
+        .clone();
+    assert_eq!(
+        done["research"]["reviewed_through"]["disposition"],
+        "no_change"
+    );
+    assert!(done["research"]["pass"].is_null());
 }
 
 #[tokio::test]
@@ -1929,7 +2030,6 @@ async fn checkpoint_eof_normalization_rejects_invalid_ranges_and_sources_atomica
         .await
         .unwrap();
     for (source, status, error) in [
-        (&support, StatusCode::CONFLICT, "candidate evidence changed"),
         (&deleted, StatusCode::BAD_REQUEST, "missing or inaccessible"),
         (
             &generated,
@@ -2007,14 +2107,17 @@ async fn linked_primary_second_round_replay_after_interleaving_and_exact_candida
         third["frozen_generation"], frozen,
         "location/attempt snapshot must stay frozen"
     );
-    assert!(third["research"]["snapshot_generation"].as_i64().unwrap() > frozen.as_i64().unwrap());
+    assert!(third["research"]["snapshot_generation"].as_i64().unwrap() >= frozen.as_i64().unwrap());
+    // The newer primary version landed after this pass's cutoff; the linked
+    // primary is admitted at its pinned version and the update is queued.
     assert!(
         third["research"]["sources"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|s| s["entry_ref"] == primary["entry_ref"] && s["version"] == 2)
+            .any(|s| s["entry_ref"] == primary["entry_ref"] && s["version"] == 1)
     );
+    assert_eq!(current_primary["version"], 2);
     let replay = ok(post(
         &f,
         &f.runner,
@@ -2049,7 +2152,7 @@ async fn linked_primary_second_round_replay_after_interleaving_and_exact_candida
         "research discovery never consumes input"
     );
 
-    let selectors = vec![reviewed(&person), reviewed(&current_primary)];
+    let selectors = vec![reviewed(&person), reviewed(&primary)];
     let candidate = subject_candidate(&third, selectors.clone());
     let mut submit = research_request(&third);
     submit["candidates"] = json!([candidate]);
@@ -2073,7 +2176,7 @@ async fn linked_primary_second_round_replay_after_interleaving_and_exact_candida
     );
     let mut progress = progress_body(
         &accepted,
-        vec![reviewed(&person), reviewed(&current_primary)],
+        vec![reviewed(&person), reviewed(&primary)],
         "waiting",
         "The completed outcome supersedes the old plan.",
     );
@@ -2136,7 +2239,7 @@ async fn linked_primary_second_round_replay_after_interleaving_and_exact_candida
     forbidden["expected_state_version"] = held_view["decision_version"].clone();
     forbidden["candidates"] = json!([subject_candidate(
         &later,
-        vec![reviewed(&person), reviewed(&current_primary)]
+        vec![reviewed(&person), reviewed(&primary)]
     )]);
     assert_eq!(
         post(&f, &f.runner, "/v1/workspace/dreamer/candidates", forbidden)
@@ -2252,7 +2355,7 @@ async fn research_restart_restores_checked_notes_and_waiting_subject_yields_to_u
 }
 
 #[tokio::test]
-async fn research_new_relevant_source_blocks_acceptance_and_discovery_reconciles_it() {
+async fn research_new_relevant_source_is_queued_for_the_next_pass_without_blocking_acceptance() {
     let Some(f) = fixture().await else { return };
     control(&f, "report-only", 0).await;
     let person = write(
@@ -2284,24 +2387,41 @@ async fn research_new_relevant_source_blocks_acceptance_and_discovery_reconciles
         vec![reviewed(&person), reviewed(&prior)]
     )]);
     submit["processed_inputs"] = json!([]);
-    let rejected = post(&f, &f.runner, "/v1/workspace/dreamer/candidates", submit).await;
+    let accepted = ok(post(&f, &f.runner, "/v1/workspace/dreamer/candidates", submit).await);
     assert_eq!(
-        rejected.status,
-        StatusCode::BAD_REQUEST,
-        "{}",
-        rejected.body
+        accepted["accepted_candidate_ids"].as_array().unwrap().len(),
+        1,
+        "a lead written after the cutoff cannot block supported work"
     );
-    assert!(rejected.body.to_string().contains("scope changed"));
-    let (_, renewed) = discover_subject(&f, &a, vec![]).await;
+    assert!(accepted["research"]["pass"].is_null());
+    finish(
+        &f,
+        &accepted,
+        accepted["state_version"].as_i64().unwrap(),
+        "partial",
+    )
+    .await;
+    let renewed = next_subject(
+        &f,
+        &admit_requested(&f, vec![person["entry_ref"].clone()]).await,
+    )
+    .await;
+    assert_eq!(renewed["research"]["subject_ref"], person["entry_ref"]);
     assert!(
         renewed["research"]["sources"]
             .as_array()
             .unwrap()
             .iter()
             .any(|s| s["entry_ref"] == newer["entry_ref"]),
-        "all checked newly relevant changes must enter the research packet even outside search rank and source directories"
+        "newly relevant changes enter the next pass even outside search rank and source directories"
     );
-    assert_eq!(renewed["research"]["notes"], "");
+    let queued = renewed["research"]["pass"]["changed"].as_array().unwrap();
+    assert!(
+        queued.iter().any(|c| c["entry_ref"] == newer["entry_ref"]
+            && c["kind"] == "new_relevant"
+            && c["required"] == false),
+        "{queued:?}"
+    );
 }
 
 #[tokio::test]
@@ -2387,10 +2507,14 @@ async fn research_done_consumes_only_exact_reviewed_input_and_does_not_leak_afte
     .await);
     assert_eq!(replay["no_op"], true);
     assert!(
-        !replay
+        replay
             .to_string()
             .contains("Checked source supports no useful change"),
-        "replay cannot restore stale cached conclusions"
+        "a completed pass keeps its dated conclusions; the correction is refresh work for the next pass"
+    );
+    assert_eq!(
+        replay["data"]["research"]["reviewed_through"]["disposition"],
+        "no_change"
     );
 }
 
@@ -2421,9 +2545,17 @@ async fn research_change_cap_preserves_scope_boundary_and_never_accepts_unchecke
             .trim_start_matches("entry:")
     );
     let baseline=current(&f,&research_path).await.unwrap().2["dreamer_research"]["scope"]["checked_generation"].clone();
+    // Churn after a pass cutoff is invisible to that pass. Yield so the next
+    // selection scans it from the previous cutoff.
+    yield_and_finish(&f, &a).await;
     sqlx::query("INSERT INTO brunn.workspace_changes(user_id,entry_id,entry_version,operation,path,content_sha256) SELECT e.user_id,e.id,e.current_version,'update',e.path,v.content_sha256 FROM generate_series(1,2001) n CROSS JOIN brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version WHERE e.user_id=$1 AND e.id=$2 ORDER BY n")
         .bind(f.owner.user).bind(Uuid::parse_str(unrelated["entry_ref"].as_str().unwrap().trim_start_matches("entry:")).unwrap()).execute(&f.pool).await.unwrap();
-    let (_, refreshed) = discover_subject(&f, &a, vec![]).await;
+    let refreshed = next_subject(
+        &f,
+        &admit_requested(&f, vec![person["entry_ref"].clone()]).await,
+    )
+    .await;
+    assert_eq!(refreshed["research"]["subject_ref"], person["entry_ref"]);
     assert_eq!(
         refreshed["research"]["coverage"]["change_status"],
         "unchecked"
@@ -2763,6 +2895,20 @@ async fn review_withholds_subject_candidate_after_non_cited_dependency_is_delete
         vec![claim["entry_ref"].clone(), dependency["entry_ref"].clone()],
     )
     .await;
+    // The bridge authority is reviewed but never cited: reliance binds it.
+    let a = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/research-progress",
+        progress_body(
+            &a,
+            vec![reviewed(&person), reviewed(&claim), reviewed(&dependency)],
+            "researching",
+            "The outcome was checked through the bridge authority.",
+        ),
+    )
+    .await)["data"]
+        .clone();
     let mut submit = research_request(&a);
     let mut candidate = subject_candidate(&a, vec![reviewed(&person), reviewed(&claim)]);
     candidate["title"] = json!("UNCITED_DEPENDENCY_PRIVATE_TITLE");
@@ -2869,7 +3015,7 @@ async fn requested_subject_priority_survives_selection_and_yield_until_supported
 }
 
 #[tokio::test]
-async fn stale_subject_held_approval_requires_new_review_in_report_only_mode() {
+async fn held_subject_approval_survives_source_drift_as_refresh_pending() {
     let Some(f) = fixture().await else { return };
     control(&f, "report-only", 0).await;
     let person = write(
@@ -2909,7 +3055,10 @@ async fn stale_subject_held_approval_requires_new_review_in_report_only_mode() {
     )
     .await;
     let admitted = admit(&f).await;
-    assert_eq!(admitted["pending"][0]["status"], "needs_changes");
+    // Drift after the pass cutoff is refresh work: the owner's approval stands
+    // and is flagged for refresh, and the held subject stays out of research
+    // until the owner decides or the approval is published.
+    assert_eq!(admitted["pending"][0]["status"], "approved_held");
     assert_eq!(
         admitted["pending"][0]["candidate_hash"],
         identity["candidate_hash"]
@@ -2920,19 +3069,12 @@ async fn stale_subject_held_approval_requires_new_review_in_report_only_mode() {
             .await
             .is_none()
     );
+    assert_eq!(newer["version"], 2);
+    let view = review(&f).await;
+    assert_eq!(view["items"][0]["stale"], false);
+    assert_eq!(view["items"][0]["refresh_pending"], true);
     let a = next_subject(&f, &admitted).await;
-    let mut request = research_request(&a);
-    let mut revision = subject_candidate(&a, vec![reviewed(&newer)]);
-    revision["content"] = json!("# Radley\n\nThe corrected source fact.[^s1]\n");
-    revision["revises_item_id"] = identity["id"].clone();
-    request["candidates"] = json!([revision]);
-    let revised = ok(post(&f, &f.runner, "/v1/workspace/dreamer/candidates", request).await);
-    assert_eq!(revised["accepted_candidate_ids"], json!([identity["id"]]));
-    assert_eq!(revised["pending"][0]["status"], "pending");
-    assert_ne!(
-        revised["pending"][0]["candidate_hash"],
-        identity["candidate_hash"]
-    );
+    assert_ne!(a["research"]["subject_ref"], person["entry_ref"]);
 }
 
 #[tokio::test]
@@ -2955,6 +3097,7 @@ async fn oversized_relevant_source_keeps_coverage_unchecked_and_safe_yield_does_
     )
     .await;
     let a = next_subject(&f, &admit(&f).await).await;
+    yield_and_finish(&f, &a).await;
     let large = write(
         &f,
         "sources/Large/Primary.md",
@@ -2971,10 +3114,21 @@ async fn oversized_relevant_source_keeps_coverage_unchecked_and_safe_yield_does_
     let hash = hex::encode(Sha256::digest(content.as_bytes()));
     sqlx::query("UPDATE brunn.entry_versions SET content=$3,size_bytes=$4,content_sha256=$5 WHERE user_id=$1 AND entry_id=$2 AND version=1")
         .bind(f.owner.user).bind(Uuid::parse_str(large["entry_ref"].as_str().unwrap().trim_start_matches("entry:")).unwrap()).bind(&content).bind(content.len() as i64).bind(hash).execute(&f.pool).await.unwrap();
-    let (_, refreshed) = discover_subject(&f, &a, vec![]).await;
+    let refreshed = next_subject(
+        &f,
+        &admit_requested(&f, vec![person["entry_ref"].clone()]).await,
+    )
+    .await;
+    assert_eq!(refreshed["research"]["subject_ref"], person["entry_ref"]);
+    // The scan completed; the oversized lead is queued as unresolved rather
+    // than blocking supported work.
     assert_eq!(
         refreshed["research"]["coverage"]["change_status"],
-        "unchecked"
+        "complete"
+    );
+    assert_eq!(
+        refreshed["research"]["coverage"]["change_reason"],
+        "research_sources_unresolved"
     );
     assert!(
         refreshed["research"]["coverage"]["pending_source_refs"]
@@ -3037,7 +3191,7 @@ async fn automatic_invalid_subject_is_skipped_without_rolling_back_the_selection
 }
 
 #[tokio::test]
-async fn additive_discovery_preserves_checked_progress_but_source_or_scope_changes_invalidate_it() {
+async fn additive_discovery_preserves_checked_progress_and_queues_changes_for_the_next_pass() {
     let Some(f) = fixture().await else { return };
     control(&f, "report-only", 0).await;
     let canonical = write(
@@ -3163,30 +3317,21 @@ async fn additive_discovery_preserves_checked_progress_but_source_or_scope_chang
     )
     .await;
     let (_, changed) = discover_subject(&f, &expanded, vec![]).await;
-    assert_eq!(changed["research"]["notes"], "");
-    assert_eq!(changed["research"]["reviewed_sources"], json!([]));
+    assert_eq!(
+        changed["research"]["notes"], reconciled_note,
+        "a version written after the pass cutoff does not erase checked work"
+    );
+    assert_eq!(
+        changed["research"]["reviewed_sources"],
+        checkpoint["research"]["reviewed_sources"]
+    );
     assert!(
         changed["research"]["sources"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|source| source["entry_ref"] == corrected["entry_ref"] && source["version"] == 2)
+            .any(|source| source["entry_ref"] == corrected["entry_ref"] && source["version"] == 1)
     );
-
-    let progress = progress_body(
-        &changed,
-        vec![reviewed(&canonical), reviewed(&corrected)],
-        "researching",
-        "The corrected source has now been checked.",
-    );
-    let checked = ok(post(
-        &f,
-        &f.runner,
-        "/v1/workspace/dreamer/research-progress",
-        progress,
-    )
-    .await)["data"]
-        .clone();
     let relevant = write(
         &f,
         "UnrelatedDirectory/Current.md",
@@ -3194,26 +3339,69 @@ async fn additive_discovery_preserves_checked_progress_but_source_or_scope_chang
         0,
     )
     .await;
-    let (_, refreshed) = discover_subject(&f, &checked, vec![]).await;
+    let (_, refreshed) = discover_subject(&f, &changed, vec![]).await;
     assert_eq!(
-        refreshed["research"]["notes"], "",
-        "newly relevant corpus changes still invalidate old conclusions"
+        refreshed["research"]["notes"], reconciled_note,
+        "newly relevant corpus changes are queued for the next pass, not invalidating"
     );
-    assert_eq!(refreshed["research"]["reviewed_sources"], json!([]));
     assert!(
-        refreshed["research"]["sources"]
+        !refreshed["research"]["sources"]
             .as_array()
             .unwrap()
             .iter()
             .any(|source| source["entry_ref"] == relevant["entry_ref"])
     );
 
+    // The next pass re-pins: the moved supporting source is a required
+    // reread, the relevant outcome is a new lead, and the prose is kept.
+    yield_and_finish(&f, &refreshed).await;
+    let next = next_subject(
+        &f,
+        &admit_requested(&f, vec![canonical["entry_ref"].clone()]).await,
+    )
+    .await;
+    assert_eq!(next["research"]["subject_ref"], canonical["entry_ref"]);
+    assert_eq!(next["research"]["notes"], reconciled_note);
+    assert_eq!(
+        next["research"]["reviewed_sources"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        next["research"]["reviewed_sources"][0]["entry_ref"],
+        canonical["entry_ref"]
+    );
+    let queued = next["research"]["pass"]["changed"].as_array().unwrap();
+    assert!(
+        queued
+            .iter()
+            .any(|c| c["entry_ref"] == supporting["entry_ref"]
+                && c["kind"] == "version"
+                && c["required"] == true),
+        "{queued:?}"
+    );
+    assert!(
+        queued
+            .iter()
+            .any(|c| c["entry_ref"] == relevant["entry_ref"] && c["kind"] == "new_relevant"),
+        "{queued:?}"
+    );
+    assert!(
+        next["research"]["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|source| source["entry_ref"] == relevant["entry_ref"])
+    );
     let progress = progress_body(
-        &refreshed,
+        &next,
         vec![
             reviewed(&canonical),
             reviewed(&corrected),
             reviewed(&relevant),
+            reviewed(&primary),
         ],
         "researching",
         "The newly relevant outcome has been reconciled with the checked sources.",
@@ -3245,7 +3433,7 @@ async fn additive_discovery_preserves_checked_progress_but_source_or_scope_chang
     let (_, withheld) = discover_subject(&f, &checked, vec![]).await;
     assert_eq!(
         withheld["research"]["notes"], "",
-        "loss of access to prior research evidence still clears cached conclusions"
+        "loss of access to reviewed research evidence still clears cached conclusions"
     );
     assert_eq!(withheld["research"]["reviewed_sources"], json!([]));
     assert_eq!(

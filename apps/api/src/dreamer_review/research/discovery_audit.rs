@@ -192,7 +192,10 @@ async fn current(
     else {
         return Ok(false);
     };
+    // A search is current only for the pass whose pinned evidence it served.
+    // A later pass starts at a newer cutoff, so its evidence may differ.
     if search.retrieval_policy != simple_core::DREAMER_LEXICAL_POLICY_VERSION
+        || search.searched_generation < cutoff(job)
         || dependencies.iter().any(|(id, version)| {
             !job.sources.iter().any(|source| {
                 source.entry_ref == format!("entry:{id}") && source.version == *version

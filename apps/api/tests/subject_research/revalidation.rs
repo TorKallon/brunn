@@ -224,6 +224,18 @@ async fn replace_fixture_metadata(f: &Fixture, path: &str, version: i64, metadat
         .bind(f.owner.user).bind(path).bind(version).bind(metadata).execute(&f.pool).await.unwrap();
 }
 
+/// Yield the pass and start the next one so post-cutoff versions are pinned.
+async fn repin(f: &Fixture, admission: &Value, canonical: &Value) -> Value {
+    yield_and_finish(f, admission).await;
+    let next = next_subject(
+        f,
+        &admit_requested(f, vec![canonical["entry_ref"].clone()]).await,
+    )
+    .await;
+    assert_eq!(next["research"]["subject_ref"], canonical["entry_ref"]);
+    next
+}
+
 async fn drift(f: &Fixture, source: &Value) -> Value {
     let version = source["version"].as_i64().unwrap();
     write(f, source["path"].as_str().unwrap(), &format!("# Detector\n\nThe detector schedule now records a revised exposure interval.\n\nRevision {}.\n", version + 1), version).await
@@ -265,36 +277,23 @@ async fn revalidation_retains_latest_discovery_context_across_scope_refresh_and_
             0,
         )
         .await;
+        // A relevant source written after the cutoff is queued for the next
+        // pass; the checked notes stay current instead of becoming history.
         let ephemeral = replay_progress(&f, &n.operation).await;
-        assert_context(&ephemeral, &prior);
-        let notebook_id: Uuid =
-            sqlx::query_scalar("SELECT id FROM brunn.entries WHERE user_id=$1 AND path=$2")
-                .bind(f.owner.user)
-                .bind(&path)
-                .fetch_one(&f.pool)
-                .await
-                .unwrap();
+        assert!(context(&ephemeral).is_null());
+        assert_eq!(ephemeral["research"]["notes"], NOTES);
         assert_eq!(
-            context(&ephemeral)["origin"]["entry_ref"],
-            format!("entry:{notebook_id}")
+            ephemeral["research"]["reviewed_sources"],
+            prior["research"]["reviewed_sources"]
         );
-        assert_eq!(ephemeral["research"]["notes"], "");
-        assert_eq!(ephemeral["research"]["reviewed_sources"], json!([]));
-        assert_eq!(ephemeral["research"]["needs_refresh"], true);
+        assert_ne!(ephemeral["research"]["needs_refresh"], true);
         assert_eq!(
             current(&f, &path).await.unwrap(),
             original,
             "a read-only replay cannot persist a pointer"
         );
         let refreshed = if selection {
-            finish(
-                &f,
-                &prior,
-                prior["state_version"].as_i64().unwrap(),
-                "partial",
-            )
-            .await;
-            next_subject(&f, &admit(&f).await).await
+            repin(&f, &prior, &n.canonical).await
         } else {
             discover_subject(&f, &prior, vec![]).await.1
         };
@@ -302,26 +301,32 @@ async fn revalidation_retains_latest_discovery_context_across_scope_refresh_and_
             refreshed["research"]["subject_ref"],
             n.canonical["entry_ref"]
         );
-        assert_context(&refreshed, &prior);
+        assert!(context(&refreshed).is_null());
+        assert_eq!(refreshed["research"]["notes"], NOTES);
         assert_eq!(
-            context(&refreshed)["prior_progress"]["latest_discovery_groups"],
-            prior["research"]["coverage"]["query_results"]
-        );
-        assert_eq!(
-            checkpoint(&f, &n.canonical).await,
-            json!({"state":"retained","version":original.0})
-        );
-        assert!(
             refreshed["research"]["sources"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|s| s["entry_ref"] == added["entry_ref"] && s["version"] == added["version"])
+                .any(|s| s["entry_ref"] == added["entry_ref"] && s["version"] == added["version"]),
+            selection,
+            "the new relevant source joins the next pass, not the pinned one"
         );
-        assert_eq!(refreshed["research"]["notes"], "");
-        assert_eq!(refreshed["research"]["reviewed_sources"], json!([]));
+        if selection {
+            let queued = refreshed["research"]["pass"]["changed"].as_array().unwrap();
+            assert!(
+                queued
+                    .iter()
+                    .any(|c| c["entry_ref"] == added["entry_ref"] && c["kind"] == "new_relevant"),
+                "{queued:?}"
+            );
+        }
         assert_eq!(exact_metadata(&f, &path, original.0).await, original.2);
-        let replacement = save_progress(&f, progress_body(&refreshed, vec![reviewed(&n.canonical), reviewed(&n.support), reviewed(&added)], "researching", "The old observations and the new relevant outcome have been reconciled; the independent measurement remains open.")).await;
+        let mut selectors = vec![reviewed(&n.canonical), reviewed(&n.support)];
+        if selection {
+            selectors.push(reviewed(&added));
+        }
+        let replacement = save_progress(&f, progress_body(&refreshed, selectors, "researching", "The old observations and the new relevant outcome have been reconciled; the independent measurement remains open.")).await;
         assert!(context(&replacement).is_null());
         assert_eq!(checkpoint(&f, &n.canonical).await, json!({"state":"none"}));
         assert_eq!(
@@ -336,11 +341,16 @@ async fn revalidation_version_drift_rejects_old_evidence_and_zero_id_progress_pr
     let Some(f) = fixture().await else { return };
     let n = notebook(&f).await;
     let newer = drift(&f, &n.support).await;
-    let (_, refreshed) = discover_subject(&f, &n.saved, vec![]).await;
-    assert_context(&refreshed, &n.saved);
+    let refreshed = repin(&f, &n.saved, &n.canonical).await;
+    assert!(context(&refreshed).is_null());
+    assert_eq!(refreshed["research"]["notes"], NOTES, "the prose is kept");
     assert_eq!(
-        context(&refreshed)["prior_reviewed_sources"][1]["version"],
-        1
+        refreshed["research"]["reviewed_sources"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1,
+        "the moved selector is dropped until reread"
     );
     assert!(
         refreshed["research"]["sources"]
@@ -379,11 +389,14 @@ async fn revalidation_version_drift_rejects_old_evidence_and_zero_id_progress_pr
         partial["research"]["notes"],
         "ZERO_ID_NOTE_MARKER: current source versions were checked, with the independent measurement still open."
     );
-    assert_context(&partial, &n.saved);
-    // A later reset captures this accepted head, even though it contains its own pointer.
+    assert!(context(&partial).is_null());
     let newest = drift(&f, &newer).await;
-    let (_, reset) = discover_subject(&f, &partial, vec![]).await;
-    assert_context(&reset, &partial);
+    let reset = repin(&f, &partial, &n.canonical).await;
+    assert!(context(&reset).is_null());
+    assert_eq!(
+        reset["research"]["notes"],
+        "ZERO_ID_NOTE_MARKER: current source versions were checked, with the independent measurement still open."
+    );
     let mut proposal = candidate(&n.canonical, "cedar-revalidation");
     proposal["subject_ref"] = n.canonical["entry_ref"].clone();
     proposal["path"] = reset["research"]["output_path"].clone();
@@ -419,10 +432,17 @@ async fn revalidation_stale_waiting_and_replays_preserve_context_until_supported
     waiting["status"] = json!("waiting");
     waiting["processed_inputs"] = json!([]);
     let mut current_admission = save_progress(&f, waiting.clone()).await;
-    assert_context(&current_admission, &n.saved);
-    assert_eq!(current_admission["research"]["notes"], "");
-    assert_eq!(current_admission["research"]["pending_queries"], json!([]));
-    assert_eq!(current_admission["research"]["pending_targets"], json!([]));
+    assert!(context(&current_admission).is_null());
+    assert_eq!(current_admission["research"]["notes"], NOTES);
+    assert_eq!(
+        current_admission["research"]["pending_queries"],
+        json!(["independent detector measurement"])
+    );
+    assert_eq!(
+        current_admission["research"]["pending_targets"],
+        json!([n.lead["entry_ref"]])
+    );
+    assert_eq!(current_admission["research"]["pass"]["yielded"], true);
     let (_, refreshed) = discover_subject(&f, &current_admission, vec![]).await;
     current_admission = refreshed;
     for kind in ["empty", "omitted", "repair"] {
@@ -436,13 +456,27 @@ async fn revalidation_stale_waiting_and_replays_preserve_context_until_supported
             body["repair_feedback"] = json!({"phase":"response_validation","message":"Return one valid structured checkpoint."});
         }
         current_admission = save_progress(&f, body).await;
-        assert_context(&current_admission, &n.saved);
+        assert!(context(&current_admission).is_null());
+        if kind == "empty" {
+            assert_eq!(current_admission["research"]["notes"], "");
+        }
     }
+    // Restore reviewed work so the moved support source is reliance again.
+    current_admission = save_progress(
+        &f,
+        progress_body(
+            &current_admission,
+            vec![reviewed(&n.canonical), reviewed(&n.support)],
+            "waiting",
+            NOTES,
+        ),
+    )
+    .await;
     let path = notebook_path(&n.canonical);
     let before = current(&f, &path).await.unwrap();
     let state = current(&f, "dreams/state.md").await.unwrap();
     let replay = replay_progress(&f, &waiting).await;
-    assert_context(&replay, &n.saved);
+    assert!(context(&replay).is_null());
     assert_eq!(current(&f, &path).await.unwrap(), before);
     assert_eq!(current(&f, "dreams/state.md").await.unwrap(), state);
     let mut changed = waiting;
@@ -467,10 +501,27 @@ async fn revalidation_stale_waiting_and_replays_preserve_context_until_supported
     )
     .await;
     reload_router(&mut f).await;
-    let restarted = admit(&f).await;
-    assert_context(&restarted, &n.saved);
+    // The explicit yield lets the next selection re-pin at a newer cutoff;
+    // completion must reread the moved reliance source.
+    let restarted = next_subject(
+        &f,
+        &admit_requested(&f, vec![n.canonical["entry_ref"].clone()]).await,
+    )
+    .await;
+    assert!(context(&restarted).is_null());
+    let queued = restarted["research"]["pass"]["changed"].as_array().unwrap();
+    assert!(
+        queued
+            .iter()
+            .any(|c| c["entry_ref"] == newer["entry_ref"] && c["required"] == true),
+        "{queued:?}"
+    );
     let done = save_progress(&f, progress_body(&restarted, vec![reviewed(&n.canonical), reviewed(&newer)], "no_change", "The current canonical source and revised schedule were inspected; no proposal is required.")).await;
     assert!(context(&done).is_null());
+    assert_eq!(
+        done["research"]["reviewed_through"]["disposition"],
+        "no_change"
+    );
     assert_eq!(checkpoint(&f, &n.canonical).await, json!({"state":"none"}));
 }
 
@@ -488,7 +539,8 @@ async fn revalidation_audits_cited_and_uncited_original_dependencies_before_and_
         let n = notebook(&f).await;
         let newer = drift(&f, &n.support).await;
         let (discovery, retained) = discover_subject(&f, &n.saved, vec![]).await;
-        assert_context(&retained, &n.saved);
+        assert!(context(&retained).is_null());
+        assert_eq!(retained["research"]["notes"], NOTES);
         let path = notebook_path(&n.canonical);
         let origin_version = n.saved["research"]["version"].as_i64().unwrap();
         let original = exact_metadata(&f, &path, origin_version).await;
@@ -552,9 +604,19 @@ async fn revalidation_audits_cited_and_uncited_original_dependencies_before_and_
         .await);
         assert_eq!(replay["no_op"], true);
         assert!(context(&replay["data"]).is_null(), "{loss}: {replay}");
-        assert!(
-            !replay.to_string().contains("REVALIDATION_NOTE_MARKER"),
-            "{loss}"
+        // Losing reviewed evidence withholds the cached conclusions; losing an
+        // admitted but unreviewed lead does not.
+        let relied = matches!(
+            loss,
+            "cited_generated" | "original_generated" | "canonical_deleted"
+        );
+        assert_eq!(
+            !replay["data"]["research"]["notes"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("REVALIDATION_NOTE_MARKER"),
+            relied,
+            "{loss}: {replay}"
         );
         assert_eq!(current(&f, &path).await.unwrap(), before);
         assert_eq!(current(&f, "dreams/state.md").await.unwrap(), state);
@@ -582,7 +644,8 @@ async fn revalidation_audits_cited_and_uncited_original_dependencies_before_and_
             assert!(
                 !ok(post(&f, &f.model, "/v1/workspace/read", read).await)
                     .to_string()
-                    .contains("REVALIDATION_NOTE_MARKER")
+                    .contains("REVALIDATION_NOTE_MARKER"),
+                "historical notebook reads keep their immutable manifest authority: {loss}"
             );
         }
         assert_eq!(
@@ -774,12 +837,6 @@ async fn revalidation_rejects_malformed_origins_and_server_field_injection_witho
             "{bad_version}: {}",
             response.body
         );
-        assert!(
-            !response
-                .body
-                .to_string()
-                .contains("REVALIDATION_NOTE_MARKER")
-        );
     }
     replace_fixture_metadata(&f, &path, head.0, head.2.clone()).await;
     let foreign = actor(&f.pool, None, OWNER_CAPS).await;
@@ -833,7 +890,6 @@ async fn revalidation_rejects_malformed_origins_and_server_field_injection_witho
         )
         .await);
         assert!(context(&response["data"]).is_null(), "{defect}: {response}");
-        assert!(!response.to_string().contains("REVALIDATION_NOTE_MARKER"));
         assert_eq!(
             current(&f, &path).await.unwrap(),
             head,
@@ -857,7 +913,11 @@ async fn revalidation_rejects_malformed_origins_and_server_field_injection_witho
             discovery.clone(),
         )
         .await);
-        assert_context(&response["data"], &n.saved);
+        assert!(
+            context(&response["data"]).is_null(),
+            "an embedded pointer in an origin is never followed"
+        );
+        assert_eq!(response["data"]["research"]["notes"], NOTES);
     }
     replace_fixture_metadata(&f, &path, origin_version, original).await;
     assert_eq!(current(&f, "dreams/state.md").await.unwrap(), state);
@@ -876,7 +936,7 @@ async fn revalidation_maximum_notes_selectors_and_leads_remain_bounded_under_cli
             .collect::<String>()
     );
     let expanded = write(&f, n.support["path"].as_str().unwrap(), &source_text, 1).await;
-    let (_, selected) = discover_subject(&f, &n.saved, vec![]).await;
+    let selected = repin(&f, &n.saved, &n.canonical).await;
     let mut selectors = vec![reviewed(&n.canonical)];
     selectors.extend((3..66).map(|line| json!({"entry_ref":expanded["entry_ref"],"version":expanded["version"],"start_line":line,"end_line":line})));
     assert_eq!(selectors.len(), 64);
@@ -909,29 +969,34 @@ async fn revalidation_maximum_notes_selectors_and_leads_remain_bounded_under_cli
     .await
     .expect("bounded historical projection must fit the existing 30-second client deadline");
     let elapsed = started.elapsed();
-    assert_context(&historical, &maximum);
+    // A post-cutoff version keeps the maximal notebook current and served.
+    assert!(context(&historical).is_null());
     assert_eq!(
-        context(&historical)["prior_reviewed_sources"]
+        historical["research"]["notes"],
+        maximum["research"]["notes"]
+    );
+    assert_eq!(
+        historical["research"]["reviewed_sources"]
             .as_array()
             .unwrap()
             .len(),
         64
     );
     assert_eq!(
-        context(&historical)["prior_pending_queries"]
+        historical["research"]["pending_queries"]
             .as_array()
             .unwrap()
             .len(),
         12
     );
     assert_eq!(
-        context(&historical)["prior_pending_targets"]
+        historical["research"]["pending_targets"]
             .as_array()
             .unwrap()
             .len(),
         32
     );
-    let bytes = serde_json::to_vec(context(&historical)).unwrap().len();
+    let bytes = serde_json::to_vec(&historical["research"]).unwrap().len();
     eprintln!(
         "Maximum historical research projection: {bytes} bytes, {elapsed:?}; 64 exact selectors, 12 queries, 32 targets"
     );

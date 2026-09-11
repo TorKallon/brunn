@@ -188,6 +188,19 @@ async fn rejected_unchanged(f: &Fixture, canonical: &Value, endpoint: &str, oper
     );
 }
 
+/// Yield the pass and start the next one at a newer cutoff, so versions
+/// written after the previous cutoff become the pinned evidence.
+async fn repin(f: &Fixture, admission: &Value, canonical: &Value) -> (Value, Value) {
+    let yielded = yield_and_finish(f, admission).await;
+    let next = next_subject(
+        f,
+        &admit_requested(f, vec![canonical["entry_ref"].clone()]).await,
+    )
+    .await;
+    assert_eq!(next["research"]["subject_ref"], canonical["entry_ref"]);
+    (next, yielded)
+}
+
 async fn drift(f: &Fixture, source: &Value) -> Value {
     let version = source["version"].as_i64().unwrap();
     write(f, source["path"].as_str().unwrap(), &format!("# Calibration\n\nThe optical survey uses detector calibration revision {}.\n\nThe independent exposure check remains open.\n", version + 1), version).await
@@ -236,14 +249,24 @@ async fn checkpoint_preserves_independent_units_across_repeated_refresh_reload_a
         vec![],
     );
     let b = save(&f, b_body.clone()).await;
-    let b_origin = origin(&b);
     assert_contexts(&b, &[(&a_origin, a_body["notes"].as_str().unwrap())]);
     assert_eq!(
         b["inputs"], inputs,
         "checkpoint is never an input disposition"
     );
     let newer = drift(&f, &s.support).await;
-    let (_, refreshed) = discover_subject(&f, &b, vec![]).await;
+    let (_, pinned) = discover_subject(&f, &b, vec![]).await;
+    assert_eq!(
+        pinned["research"]["notes"], b_body["notes"],
+        "a version written after the cutoff does not disturb the current unit"
+    );
+    assert_contexts(&pinned, &[(&a_origin, a_body["notes"].as_str().unwrap())]);
+    // The next pass re-pins: every selector of unit B moved, so B becomes
+    // reconcilable history rather than a current head over unread evidence.
+    let (refreshed, yielded_b) = repin(&f, &pinned, &s.canonical).await;
+    // The yield saved an operational version of unit B; that immutable
+    // version is the origin the next pass captures as history.
+    let b_origin = origin(&yielded_b);
     assert_contexts(
         &refreshed,
         &[
@@ -261,12 +284,24 @@ async fn checkpoint_preserves_independent_units_across_repeated_refresh_reload_a
         vec![],
     );
     let c = save(&f, c_body.clone()).await;
-    let c_origin = origin(&c);
+    reload(&mut f).await;
+    let job = current(&f, &path(&s.canonical)).await.unwrap();
+    let state = current(&f, "dreams/state.md").await.unwrap();
+    let response = ok(post(&f, &f.runner, PROGRESS, c_body.clone()).await);
+    assert_eq!(response["no_op"], true);
+    assert_contexts(
+        &response["data"],
+        &[
+            (&a_origin, a_body["notes"].as_str().unwrap()),
+            (&b_origin, b_body["notes"].as_str().unwrap()),
+        ],
+    );
+    assert_receipt(&response["data"], &c_body, true, false, false, false);
+    assert_eq!(current(&f, &path(&s.canonical)).await.unwrap(), job);
+    assert_eq!(current(&f, "dreams/state.md").await.unwrap(), state);
     let newest = drift(&f, &newer).await;
-    let mut waiting = research_request(&c);
-    waiting["status"] = json!("waiting");
-    waiting["processed_inputs"] = json!([]);
-    let retained = save(&f, waiting).await;
+    let (retained, yielded_c) = repin(&f, &c, &s.canonical).await;
+    let c_origin = origin(&yielded_c);
     let expected = [
         (&a_origin, a_body["notes"].as_str().unwrap()),
         (&b_origin, b_body["notes"].as_str().unwrap()),
@@ -274,17 +309,7 @@ async fn checkpoint_preserves_independent_units_across_repeated_refresh_reload_a
     ];
     assert_contexts(&retained, &expected);
     let (_, refreshed) = discover_subject(&f, &retained, vec![]).await;
-    reload(&mut f).await;
-    let job = current(&f, &path(&s.canonical)).await.unwrap();
-    let state = current(&f, "dreams/state.md").await.unwrap();
-    for operation in [&a_body, &b_body, &c_body] {
-        let response = ok(post(&f, &f.runner, PROGRESS, operation.clone()).await);
-        assert_eq!(response["no_op"], true);
-        assert_contexts(&response["data"], &expected);
-        assert_receipt(&response["data"], operation, true, false, false, false);
-        assert_eq!(current(&f, &path(&s.canonical)).await.unwrap(), job);
-        assert_eq!(current(&f, "dreams/state.md").await.unwrap(), state);
-    }
+    assert_contexts(&refreshed, &expected);
     let consolidate = body(
         &refreshed,
         vec![reviewed(&s.canonical), reviewed(&newest)],
@@ -294,7 +319,10 @@ async fn checkpoint_preserves_independent_units_across_repeated_refresh_reload_a
     let merged = save(&f, consolidate.clone()).await;
     assert_contexts(&merged, &[(&b_origin, b_body["notes"].as_str().unwrap())]);
     assert_eq!(merged["checkpoint_receipt"]["reconciled"], true);
-    assert_eq!(merged["inputs"], inputs);
+    // Later attempts admitted the drifted versions as inputs; the checkpoint
+    // itself still disposes none of the current attempt's inputs.
+    assert_eq!(merged["inputs"], retained["inputs"]);
+    assert!(merged["inputs"].as_array().unwrap().len() >= inputs.as_array().unwrap().len());
     let exact = ok(post(&f, &f.model, "/v1/workspace/read", json!({"requests":[{"path":path(&s.canonical),"version":a_origin["version"],"view":"full"}]})).await);
     assert!(
         exact.to_string().contains("UNIT_A"),
@@ -387,15 +415,15 @@ async fn checkpoint_exact_reconciliation_and_count_capacity_are_atomic_and_yield
     repair["repair_feedback"] = json!({"phase":"checkpoint_validation","message":"Consolidate offered checkpoints before saving a fifth unit."});
     let repaired = save(&f, repair).await;
     assert_eq!(contexts(&repaired).len(), 3);
-    let newer = drift(&f, &s.support).await;
-    let (_, refreshed) = discover_subject(&f, &repaired, vec![]).await;
+    let newer = drift(&f, &s.canonical).await;
+    let (refreshed, _) = repin(&f, &repaired, &s.canonical).await;
     assert_eq!(
         contexts(&refreshed).len(),
         4,
-        "reserved current unit fits when refresh invalidates it"
+        "reserved current unit fits when the next pass invalidates it"
     );
     assert!(refreshed["research"]["current_checkpoint"].is_null());
-    let combined = save(&f, body(&refreshed, vec![reviewed(&s.canonical), reviewed(&newer)], "All four units were reconsidered into a current aggregate, with independent follow-up retained.", offered(&refreshed))).await;
+    let combined = save(&f, body(&refreshed, vec![reviewed(&newer), reviewed(&s.support)], "All four units were reconsidered into a current aggregate, with independent follow-up retained.", offered(&refreshed))).await;
     assert!(contexts(&combined).is_empty());
     assert_eq!(combined["checkpoint_receipt"]["reconciled"], true);
     let mut waiting = research_request(&combined);
@@ -472,8 +500,8 @@ async fn checkpoint_aggregate_byte_reservation_rejects_whole_write_and_survives_
         sqlx::query("UPDATE brunn.entry_versions v SET metadata=jsonb_set(v.metadata,'{dreamer_research,coverage,query_results}',$4) FROM brunn.entries e WHERE e.user_id=$1 AND e.path=$2 AND v.user_id=e.user_id AND v.entry_id=e.id AND v.version=$3")
             .bind(f.owner.user).bind(path(&s.canonical)).bind(origin["version"].as_i64().unwrap()).bind(&groups).execute(&f.pool).await.unwrap();
     }
-    let _newer = drift(&f, &s.support).await;
-    let (_, refreshed) = discover_subject(&f, &discovered, vec![]).await;
+    let _newer = drift(&f, &s.canonical).await;
+    let (refreshed, _) = repin(&f, &discovered, &s.canonical).await;
     assert_eq!(contexts(&refreshed).len(), 2);
     assert!(refreshed["research"]["current_checkpoint"].is_null());
     let total = serde_json::to_vec(&refreshed["research"]["checkpoint_contexts"])
@@ -493,7 +521,7 @@ async fn checkpoint_original_dependency_loss_withholds_entire_frontier_and_canno
         let s = scenario(&f).await;
         let a_body = body(
             &s.admission,
-            vec![reviewed(&s.canonical)],
+            vec![reviewed(&s.canonical), reviewed(&s.support)],
             "ACCESS_UNIT_A: canonical observation with an uncited detector lead.",
             vec![],
         );
@@ -503,7 +531,7 @@ async fn checkpoint_original_dependency_loss_withholds_entire_frontier_and_canno
             &f,
             body(
                 &a,
-                vec![reviewed(&s.canonical)],
+                vec![reviewed(&s.canonical), reviewed(&s.support)],
                 "ACCESS_UNIT_B: another independent canonical observation.",
                 vec![],
             ),
@@ -598,39 +626,20 @@ async fn checkpoint_original_dependency_loss_withholds_entire_frontier_and_canno
         if loss == "protected" {
             // RLS hides this head entirely. Unlike a visible tombstone or
             // generated edition, its disappearance cannot prove a terminal
-            // source-policy disposition, so current scope remains unchecked.
-            assert_eq!(refreshed["research"]["needs_refresh"], true);
-            assert_eq!(
-                refreshed["research"]["coverage"]["change_status"],
-                "unchecked"
-            );
+            // source-policy disposition, so it stays queued as unresolved. The
+            // withheld history remains withheld; independently supported
+            // current work may continue.
+            assert_ne!(refreshed["research"]["needs_refresh"], true);
             assert_eq!(
                 refreshed["research"]["coverage"]["change_reason"],
                 "research_sources_unresolved"
             );
-            let before = current(&f, &path(&s.canonical)).await.unwrap();
-            let state = current(&f, "dreams/state.md").await.unwrap();
-            let refused = post(
-                &f,
-                &f.runner,
-                PROGRESS,
-                body(
-                    &refreshed,
-                    vec![reviewed(&s.canonical)],
-                    "UNCHECKED_CURRENT_MUST_NOT_PERSIST",
-                    vec![],
-                ),
-            )
-            .await;
-            assert_eq!(
-                refused.status,
-                StatusCode::BAD_REQUEST,
-                "loss={loss}, phase=unchecked current checkpoint, error={}",
-                refused.body
+            assert!(
+                refreshed["research"]["coverage"]["pending_source_refs"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&s.support["entry_ref"])
             );
-            assert_eq!(refused.body["error"]["code"], "research_refresh_required");
-            assert_eq!(current(&f, &path(&s.canonical)).await.unwrap(), before);
-            assert_eq!(current(&f, "dreams/state.md").await.unwrap(), state);
             let mut waiting = research_request(&refreshed);
             waiting["status"] = json!("waiting");
             let waiting =
@@ -966,10 +975,13 @@ async fn checkpoint_legacy_migration_and_old_client_omission_cannot_erase_v2_cus
         "dream.research.v1"
     );
     let newer = drift(&f, &s.support).await;
-    let (_, refreshed) = discover_subject(&f, &legacy, vec![]).await;
-    assert_eq!(contexts(&refreshed).len(), 1);
-    let legacy_origin = contexts(&refreshed)[0]["origin"].clone();
-    assert_eq!(legacy_origin["version"], legacy["research"]["version"]);
+    let (refreshed, _) = repin(&f, &legacy, &s.canonical).await;
+    assert!(
+        contexts(&refreshed).is_empty(),
+        "the legacy unit relied only on the canonical, which did not move"
+    );
+    let legacy_origin = origin(&refreshed);
+    assert_eq!(legacy_origin["version"], refreshed["research"]["version"]);
     let upgraded = save(
         &f,
         body(
@@ -1035,7 +1047,8 @@ async fn checkpoint_four_unit_maximum_authority_projection_remains_bounded_and_e
     for n in 0..254 {
         sources.push(write(&f, &format!("sources/Optics/Batch/Measurement-{n:03}.md"), &format!("# Measurement {n:03}\n\nAn independently recorded optical measurement has sample index {n:03}.\n"), 0).await);
     }
-    let mut admission = s.admission.clone();
+    // Sources written after the pass cutoff wait for the next pass.
+    let (mut admission, _) = repin(&f, &s.admission, &s.canonical).await;
     for batch in sources[2..].chunks(32) {
         (_, admission) = discover_subject(
             &f,
@@ -1063,10 +1076,14 @@ async fn checkpoint_four_unit_maximum_authority_projection_remains_bounded_and_e
         admission = save(&f, operation).await;
         units.push((origin(&admission), notes));
     }
-    let _newer = drift(&f, &s.support).await;
+    // Every selector of the current unit moves; the next pass captures it.
+    for source in &sources[192..256] {
+        drift(&f, source).await;
+    }
     let started = std::time::Instant::now();
-    let (_, refreshed) = discover_subject(&f, &admission, vec![]).await;
+    let (refreshed, yielded) = repin(&f, &admission, &s.canonical).await;
     let elapsed = started.elapsed();
+    units[3].0 = origin(&yielded);
     let expected = units
         .iter()
         .map(|(origin, notes)| (origin, notes.as_str()))

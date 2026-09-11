@@ -366,6 +366,12 @@ async fn comparison_owner_or_source_race_cannot_consume_retained_input() {
             body,
         )
         .await;
+        if change == "source" {
+            // A cited source moving after the pass cutoff is refresh work; the
+            // exact admitted input remains covered by the pinned proposal.
+            assert!(response.status.is_success(), "{change}: {}", response.body);
+            continue;
+        }
         assert!(
             response.status.is_client_error(),
             "{change}: {}",
@@ -1261,8 +1267,9 @@ async fn comparison_follow_up_reconciles_changed_origin_only_after_cited_current
     // pending proposal. A source-based no_change must not strand that stale
     // view by consuming its routed correction and removing its priority.
     let view = review(&f).await;
-    assert_eq!(view["items"][0]["status"], "stale");
-    assert_eq!(view["items"][0]["stale"], true);
+    assert_eq!(view["items"][0]["status"], "pending");
+    assert_eq!(view["items"][0]["stale"], false);
+    assert_eq!(view["items"][0]["refresh_pending"], true);
     let mut premature = progress_body(
         &expanded,
         vec![

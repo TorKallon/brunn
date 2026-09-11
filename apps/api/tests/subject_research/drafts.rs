@@ -342,15 +342,11 @@ async fn draft_one_pass_custody_survives_stale_submit_restart_and_exact_replay()
             )
             .await
         };
-        // Neither case changes the candidate's citation: uncited manifest drift
-        // and new relevant scope must still reject the unchanged acceptance path.
-        rejected_unchanged(
-            &f,
-            &s.canonical,
-            CANDIDATES,
-            submission(&saved, candidate.clone(), Some(ptr.clone())),
-        )
-        .await;
+        // Post-cutoff changes are invisible to this pass; an unrelated stale
+        // notebook version still rejects the submission without retiring custody.
+        let mut stale = submission(&saved, candidate.clone(), Some(ptr.clone()));
+        stale["research_version"] = json!(0);
+        rejected_unchanged(&f, &s.canonical, CANDIDATES, stale).await;
         let durable = current(&f, &draft_path(&s.canonical)).await.unwrap();
         reload(&mut f).await;
         let job = current(&f, &job_path(&s.canonical)).await.unwrap();
@@ -374,10 +370,10 @@ async fn draft_one_pass_custody_survives_stale_submit_restart_and_exact_replay()
             "bounded fixture refresh completes: {refreshed}"
         );
         assert!(
-            delta[change]
+            !delta[change]
                 .to_string()
                 .contains(changed["entry_ref"].as_str().unwrap()),
-            "{change}: {delta}"
+            "post-cutoff {change} waits for the next pass: {delta}"
         );
         assert_eq!(refreshed["inputs"], saved["inputs"]);
         assert_eq!(
@@ -407,7 +403,7 @@ async fn draft_one_pass_custody_survives_stale_submit_restart_and_exact_replay()
 }
 
 #[tokio::test]
-async fn draft_custody_accepts_already_stale_scope_without_accepting_the_candidate() {
+async fn draft_custody_and_submission_use_pinned_evidence_while_newer_versions_wait() {
     let Some(f) = fixture().await else { return };
     let s = scenario(&f).await;
     let candidate = proposal(&s.admission, &s.canonical, "already stale");
@@ -423,24 +419,27 @@ async fn draft_custody_accepts_already_stale_scope_without_accepting_the_candida
     let saved = save(&f, custody(&s.admission, candidate.clone(), None)).await;
     let ptr = pointer(&saved);
     assert_draft(&saved, &candidate, &ptr);
-    assert_eq!(draft(&saved)["source_delta"]["coverage_complete"], false);
+    assert_eq!(draft(&saved)["source_delta"]["coverage_complete"], true);
+    assert_eq!(draft(&saved)["source_delta"]["changed"], json!([]));
+    assert_eq!(
+        newer["version"], 2,
+        "the newer version waits for the next pass"
+    );
     assert_eq!(current(&f, &job_path(&s.canonical)).await.unwrap(), job);
     assert_eq!(current(&f, "dreams/state.md").await.unwrap(), state);
-    rejected_unchanged(
+    let accepted = ok(post(
         &f,
-        &s.canonical,
+        &f.runner,
         CANDIDATES,
         submission(&saved, candidate.clone(), Some(ptr.clone())),
     )
-    .await;
-    let (_, refreshed) = discover_subject(&f, &saved, vec![]).await;
-    assert_draft(&refreshed, &candidate, &ptr);
-    assert!(
-        draft(&refreshed)["source_delta"]["changed"]
-            .to_string()
-            .contains(newer["entry_ref"].as_str().unwrap())
+    .await);
+    assert_eq!(
+        accepted["accepted_candidate_ids"].as_array().unwrap().len(),
+        1
     );
-    assert_eq!(draft(&refreshed)["source_delta"]["coverage_complete"], true);
+    assert_eq!(accepted["draft_receipt"]["retired"], true);
+    assert!(draft(&accepted).is_null());
     f.pool.close().await;
 }
 
@@ -462,7 +461,14 @@ async fn draft_source_delta_is_bounded_and_never_claims_complete_truncated_cover
         )
         .await;
     }
-    let (_, refreshed) = discover_subject(&f, &saved, vec![]).await;
+    // Leads written after the cutoff join the next pass, where the retained
+    // draft's delta is computed against the re-pinned evidence.
+    yield_and_finish(&f, &saved).await;
+    let refreshed = next_subject(
+        &f,
+        &admit_requested(&f, vec![s.canonical["entry_ref"].clone()]).await,
+    )
+    .await;
     assert_draft(&refreshed, &candidate, &ptr);
     assert_ne!(
         refreshed["research"]["needs_refresh"], true,
@@ -476,7 +482,6 @@ async fn draft_source_delta_is_bounded_and_never_claims_complete_truncated_cover
     assert_eq!(count, 16);
     assert_eq!(delta["truncated"], true);
     assert_eq!(delta["coverage_complete"], false);
-    assert_eq!(refreshed["inputs"], saved["inputs"]);
     assert!(review(&f).await["items"].as_array().unwrap().is_empty());
     f.pool.close().await;
 }

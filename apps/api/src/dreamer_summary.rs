@@ -66,6 +66,9 @@ struct Check {
     reason: &'static str,
     sources: Vec<Document>,
     inaccessible: bool,
+    /// Background-maintained refresh status for a subject overview.
+    refresh: Value,
+    evidence_cutoff: Option<i64>,
 }
 
 pub fn managed_path(path: &str) -> bool {
@@ -215,6 +218,8 @@ async fn check(
             reason: "invalid_manifest",
             sources: vec![],
             inaccessible: true,
+            refresh: Value::Null,
+            evidence_cutoff: None,
         });
     };
     let mut sources = Vec::new();
@@ -262,6 +267,8 @@ async fn check(
             reason: "source_unavailable",
             sources,
             inaccessible,
+            refresh: Value::Null,
+            evidence_cutoff: None,
         });
     }
     if !manifest.raw_sources.is_empty() {
@@ -280,6 +287,8 @@ async fn check(
                 },
                 sources,
                 inaccessible: true,
+                refresh: Value::Null,
+                evidence_cutoff: None,
             });
         }
     }
@@ -290,6 +299,8 @@ async fn check(
                 reason: "location_evidence_requires_save",
                 sources,
                 inaccessible: false,
+                refresh: Value::Null,
+                evidence_cutoff: None,
             });
         }
         let query = json!({ "from": scope.get("from"), "to": scope.get("to"), "timezone": scope.get("timezone") });
@@ -299,6 +310,8 @@ async fn check(
                 reason: "invalid_evidence_scope",
                 sources,
                 inaccessible: false,
+                refresh: Value::Null,
+                evidence_cutoff: None,
             });
         };
         if query.validate(Utc::now()).is_err()
@@ -309,6 +322,8 @@ async fn check(
                 reason: "unverified_evidence_scope",
                 sources,
                 inaccessible: false,
+                refresh: Value::Null,
+                evidence_cutoff: None,
             });
         }
         // Publication verifies every cited canonical row belongs to this exact
@@ -355,6 +370,8 @@ async fn check(
             },
             sources,
             inaccessible: false,
+            refresh: Value::Null,
+            evidence_cutoff: None,
         });
     }
     if changed && manifest.subject_scope.is_none() {
@@ -363,6 +380,8 @@ async fn check(
             reason: "source_version_changed",
             sources,
             inaccessible: false,
+            refresh: Value::Null,
+            evidence_cutoff: None,
         });
     }
     if let Some(scope) = &manifest.subject_scope {
@@ -372,12 +391,59 @@ async fn check(
             .filter_map(|source| source_id(source).map(|id| (id, source.version)))
             .collect::<Vec<_>>();
         let subject = crate::dreamer_subject::check_scope(tx, auth, scope, &dependencies).await?;
+        if subject.status != "fresh" {
+            return Ok(Check {
+                status: subject.status,
+                reason: subject.reason,
+                sources,
+                inaccessible: subject.reason == "subject_source_unavailable"
+                    || subject.reason.starts_with("invalid_subject_"),
+                refresh: Value::Null,
+                evidence_cutoff: None,
+            });
+        }
+        // The overview is served as reviewed through its evidence cutoff.
+        // Refresh status comes from the background research job's completed
+        // passes and one bounded header comparison: no model work, no scan.
+        let mut evidence_cutoff = scope.checked_generation;
+        let mut status = "fresh";
+        let mut refresh = json!({"status":if subject.changed.is_empty(){"current"}else{"pending"},
+            "changed_source_count":subject.changed.len(),"reviewed_through":scope.checked_generation});
+        if let Some(reviewed) = research_reviewed_through(tx, auth, &scope.subject_ref).await?
+            && let Some(generation) = reviewed["generation"].as_i64()
+            && generation > scope.checked_generation
+        {
+            let published_hash = &summary.metadata["dreamer_summary"]["candidate_hash"];
+            let newer_revision = reviewed["disposition"] == "accepted"
+                && reviewed["candidate_hash"].is_string()
+                && &reviewed["candidate_hash"] != published_hash;
+            if newer_revision {
+                status = "revision_pending";
+                refresh = json!({"status":"revision_pending","reviewed_through":generation,
+                    "reviewed_at":reviewed["at"],"changed_source_count":subject.changed.len()});
+            } else if let Ok(pins) = serde_json::from_value::<
+                Vec<crate::dreamer_subject::SubjectDependency>,
+            >(reviewed["dependencies"].clone())
+            {
+                let mut later = scope.clone();
+                later.checked_generation = generation;
+                later.dependencies = pins;
+                let drift = crate::dreamer_subject::check_scope(tx, auth, &later, &[]).await?;
+                if drift.status == "fresh" {
+                    evidence_cutoff = generation;
+                    refresh = json!({"status":if drift.changed.is_empty(){"current"}else{"pending"},
+                        "changed_source_count":drift.changed.len(),"reviewed_through":generation,
+                        "reviewed_at":reviewed["at"]});
+                }
+            }
+        }
         return Ok(Check {
-            status: subject.status,
+            status,
             reason: subject.reason,
             sources,
-            inaccessible: subject.reason == "subject_source_unavailable"
-                || subject.reason.starts_with("invalid_subject_"),
+            inaccessible: false,
+            refresh,
+            evidence_cutoff: Some(evidence_cutoff),
         });
     }
     let changes = sqlx::query("SELECT change.path,previous.path AS previous_path FROM brunn.workspace_changes change LEFT JOIN LATERAL (SELECT old.path,old.entry_version FROM brunn.workspace_changes old WHERE old.user_id=change.user_id AND old.entry_id=change.entry_id AND old.generation<change.generation ORDER BY old.generation DESC LIMIT 1) previous ON true LEFT JOIN brunn.entry_versions change_v ON change_v.user_id=change.user_id AND change_v.entry_id=change.entry_id AND change_v.version=change.entry_version LEFT JOIN brunn.entry_versions previous_v ON previous_v.user_id=change.user_id AND previous_v.entry_id=change.entry_id AND previous_v.version=previous.entry_version WHERE change.user_id=$1 AND change.generation>$2 AND (coalesce(change_v.metadata->>'kind','')<>'briefing_edition' OR previous.path IS NOT NULL AND coalesce(previous_v.metadata->>'kind','')<>'briefing_edition') ORDER BY change.generation LIMIT $3")
@@ -404,6 +470,8 @@ async fn check(
         reason,
         sources,
         inaccessible: false,
+        refresh: Value::Null,
+        evidence_cutoff: None,
     })
 }
 
@@ -533,9 +601,40 @@ fn render(document: &Document, request: &ReadItem, max_chars: usize) -> Value {
     value
 }
 
-fn freshness(check: &Check, generation: i64) -> Value {
-    json!({"status":check.status,"reason":check.reason,"checked_generation":generation,
-        "sources":check.sources.iter().take(MAX_ALTERNATIVES).map(|source| json!({"reference":format!("entry:{}",source.id),"path":source.path,"version":source.version})).collect::<Vec<_>>()})
+fn freshness(check: &Check, generation: i64, summary: &Document) -> Value {
+    let mut value = json!({"status":check.status,"reason":check.reason,"checked_generation":generation,
+        "sources":check.sources.iter().take(MAX_ALTERNATIVES).map(|source| json!({"reference":format!("entry:{}",source.id),"path":source.path,"version":source.version})).collect::<Vec<_>>()});
+    if let Some(cutoff) = check.evidence_cutoff {
+        let manifest = &summary.metadata["dreamer_summary"];
+        value["evidence_cutoff"] = json!(cutoff);
+        value["reviewed_at"] = manifest["compiled_at"].clone();
+        value["published_at"] = manifest["published_at"].clone();
+        value["refresh"] = check.refresh.clone();
+    }
+    value
+}
+
+/// The last completed research pass for a subject, read from the retained
+/// job record by exact path. Absent for legacy or never-completed subjects.
+async fn research_reviewed_through(
+    tx: &mut Transaction<'_, Postgres>,
+    auth: &AuthContext,
+    subject_ref: &str,
+) -> ApiResult<Option<Value>> {
+    let Some(id) = subject_ref
+        .strip_prefix("entry:")
+        .and_then(|id| Uuid::parse_str(id).ok())
+    else {
+        return Ok(None);
+    };
+    let reviewed: Option<Value> = sqlx::query_scalar(
+        "SELECT v.metadata->'dreamer_research'->'reviewed_through' FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version WHERE e.user_id=$1 AND e.path=$2 AND e.deleted_at IS NULL",
+    )
+    .bind(auth.user_id.0)
+    .bind(format!("dreams/research/{id}.md"))
+    .fetch_optional(&mut **tx)
+    .await?;
+    Ok(reviewed.filter(Value::is_object))
 }
 
 fn exact_ref(value: &Value, ref_key: &str, version_key: &str) -> Option<(Uuid, i64)> {
@@ -1336,14 +1435,17 @@ async fn project(
                 generation,
             ));
         }
-        if check.status == "fresh" || request.version.is_some() {
+        if check.status == "fresh"
+            || check.status == "revision_pending"
+            || request.version.is_some()
+        {
             let mut value = render(&selected, request, max_chars);
             value["representation"] = json!(if request.version.is_some() {
                 "historical_summary"
             } else {
                 "derived_summary"
             });
-            value["freshness"] = freshness(&check, generation);
+            value["freshness"] = freshness(&check, generation, &selected);
             return Ok(value);
         }
         if let Some(source) = check.sources.first() {
@@ -1355,7 +1457,7 @@ async fn project(
                 .expect("source head exists in the same snapshot");
             let mut value = render(&source, &full, max_chars);
             value["representation"] = json!("current_source_fallback");
-            value["freshness"] = freshness(&check, generation);
+            value["freshness"] = freshness(&check, generation, &selected);
             return Ok(value);
         }
         return Ok(withheld(
@@ -1387,10 +1489,10 @@ async fn project(
         let check = check(tx, auth, &summary).await?;
         let canonical = summary.metadata["dreamer_summary"]["subject_ref"] == format!("entry:{id}");
         last_reason = check.reason;
-        if check.status == "fresh" {
+        if check.status == "fresh" || check.status == "revision_pending" {
             let mut summary_value = render(&summary, request, max_chars);
             summary_value["representation"] = json!("derived_summary");
-            summary_value["freshness"] = freshness(&check, generation);
+            summary_value["freshness"] = freshness(&check, generation, &summary);
             summary_value["requested_source"] =
                 json!({"reference":format!("entry:{id}"),"version":selected.version});
             return Ok(summary_value);
@@ -1833,9 +1935,10 @@ mod tests {
             tx.commit().await.unwrap();
             assert_eq!(
                 subject_check(&state, &auth, &scope, canonical).await.reason,
-                "subject_scope_changed"
+                "subject_evidence_pinned"
             );
         }
+        // Legacy prefix summaries keep their older covered-scope contract.
         assert_eq!(
             read_item(&state, &auth, legacy, "full", None).await["freshness"]["status"],
             "stale"
@@ -1895,7 +1998,7 @@ mod tests {
         tx.commit().await.unwrap();
         assert_eq!(
             subject_check(&state, &auth, &scope, canonical).await.reason,
-            "subject_scope_changed"
+            "subject_evidence_pinned"
         );
 
         let scope = subject_scope(&state, &auth, canonical, generation).await;
@@ -1922,7 +2025,7 @@ mod tests {
         tx.commit().await.unwrap();
         assert_eq!(
             subject_check(&state, &auth, &scope, canonical).await.reason,
-            "subject_scope_changed"
+            "subject_evidence_pinned"
         );
 
         let scope = subject_scope(&state, &auth, canonical, generation).await;
@@ -1935,7 +2038,7 @@ mod tests {
             .bind(auth.user_id.0).bind(changing).bind(path).bind(hash_token("Aster new primary outcome")).execute(&pool).await.unwrap();
         assert_eq!(
             subject_check(&state, &auth, &scope, canonical).await.reason,
-            "subject_scope_changed"
+            "subject_evidence_pinned"
         );
         pool.close().await;
     }
@@ -2197,7 +2300,7 @@ mod tests {
             tx.commit().await.unwrap();
             assert_eq!(
                 subject_check(&state, &auth, &scope, canonical).await.reason,
-                "subject_scope_changed"
+                "subject_evidence_pinned"
             );
         }
 
@@ -2368,7 +2471,7 @@ mod tests {
         .await;
         assert_eq!(
             subject_check(&state, &auth, &scope, canonical).await.reason,
-            "subject_scope_changed"
+            "subject_evidence_pinned"
         );
         let scope = subject_scope(&state, &auth, canonical, generation).await;
         let generation = put(
@@ -2381,10 +2484,11 @@ mod tests {
             json!({}),
         )
         .await;
-        // Removed mentions remain changes to the researched scope.
+        // Removed mentions remain changes for the research job to review; a
+        // read of pinned evidence stays fresh without scanning them.
         assert_eq!(
             subject_check(&state, &auth, &scope, canonical).await.status,
-            "stale"
+            "fresh"
         );
         let mut tx = snapshot(&state, &auth).await.unwrap();
         let delta = crate::dreamer_subject::research_changes(
@@ -2426,7 +2530,7 @@ mod tests {
             .bind(auth.user_id.0).bind(renamed).bind(hash_token("Outcome with no subject name")).fetch_one(&pool).await.unwrap();
         assert_eq!(
             subject_check(&state, &auth, &scope, canonical).await.status,
-            "stale"
+            "fresh"
         );
 
         let scope = subject_scope(&state, &auth, canonical, generation).await;
@@ -2443,7 +2547,7 @@ mod tests {
         .await;
         assert_eq!(
             subject_check(&state, &auth, &scope, canonical).await.status,
-            "stale"
+            "fresh"
         );
         let scope = subject_scope(&state, &auth, canonical, generation).await;
         sqlx::query("UPDATE brunn.entries SET deleted_at=clock_timestamp() WHERE id=$1")
@@ -2455,7 +2559,7 @@ mod tests {
             .bind(auth.user_id.0).bind(deleted).bind(hash_token("Aster's new evidence")).fetch_one(&pool).await.unwrap();
         assert_eq!(
             subject_check(&state, &auth, &scope, canonical).await.status,
-            "stale"
+            "fresh"
         );
         let mut tx = snapshot(&state, &auth).await.unwrap();
         let delta = crate::dreamer_subject::research_changes(
@@ -2473,9 +2577,11 @@ mod tests {
         let scope = subject_scope(&state, &auth, canonical, generation).await;
         sqlx::query("INSERT INTO brunn.workspace_changes(user_id,entry_id,entry_version,operation,path,content_sha256) SELECT $1,$2,1,'update','Elsewhere/unrelated.md',$3 FROM generate_series(1,2001)")
             .bind(auth.user_id.0).bind(unrelated).bind(hash_token("An unrelated Orchid outcome")).execute(&pool).await.unwrap();
+        // Reads no longer scan change history; the bounded scan below still
+        // reports its limit to the research job.
         assert_eq!(
             subject_check(&state, &auth, &scope, canonical).await.reason,
-            "subject_change_check_limit"
+            "subject_evidence_pinned"
         );
         let mut tx = snapshot(&state, &auth).await.unwrap();
         let first =
@@ -2519,7 +2625,7 @@ mod tests {
             subject_check(&state, &auth, &cursor_scope, canonical)
                 .await
                 .status,
-            "stale"
+            "fresh"
         );
         let generation: i64 = sqlx::query_scalar(
             "SELECT max(generation) FROM brunn.workspace_changes WHERE user_id=$1",
@@ -2541,7 +2647,7 @@ mod tests {
         .await;
         assert_eq!(
             subject_check(&state, &auth, &scope, canonical).await.reason,
-            "subject_change_coverage_incomplete"
+            "subject_evidence_pinned"
         );
         pool.close().await;
     }
@@ -2606,8 +2712,9 @@ mod tests {
         )
         .await;
         let selected = read_item(&state, &auth, canonical, "current_state", None).await;
-        assert_eq!(selected["representation"], "current_source_fallback");
-        assert_eq!(selected["freshness"]["reason"], "subject_scope_changed");
+        assert_eq!(selected["representation"], "derived_summary");
+        assert_eq!(selected["freshness"]["status"], "fresh");
+        assert_eq!(selected["freshness"]["refresh"]["status"], "current");
         assert!(!selected.to_string().contains("skiing summary"));
         assert_eq!(
             read_item(&state, &auth, canonical, "full", Some(1)).await["text"],
@@ -2698,7 +2805,7 @@ mod tests {
         .await;
         assert_eq!(
             read_item(&state, &auth, canonical, "current_state", None).await["freshness"]["reason"],
-            "subject_scope_changed"
+            "subject_evidence_pinned"
         );
         // Changed-but-accessible evidence still permits an explicit historical
         // read. Losing another dependency must override that stale result.

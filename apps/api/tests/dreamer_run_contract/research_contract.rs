@@ -1249,3 +1249,77 @@ async fn accepted_evidence_checkpoint_resets_refresh_rejection_budget() {
     );
     assert!(s.submitted.is_empty());
 }
+
+#[tokio::test]
+async fn exhausted_pass_allowance_yields_without_model_work_and_changed_evidence_reaches_the_prompt()
+ {
+    let second = "entry:019fba27-687b-7582-8b99-e9371dbe2ce6";
+    let done = json!({"schema":"dream.research.step.v1","action":"done",
+        "reviewed_sources":[{"entry_ref":second,"version":2,"start_line":1,"end_line":2}],
+        "findings":["The moved source was reread; it does not alter any conclusion."]});
+    let behavior = format!(
+        r#"
+if grep -q 'single word READY' "$DIR/prompt"; then echo READY; exit 0; fi
+case "$OUTPUT_NAME" in
+ research-2-1-answer.md) cat > "$OUTPUT_PATH" <<'JSON'
+{done}
+JSON
+ ;;
+ *) exit 99;;
+esac
+"#
+    );
+    let (shared, dreamer, dir) = build(&behavior).await;
+    enable(&shared);
+    {
+        let mut exhausted = job(SOURCE);
+        exhausted["notes"] = json!("Retained notes survive an exhausted allowance.");
+        exhausted["reviewed_sources"] =
+            json!([{"entry_ref":SOURCE,"version":2,"start_line":1,"end_line":2}]);
+        exhausted["pass"] = json!({"cutoff":17,"started_at":"2026-09-07T03:00:00Z",
+            "rounds":48,"rounds_remaining":0,"changed":[],"yielded":false});
+        let mut refresh = job(second);
+        refresh["pass"] = json!({"cutoff":17,"started_at":"2026-09-07T03:00:00Z",
+            "rounds":3,"rounds_remaining":45,"yielded":false,
+            "changed":[{"entry_ref":second,"path":"sources/Project.md","kind":"version",
+                "from_version":1,"version":2,"required":true}]});
+        let mut s = shared.lock().unwrap();
+        s.research_enabled = true;
+        s.research_jobs = vec![exhausted, refresh];
+    }
+    let report = dreamer.run_once(today(), RunKind::Manual).await;
+    assert!(
+        matches!(report.outcome, RunOutcome::Partial { .. }),
+        "{report:?}"
+    );
+    assert_eq!(report.research["subjects_yielded"], 1);
+    assert_eq!(report.research["subjects_completed"], 1);
+    assert_eq!(
+        report.research["rounds"], 1,
+        "no model round is spent on an exhausted pass"
+    );
+    assert!(!dir.path().join("prompt-research-1-1-answer.md").exists());
+    let prompt = std::fs::read_to_string(dir.path().join("prompt-research-2-1-answer.md")).unwrap();
+    assert!(prompt.contains("research.pass fixes this pass's evidence cutoff"));
+    assert!(prompt.contains("\"rounds_remaining\":45"));
+    assert!(prompt.contains("\"from_version\":1"));
+    assert!(prompt.contains("\"required\":true"));
+    let s = shared.lock().unwrap();
+    assert_eq!(s.research_progress[0]["subject_ref"], SOURCE);
+    assert_eq!(s.research_progress[0]["status"], "waiting");
+    assert!(
+        s.research_progress[0]["findings"][0]
+            .as_str()
+            .unwrap()
+            .contains("model-round allowance")
+    );
+    for key in ["notes", "reviewed_sources"] {
+        assert!(
+            s.research_progress[0].get(key).is_none(),
+            "an allowance yield must not rewrite retained {key}"
+        );
+    }
+    assert_eq!(s.research_progress[1]["subject_ref"], second);
+    assert_eq!(s.research_progress[1]["status"], "no_change");
+    assert_eq!(report.auth_persistence, "verified");
+}

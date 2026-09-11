@@ -448,7 +448,7 @@ async fn repair_hint_phase_lifetime_distinguishes_evidence_checkpoints_from_disp
 }
 
 #[tokio::test]
-async fn repair_hint_can_checkpoint_stale_versions_without_accepting_old_conclusions() {
+async fn repair_hint_survives_pinned_progress_while_newer_versions_wait() {
     let Some(f) = fixture().await else { return };
     let r = research(&f).await;
     let replacement = write(
@@ -467,9 +467,16 @@ async fn repair_hint_can_checkpoint_stale_versions_without_accepting_old_conclus
     )
     .await;
     assert_eq!(saved["repair_feedback_receipt"]["recorded"], true);
-    assert!(saved["research"]["repair_feedback"].is_null());
-    assert_eq!(saved["research"]["notes"], "");
-    assert_eq!(saved["research"]["reviewed_sources"], json!([]));
+    assert_eq!(
+        saved["research"]["repair_feedback"],
+        feedback("candidate_validation"),
+        "a post-cutoff source version does not withhold the retained correction"
+    );
+    assert_eq!(saved["research"]["notes"], r.saved["research"]["notes"]);
+    assert_eq!(
+        saved["research"]["reviewed_sources"],
+        r.saved["research"]["reviewed_sources"]
+    );
     let after = current(&f, &path).await.unwrap();
     unchanged_research(&before.2["dreamer_research"], &after.2["dreamer_research"]);
     assert_eq!(
@@ -477,37 +484,41 @@ async fn repair_hint_can_checkpoint_stale_versions_without_accepting_old_conclus
         feedback("candidate_validation")
     );
     unchanged_work(&state.2, &current(&f, "dreams/state.md").await.unwrap().2);
-    let stale_progress = progress_body(
-        &saved,
-        vec![reviewed(&r.canonical), reviewed(&r.support)],
-        "researching",
-        "Old source selectors cannot be accepted by saving repair feedback.",
-    );
-    let rejected = post(
+    let pinned = progress(
         &f,
-        &f.runner,
-        "/v1/workspace/dreamer/research-progress",
-        stale_progress,
+        progress_body(
+            &saved,
+            vec![reviewed(&r.canonical), reviewed(&r.support)],
+            "researching",
+            "Pinned selectors remain valid evidence within the pass.",
+        ),
     )
     .await;
-    assert_eq!(rejected.body["error"]["code"], "dreamer_source_changed");
-    assert_no_repair_phase(&rejected);
-    assert_eq!(current(&f, &path).await.unwrap(), after);
-    let (_, refreshed) = discover_subject(&f, &saved, vec![replacement["entry_ref"].clone()]).await;
+    assert_eq!(
+        pinned["research"]["notes"],
+        "Pinned selectors remain valid evidence within the pass."
+    );
+    assert_eq!(
+        pinned["research"]["repair_feedback"],
+        feedback("candidate_validation"),
+        "notebook progress does not discharge a candidate defect"
+    );
+    let (_, refreshed) =
+        discover_subject(&f, &pinned, vec![replacement["entry_ref"].clone()]).await;
     assert_eq!(
         refreshed["research"]["repair_feedback"],
         feedback("candidate_validation")
     );
-    assert_eq!(refreshed["research"]["notes"], "");
-    assert_eq!(refreshed["research"]["reviewed_sources"], json!([]));
     assert!(
         refreshed["research"]["sources"]
             .as_array()
             .unwrap()
             .iter()
             .any(|source| source["entry_ref"] == replacement["entry_ref"]
-                && source["version"] == replacement["version"])
+                && source["version"] == 1),
+        "the replacement waits for the next pass"
     );
+    assert_eq!(replacement["version"], 2);
 }
 
 #[tokio::test]
@@ -519,11 +530,11 @@ async fn repair_hint_mixed_phases_keep_both_corrections_until_candidate_or_done_
         let prior_message = format!("CANDIDATE_REPAIR_MARKER: {}", "é".repeat(1400));
         candidate_hint["repair_feedback"]["message"] = json!(prior_message);
         let hinted = progress(&f, candidate_hint).await;
-        let support = if phase == "checkpoint_validation" {
-            write(&f, "sources/Notes/Outcome.md", "# Outcome\n\nThe current outcome is complete; one equipment detail remains unresolved.\n\nAn eligible source revision.\n", 1).await
-        } else {
-            r.support.clone()
-        };
+        let support = r.support.clone();
+        if phase == "checkpoint_validation" {
+            // A post-cutoff revision does not withhold the pinned notebook.
+            write(&f, "sources/Notes/Outcome.md", "# Outcome\n\nThe current outcome is complete; one equipment detail remains unresolved.\n\nAn eligible source revision.\n", 1).await;
+        }
         let mut lower = hint_request(&hinted, phase, "researching");
         lower["repair_feedback"]["message"] =
             json!(format!("LOWER_REPAIR_MARKER: {}", "界".repeat(1200)));
@@ -550,14 +561,7 @@ async fn repair_hint_mixed_phases_keep_both_corrections_until_candidate_or_done_
             message.len() > 4000,
             "the combined UTF-8 bound is exercised"
         );
-        if phase == "checkpoint_validation" {
-            assert!(
-                saved["research"]["repair_feedback"].is_null(),
-                "stale projection cannot expose either correction"
-            );
-        } else {
-            assert_eq!(saved["research"]["repair_feedback"], combined);
-        }
+        assert_eq!(saved["research"]["repair_feedback"], combined);
         let (_, refreshed) = discover_subject(&f, &saved, vec![support["entry_ref"].clone()]).await;
         assert_eq!(refreshed["research"]["repair_feedback"], combined);
         let checked = progress(

@@ -1,14 +1,196 @@
 # Dreamer subject research
 
-Implementation design, updated September 10, 2026. Reviewed by Astra Ultra before implementation.
+Revised design, September 10, 2026. After holding implementation during design,
+the owner requested a Claude Code/Fable build-and-test handoff. That delegated
+implementation/testing may proceed after coordinating ownership; the preparing
+Codex session remains documents-only. Deployment, production manual runs and
+CONTROL/publication changes are not authorized by this handoff. Deployed code at
+`36d1da1` still uses the broader freshness rule described in the implementation
+reference below. Use the owner's available Claude Code/Fable allocation for this
+development/testing work; do not change Dreamer's deployed model/account/provider.
 
-## Behavior
+## Intended behavior
 
-The existing ChatGPT-backed runner researches one canonical person, project or topic at a time. It can repeatedly search and follow exact references, retain evidence and unfinished leads, produce a useful overview despite isolated gaps, and continue within or across nightly runs. Sources remain in the existing entry/version store. Review and publication remain separate from research.
+Maintain one useful, dated overview per person, project or topic. Research can
+search, follow links, reconcile evidence and resume across runs. Finish supported
+work despite peripheral gaps; keep those gaps visible and queued. Source records
+and their history remain untouched. Radley is an acceptance example, not a special
+case or the boundary of subject coverage.
 
-The design review requires explicit canonical summary selection, shared checks for newly relevant evidence, replay safety across interleaved rounds, fair scheduling and strict location isolation.
+The product promises best-known understanding with an honest review date and
+background maintenance, not a guarantee that nothing related has changed at the
+instant of every read. This section supersedes the older all-admitted-source
+freshness requirements. It does not supersede source access or owner decisions.
 
-## Server protocol
+## Evidence and discovery have different jobs
+
+- A search hit, admitted header or followed lead means "consider this." It does
+  not automatically make the entire record a dependency of the overview.
+- Retain exact source versions supporting or materially qualifying the actual
+  conclusions. Reliance includes contradictory evidence, uncertainty and reasons
+  for excluding a claim, not just the footnotes selected for display. Do not use
+  citation omission to hide reliance on a source.
+- A new match or a source version change is a reason to assess an update, not
+  proof that the summary is wrong. Neither keyword overlap nor recency alone
+  establishes materiality. A capped search cannot prove an exhaustive absence.
+
+Use existing source selectors, research notes and pending changes. These are
+behavioral distinctions, not a request for a claim graph, a new dependency
+database, or another model-facing receipt protocol. The runner owns mechanical
+versions/hashes; the model assesses meaning against exact primary evidence.
+
+## Finish a bounded pass
+
+Set and persist one evidence cutoff when a subject pass starts. Resume that same
+pass after interruption; discovery rounds, retries and new writes do not advance
+its cutoff or refill its time allowance. Use the existing version store to pin
+evidence no later than that cutoff. Search may surface newer leads, but queue
+post-cutoff material for the next pass instead of silently mixing it into an
+older snapshot. This does not require a copied corpus or an exhaustive snapshot
+search index; disclose incomplete discovery and avoid completeness claims.
+
+Acceptance means the overview is supported by its pinned evidence, with material
+conflicts encountered within that pass resolved or clearly qualified. Save it as
+reviewed through the cutoff; do not require every admitted lead to equal its
+latest head. Saving notes and retaining a draft likewise do not require unrelated
+sources to stop changing. Completion of this pass does not acknowledge or discard
+post-cutoff changes or imply the subject will never need more research.
+Peripheral unresolved leads can remain queued after acceptance; they must not
+force a false "all research done" disposition or block otherwise supported work.
+
+Newer information cannot move the finish line indefinitely. If a known newer
+correction contradicts the proposed overview, retain the dated result but mark
+the affected conclusion as needing correction; do not expose it as verified
+current. Queue focused follow-up. A fixed cutoff is not permission to ignore an
+already known contradiction.
+
+## Refresh what matters
+
+Background change handling retains a bounded list of potentially relevant changes
+for the existing subject job. Review the changed evidence against the retained
+overview and draft. If it does not alter any conclusion, keep the prose and finish
+the review. If it changes or qualifies a conclusion, revise the affected content
+while preserving useful work. A whole-document edit is fine; no per-claim storage
+engine is required. If significance remains unresolved, say so and retain the
+follow-up rather than certifying the claim or repeatedly restarting all research.
+
+The rental-reminder case must finish even while unrelated booking/refund or
+delivery fields change. A newly discovered cancellation that contradicts an older
+booking claim must still be considered, even if the new note was never cited.
+Use semantic evidence, not path/name exceptions for either example. Reuse the
+existing scheduling fairness and execution bounds; ordinary lead churn does not
+consume a model-repair allowance or count as completed research.
+
+## Useful, honest, fast reads
+
+Serve the saved canonical overview, with its last-reviewed/evidence-cutoff time
+distinct from its save/publication time. Show a pending refresh or unresolved
+correction when applicable. Pending refresh is not the same as invalid evidence:
+it does not by itself remove the useful overview or force fallback to raw notes.
+Do not keep displaying a known contradicted conclusion as current. Qualify or
+withhold the affected content; if the renderer cannot isolate it, show the dated
+overview as needing correction rather than silently treating it as current truth.
+
+Summary retrieval performs no model work, writes no research checkpoints and does
+not scan the corpus/change history. Background work maintains refresh status;
+foreground reads still enforce actual caller access and bounded evidence
+availability checks. Deleted/inaccessible supporting evidence is not merely a
+refresh lag: withhold content that cannot be served under the existing access
+rules. Do not prune old authority manifests to evade those rules. Legacy summaries
+must not be relabeled under the new contract without evidence-backed regeneration.
+Exact historical source reads remain exact and access-controlled.
+
+### Daytime answers use newer source evidence
+
+Successful source writes are durable and available to exact/lexical retrieval
+without waiting for Dreamer. This means captured information is available, not
+that every real-world change was captured or that an older overview has already
+been rewritten. The normal schedule is 03:00 America/Los_Angeles; startup catch-up
+and manual runs are not restricted to the night or gated on the owner being idle.
+
+For a current-state question, the answering agent uses the nightly overview as a
+dated baseline and checks relevant newer source evidence with bounded, targeted
+search/read. A confirmed correction or later outcome takes precedence over an
+obsolete summary claim; a newer timestamp alone does not settle a conflict. If
+the relevant update cannot be checked, qualify the answer instead of asserting
+that nothing changed. This is ordinary question answering, not a foreground
+Dreamer run, a corpus scan, or a new reconciliation service. An explicitly dated
+summary can still be read as a snapshot without this current-answer claim.
+
+This consumer behavior is an acceptance requirement, not a claim that the
+deployed summary endpoint already merges newer evidence. Its existing stale
+summary fallback returns source material, not a reconciled account of all later
+changes. Nightly consolidation alone cannot guarantee correct daytime answers.
+
+## Automation and scope
+
+The intended end state is automatic maintenance of reversible **derived
+summaries**, with source links and prior versions available. It is not automatic
+execution of tasks, edits to original source records, or blanket approval of other
+Dreamer actions. Existing owner holds and corrections remain authoritative.
+
+Research acceptance and publication remain separate. After the revised behavior
+has been implemented and demonstrated, the owner must explicitly authorize the
+limited automatic-publication mode. Until then, keep report-only behavior and
+existing decisions unchanged. This design edit does not enable that mode.
+
+Reuse the current runner/account, subject identities, entry/version store,
+retained drafts, pending changes and scheduler. Do not add a new memory backend,
+graph, checkpoint hierarchy or blanket revalidation of everything ever seen.
+Keep location/phone capture and its separate evidence contract out of this change.
+
+## Acceptance and implementation handoff — Claude Code/Fable
+
+Before implementation, agree ownership with Brunn 2 and recheck the working tree.
+The owner's Claude Code/Fable handoff releases the earlier hold for that delegated
+build/test work, not production rollout. Cover intake, progress saves, draft recovery, Review,
+publication and current reads consistently; changing only candidate intake would
+leave the same over-broad rule blocking another stage.
+
+The fixed acceptance bar is:
+
+1. Produce useful person, project and topic overviews from identities alone,
+   following linked primary evidence and retaining isolated unresolved details.
+2. Reproduce the uncited rental-reminder update during drafting and recovery.
+   Complete the supported overview without a restart or a subject-specific rule.
+3. Introduce a material contradiction in a previously uncited source. Correct or
+   qualify the affected conclusion; unchanged citations alone cannot certify it.
+4. Interrupt and resume a pass. Preserve the cutoff, useful draft and pending
+   post-cutoff changes; accept without duplicate proposals or lost work.
+5. Keep accepting bounded passes under continuing nonmaterial writes. Show the
+   difference between a completed pass and outstanding refresh/backlog work.
+6. Verify source-access loss, owner holds, exact historical reads, source
+   preservation, overlapping-summary behavior and location isolation.
+7. Repeated unchanged reads return the saved overview with honest status, no
+   model calls and no corpus scan. Measure latency against the same raw-read
+   baseline; response-byte savings alone do not establish faster answers.
+8. Save a material correction after the nightly overview, then ask a current-state
+   question before the next run. The answer reflects the correction using the
+   existing source retrieval path, without rerunning Dreamer. The dated overview
+   remains available and the source correction is preserved.
+
+Use focused deterministic checks plus one bounded integrated acceptance/recovery
+pass in an isolated dev/test environment. A production live pass remains a
+separate owner-approved step; do not claim it was exercised by isolated tests.
+Report actual readable output, accepted revisions, elapsed time, model rounds,
+retained work and retrieval measurements. Synthetic canaries and test counts are
+supporting checks, not the result. If the same blocker remains, stop and report
+the exact failure; do not automatically expand the architecture or repeat
+fix/deploy/manual-retry cycles. Existing tests asserting that every uncited lead
+change invalidates the whole summary describe the superseded contract, not a
+requirement to preserve that behavior.
+
+## Deployed implementation reference — not the revised contract
+
+The notes below retain the earlier implementation design and protocol details
+for compatibility work. They were reviewed before that implementation and were
+checked against the `36d1da1` baseline during this design revision. Their blanket
+freshness/invalidation requirements are superseded by the sections above and
+must not be reapplied as acceptance requirements for the revision. Existing
+authorization, replay, custody and owner-decision behavior remains the baseline.
+See also [Operations.md](Operations.md) for the deployed draft-saving behavior.
+
+### Server protocol
 
 The normal admission advertises `research_protocol: 1`. Existing clients and legacy narrative/location contracts continue to work. All mutations require the existing runner credential, active attempt fence and state CAS. Operation IDs are UUIDs. Manual runs can supply at most 16 exact `requested_subject_refs`; the scheduler retains those identities until an accepted proposal or supported no-change disposition, including across selection crashes and yields.
 
@@ -42,7 +224,7 @@ Dreamer header search uses migration 0098's `dreamer_lexical_candidates` functio
 
 The existing `candidates` endpoint additionally accepts top-level `subject_ref`, `research_version`, `operation_id` and optional `research_progress`. Every subject candidate carries `subject_ref`; the server attaches a validated `subject_scope`. Summary destination must equal the job's stable `output_path`, and it must cite the canonical source. The research view supplies `output_version` directly. Candidate validation, accepted review identity, research progress and replay receipt commit atomically. Subject evidence is authorized by the job's admitted exact versions and snapshot, not by the original input batch. Legacy/location sources retain their existing fences. Approved/deferred/rejected candidates cannot be silently replaced. Evidence changes invalidate a stale subject approval to `needs_changes`, preserving its bytes, hash and decision history until a newly reviewed revision is approved.
 
-## Research loop
+### Research loop
 
 Use one model response envelope, `dream.research.step.v1`, with `action` (`checkpoint`, `discover`, `submit`, `yield`, `done`), `queries`, `targets`, `notes`, `reviewed_sources`, `pending_queries`, `pending_targets`, `candidates`, `processed_inputs`, and `findings`. `checkpoint` is offered only when the API advertises `research.checkpoint_protocol: dream.research.checkpoint.v1`. It saves a nonempty source-backed partial result through `research-progress` and continues without a discovery request. It cannot submit candidates, process inputs or route/retire proposals. `submit` uses the existing candidate format and validators. `discover` requests missing evidence; `yield` retains a specific unresolved need; `done` records a supported no-change result. The wrapper forwards precise validation feedback for bounded local correction before yielding a repeatedly failing subject.
 
@@ -76,7 +258,7 @@ Every protocol-aware semantic progress/candidate save requires an exact `checkpo
 
 Legacy v1 clients retain the singular `revalidation_context` contract until upgrade; absent versus explicitly empty legacy pointers remain distinct. The existing one-time sixteen-version legacy lookup imports at most one unit and never searches around an access failure. An old runner against the new API cannot erase v2 history by omitting reconciliation. An old API rejects `dream.research.v2` before writing, preventing rollback from silently dropping unknown custody fields. Deploy API first, then runner; do not roll the API back below v2 support after jobs upgrade.
 
-## Comparing overlapping inputs
+### Comparing overlapping inputs
 
 Separate imported files can describe the same subject or successive snapshots
 of one dataset. Admission therefore supplies `comparison_proposals`: at most
@@ -176,7 +358,7 @@ decisions, including from an old mobile view. This routes work and removes
 proven redundancy without defining permanent equivalence between source
 identities.
 
-## Canonical views and freshness
+### Canonical views and freshness (superseded policy)
 
 Published metadata contains server-validated `subject_ref` and `subject_scope`. A canonical source's current-state read prefers its subject overview over a newer narrow summary that merely cites the source. Exact source reads remain exact; current reads fall back to source material when freshness cannot be proven.
 
@@ -186,7 +368,7 @@ Identity names come from the canonical filename and explicit structured metadata
 
 Research paths/metadata join protected reads/search/access auditing. Never serve cached conclusions after dependency access loss. Strip all research state from location prompts; preserve the existing location evidence packet and Sunday stop rules.
 
-## Verification and release
+### Earlier verification and release baseline
 
 Test discovery of a linked primary source absent from initial search; current outcome replacing an old plan; useful overview with one unresolved fact; replay A after B; crash/restart; changed/deleted/renamed/revoked sources; new relevant source outside original directories; canonical overview preference; search/state cap behavior; stuck-subject fairness and location isolation. Verify actual model quality across Radley and unrelated subjects, and measure current-state retrieval against source reads. Retest Sunday.
 

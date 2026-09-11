@@ -200,9 +200,15 @@ pub(in crate::dreamer_review) async fn prepare_resolutions(
         let item = destination(tx, auth, data, route)
             .await?
             .expect("offered destination");
-        if !candidate && item_stale(tx, auth, item).await? {
+        if !candidate
+            && (item_stale(tx, auth, item).await?
+                || !item.candidate.sources.iter().any(|source| {
+                    offered["current_source"]["entry_ref"] == source.entry_ref
+                        && offered["current_source"]["version"] == source.version
+                }))
+        {
             return Err(ApiError::invalid(
-                "source-route no_change requires a fresh destination proposal",
+                "source-route no_change requires a fresh destination proposal citing the current origin",
             ));
         }
         if !route.targets.iter().all(|reference| {
@@ -276,9 +282,13 @@ pub(in crate::dreamer_review) async fn resolve_sources(
         } else if pointer(destination) != prepared.token.comparison
             || !item_available(tx, auth.user_id.0, destination).await?
             || item_stale(tx, auth, destination).await?
+            || !destination.candidate.sources.iter().any(|source| {
+                source.entry_ref == prepared.current_source.entry_ref
+                    && source.version == prepared.current_source.version
+            })
         {
             return Err(ApiError::invalid(
-                "source-route no_change requires its unchanged fresh available destination",
+                "source-route no_change requires its unchanged fresh available destination citing the current origin",
             ));
         }
         let destination_pointer = pointer(destination);

@@ -39,6 +39,9 @@ pub(crate) struct SubjectDependency {
 pub(crate) struct SubjectCheck {
     pub status: &'static str,
     pub reason: &'static str,
+    /// Dependencies whose head moved past the pinned version. Drift is a
+    /// reason to assess a refresh, never proof that the reviewed work is wrong.
+    pub changed: Vec<Uuid>,
 }
 
 pub(crate) struct SubjectChanges {
@@ -53,7 +56,11 @@ fn result(status: &'static str, reason: &'static str) -> SubjectCheck {
     if status != "fresh" {
         tracing::info!(status, reason, "subject freshness rejected");
     }
-    SubjectCheck { status, reason }
+    SubjectCheck {
+        status,
+        reason,
+        changed: Vec::new(),
+    }
 }
 
 fn subject_id(reference: &str) -> Option<Uuid> {
@@ -144,7 +151,7 @@ pub(crate) async fn create_scope(
 ) -> ApiResult<SubjectScope> {
     let id = subject_id(canonical_ref)
         .ok_or_else(|| ApiError::invalid("canonical subject must be an exact entry reference"))?;
-    let row = sqlx::query("SELECT e.path,v.metadata,EXISTS(SELECT 1 FROM brunn.workspace_changes c WHERE c.user_id=e.user_id AND c.entry_id=e.id AND c.entry_version=e.current_version AND c.generation<=$3) AS admitted FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version WHERE e.user_id=$1 AND e.id=$2 AND e.deleted_at IS NULL AND e.kind='markdown' AND v.content IS NOT NULL")
+    let row = sqlx::query("SELECT e.path,v.metadata,EXISTS(SELECT 1 FROM brunn.workspace_changes c WHERE c.user_id=e.user_id AND c.entry_id=e.id AND c.generation<=$3 AND c.operation<>'delete') AS admitted FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version WHERE e.user_id=$1 AND e.id=$2 AND e.deleted_at IS NULL AND e.kind='markdown' AND v.content IS NOT NULL")
         .bind(auth.user_id.0).bind(id).bind(generation).fetch_optional(&mut **tx).await?
         .ok_or_else(|| ApiError::invalid("canonical subject is unavailable"))?;
     let path: String = row.get("path");
@@ -168,8 +175,11 @@ pub(crate) async fn create_scope(
     })
 }
 
-/// Attach server-resolved heads at candidate intake. Never call this on an
-/// approved item: its exact serialized dependency manifest is immutable.
+/// Attach the exact reliance versions at candidate intake: the canonical
+/// subject plus every reviewed or cited source, pinned no later than the
+/// scope's evidence cutoff. Discovery leads that were never reviewed or cited
+/// are not dependencies. Never call this on an approved item: its exact
+/// serialized dependency manifest is immutable.
 pub(crate) async fn bind_dependencies(
     tx: &mut Transaction<'_, Postgres>,
     auth: &AuthContext,
@@ -184,16 +194,19 @@ pub(crate) async fn bind_dependencies(
             ApiError::invalid("subject dependencies are invalid or exceed their bound")
         })?;
     let ids = dependencies.iter().map(|(id, _)| *id).collect::<Vec<_>>();
-    let rows = sqlx::query("SELECT e.id,e.path,e.current_version,v.metadata,EXISTS(SELECT 1 FROM brunn.workspace_changes c WHERE c.user_id=e.user_id AND c.entry_id=e.id AND c.entry_version=e.current_version AND c.generation<=$3) AS admitted FROM brunn.entries e JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version WHERE e.user_id=$1 AND e.id=ANY($2) AND e.deleted_at IS NULL AND e.kind='markdown' AND v.content IS NOT NULL")
-        .bind(auth.user_id.0).bind(ids).bind(scope.checked_generation).fetch_all(&mut **tx).await?;
+    let versions = dependencies
+        .iter()
+        .map(|(_, version)| *version)
+        .collect::<Vec<_>>();
+    let rows = sqlx::query("SELECT e.id,e.path,v.metadata,EXISTS(SELECT 1 FROM brunn.workspace_changes c WHERE c.user_id=e.user_id AND c.entry_id=e.id AND c.entry_version=selected.version AND c.generation<=$4) AS admitted FROM unnest($2::uuid[],$3::bigint[]) selected(id,version) JOIN brunn.entries e ON e.user_id=$1 AND e.id=selected.id JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=selected.version WHERE e.deleted_at IS NULL AND e.kind='markdown' AND v.content IS NOT NULL")
+        .bind(auth.user_id.0).bind(&ids).bind(&versions).bind(scope.checked_generation).fetch_all(&mut **tx).await?;
     for (id, version) in dependencies {
         let row = rows
             .iter()
             .find(|row| row.get::<Uuid, _>("id") == id)
             .ok_or_else(|| ApiError::invalid("subject dependency is unavailable"))?;
         let path: String = row.get("path");
-        if row.get::<i64, _>("current_version") != version
-            || !row.get::<bool, _>("admitted")
+        if !row.get::<bool, _>("admitted")
             || !source_path(&path)
             || path.len() > 1024
             || crate::dreamer_summary::protected_metadata(&row.get::<Value, _>("metadata"))
@@ -293,6 +306,11 @@ fn dependency_set(
     Some(merged.into_iter().collect())
 }
 
+/// Check that pinned reliance evidence can still be served: every dependency
+/// exists at its exact version, is an ordinary readable source, and the
+/// canonical identity is unchanged. Heads that moved past the pinned version
+/// are returned as `changed` for refresh scheduling and honest read status.
+/// This performs no change-history or corpus scan.
 #[tracing::instrument(skip_all, fields(checked_generation = scope.checked_generation))]
 pub(crate) async fn check_scope(
     tx: &mut Transaction<'_, Postgres>,
@@ -314,11 +332,11 @@ pub(crate) async fn check_scope(
         .iter()
         .map(|(_, version)| *version)
         .collect::<Vec<_>>();
-    let heads = sqlx::query("SELECT e.id,e.path,e.current_version,v.metadata FROM unnest($2::uuid[],$3::bigint[]) selected(id,version) JOIN brunn.entries e ON e.user_id=$1 AND e.id=selected.id JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version JOIN LATERAL (SELECT original.metadata FROM brunn.entry_versions original WHERE original.user_id=e.user_id AND original.entry_id=e.id AND original.version=selected.version LIMIT 1) original ON true WHERE e.deleted_at IS NULL AND coalesce(original.metadata->>'kind','')<>'briefing_edition'")
+    let heads = sqlx::query("SELECT e.id,e.path,e.current_version,v.metadata FROM unnest($2::uuid[],$3::bigint[]) selected(id,version) JOIN brunn.entries e ON e.user_id=$1 AND e.id=selected.id JOIN brunn.entry_versions v ON v.user_id=e.user_id AND v.entry_id=e.id AND v.version=e.current_version JOIN LATERAL (SELECT original.metadata FROM brunn.entry_versions original WHERE original.user_id=e.user_id AND original.entry_id=e.id AND original.version=selected.version AND original.content IS NOT NULL LIMIT 1) original ON true WHERE e.deleted_at IS NULL AND coalesce(original.metadata->>'kind','')<>'briefing_edition'")
         .bind(auth.user_id.0).bind(&ids).bind(versions).fetch_all(&mut **tx).await?;
-    // Availability takes precedence over every freshness result, including for
-    // historical summary reads. An earlier changed source cannot hide a later
-    // revoked dependency and allow cached text to escape.
+    // Availability takes precedence over everything else, including for
+    // historical summary reads. A revoked or generated dependency can never
+    // let cached text escape, and drift on another source cannot hide it.
     if dependencies.iter().any(|(id, _)| {
         heads
             .iter()
@@ -333,35 +351,11 @@ pub(crate) async fn check_scope(
     }) {
         return Ok(result("stale", "subject_source_unavailable"));
     }
+    let mut changed = Vec::new();
     for (id, version) in &dependencies {
         let Some(head) = heads.iter().find(|row| row.get::<Uuid, _>("id") == *id) else {
             return Ok(result("stale", "subject_source_unavailable"));
         };
-        if head.get::<i64, _>("current_version") != *version {
-            // All dependencies passed the availability check above. Do not
-            // log identities from an unavailable or protected manifest.
-            tracing::info!(dependency_ref = %format!("entry:{id}"), expected_version = version,
-                current_version = head.get::<i64, _>("current_version"), change = "version",
-                "subject dependency changed");
-            return Ok(result("stale", "subject_source_changed"));
-        }
-        if scope.dependencies.iter().any(|source| {
-            subject_id(&source.entry_ref) == Some(*id)
-                && source.path != head.get::<String, _>("path")
-        }) {
-            tracing::info!(dependency_ref = %format!("entry:{id}"), expected_version = version,
-                current_version = head.get::<i64, _>("current_version"), change = "path",
-                "subject dependency changed");
-            return Ok(result("stale", "subject_source_changed"));
-        }
-        if !source_path(head.get("path"))
-            || crate::dreamer_summary::protected_metadata(&head.get::<Value, _>("metadata"))
-            || crate::dreamer_summary::generated_briefing_metadata(
-                &head.get::<Value, _>("metadata"),
-            )
-        {
-            return Ok(result("stale", "subject_source_unavailable"));
-        }
         if *id == canonical {
             let current_names = names(head.get("path"), &head.get::<Value, _>("metadata"));
             if head.get::<String, _>("path") != scope.subject_path
@@ -372,20 +366,25 @@ pub(crate) async fn check_scope(
                 return Ok(result("stale", "subject_identity_changed"));
             }
         }
+        if head.get::<i64, _>("current_version") != *version {
+            changed.push(*id);
+        }
     }
-    let changes = research_changes(tx, auth, scope, &dependencies).await?;
-    if !changes.relevant_ids.is_empty() {
-        return Ok(result("stale", "subject_scope_changed"));
-    }
-    if changes.status != "complete" {
-        return Ok(result("unchecked", changes.reason));
-    }
-    Ok(result("fresh", "subject_sources_and_scope_match"))
+    Ok(SubjectCheck {
+        status: "fresh",
+        reason: if changed.is_empty() {
+            "subject_evidence_pinned"
+        } else {
+            "subject_evidence_pinned_refresh_pending"
+        },
+        changed,
+    })
 }
 
 /// Return changes to reconcile without requiring old dependencies still to be
 /// current. The caller may advance the coverage baseline only after complete
 /// results have been admitted or explicitly dispositioned in the research job.
+#[cfg(test)]
 pub(crate) async fn research_changes(
     tx: &mut Transaction<'_, Postgres>,
     auth: &AuthContext,

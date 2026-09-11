@@ -459,8 +459,12 @@ impl Dreamer {
                     stop = "time_exhausted".into();
                     break 'subjects;
                 }
+                let pass_exhausted = current["research"]["pass"]["rounds_remaining"]
+                    .as_u64()
+                    .is_some_and(|remaining| remaining == 0);
                 let yield_subject = repairs + refresh_rejections >= 2
                     || no_progress >= 2
+                    || pass_exhausted
                     || subject_round >= 32
                     || subject_deadline.saturating_duration_since(tokio::time::Instant::now())
                         <= selection_margin;
@@ -501,7 +505,7 @@ impl Dreamer {
                     add_fields(
                         &mut body,
                         json!({"status":"waiting",
-                        "findings":[if feedback.is_empty(){"Further research remains; this subject yielded so other work can proceed."}else{&feedback}],
+                        "findings":[if pass_exhausted{"This pass used its model-round allowance; retained notes and drafts continue in a new pass at a newer evidence cutoff."}else if feedback.is_empty(){"Further research remains; this subject yielded so other work can proceed."}else{&feedback}],
                         "processed_inputs":[]}),
                     );
                     match self

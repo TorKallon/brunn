@@ -782,11 +782,16 @@ pub(super) async fn resolve_processed(
             }
             if accepted_ids.is_none() {
                 let destination = destination.expect("checked retained destination");
+                // A pinned proposal is not stale when its origin moved, but a
+                // routed newer origin must be cited before no_change resolves it.
                 if !item_available(tx, auth.user_id.0, destination).await?
                     || item_stale(tx, auth, destination).await?
+                    || !destination.candidate.sources.iter().any(|source| {
+                        input["entry_ref"] == source.entry_ref && input["version"] == source.version
+                    })
                 {
                     return Err(ApiError::invalid(
-                        "routed no_change requires a current available fresh destination proposal; origin input remains retained",
+                        "routed no_change requires a fresh destination proposal citing the current origin version; origin input remains retained",
                     ));
                 }
             }

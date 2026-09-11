@@ -373,13 +373,31 @@ async fn discovery_audit_relevant_scope_invalidates_but_unrelated_and_generated_
         0,
     )
     .await;
+    // A relevant write after this pass's cutoff neither enters the pass nor
+    // outdates the search that served its pinned evidence.
     let replay = ok(post(&f, &f.runner, DISCOVER, original.clone()).await);
+    assert_eq!(current_audit(&replay["data"]), &receipt);
+    let (_, still) = discover_subject(&f, &unchanged, vec![]).await;
+    assert_eq!(current_audit(&still), &receipt);
+    assert!(
+        !still["research"]["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|source| source["entry_ref"] == relevant["entry_ref"])
+    );
+    // The next pass re-pins at a newer cutoff: the search is outdated and the
+    // relevant lead is admitted.
+    yield_and_finish(&f, &still).await;
+    let refreshed = next_subject(
+        &f,
+        &admit_requested(&f, vec![s.canonical["entry_ref"].clone()]).await,
+    )
+    .await;
     assert_eq!(
-        audit(&replay["data"]),
+        audit(&refreshed),
         &json!({"validity":"outdated","last_search":null})
     );
-    let (_, refreshed) = discover_subject(&f, &unchanged, vec![]).await;
-    assert_eq!(audit(&refreshed)["validity"], "outdated");
     assert!(
         refreshed["research"]["sources"]
             .as_array()
@@ -762,13 +780,15 @@ async fn discovery_audit_relevant_write_during_search_cannot_be_stamped_as_curre
         .bind(f.owner.user).bind(canonical_id).bind(s.canonical["path"].as_str().unwrap()).bind(&hash).fetch_one(&mut *blocker).await.unwrap();
     blocker.commit().await.unwrap();
     let response = ok(task.await.unwrap());
+    // The write during the search landed after the pass cutoff: the pass keeps
+    // its pinned canonical version and the search cannot be stamped current.
     assert!(
         response["data"]["research"]["snapshot_generation"]
             .as_i64()
             .unwrap()
-            >= changed
+            < changed
     );
-    assert_eq!(response["data"]["research"]["sources"][0]["version"], 2);
+    assert_eq!(response["data"]["research"]["sources"][0]["version"], 1);
     assert_eq!(
         audit(&response["data"]),
         &json!({"validity":"outdated","last_search":null}),
@@ -776,12 +796,10 @@ async fn discovery_audit_relevant_write_during_search_cannot_be_stamped_as_curre
     );
     let (_, rerun) = search(&f, &response["data"], vec!["aster"]).await;
     assert_eq!(rerun["no_op"], false);
-    assert!(
-        current_audit(&rerun["data"])["searched_generation"]
-            .as_i64()
-            .unwrap()
-            >= changed
-    );
+    // Within this pass the hit stays newer than the pinned version, so no
+    // rerun can be stamped current; the next pass re-pins and re-searches.
+    assert_eq!(audit(&rerun["data"])["validity"], "outdated");
+    assert_eq!(rerun["data"]["research"]["sources"][0]["version"], 1);
 }
 
 #[tokio::test]
