@@ -508,6 +508,17 @@ mod tests {
         let path = file.into_temp_path();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
             .expect("stub permissions");
+        // A concurrently running test can fork while this file was still open
+        // for writing, so the first exec may fail with ETXTBSY on Linux until
+        // that child has exec'd. Warm the stub with a bounded retry.
+        for _ in 0..50 {
+            match std::process::Command::new(&path).arg("--version").output() {
+                Err(error) if error.raw_os_error() == Some(26) => {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                _ => break,
+            }
+        }
         path
     }
 }
