@@ -359,7 +359,7 @@ Approved one-line directions include:
   `AppIcon.png`, `AppIcon-tinted.png`,
   `LaunchWaterline.imageset`, and `LaunchBackground.colorset`.
 - Derived web assets: `favicon.svg`, `favicon-32.png`, `favicon-16.png`,
-  `apple-touch-icon.png`, `og.png`, and the in-app raster mark.
+  `apple-touch-icon.png`, `og.jpg`, and the in-app raster mark.
 
 Regenerate derivatives with the single script
 `apps/ios/Tools/generate_app_icon.swift`; it accepts the canonical raster and

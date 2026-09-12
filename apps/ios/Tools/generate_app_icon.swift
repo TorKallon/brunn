@@ -153,7 +153,7 @@ func writeLosslessWebP(from png: Data, to destination: URL) throws {
     print("Wrote \(destination.path)")
 }
 
-func openGraphPNG(from source: URL) throws -> Data {
+func openGraphJPEG(from source: URL) throws -> Data {
     let width = 1200
     let height = 630
     guard let image = NSImage(contentsOf: source) else {
@@ -225,8 +225,10 @@ func openGraphPNG(from source: URL) throws -> Data {
         fatalError("Cannot finish the Open Graph bitmap")
     }
     let bitmap = NSBitmapImageRep(cgImage: renderedImage)
-    guard let data = bitmap.representation(using: .png, properties: [:]) else {
-        fatalError("Cannot encode the Open Graph bitmap as PNG")
+    // JPEG: the grained night gradient compresses about twelve times smaller
+    // than PNG with no visible banding at this quality.
+    guard let data = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.92]) else {
+        fatalError("Cannot encode the Open Graph bitmap as JPEG")
     }
     return data
 }
@@ -276,7 +278,7 @@ if !iosOnly {
         to: webDirectory.appendingPathComponent("brunn-well-128.webp")
     )
     try write(
-        openGraphPNG(from: heroSource),
-        to: webDirectory.appendingPathComponent("og.png")
+        openGraphJPEG(from: heroSource),
+        to: webDirectory.appendingPathComponent("og.jpg")
     )
 }

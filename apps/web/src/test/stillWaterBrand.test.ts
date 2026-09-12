@@ -14,7 +14,7 @@ describe("Still Water web brand", () => {
     expect(pngIndex).toBeGreaterThan(svgIndex);
     expect(html).toContain('href="/favicon-16.png"');
     expect(html).toContain('href="/apple-touch-icon.png?v=20260912"');
-    expect(html).toContain('property="og:image" content="https://brunn.ai/og.png"');
+    expect(html).toContain('property="og:image" content="https://brunn.ai/og.jpg"');
     expect(appearanceSource).toContain('appearance === "dark" ? "#06152c"');
   });
 
