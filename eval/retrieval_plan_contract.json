@@ -13,9 +13,9 @@
     "semantic": {
       "function_name": "brunn.workspace_semantic_candidates_v2",
       "regprocedure": "brunn.workspace_semantic_candidates_v2(vector,text)",
-      "migration": "apps/api/migrations/0067_search_candidate_updated_at.sql",
+      "migration": "apps/api/migrations/0101_inline_candidate_context.sql",
       "invocation_sql": "SELECT * FROM brunn.workspace_semantic_candidates_v2($1,$2)",
-      "body_sha256": "2eca986f3c8358628a5cec87c594085f24ecf64d6743f22e3570ef5b319e63f5",
+      "body_sha256": "ec48d20c95508a218261511b9388986d1de36c8e64d32abdaa5e626d154ae6ff",
       "expected_index": "search_chunks_embedding_hnsw_idx"
     }
   }
