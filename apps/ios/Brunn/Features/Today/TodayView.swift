@@ -1315,6 +1315,17 @@ struct BriefingReader: View {
             if let payload = briefing.briefing {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(payload.sections ?? []) { section in
+                        if !section.items.isEmpty {
+                            Text(section.title.uppercased())
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .padding(.horizontal, 12)
+                                .padding(.top, 14)
+                                .padding(.bottom, 4)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .accessibilityAddTraits(.isHeader)
+                        }
                         ForEach(section.items) { item in
                             BriefingItemDisclosure(
                                 item: item,
@@ -1435,11 +1446,6 @@ private struct BriefingItemDisclosure: View {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: onToggle) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(sectionTitle.uppercased())
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(plainHeadline)
                             .font(.body)
@@ -1459,7 +1465,7 @@ private struct BriefingItemDisclosure: View {
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 12)
-            .padding(.vertical, 11)
+            .padding(.vertical, 9)
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .accessibilityLabel("\(sectionTitle). \(plainHeadline). \(isExpanded ? "Expanded" : "Collapsed")")
             .accessibilityIdentifier("briefing-item-\(item.id)")
