@@ -19,7 +19,10 @@ LABEL org.opencontainers.image.title="Brunn Control Plane" \
       org.opencontainers.image.revision="${BRUNN_BUILD_REVISION}"
 COPY --chmod=0644 nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY --chmod=0644 site /usr/share/nginx/html/site
+COPY site/index.html /usr/share/nginx/html/site/index.html
+# COPY --chmod would also apply to the directory it creates, so fix modes explicitly.
+RUN chmod 0755 /usr/share/nginx/html/site \
+    && chmod 0644 /usr/share/nginx/html/site/index.html
 
 USER 101:101
 EXPOSE 8080
