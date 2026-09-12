@@ -179,6 +179,10 @@ test("both MCP profiles expose the exact public task surface with safe annotatio
       const update = byName.get("task.update");
       assert.match(update?.description ?? "", /add_today.*sweep/);
       assert.match(update?.description ?? "", /agent-orientation/);
+      assert.match(update?.description ?? "", /owner asks to mark finished work done/);
+      assert.match(update?.description ?? "", /owner-created or reopened tasks/);
+      assert.match(update?.description ?? "", /source and completed_via both agent:<id>/);
+      assert.match(update?.description ?? "", /next_occurrence_task_ref/);
 
       const contexts = byName.get("task.contexts");
       assert.match(contexts?.description ?? "", /suggested_existing/);

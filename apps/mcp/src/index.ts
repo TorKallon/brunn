@@ -1038,7 +1038,13 @@ registerJsonTool(
   + "complete, reopen, snooze, drop, wait_on, unpark, pin_today, unpin, add_today, sweep, confirm_hard, "
   + "and downgrade_to_soft. add_today puts a task on the owner's persisting Today list; sweep moves it back "
   + "to the queue. Every operation requires source; complete also requires completed_via and returns "
-  + "done_today_count. Replay an ambiguous result with the identical idempotency_key and payload."
+  + "done_today_count. When the owner asks to mark finished work done, agents should use complete, "
+  + "including on owner-created or reopened tasks, with source and completed_via both agent:<id>. "
+  + "The owner's confirmation is sufficient; no separate approval flow is needed. Read the current "
+  + "task/version first and verify the returned done status. Completion records finished work, not "
+  + "permission to execute it. For recurring tasks, complete the occurrence, not the whole series; "
+  + "next_occurrence_task_ref identifies any successor. Replay an ambiguous result with the identical "
+  + "idempotency_key and payload."
   + ORIENTATION_POINTER,
   {
     task_ref: taskRef,

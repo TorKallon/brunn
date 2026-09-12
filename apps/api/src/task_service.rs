@@ -2753,6 +2753,43 @@ fn push_sourced_change(
     Ok(())
 }
 
+/// Completion is an explicit task action, not background field enrichment.
+/// It may finish an owner-created/reopened task without impersonating the owner.
+/// Keep this exception limited to the two completion fields; ordinary corrections
+/// and integrations still go through apply_sourced_field's owner precedence.
+fn record_task_completion(
+    metadata: &mut Value,
+    corrections: &mut Vec<CorrectionDelta>,
+    source: &str,
+    completed_via: &str,
+    now: DateTime<Utc>,
+) -> ApiResult<()> {
+    let task = direct_task_object_mut(metadata)?;
+    for (field, value) in [
+        ("status", json!("done")),
+        ("completed_via", json!(completed_via)),
+    ] {
+        let previous = cell(task, field)?;
+        let correction = CorrectionDelta {
+            field_name: field.to_owned(),
+            previous_value: previous
+                .as_ref()
+                .map_or(Value::Null, |cell| cell.value.clone()),
+            previous_source: previous.and_then(|cell| cell.source.map(str::to_owned)),
+            corrected_value: value.clone(),
+            corrected_source: source.to_owned(),
+        };
+        task.insert(
+            field.to_owned(),
+            json!({"value":value,"source":source,"set_at":now,"note":null}),
+        );
+        corrections.push(correction);
+    }
+    task.insert("done_at".to_owned(), json!(now));
+    task.remove("today_since");
+    Ok(())
+}
+
 fn direct_task_object_mut(metadata: &mut Value) -> ApiResult<&mut Map<String, Value>> {
     effective_metadata_mut(metadata)
         .get_mut("task")
@@ -3033,27 +3070,13 @@ pub(crate) async fn update_task(
         }
         UpdateOperation::Complete { completed_via, .. } => {
             let completed_via = canonical_completed_via(&auth, completed_via)?;
-            push_sourced_change(
+            record_task_completion(
                 &mut metadata,
                 &mut corrections,
-                "status",
-                json!("done"),
                 &source,
+                &completed_via,
                 now,
-                None,
             )?;
-            push_sourced_change(
-                &mut metadata,
-                &mut corrections,
-                "completed_via",
-                json!(completed_via),
-                &source,
-                now,
-                None,
-            )?;
-            let task = direct_task_object_mut(&mut metadata)?;
-            task.insert("done_at".to_owned(), json!(now));
-            task.remove("today_since");
             ("complete", "explicit completion")
         }
         UpdateOperation::Reopen { .. } => {
@@ -8688,6 +8711,74 @@ mod tests {
         assert!(
             validate_task_entry(&format!("{TASK_ENTRY_PREFIX}{task_id}.md"), &metadata).unwrap()
         );
+    }
+
+    #[test]
+    fn explicit_completion_preserves_owner_details_and_records_agent_provenance() {
+        let now: DateTime<Utc> = "2026-09-12T12:00:00Z".parse().unwrap();
+        for status in ["open", "waiting"] {
+            let mut metadata = json!({"task":{
+                "title":"Owner task",
+                "status":cell(json!(status),"owner"),
+                "completed_via":cell(json!("ios"),"owner"),
+                "notes":cell(json!("Keep these instructions"),"owner"),
+                "soft_due":cell(json!("2026-09-13"),"owner"),
+                "recurrence":cell(json!({"rrule":"FREQ=WEEKLY"}),"owner"),
+                "today_since":cell(json!("2026-09-12"),"owner")
+            }});
+            let before = metadata.clone();
+            let mut corrections = Vec::new();
+            record_task_completion(
+                &mut metadata,
+                &mut corrections,
+                "agent:aether",
+                "agent:aether",
+                now,
+            )
+            .unwrap();
+            assert_eq!(metadata["task"]["status"]["value"], "done");
+            assert_eq!(metadata["task"]["status"]["source"], "agent:aether");
+            assert_eq!(metadata["task"]["completed_via"]["value"], "agent:aether");
+            assert_eq!(metadata["task"]["done_at"], json!(now));
+            assert!(metadata["task"].get("today_since").is_none());
+            for field in ["title", "notes", "soft_due", "recurrence"] {
+                assert_eq!(metadata["task"][field], before["task"][field]);
+            }
+            assert_eq!(corrections.len(), 2);
+            assert_eq!(corrections[0].previous_value, status);
+            assert_eq!(corrections[0].previous_source.as_deref(), Some("owner"));
+            assert_eq!(corrections[1].previous_value, "ios");
+            assert!(
+                corrections
+                    .iter()
+                    .all(|change| change.corrected_source == "agent:aether")
+            );
+            // The completion exception must not leak into ordinary enrichment.
+            assert!(
+                apply_sourced_field(
+                    &mut metadata,
+                    "notes",
+                    json!("Overwrite"),
+                    "agent:aether",
+                    now,
+                    None,
+                    true
+                )
+                .is_err()
+            );
+            assert!(
+                apply_sourced_field(
+                    &mut before.clone(),
+                    "status",
+                    json!("done"),
+                    "agent:aether",
+                    now,
+                    None,
+                    true
+                )
+                .is_err()
+            );
+        }
     }
 
     #[test]

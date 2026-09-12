@@ -5,6 +5,11 @@ Brunn does work in the background. Your writes are inputs to that work, not fina
 ## Tasks
 - Capture stores what you send. Enrichment (project, contexts, dates, cost, estimate) is
   done by agents later, sourced `agent:<id>`, and never overwrites an `owner`-sourced value.
+- When the owner asks to mark finished work done, agents should use `task.update` with
+  `type: complete`, `source: agent:<id>` and `completed_via: agent:<id>`, even for owner-set
+  tasks. Read the current task/version first; the owner's confirmation is sufficient.
+  This records completion, not permission to execute unfinished work. Check recurrence:
+  completing an occurrence may create the next one; stopping the series is a separate decision.
 - Quick tasks are `estimate_minutes` ≤ 5. "Flag as quick" means `estimate_minutes` with
   source `owner`. Quickness is never a context.
 - `today_since` is the owner's Today list: things that came up and still need doing. It

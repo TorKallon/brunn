@@ -130,6 +130,126 @@ async fn indexed_today_since(pool: &PgPool, user_id: Uuid, task_ref: &str) -> Op
 }
 
 #[tokio::test]
+async fn agent_completes_owner_tasks_and_reopened_tasks_without_overriding_owner_details() {
+    let Some(pool) = connect_test_pool().await else {
+        return;
+    };
+    let app = test_router().await;
+    let (user_id, owner, reader) = owner_with_reader(&pool).await;
+    let agent = credential(&pool, user_id, &["task.read", "task.write"]).await;
+    let (_, captured) = call(
+        &app,
+        &owner,
+        Method::POST,
+        "/v1/workspace/tasks/capture",
+        Some(json!({
+            "idempotency_key":"owner-completion-capture",
+            "items":[{"raw_text":"Finished owner task", "today":true,
+                      "notes":{"value":"Keep owner notes","source":"owner"},
+                      "soft_due":{"value":"2026-09-13","source":"owner"}}]
+        })),
+    )
+    .await;
+    let task_ref = captured["data"]["items"][0]["task_ref"]
+        .as_str()
+        .expect("captured task");
+    let path = format!("/v1/workspace/tasks/{task_ref}");
+    let completion = |version, key: &str| {
+        json!({"expected_version":version,"idempotency_key":key,
+        "operation":{"type":"complete","source":"agent:aether","completed_via":"agent:aether"}})
+    };
+    let (status, _) = call(
+        &app,
+        &reader,
+        Method::PATCH,
+        &path,
+        Some(completion(1, "reader-cannot-complete")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    for field in ["notes", "soft_due"] {
+        let value = if field == "notes" {
+            json!("Overwrite")
+        } else {
+            json!("2026-09-14")
+        };
+        let (status, _) = call(
+            &app,
+            &agent,
+            Method::PATCH,
+            &path,
+            Some(json!({
+                "expected_version":1,"idempotency_key":format!("no-override-{field}"),
+                "operation":{"type":"correct","field":field,"value":value,"source":"agent:aether"}
+            })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+    }
+    for version in [1, 3] {
+        let body = completion(version, &format!("agent-complete-{version}"));
+        let (status, done) = call(&app, &agent, Method::PATCH, &path, Some(body.clone())).await;
+        assert_eq!(status, StatusCode::OK, "{done}");
+        let task = &done["data"]["task"];
+        let fields = &task["task"];
+        assert_eq!(task["version"], version + 1);
+        assert_eq!(fields["status"]["value"], "done");
+        assert!(
+            fields["status"]["source"]
+                .as_str()
+                .unwrap()
+                .starts_with("agent:")
+        );
+        assert_eq!(fields["status"]["source"], fields["completed_via"]["value"]);
+        assert_eq!(fields["notes"]["value"], "Keep owner notes");
+        assert_eq!(fields["notes"]["source"], "owner");
+        assert_eq!(fields["soft_due"]["value"], "2026-09-13");
+        assert!(fields.get("today_since").is_none_or(Value::is_null));
+        assert!(fields["done_at"].is_string());
+        assert_eq!(done["data"]["done_today_count"], 1);
+        let (status, replay) = call(&app, &agent, Method::PATCH, &path, Some(body)).await;
+        assert_eq!(status, StatusCode::OK, "{replay}");
+        assert_eq!(replay["status"], "no_op");
+        assert_eq!(replay["data"]["task"]["version"], version + 1);
+        if version == 1 {
+            let (status, reopened) = call(
+                &app,
+                &owner,
+                Method::PATCH,
+                &path,
+                Some(json!({
+                    "expected_version":2,"idempotency_key":"owner-reopened",
+                    "operation":{"type":"reopen","source":"owner"}
+                })),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{reopened}");
+            assert_eq!(
+                reopened["data"]["task"]["task"]["status"]["source"],
+                "owner"
+            );
+        }
+    }
+    let (status, _) = call(
+        &app,
+        &agent,
+        Method::PATCH,
+        &path,
+        Some(completion(1, "stale-completion")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (_, current) = call(&app, &reader, Method::GET, &path, None).await;
+    assert_eq!(current["data"]["task"]["task"]["status"]["value"], "done");
+    assert_eq!(indexed_today_since(&pool, user_id, task_ref).await, None);
+    let previous_owner_changes: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM brunn.task_corrections WHERE user_id=$1 AND task_id=$2 AND field_name='status' AND previous_source='owner' AND corrected_source LIKE 'agent:%'"
+    ).bind(user_id).bind(Uuid::parse_str(task_ref).unwrap()).fetch_one(&pool).await.unwrap();
+    // Capture initializes status as derived; reopening explicitly sets it to owner.
+    assert_eq!(previous_owner_changes, 1);
+}
+
+#[tokio::test]
 async fn capture_today_and_quick_views_and_add_today_sweep_round_trip() {
     let Some(pool) = connect_test_pool().await else {
         return;

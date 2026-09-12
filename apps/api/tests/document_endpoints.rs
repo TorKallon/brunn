@@ -443,6 +443,9 @@ fn agent_orientation_stays_short() {
     for line in lines {
         assert!(line.chars().count() <= 100, "line too long: {line}");
     }
+    assert!(AGENT_ORIENTATION_MD.contains("owner asks to mark finished work done"));
+    assert!(AGENT_ORIENTATION_MD.contains("completed_via: agent:<id>"));
+    assert!(AGENT_ORIENTATION_MD.contains("stopping the series is a separate decision"));
 }
 
 #[tokio::test]
