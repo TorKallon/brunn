@@ -13,7 +13,7 @@ describe("Still Water web brand", () => {
     expect(svgIndex).toBeGreaterThan(-1);
     expect(pngIndex).toBeGreaterThan(svgIndex);
     expect(html).toContain('href="/favicon-16.png"');
-    expect(html).toContain('href="/apple-touch-icon.png"');
+    expect(html).toContain('href="/apple-touch-icon.png?v=20260912"');
     expect(html).toContain('property="og:image" content="https://brunn.ai/og.png"');
     expect(appearanceSource).toContain('appearance === "dark" ? "#06152c"');
   });
@@ -21,8 +21,8 @@ describe("Still Water web brand", () => {
   it("uses the approved well mark and has no retired beam mark reference", () => {
     const retiredMark = ["brunn", "mark.png"].join("-");
 
-    expect(appShellSource).toContain('src="/brunn-well-128.webp"');
-    expect(authPagesSource).toContain('src="/brunn-well-128.webp"');
+    expect(appShellSource).toContain('src="/brunn-well-128.webp?v=20260912"');
+    expect(authPagesSource).toContain('src="/brunn-well-128.webp?v=20260912"');
     expect(`${appShellSource}\n${authPagesSource}`).not.toContain(retiredMark);
   });
 

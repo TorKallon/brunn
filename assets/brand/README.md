@@ -21,6 +21,9 @@ script that emits all platform sizes. It is full bleed, with blue extending
 into every corner, and has no baked platform mask or external shadow. The
 approved sapphire shoulder and edge lighting remain within the artwork.
 The production-source prompt is in `brunn-well-source-prompt.md`.
+Web references use `?v=20260912` for the touch icon and raster mark so the
+refinement bypasses the previous assets' immutable browser and CDN caches.
+Change this version whenever those assets change.
 `brunn-waterline-1024.png` is launch artwork on
 `#030B18`. `brunn-hero-wide.png` is artwork only; web copy remains locally
 typeset by `apps/ios/Tools/generate_app_icon.swift`. Full derivative

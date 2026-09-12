@@ -35,7 +35,7 @@ function AuthLayout({
     <main className="login-layout">
       <section className="login-panel" aria-labelledby="auth-title">
         <div className="brand brand-login" aria-label="brunn">
-          <img className="brand-mark" src="/brunn-well-128.webp" alt="" aria-hidden="true" />
+          <img className="brand-mark" src="/brunn-well-128.webp?v=20260912" alt="" aria-hidden="true" />
           <div>
             <strong>brunn</strong>
             <span>Memory &amp; briefings</span>
