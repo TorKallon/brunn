@@ -39,6 +39,16 @@ function reviewData(overrides: Partial<DreamerReviewData> = {}): DreamerReviewDa
 const envelope = (data: DreamerReviewData) => ({ status: "complete", data });
 
 describe("Dreamer Review inbox", () => {
+  it("shows the configured automatic publication window and candidate deadline", async () => {
+    const deadline = "2026-09-14T19:00:00.123456Z";
+    installApiMock({ "GET /api/v1/dreamer/review": envelope(reviewData({ mode: "full", auto_apply_after_hours: 24, items: [{ ...candidate, auto_apply_at: deadline }], history: [{ id: "auto-one", item_id: "older", decision: "auto_apply", at: deadline, application_status: "applied" }] })) });
+    const user = userEvent.setup();
+    renderApp("/dreams");
+    expect(await screen.findByText(/Proposals apply on the first run after 24 hours/)).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: `Review ${candidate.title}` }));
+    expect(screen.getByText(`Applies on the first run after ${formatDate(deadline)} unless you reject, defer, or request a correction.`)).toBeInTheDocument();
+  });
+
   it("opens the complete proposal and keeps notes through previous/next navigation", async () => {
     const ending = "The final instruction and its uncertainty must remain readable.";
     const fullTitle = "Refresh the project summary using the exact approved milestone, including the original source references and the unresolved delivery date, so the owner can understand the entire proposal.";

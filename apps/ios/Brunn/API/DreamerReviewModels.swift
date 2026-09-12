@@ -52,6 +52,7 @@ public struct DreamerReviewItem: Codable, Sendable, Equatable, Identifiable {
     public let stale: Bool
     public let blockedReason: String?
     public var legacy: Bool? = nil
+    public var autoApplyAt: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -71,6 +72,7 @@ public struct DreamerReviewItem: Codable, Sendable, Equatable, Identifiable {
         case stale
         case blockedReason = "blocked_reason"
         case legacy
+        case autoApplyAt = "auto_apply_at"
     }
 }
 
@@ -234,6 +236,7 @@ public struct DreamerReviewData: Codable, Sendable, Equatable {
     public let history: [DreamerReviewDecision]
     public let decisionVersion: Int
     public var legacyItems: [DreamerReviewItem]? = nil
+    public var autoApplyAfterHours: Int? = nil
 
     enum CodingKeys: String, CodingKey {
         case available
@@ -247,6 +250,7 @@ public struct DreamerReviewData: Codable, Sendable, Equatable {
         case history
         case decisionVersion = "decision_version"
         case legacyItems = "legacy_items"
+        case autoApplyAfterHours = "auto_apply_after_hours"
     }
 }
 

@@ -307,7 +307,16 @@ successes and failures.
 disabled CONTROL produces zero workspace writes. Calendar dates never promote
 report-only mode to full. In report-only mode, approvals remain held; enabling
 publication explicitly permits validated application of those approvals.
-Silence and an elapsed review window never approve a proposal. The Dreams page
+With explicit owner authorization, add `auto_apply_after_hours: 24` to CONTROL.
+In full mode, each concrete pending candidate publishes on the first run at least
+24 hours after that candidate was proposed, after the same evidence and target
+validation as an explicit approval. Revisions restart the window; exact retries
+do not. Existing candidates use their exact immutable run version timestamp.
+Rejected, deferred, correction-requested and question items do not auto-publish.
+Without this key, explicit approval remains required. Pause/Resume preserves
+the policy; report-only still prevents publication. Automatic publications have
+a durable audit identifying the policy, candidate and output, rather than an
+invented owner decision. The Dreams page
 supports approve, reject, defer, and correction against the displayed candidate
 and state version. Source or target changes require renewed validation; failed
 validation leaves the proposal available for review.

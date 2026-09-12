@@ -11,6 +11,7 @@ import { formatDate } from "../lib/format";
 interface ControlView {
   enabled?: boolean;
   mode?: string;
+  auto_apply_after_hours?: number | null;
   advance_after?: string;
   reason?: string;
 }
@@ -252,7 +253,7 @@ export function DreamingSettings() {
         </dl>
       </div>
 
-      <p className="settings-note">Review proposals and questions in the Review inbox. In report-only mode approvals are saved and held; nothing is written until you switch Dreaming to full mode by editing dreams/CONTROL.md.</p>
+      <p className="settings-note">{control.mode === "full" && control.auto_apply_after_hours ? `Proposals apply on the first run after ${control.auto_apply_after_hours} hours unless you reject, defer, or request a correction in Review. Each revision starts a new review window.` : "Review proposals and questions in the Review inbox. Report-only holds approvals; full mode publishes approved changes."}</p>
 
       {connect.state === "failed" ? (
         <p className="dreaming-connect-failed" role="alert">

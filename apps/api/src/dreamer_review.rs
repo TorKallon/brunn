@@ -125,6 +125,9 @@ struct Item {
     #[serde(default)]
     frozen_generation: i64,
     created_at: DateTime<Utc>,
+    /// The current immutable candidate's review window, not the inbox item's age.
+    #[serde(default)]
+    proposed_at: Option<DateTime<Utc>>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Attempt {
@@ -321,22 +324,25 @@ async fn load_state(tx: &mut Transaction<'_, Postgres>, user: Uuid) -> ApiResult
                 ApiError::invalid("Dreamer state is invalid; refusing to reset progress")
             })?;
             separate_legacy_history(&mut data)?;
-            let mut audits = std::collections::BTreeMap::<(String, i64), Vec<Item>>::new();
+            let mut audits =
+                std::collections::BTreeMap::<(String, i64), (Vec<Item>, DateTime<Utc>)>::new();
             for item in &mut data.items {
                 if !item.reviewable || item.run_version == 0 {
                     continue;
                 }
                 let key = (item.run_entry_ref.clone(), item.run_version);
                 if !audits.contains_key(&key) {
-                    let metadata:Value=sqlx::query_scalar("SELECT v.metadata FROM brunn.entry_versions v JOIN brunn.entries e ON e.user_id=v.user_id AND e.id=v.entry_id WHERE v.user_id=$1 AND v.entry_id=$2 AND v.version=$3 AND e.deleted_at IS NULL")
+                    let row=sqlx::query("SELECT v.metadata,v.created_at FROM brunn.entry_versions v JOIN brunn.entries e ON e.user_id=v.user_id AND e.id=v.entry_id WHERE v.user_id=$1 AND v.entry_id=$2 AND v.version=$3 AND e.deleted_at IS NULL")
                         .bind(user).bind(entry_id(&key.0)?).bind(key.1).fetch_optional(&mut **tx).await?
                         .ok_or_else(||ApiError::invalid("Retained proposal audit is unavailable; refusing to discard it"))?;
+                    let metadata: Value = row.get("metadata");
                     let items: Vec<Item> =
                         serde_json::from_value(metadata["dreamer_run"]["items"].clone())
                             .map_err(|_| ApiError::invalid("Retained proposal audit is invalid"))?;
-                    audits.insert(key.clone(), items);
+                    audits.insert(key.clone(), (items, row.get("created_at")));
                 }
                 let audit = audits[&key]
+                    .0
                     .iter()
                     .find(|a| a.id == item.id && a.candidate_hash == item.candidate_hash)
                     .ok_or_else(|| {
@@ -346,6 +352,7 @@ async fn load_state(tx: &mut Transaction<'_, Postgres>, user: Uuid) -> ApiResult
                     })?;
                 item.candidate = audit.candidate.clone();
                 item.before_md = audit.before_md.clone();
+                item.proposed_at = Some(audit.proposed_at.unwrap_or(audits[&key].1));
             }
             Ok((data, e.version))
         }
@@ -430,14 +437,32 @@ async fn save_state(
     let receipt = put_entry(state, tx, auth, STATE_PATH, text, metadata, version).await?;
     Ok(receipt["version"].as_i64().expect("version"))
 }
-async fn mode(tx: &mut Transaction<'_, Postgres>, user: Uuid) -> ApiResult<Option<String>> {
+async fn policy(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+) -> ApiResult<Option<control::Control>> {
     let control = load_entry(tx, user, "dreams/CONTROL.md").await?;
     Ok(
         match control::parse(control.as_ref().map(|e| e.content.as_str())) {
-            ControlState::Enabled(c) => Some(c.mode.as_str().into()),
+            ControlState::Enabled(c) => Some(c),
             _ => None,
         },
     )
+}
+async fn mode(tx: &mut Transaction<'_, Postgres>, user: Uuid) -> ApiResult<Option<String>> {
+    Ok(policy(tx, user).await?.map(|c| c.mode.as_str().into()))
+}
+
+fn auto_apply_at(item: &Item, hours: Option<u32>) -> Option<DateTime<Utc>> {
+    if item.status != "pending"
+        || !item.reviewable
+        || item.candidate.kind == "question"
+        || item.run_version <= 0
+    {
+        return None;
+    }
+    item.proposed_at?
+        .checked_add_signed(Duration::hours(i64::from(hours?)))
 }
 fn active(data: &RunState, body: &Value, auth: &AuthContext, version: i64) -> ApiResult<Attempt> {
     if integer(body, "expected_state_version")? != version {
@@ -1502,11 +1527,12 @@ pub async fn admit(
     NaiveDate::parse_from_str(&date, "%Y-%m-%d")
         .map_err(|_| ApiError::invalid("date must be an owner-local ISO date"))?;
     let mut tx = begin_runner_write(&state, &auth).await?;
-    let Some(current_mode) = mode(&mut tx, user).await? else {
+    let Some(current_policy) = policy(&mut tx, user).await? else {
         return Ok(Json(
             json!({"admitted":false,"reason":"CONTROL is disabled, missing or invalid"}),
         ));
     };
+    let current_mode = current_policy.mode.as_str().to_owned();
     let (mut data, version) = load_state(&mut tx, user).await?;
     let mut recovered = false;
     if let Some(a) = data.active.clone() {
@@ -1708,12 +1734,16 @@ pub async fn admit(
             .items
             .iter()
             .enumerate()
-            .filter(|(_, i)| i.status == "approved_held")
-            .take(8)
+            .filter(|(_, i)| {
+                i.status == "approved_held"
+                    || auto_apply_at(i, current_policy.auto_apply_after_hours)
+                        .is_some_and(|at| at <= now)
+            })
             .map(|(n, _)| n)
             .collect::<Vec<_>>()
         {
             let mut item = data.items[index].clone();
+            let automatic = item.status == "pending";
             if item_stale(&mut tx, &auth, &item).await? {
                 item.status = "needs_changes".into();
             } else {
@@ -1728,6 +1758,28 @@ pub async fn admit(
                 match validation {
                     Ok(()) => {
                         publish_item(&state, &mut tx, &auth, &mut item, Some(&attempt_id)).await?;
+                        if automatic {
+                            let eligible_at = auto_apply_at(
+                                &data.items[index],
+                                current_policy.auto_apply_after_hours,
+                            );
+                            let audit_id = digest(&json!([
+                                item.id,
+                                item.candidate_hash,
+                                item.run_entry_ref,
+                                item.run_version
+                            ]));
+                            let audit_path = format!("dreams/reviews/auto-{audit_id}.md");
+                            let history = json!({"id":format!("automatic:{audit_id}"),"item_id":item.id,"decision":"auto_apply","application_status":"applied","at":now,"candidate_hash":item.candidate_hash,"run_entry_ref":item.run_entry_ref,"run_version":item.run_version,"proposed_at":item.proposed_at,"eligible_at":eligible_at,"auto_apply_after_hours":current_policy.auto_apply_after_hours,"attempt_id":attempt_id,"actor_credential_id":auth.credential_id.0,"published":item.published});
+                            let audit = put_entry(&state, &mut tx, &auth, &audit_path,
+                                format!("# Automatic Dreamer publication\n\n{} — {}\n\nApplied on the next run after the {}-hour review window under the owner's configured policy. No owner approval click was recorded.\n", item.id, item.candidate.title, current_policy.auto_apply_after_hours.expect("eligible policy")),
+                                json!({"kind":"dreamer_review","dreamer_review":{"schema":"dream.review.v1","decision":history,"item":item}}), 0).await?;
+                            data.candidate_dispositions.push(json!({"disposition":"auto_applied","item_id":item.id,"candidate_hash":item.candidate_hash,"audit":audit}));
+                            data.history.push(json!({"id":history["id"],"item_id":item.id,"decision":"auto_apply","application_status":"applied","at":now,"candidate_hash":item.candidate_hash,"audit":audit}));
+                            if data.history.len() > 32 {
+                                data.history.remove(0);
+                            }
+                        }
                     }
                     Err(ApiError::Public {
                         status,
@@ -1742,7 +1794,7 @@ pub async fn admit(
                         // it must not wedge unrelated work on every admission.
                         item.status = "needs_changes".into();
                         data.candidate_dispositions.push(json!({
-                            "disposition":"held_approval_invalidated",
+                            "disposition":if automatic { "automatic_publication_invalidated" } else { "held_approval_invalidated" },
                             "item_id":item.id,"candidate_hash":item.candidate_hash,
                             "run_entry_ref":item.run_entry_ref,"run_version":item.run_version,
                             "code":code,"reason":message,
@@ -1772,7 +1824,7 @@ pub async fn admit(
         }
         if changed {
             let attempt = data.active.clone().expect("active");
-            write_run(&state,&mut tx,&auth,&mut data,&attempt,"running","Previously approved candidates were checked for publication. Invalid candidates require changes and a new owner decision; model execution has not completed.").await?;
+            write_run(&state,&mut tx,&auth,&mut data,&attempt,"running","Approved candidates and proposals whose configured review window elapsed were checked for publication. Invalid candidates require a revised proposal; model execution has not completed.").await?;
         }
     }
     let version = save_state(&state, &mut tx, &auth, &data, version).await?;
@@ -2009,6 +2061,7 @@ async fn import_legacy(
                 published: None,
                 frozen_generation: 0,
                 created_at: row.get("created_at"),
+                proposed_at: None,
             });
         }
         data.legacy_scan_after = path;
@@ -2703,6 +2756,7 @@ pub async fn candidates(
                 published: None,
                 frozen_generation: candidate_generation,
                 created_at,
+                proposed_at: Some(Utc::now()),
             };
             ids.push(id);
             continue;
@@ -2729,6 +2783,7 @@ pub async fn candidates(
             published: None,
             frozen_generation: candidate_generation,
             created_at: Utc::now(),
+            proposed_at: Some(Utc::now()),
         });
     }
     let processed = body
@@ -3663,6 +3718,10 @@ async fn review_view(
 ) -> ApiResult<Value> {
     let user = auth.user_id.0;
     let legacy_texts = legacy_review_texts(tx, user, data).await?;
+    let auto_apply_after_hours = policy(tx, user)
+        .await?
+        .filter(|c| c.mode == control::Mode::Full)
+        .and_then(|c| c.auto_apply_after_hours);
     let mut items = Vec::new();
     let mut legacy_items = Vec::new();
     for original in data
@@ -3745,13 +3804,13 @@ async fn review_view(
         } else {
             &mut items
         };
-        destination.push(json!({"id":i.id,"kind":if i.candidate.kind=="question"{"question"}else{"proposal"},"legacy":legacy,"title":title,"body_md":body,"why_md":i.candidate.reason,"uncertainty_md":i.candidate.uncertainty,"run_id":i.run_id,"run_entry_ref":i.run_entry_ref,"run_version":i.run_version,"candidate_hash":i.candidate_hash,"candidate":preview,"sources":sources,"status":if stale{"stale"}else{&i.status},"reviewable":i.reviewable&&i.candidate.kind!="question","stale":stale,"refresh_pending":freshness.refresh_pending,"evidence_cutoff":i.frozen_generation,"blocked_reason":block}));
+        destination.push(json!({"id":i.id,"kind":if i.candidate.kind=="question"{"question"}else{"proposal"},"legacy":legacy,"proposed_at":i.proposed_at,"auto_apply_at":if !stale { auto_apply_at(original, auto_apply_after_hours) } else { None },"title":title,"body_md":body,"why_md":i.candidate.reason,"uncertainty_md":i.candidate.uncertainty,"run_id":i.run_id,"run_entry_ref":i.run_entry_ref,"run_version":i.run_version,"candidate_hash":i.candidate_hash,"candidate":preview,"sources":sources,"status":if stale{"stale"}else{&i.status},"reviewable":i.reviewable&&i.candidate.kind!="question","stale":stale,"refresh_pending":freshness.refresh_pending,"evidence_cutoff":i.frozen_generation,"blocked_reason":block}));
     }
     // Put actionable candidates within reach before other current items;
     // stable sorting preserves the existing order and every decision identity.
     items.sort_by_key(|item| !(item["reviewable"] == true && item["stale"] == false));
     Ok(
-        json!({"available":true,"mode":current_mode,"paused":current_mode.is_none(),"last_attempt":data.last_attempt,"last_successful_run":data.last_successful_run,"counts":counts(data),"items":items,"legacy_items":legacy_items,"history":data.history,"decision_version":version}),
+        json!({"available":true,"mode":current_mode,"auto_apply_after_hours":auto_apply_after_hours,"paused":current_mode.is_none(),"last_attempt":data.last_attempt,"last_successful_run":data.last_successful_run,"counts":counts(data),"items":items,"legacy_items":legacy_items,"history":data.history,"decision_version":version}),
     )
 }
 pub async fn review(
@@ -4069,10 +4128,54 @@ pub async fn decide(
         "rejected" => "Rejected. Final; nothing is written and this proposal does not come back.",
         "deferred" => "Deferred. It stays in this inbox; nothing is written.",
         _ => {
-            "Correction sent. The next run drafts a new version for you to review; nothing is written until you approve it."
+            "Correction sent. The next run drafts a new version with a fresh review window under your publication settings."
         }
     };
     Ok(Json(
         json!({"status":"complete","data":{"saved":true,"decision":decision,"application_status":item.status,"message":message,"state_version":version}}),
     ))
+}
+
+#[cfg(test)]
+mod automatic_publication_tests {
+    use super::*;
+
+    #[test]
+    fn automatic_review_clock_uses_candidate_version_and_holds() {
+        let proposed: DateTime<Utc> = "2026-09-12T12:00:00Z".parse().unwrap();
+        let mut item: Item = serde_json::from_value(json!({
+            "id":"fixture","run_id":"2026-09-12","run_entry_ref":format!("entry:{}",Uuid::now_v7()),"run_version":1,
+            "candidate_hash":"fixture","candidate":{"kind":"summary","title":"Fixture"},
+            "status":"pending","reviewable":true,"created_at":"2020-01-01T00:00:00Z","proposed_at":proposed
+        })).unwrap();
+        let deadline = auto_apply_at(&item, Some(24)).unwrap();
+        let is_due = |now| deadline <= now;
+        assert!(!is_due(
+            proposed + Duration::hours(24) - Duration::nanoseconds(1)
+        ));
+        assert!(is_due(proposed + Duration::hours(24)));
+        assert!(is_due(proposed + Duration::hours(25)));
+        assert!(!is_due(proposed - Duration::hours(1)));
+        assert!(auto_apply_at(&item, None).is_none());
+        for status in [
+            "rejected",
+            "deferred",
+            "needs_changes",
+            "superseded",
+            "applied",
+            "approved_held",
+        ] {
+            item.status = status.into();
+            assert!(auto_apply_at(&item, Some(24)).is_none());
+        }
+        item.status = "pending".into();
+        item.candidate.kind = "question".into();
+        assert!(auto_apply_at(&item, Some(24)).is_none());
+        item.candidate.kind = "summary".into();
+        item.proposed_at = None;
+        assert!(
+            auto_apply_at(&item, Some(24)).is_none(),
+            "no fallback to original inbox age"
+        );
+    }
 }

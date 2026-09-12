@@ -78,9 +78,10 @@ function RunStatus({ data }: { data: DreamerReviewData }) {
 
 function modeBanner(data: DreamerReviewData): string {
   if (data.paused) return "Dreaming is paused. Decisions are saved, but no run will act on them until it resumes.";
+  if (data.mode === "full" && data.auto_apply_after_hours) return `Proposals apply on the first run after ${data.auto_apply_after_hours} hours unless you reject, defer, or request a correction. Each revision gets a new review window.`;
   return data.mode === "report-only"
     ? "Report-only: your approvals are saved and held. Nothing is written until Dreaming is switched to full mode."
-    : "Full mode: approvals are written by the next run after their sources are re-checked.";
+    : "Full mode: approving a proposal writes it after its evidence is validated.";
 }
 
 function OlderReportDetail({ item }: { item: DreamerReviewItem }) {
@@ -180,6 +181,7 @@ function ReviewDetail({ item, historical, data, decisionVersion, changed, unavai
     </header>
     {(changed || conflict) && !decisionMutation.isSuccess ? <div className="review-notice warning" role="status"><strong>This review has changed.</strong><p>{onReviewUpdated ? "The latest item is shown below. Read it and its decisions before another action. Your note is kept." : "This item is no longer in the pending inbox. Your note is kept."}</p>{onReviewUpdated ? <button className="button secondary" disabled={decisionMutation.isPending || uncertain} onClick={onReviewUpdated}>Review updated item</button> : null}</div> : null}
     {blocked && (item.kind !== "question" || item.stale || item.status === "needs_changes") ? <div className="review-notice warning"><strong>{item.stale || item.status === "needs_changes" ? "Needs another review" : item.status === "approved_held" ? "Approved and held" : "Candidate not ready"}</strong><p>{blocked}</p></div> : null}
+    {item.auto_apply_at ? <p className="review-muted">Applies on the first run after {formatDate(item.auto_apply_at)} unless you reject, defer, or request a correction.</p> : null}
     <div className="review-detail-section"><h3>{item.kind === "question" ? "The question" : "Proposal"}</h3><MarkdownView markdown={item.body_md} stripAnchors /></div>
     {item.candidate && (item.candidate.body_md?.trim() || item.candidate.before_md?.trim() || item.candidate.after_md?.trim()) ? <div className="review-detail-section">
       <h3>Candidate</h3>
@@ -208,7 +210,7 @@ function ReviewDetail({ item, historical, data, decisionVersion, changed, unavai
       </ul>
       <details className="review-correction" open={item.kind === "question" ? true : undefined}><summary><MessageSquareText size={16} aria-hidden="true" />{item.kind === "question" ? "Answer or correct this item" : "Suggest a correction"}</summary>
         <label className="field"><span>{item.kind === "question" ? "Answer or correction" : "Correction"}</span><textarea rows={3} maxLength={4000} value={correction} onChange={(event) => onDraftChange({ ...draft, correction: event.target.value })} disabled={disabled || uncertain} /></label>
-        <p className="review-muted">Goes to the next run, which drafts a new version for you to review. Nothing is written until you approve that version.</p>
+        <p className="review-muted">Goes to the next run, which drafts a new version for you to review. The revised proposal follows your publication settings and gets a new review window.</p>
         <button className="button secondary" type="button" disabled={disabled || uncertain || !correction.trim()} onClick={() => decide("correct")}>Save correction</button>
       </details>
       {decisionMutation.isPending ? <p role="status">Recording your decision…</p> : null}
@@ -269,7 +271,7 @@ export function DreamsPage() {
   }
 
   return <Page className={`review-page${detailOpen ? " review-reading" : ""}`}>
-    <PageHeader title="Review" description="Concrete proposals and questions that need your decision" actions={<button className="button secondary" type="button" onClick={() => void reviewQuery.refetch()} disabled={reviewQuery.isFetching}><RefreshCw size={16} aria-hidden="true" />{reviewQuery.isFetching ? "Refreshing…" : "Refresh"}</button>} />
+    <PageHeader title="Review" description="Proposed changes and questions for your review" actions={<button className="button secondary" type="button" onClick={() => void reviewQuery.refetch()} disabled={reviewQuery.isFetching}><RefreshCw size={16} aria-hidden="true" />{reviewQuery.isFetching ? "Refreshing…" : "Refresh"}</button>} />
     {readOnly ? <ReadOnlyNotice /> : null}
     {reviewQuery.isPending ? <LoadingState label="Loading review inbox" /> : null}
     {reviewQuery.isError ? <ErrorState error={reviewQuery.error} retry={() => void reviewQuery.refetch()} title="Review inbox unavailable" /> : null}

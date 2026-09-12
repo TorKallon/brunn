@@ -33,12 +33,14 @@ export interface DreamerReviewItem {
   reviewable: boolean;
   stale: boolean;
   blocked_reason?: string | null;
+  proposed_at?: string | null;
+  auto_apply_at?: string | null;
 }
 
 export interface DreamerReviewDecision {
   id: string;
   item_id: string;
-  decision: DreamerDecisionAction;
+  decision: DreamerDecisionAction | "auto_apply";
   comment?: string | null;
   correction?: string | null;
   at: string;
@@ -48,6 +50,7 @@ export interface DreamerReviewDecision {
 export interface DreamerReviewData {
   available: boolean;
   mode: string;
+  auto_apply_after_hours?: number | null;
   paused: boolean;
   unavailable_reason?: string | null;
   last_attempt?: {

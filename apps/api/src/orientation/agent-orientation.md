@@ -38,5 +38,9 @@ Brunn does work in the background. Your writes are inputs to that work, not fina
 
 ## Dreaming
 - The Dreamer researches subjects nightly and proposes derived overviews for owner review.
-  In report-only mode nothing is applied; approvals are held. Never edit `dreams/CONTROL.md`
-  and never treat silence or elapsed time as approval.
+  In report-only mode nothing is applied; approvals are held. In full mode, an owner-configured
+  `auto_apply_after_hours` policy lets concrete pending proposals publish on the first run after
+  that review window. Each revision starts a fresh window; rejection, deferral, correction
+  requests and unavailable evidence prevent automatic publication. Questions need an answer.
+  Only change `dreams/CONTROL.md` with explicit owner authorization. An automatic publication
+  follows that standing policy; never record it as an owner approval click.

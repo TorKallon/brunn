@@ -198,7 +198,10 @@ private func reviewModeBanner(_ data: DreamerReviewData) -> String {
     if data.mode == "report-only" {
         return "Report-only: your approvals are saved and held. Nothing is written until Dreaming is switched to full mode."
     }
-    return "Full mode: approvals are written by the next run after their sources are re-checked."
+    if let hours = data.autoApplyAfterHours, data.mode == "full" {
+        return "Proposals apply on the first run after \(hours) hours unless you reject, defer, or request a correction. Each revision gets a new review window."
+    }
+    return "Full mode: approving a proposal writes it after its evidence is validated."
 }
 
 private func reviewApproveConsequence(reportOnly: Bool) -> String {
@@ -209,7 +212,7 @@ private func reviewApproveConsequence(reportOnly: Bool) -> String {
 
 private let reviewRejectConsequence = "Final. Nothing is written and this proposal does not come back."
 private let reviewDeferConsequence = "Stays in this inbox. Nothing is written."
-private let reviewCorrectionConsequence = "Goes to the next run, which drafts a new version for you to review. Nothing is written until you approve that version."
+private let reviewCorrectionConsequence = "Goes to the next run, which drafts a new version for you to review. The revised proposal follows your publication settings and gets a new review window."
 
 private func reviewDecisionStateLine(applicationStatus: String, item: DreamerReviewItem) -> String {
     switch applicationStatus {
@@ -375,6 +378,10 @@ private struct ReviewDetailView: View {
     private func decisionForm(_ item: DreamerReviewItem) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(item.kind == "question" ? "Your answer" : "Your decision").font(.headline)
+            if let deadline = item.autoApplyAt {
+                Text("Applies on the first run after \(DisplayDate.metadata(deadline)) unless you reject, defer, or request a correction.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
             if !store.canDecide { Text("A connected owner session is required to record decisions.").font(.footnote) }
             if let error = store.loadError {
                 Label("Decisions are unavailable until Review refreshes: \(error)", systemImage: "exclamationmark.icloud")

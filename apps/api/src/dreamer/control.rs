@@ -27,6 +27,18 @@ pub struct Control {
     pub mode: Mode,
     /// Legacy metadata only; never authorizes a mode transition.
     pub advance_after: Option<NaiveDate>,
+    /// Explicit owner policy; absent means every publication needs approval.
+    pub auto_apply_after_hours: Option<u32>,
+}
+
+impl Control {
+    pub fn render(&self, enabled: bool) -> String {
+        let mut text = render(enabled, self.mode, None);
+        if let Some(hours) = self.auto_apply_after_hours {
+            text.push_str(&format!("auto_apply_after_hours: {hours}\n"));
+        }
+        text
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,6 +63,7 @@ pub fn parse(content: Option<&str>) -> ControlState {
     let mut enabled: Option<bool> = None;
     let mut mode: Option<Mode> = None;
     let mut advance_after: Option<NaiveDate> = None;
+    let mut auto_apply_after_hours = None;
     for line in content.lines() {
         let line = line.trim();
         if line.is_empty() {
@@ -85,6 +98,19 @@ pub fn parse(content: Option<&str>) -> ControlState {
                     }
                 };
             }
+            "auto_apply_after_hours" => {
+                if auto_apply_after_hours.is_some() {
+                    return ControlState::disabled("duplicate CONTROL key: auto_apply_after_hours");
+                }
+                match value.parse::<u32>() {
+                    Ok(hours @ 1..=8760) => auto_apply_after_hours = Some(hours),
+                    _ => {
+                        return ControlState::disabled(
+                            "auto_apply_after_hours must be between 1 and 8760",
+                        );
+                    }
+                }
+            }
             "advance_after" => {
                 if advance_after.is_some() {
                     return ControlState::disabled("duplicate CONTROL key: advance_after");
@@ -112,6 +138,7 @@ pub fn parse(content: Option<&str>) -> ControlState {
     ControlState::Enabled(Control {
         mode,
         advance_after,
+        auto_apply_after_hours,
     })
 }
 
@@ -148,6 +175,7 @@ mod tests {
             ControlState::Enabled(Control {
                 mode: Mode::ReportOnly,
                 advance_after: Some(date("2026-09-05")),
+                auto_apply_after_hours: None,
             })
         );
     }
@@ -162,6 +190,7 @@ mod tests {
             ControlState::Enabled(Control {
                 mode: Mode::Full,
                 advance_after: Some(date("2026-09-05")),
+                auto_apply_after_hours: None,
             })
         );
     }
@@ -211,11 +240,34 @@ mod tests {
             ControlState::Enabled(Control {
                 mode: Mode::ReportOnly,
                 advance_after: Some(date("2026-09-05")),
+                auto_apply_after_hours: None,
             })
         );
         let paused = render(false, Mode::ReportOnly, None);
         assert!(matches!(
             parse(Some(&paused)),
+            ControlState::Disabled { .. }
+        ));
+    }
+
+    #[test]
+    fn automatic_policy_is_explicit_bounded_and_round_trips() {
+        let configured = "enabled: true\nmode: full\nauto_apply_after_hours: 24\n";
+        let ControlState::Enabled(policy) = parse(Some(configured)) else {
+            panic!("valid policy")
+        };
+        assert_eq!(policy.auto_apply_after_hours, Some(24));
+        assert_eq!(policy.render(true), configured);
+        for value in ["0", "-1", "8761", "24.5", "invalid"] {
+            assert!(matches!(
+                parse(Some(&format!(
+                    "enabled: true\nmode: full\nauto_apply_after_hours: {value}\n"
+                ))),
+                ControlState::Disabled { .. }
+            ));
+        }
+        assert!(matches!(
+            parse(Some(&format!("{configured}auto_apply_after_hours: 24\n"))),
             ControlState::Disabled { .. }
         ));
     }
@@ -233,6 +285,7 @@ mod tests {
                 ControlState::Enabled(Control {
                     mode,
                     advance_after: None,
+                    auto_apply_after_hours: None,
                 })
             );
         }

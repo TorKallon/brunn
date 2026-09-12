@@ -5104,3 +5104,6 @@ async fn project_status_packet_and_apply_are_fenced_idempotent_and_visible() {
         "{run}"
     );
 }
+
+#[path = "dreamer_review/auto_publication.rs"]
+mod auto_publication;

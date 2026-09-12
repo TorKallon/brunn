@@ -140,6 +140,7 @@ fn control_view(content: Option<&str>) -> Value {
         ControlState::Enabled(control) => json!({
             "enabled": true,
             "mode": control.mode.as_str(),
+            "auto_apply_after_hours": control.auto_apply_after_hours,
             "advance_after": null,
         }),
         ControlState::Disabled { reason } => json!({
@@ -202,8 +203,12 @@ pub async fn pause(
 ) -> ApiResult<Json<Value>> {
     auth.require(Capability::CredentialManage)?;
     let (content, version) = read_control(&state, &auth).await?;
-    let mode = parse_ignoring_enabled(content.as_deref()).unwrap_or(Mode::ReportOnly);
-    let rendered = control::render(false, mode, None);
+    let policy = parse_ignoring_enabled(content.as_deref()).unwrap_or(control::Control {
+        mode: Mode::ReportOnly,
+        advance_after: None,
+        auto_apply_after_hours: None,
+    });
+    let rendered = policy.render(false);
     write_control(&state, &auth, rendered.clone(), version).await?;
     Ok(Json(json!({"control": control_view(Some(&rendered))})))
 }
@@ -216,14 +221,18 @@ pub async fn resume(
 ) -> ApiResult<Json<Value>> {
     auth.require(Capability::CredentialManage)?;
     let (content, version) = read_control(&state, &auth).await?;
-    let mode = parse_ignoring_enabled(content.as_deref()).unwrap_or(Mode::ReportOnly);
-    let rendered = control::render(true, mode, None);
+    let policy = parse_ignoring_enabled(content.as_deref()).unwrap_or(control::Control {
+        mode: Mode::ReportOnly,
+        advance_after: None,
+        auto_apply_after_hours: None,
+    });
+    let rendered = policy.render(true);
     write_control(&state, &auth, rendered.clone(), version).await?;
     Ok(Json(json!({"control": control_view(Some(&rendered))})))
 }
 
 /// A paused CONTROL parses as Disabled; recover its explicitly chosen mode.
-fn parse_ignoring_enabled(content: Option<&str>) -> Option<Mode> {
+fn parse_ignoring_enabled(content: Option<&str>) -> Option<control::Control> {
     let content = content?;
     let forced = content
         .lines()
@@ -240,7 +249,7 @@ fn parse_ignoring_enabled(content: Option<&str>) -> Option<Mode> {
         .collect::<Vec<_>>()
         .join("\n");
     match control::parse(Some(&forced)) {
-        ControlState::Enabled(control) => Some(control.mode),
+        ControlState::Enabled(control) => Some(control),
         ControlState::Disabled { .. } => None,
     }
 }
@@ -252,14 +261,11 @@ mod tests {
     #[test]
     fn resume_recovers_mode_without_restoring_a_calendar_transition() {
         let paused = "enabled: false\nmode: full\nadvance_after: 2026-09-05\n";
-        let mode = parse_ignoring_enabled(Some(paused)).expect("recoverable control");
-        assert_eq!(mode, Mode::Full);
+        let policy = parse_ignoring_enabled(Some(paused)).expect("recoverable control");
+        assert_eq!(policy.mode, Mode::Full);
+        assert_eq!(policy.render(true), "enabled: true\nmode: full\n");
         assert_eq!(
-            control::render(true, mode, None),
-            "enabled: true\nmode: full\n"
-        );
-        assert_eq!(
-            parse_ignoring_enabled(Some("enabled:false\nmode: report-only\n")),
+            parse_ignoring_enabled(Some("enabled:false\nmode: report-only\n")).map(|c| c.mode),
             Some(Mode::ReportOnly)
         );
         assert!(parse_ignoring_enabled(Some("garbage")).is_none());
