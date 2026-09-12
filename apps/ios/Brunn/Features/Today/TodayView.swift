@@ -12,10 +12,6 @@ struct TodayView: View {
                         ConnectionBanner(message: message, isDemo: model.isDemo)
                     }
 
-                    if let status = model.dreamingStatus, status.accountLabel != nil || status.dreamer?.runtime?.usage != nil {
-                        DreamingUsageCard(status: status)
-                    }
-
                     if let briefing = model.latestBriefing {
                         BriefingReader(
                             briefing: briefing,
@@ -29,6 +25,10 @@ struct TodayView: View {
                             title: "No briefing is published yet",
                             detail: "When an agent publishes a structured briefing, it will appear here."
                         )
+                    }
+
+                    if let status = model.dreamingStatus, status.accountLabel != nil || status.dreamer?.runtime?.usage != nil {
+                        DreamingUsageCard(status: status)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -76,15 +76,21 @@ struct TodayView: View {
 }
 
 /// The Codex account Dreaming runs under and how much of its weekly plan
-/// allowance the last verified run observed.
+/// allowance is left, as the last verified run observed it.
 struct DreamingUsageCard: View {
     let status: DreamingStatusData
 
     private var weekly: DreamingStatusData.UsageWindow? { status.dreamer?.runtime?.usage?.weekly }
 
-    private var usedLabel: String {
-        guard let used = weekly?.usedPercent else { return "Unavailable" }
-        return "\(Int(used.rounded()))%"
+    /// Fraction of the weekly allowance still available, 0...1.
+    private var remaining: Double? {
+        guard let used = weekly?.usedPercent else { return nil }
+        return min(max(1 - used / 100, 0), 1)
+    }
+
+    private var headline: String {
+        guard let remaining else { return "Dreaming allowance not observed yet" }
+        return "Dreaming has \(Int((remaining * 100).rounded()))% of its weekly allowance left"
     }
 
     private var detail: String {
@@ -96,32 +102,33 @@ struct DreamingUsageCard: View {
         }
         if let resets = weekly?.resetsAt, let date = ISO8601DateFormatter().date(from: resets) {
             parts.append("resets " + date.formatted(date: .abbreviated, time: .shortened))
-        } else if status.accountLabel != nil, weekly?.usedPercent == nil {
-            parts.append("usage not observed yet")
         }
         return parts.joined(separator: " · ")
     }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(alignment: .top, spacing: 10) {
             Image(systemName: "moon.zzz")
-                .font(.title3)
+                .font(.footnote)
                 .foregroundStyle(BrunnTheme.signal)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Dreaming weekly usage")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(usedLabel)
-                    .font(.title3.weight(.semibold))
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(headline)
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(BrunnTheme.ink)
+                if let remaining {
+                    ProgressView(value: remaining)
+                        .tint(BrunnTheme.signal)
+                        .frame(maxWidth: 220)
+                }
                 Text(detail)
-                    .font(.footnote)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
             }
             Spacer(minLength: 0)
         }
-        .padding(14)
+        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.background, in: RoundedRectangle(cornerRadius: 8))
         .overlay { RoundedRectangle(cornerRadius: 8).stroke(BrunnTheme.line, lineWidth: 1) }
