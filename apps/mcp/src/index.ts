@@ -244,11 +244,13 @@ const taskWriteSource = z.string()
     "Use owner only for a value the owner directly supplied; agent:<id> for inference. "
     + "todoist and derived are reserved for internal service writers.",
   );
-const taskCompletedVia = z.union([
-  z.literal("ios"),
-  z.literal("web"),
-  z.string().regex(/^agent:[a-zA-Z0-9][a-zA-Z0-9._:-]{0,199}$/u),
-]).describe("Actual completion surface. MCP agents normally use agent:<id>.");
+const taskCompletedVia = z.string()
+  .regex(/^(?:ios|web|agent:[a-zA-Z0-9][a-zA-Z0-9._:-]{0,199})$/u)
+  .describe(
+    "Who records completion: ios, web, or agent:<id>. MCP agents use agent:<id> "
+    + "(matching source), even when the owner's request arrived over iMessage. "
+    + "This is not the messaging channel; do not use imessage or impersonate ios.",
+  );
 const contextList = z.array(contextSlug).max(20).refine(
   (values) => new Set(values).size === values.length,
   "contexts must not contain duplicates",

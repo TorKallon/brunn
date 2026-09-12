@@ -77,6 +77,10 @@ export function TasksPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["task-candidates"] });
       void queryClient.invalidateQueries({ queryKey: ["task-done"] });
+      void queryClient.invalidateQueries({ queryKey: ["task"] });
+    },
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: ["task-candidates"] });
     },
   });
 
@@ -87,7 +91,7 @@ export function TasksPage() {
     <Page>
       <PageHeader
         title="All tasks"
-        description="The deliberate backlog view. Results remain paginated in groups of 25."
+        description="The deliberate backlog view, including history. Filter by Deleted to restore a deleted task. Results remain paginated in groups of 25."
         actions={<ListFilter size={19} aria-hidden="true" />}
       />
       <fieldset className="task-filter-panel">
@@ -105,7 +109,7 @@ export function TasksPage() {
             <option value="open">Open</option>
             <option value="waiting">Waiting</option>
             <option value="done">Done</option>
-            <option value="dropped">Dropped</option>
+            <option value="dropped">Deleted</option>
           </select>
         </label>
         <label>
@@ -195,6 +199,10 @@ export function TasksPage() {
           Include waiting
         </label>
       </fieldset>
+
+      {actionMutation.isSuccess && actionMutation.data.data.action === "drop" ? (
+        <p className="task-feedback" role="status">Task deleted from active lists. Its history is retained here.</p>
+      ) : null}
 
       <p className="task-list-summary" role="status">
         Page {pageCursors.length + 1} · {query.data?.data.backlog_total ?? 0} matching

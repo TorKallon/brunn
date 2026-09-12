@@ -7,6 +7,12 @@ export type TaskQuickAction =
   | "drop"
   | "reopen";
 
+export function confirmTaskDeletion(title: string): boolean {
+  return window.confirm(
+    `Delete “${title}”?\n\nThis removes this task from active lists, not its history. You can restore it from All tasks → Deleted. Other recurring occurrences are unchanged.`,
+  );
+}
+
 export function taskQuickOperation(action: TaskQuickAction): JsonObject {
   if (action === "complete") {
     return { type: "complete", source: "owner", completed_via: "web" };
@@ -17,7 +23,7 @@ export function taskQuickOperation(action: TaskQuickAction): JsonObject {
     return {
       type: "drop",
       source: "owner",
-      reason: "owner dropped from Web",
+      reason: "Deleted from Web",
     };
   }
   return { type: "reopen", source: "owner" };

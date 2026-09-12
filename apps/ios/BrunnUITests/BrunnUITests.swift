@@ -555,6 +555,35 @@ final class BrunnUITests: XCTestCase {
     }
 
     @MainActor
+    func testTaskDeletionRequiresConfirmationAndDoesNotCompleteTask() {
+        let app = launchDemo()
+        openTasks(in: app)
+        let taskRef = "019f8800-0000-7000-8000-000000000003"
+        let row = element("task-row-\(taskRef)", in: app)
+        let doneCount = element("task-done-today", in: app).label
+        row.tap()
+        let delete = element("task-detail-delete", in: app)
+        XCTAssertTrue(delete.waitForExistence(timeout: 3))
+        delete.tap()
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(delete.exists)
+        delete.tap()
+        let confirmation = app.alerts.buttons["Delete task"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
+        confirmation.tap()
+        XCTAssertTrue(element("task-detail", in: app).waitForNonExistence(timeout: 3))
+        XCTAssertTrue(row.waitForNonExistence(timeout: 3))
+        XCTAssertEqual(element("task-done-today", in: app).label, doneCount)
+
+        let otherRow = element("task-row-019f8800-0000-7000-8000-000000000005", in: app)
+        otherRow.press(forDuration: 1)
+        app.buttons["Delete task"].tap()
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
+        confirmation.tap()
+        XCTAssertTrue(otherRow.waitForNonExistence(timeout: 3))
+    }
+
+    @MainActor
     func testAgentFirstTasksEmptyUrgentAndViewOnlyStates() {
         let emptyApp = launchDemo(extraArguments: ["--ui-test-task-empty-urgent"])
         openTasks(in: emptyApp)
@@ -577,6 +606,9 @@ final class BrunnUITests: XCTestCase {
         let capture = element("task-today-capture", in: viewOnlyApp)
         XCTAssertTrue(capture.exists)
         XCTAssertFalse(capture.isEnabled)
+        element("task-row-019f8800-0000-7000-8000-000000000003", in: viewOnlyApp).tap()
+        XCTAssertTrue(element("task-detail-view-only", in: viewOnlyApp).waitForExistence(timeout: 3))
+        XCTAssertFalse(element("task-detail-delete", in: viewOnlyApp).exists)
         viewOnlyApp.terminate()
     }
 

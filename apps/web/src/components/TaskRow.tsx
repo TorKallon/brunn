@@ -8,7 +8,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { TaskCandidate } from "../lib/types";
-import type { TaskQuickAction } from "../lib/taskOperations";
+import { confirmTaskDeletion, type TaskQuickAction } from "../lib/taskOperations";
 
 export function TaskRow({
   item,
@@ -58,6 +58,7 @@ export function TaskRow({
         </div>
         <div className="task-reason-row">
           <span>{item.reason}</span>
+          {item.status === "dropped" ? <span>Deleted</span> : null}
           {item.provenance_markers.map((source) => (
             <span
               className="task-provenance"
@@ -110,8 +111,8 @@ export function TaskRow({
                 <button
                   className="task-action"
                   type="button"
-                  aria-label="Reopen"
-                  title="Reopen"
+                  aria-label={item.status === "dropped" ? "Restore task" : "Reopen"}
+                  title={item.status === "dropped" ? "Restore task" : "Reopen"}
                   disabled={pending}
                   onClick={() => onAction(item, "reopen")}
                 >
@@ -134,10 +135,12 @@ export function TaskRow({
                 <button
                   className="task-action task-action-drop"
                   type="button"
-                  aria-label="Drop"
-                  title="Drop"
+                  aria-label="Delete task"
+                  title="Delete task"
                   disabled={pending}
-                  onClick={() => onAction(item, "drop")}
+                  onClick={() => {
+                    if (confirmTaskDeletion(item.title)) onAction(item, "drop");
+                  }}
                 >
                   <Trash2 size={16} aria-hidden="true" />
                 </button>

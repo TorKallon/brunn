@@ -137,6 +137,8 @@ struct DreamingUsageCard: View {
     }
 }
 
+private let taskDeletionMessage = "This removes this task from active lists, not its history. You can restore it on the web from All tasks → Deleted. Other recurring occurrences are unchanged."
+
 struct AgentTasksView: View {
     @EnvironmentObject private var model: AppModel
     @State private var moreTapCount = 0
@@ -145,6 +147,7 @@ struct AgentTasksView: View {
     @State private var snoozeDate = Date.now.addingTimeInterval(86_400)
     @State private var waitCandidate: AgentTaskCandidate?
     @State private var waitingOn = ""
+    @State private var deleteCandidate: AgentTaskCandidate?
 
     private var projection: AgentTaskTodayProjection {
         AgentTaskTodayProjection.bounded(
@@ -203,6 +206,7 @@ struct AgentTasksView: View {
                             Task { await model.openTask(reference: candidate.taskRef) }
                         },
                         action: perform,
+                        delete: { deleteCandidate = $0 },
                         pickSnooze: { candidate in
                             snoozeCandidate = candidate
                             snoozeDate = .now.addingTimeInterval(86_400)
@@ -247,6 +251,21 @@ struct AgentTasksView: View {
             .sheet(item: $model.presentedTask) { task in
                 AgentTaskDetailView(task: task)
                     .environmentObject(model)
+            }
+            .alert(
+                "Delete task?",
+                isPresented: Binding(
+                    get: { deleteCandidate != nil },
+                    set: { if !$0 { deleteCandidate = nil } }
+                ),
+                presenting: deleteCandidate
+            ) { candidate in
+                Button("Delete task", role: .destructive) {
+                    perform(candidate, .drop)
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: { candidate in
+                Text("\(candidate.title)\n\n\(taskDeletionMessage)")
             }
             .sheet(isPresented: $showsBoundedList) {
                 NavigationStack {
@@ -385,6 +404,7 @@ private struct AgentTaskSurface: View {
     let complete: (AgentTaskCandidate) -> Void
     let open: (AgentTaskCandidate) -> Void
     let action: (AgentTaskCandidate, AgentTaskUpdateOperation) -> Void
+    let delete: (AgentTaskCandidate) -> Void
     let pickSnooze: (AgentTaskCandidate) -> Void
     let waitOn: (AgentTaskCandidate) -> Void
     let more: () -> Void
@@ -692,6 +712,11 @@ private struct AgentTaskSurface: View {
                         action(candidate, .downgradeToSoft)
                     }
                 }
+                Divider()
+                Button("Delete task", systemImage: "trash", role: .destructive) {
+                    delete(candidate)
+                }
+                .disabled(mutatingRefs.contains(candidate.taskRef))
             }
         } else {
             row
@@ -949,11 +974,18 @@ private struct AgentTaskBoundedList: View {
 private struct AgentTaskDetailView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    let task: AgentTaskDetail
+    private let initialTask: AgentTaskDetail
     @State private var correctedTitle: String
+    @State private var showsDeleteConfirmation = false
+
+    private var task: AgentTaskDetail {
+        model.presentedTask?.taskRef == initialTask.taskRef
+            ? model.presentedTask ?? initialTask
+            : initialTask
+    }
 
     init(task: AgentTaskDetail) {
-        self.task = task
+        initialTask = task
         _correctedTitle = State(initialValue: task.title)
     }
 
@@ -979,7 +1011,7 @@ private struct AgentTaskDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         StatusPill(
-                            text: task.status.rawValue.uppercased(),
+                            text: task.status == .dropped ? "DELETED" : task.status.rawValue.uppercased(),
                             color: task.status == .done ? BrunnTheme.success : BrunnTheme.pulse
                         )
                         if task.task.hardDue?.source != nil,
@@ -1010,6 +1042,24 @@ private struct AgentTaskDetailView: View {
                     if let contexts = task.task.requiredContexts, !contexts.value.isEmpty {
                         LabeledContent("Contexts", value: contexts.value.joined(separator: ", "))
                         SourceLine(source: contexts.source)
+                    }
+
+                    if let message = model.taskMessage {
+                        Label(message, systemImage: "exclamationmark.triangle")
+                            .font(.footnote)
+                            .foregroundStyle(BrunnTheme.amber)
+                            .accessibilityIdentifier("task-detail-message")
+                    }
+
+                    if model.canWriteTasks, task.status != .dropped {
+                        Button("Delete task", systemImage: "trash", role: .destructive) {
+                            showsDeleteConfirmation = true
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .buttonStyle(.bordered)
+                        .tint(BrunnTheme.red)
+                        .disabled(model.mutatingTaskRefs.contains(task.taskRef))
+                        .accessibilityIdentifier("task-detail-delete")
                     }
 
                     if model.canWriteTasks, task.status == .open || task.status == .waiting {
@@ -1121,6 +1171,18 @@ private struct AgentTaskDetailView: View {
                 }
             }
             .accessibilityIdentifier("task-detail")
+            .alert("Delete task?", isPresented: $showsDeleteConfirmation) {
+                Button("Delete task", role: .destructive) {
+                    Task {
+                        if await model.performTaskAction(candidate, operation: .drop) {
+                            dismiss()
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("\(task.title)\n\n\(taskDeletionMessage)")
+            }
         }
     }
 }

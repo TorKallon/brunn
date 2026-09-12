@@ -15,10 +15,12 @@ import { type FormEvent, useState } from "react";
 import { DefinitionList, Page, PageHeader, Section } from "../components/Page";
 import { ErrorState, LoadingState, StatusBadge } from "../components/StateViews";
 import { useApi } from "../lib/auth";
+import { ApiError } from "../lib/api";
 import { useCapability } from "../lib/current";
 import { formatDate, humanize } from "../lib/format";
 import type { JsonObject, JsonValue, TaskDetail } from "../lib/types";
 import { newOperationId } from "../lib/workspace";
+import { confirmTaskDeletion, taskQuickOperation } from "../lib/taskOperations";
 
 export function TaskDetailPage() {
   const { taskRef } = useParams({ from: "/authenticated/tasks/$taskRef" });
@@ -46,6 +48,9 @@ export function TaskDetailPage() {
         queryClient.invalidateQueries({ queryKey: ["task-done"] }),
       ]);
     },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 409) void query.refetch();
+    },
   });
 
   return (
@@ -68,14 +73,18 @@ export function TaskDetailPage() {
       {mutation.isSuccess ? (
         <p className="task-feedback" role="status">
           <Check size={16} aria-hidden="true" />
-          {humanize(mutation.data.data.action)} saved
+          {mutation.data.data.action === "drop"
+            ? "Task deleted. Its history is retained."
+            : mutation.data.data.action === "reopen"
+              ? "Task restored to the queue"
+              : `${humanize(mutation.data.data.action)} saved`}
         </p>
       ) : null}
       {task ? (
         <>
           <Section
             title="Task state"
-            meta={<StatusBadge status={task.status} />}
+            meta={<StatusBadge status={task.status === "dropped" ? "deleted" : task.status} />}
             className="task-detail-state"
           >
             <DefinitionList items={taskDefinitionItems(task)} />
@@ -151,7 +160,7 @@ function TaskDetailActions({
       {!active ? (
         <button className="button secondary" type="button" disabled={pending} onClick={() => mutate({ type: "reopen", source: "owner" })}>
           <RotateCcw size={16} aria-hidden="true" />
-          Reopen
+          {task.status === "dropped" ? "Restore task" : "Reopen"}
         </button>
       ) : (
         <button className="button task-complete-button" type="button" disabled={pending} onClick={() => mutate({ type: "complete", source: "owner", completed_via: "web" })}>
@@ -188,16 +197,12 @@ function TaskDetailActions({
           className="button secondary task-drop-button"
           type="button"
           disabled={pending}
-          onClick={() =>
-            mutate({
-              type: "drop",
-              source: "owner",
-              reason: "owner dropped from Web",
-            })
-          }
+          onClick={() => {
+            if (confirmTaskDeletion(task.title)) mutate(taskQuickOperation("drop"));
+          }}
         >
           <Trash2 size={16} aria-hidden="true" />
-          Drop
+          Delete task
         </button>
       ) : null}
     </div>
@@ -236,7 +241,7 @@ function TitleCorrectionForm({
 function taskDefinitionItems(task: TaskDetail) {
   const cells = Object.fromEntries(taskFieldEntries(task));
   return [
-    { label: "Status", value: humanize(task.status) },
+    { label: "Status", value: task.status === "dropped" ? "Deleted" : humanize(task.status) },
     { label: "Project", value: formatTaskValue(cells.project?.value) },
     { label: "Ready", value: formatTaskValue(cells.ready_at?.value) },
     { label: "Soft due", value: formatTaskValue(cells.soft_due?.value) },

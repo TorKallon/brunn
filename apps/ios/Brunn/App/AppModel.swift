@@ -1184,7 +1184,7 @@ final class AppModel: ObservableObject {
         let oldQuick = quickTasks
         let oldToday = todayTasks
         switch operation {
-        case .complete, .snooze, .snoozeUntil, .waitOn:
+        case .complete, .drop, .snooze, .snoozeUntil, .waitOn:
             urgentTasks.removeAll { $0.taskRef == candidate.taskRef }
             nextTasks.removeAll { $0.taskRef == candidate.taskRef }
             quickTasks.removeAll { $0.taskRef == candidate.taskRef }

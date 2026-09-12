@@ -660,6 +660,7 @@ public enum AgentTaskCorrectionValue: Sendable, Equatable, Encodable {
 
 public enum AgentTaskUpdateOperation: Sendable, Equatable, Encodable {
     case complete
+    case drop
     case snooze(days: Int)
     case snoozeUntil(String)
     case waitOn(String)
@@ -691,6 +692,9 @@ public enum AgentTaskUpdateOperation: Sendable, Equatable, Encodable {
         case .complete:
             try container.encode("complete", forKey: .type)
             try container.encode("ios", forKey: .completedVia)
+        case .drop:
+            try container.encode("drop", forKey: .type)
+            try container.encode("Deleted from iOS", forKey: .reason)
         case let .snooze(days):
             try container.encode("snooze", forKey: .type)
             try container.encode(days, forKey: .days)

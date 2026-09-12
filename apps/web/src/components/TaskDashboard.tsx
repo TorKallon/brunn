@@ -88,9 +88,12 @@ export function TaskDashboard() {
             : response.data.action === "confirm_hard"
               ? "Hard deadline confirmed"
               : response.data.action === "drop"
-                ? "Task dropped"
+                ? "Task deleted"
                 : "Task reopened",
       );
+      void invalidateTaskReads(queryClient);
+    },
+    onError: () => {
       void invalidateTaskReads(queryClient);
     },
   });

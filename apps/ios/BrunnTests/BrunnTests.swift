@@ -1922,6 +1922,64 @@ final class BrunnTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testTaskDeletionRemovesActiveRowsWithoutCountingCompletion() async throws {
+        let model = AppModel()
+        model.enterDemo()
+        let candidate = try XCTUnwrap(model.nextTasks.first)
+        let doneBefore = model.doneToday
+        let accepted = await model.performTaskAction(candidate, operation: .drop)
+        XCTAssertTrue(accepted)
+        XCTAssertFalse((model.urgentTasks + model.nextTasks + model.quickTasks + model.todayTasks)
+            .contains { $0.taskRef == candidate.taskRef })
+        XCTAssertEqual(model.doneToday, doneBefore)
+        XCTAssertTrue(model.mutatingTaskRefs.isEmpty)
+    }
+
+    func testTaskDeletionUsesExistingEndpointAndSurfacesConflict() async throws {
+        let recorder = NotificationRequestRecorder()
+        let taskRef = "019f8800-0000-7000-8000-000000000001"
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        let api = BrunnAPI(
+            configuration: .init(baseURL: URL(string: "https://delete-task.brunn.test/api/v1")!),
+            session: URLSession(configuration: configuration)
+        )
+        defer { NotificationRequestURLProtocol.handler = nil }
+        for status in [200, 409, 503] {
+            NotificationRequestURLProtocol.handler = { request in
+                recorder.append(request)
+                if status != 200 {
+                    return StubbedHTTPResponse(statusCode: status, json: #"{"error":{"code":"task_changed","message":"Refresh and retry"}}"#)
+                }
+                return StubbedHTTPResponse(json: #"""
+                {"status":"committed","data":{"task":{"task_ref":"019f8800-0000-7000-8000-000000000001","entry_ref":"entry:one","version":8,"title":"Retained history","status":"dropped","task":{"id":"019f8800-0000-7000-8000-000000000001","title":"Retained history"},"created_at":"2026-08-27T12:00:00Z","updated_at":"2026-08-27T12:01:00Z"},"action":"drop","next_occurrence_task_ref":null,"replayed":false}}
+                """#)
+            }
+            do {
+                let response = try await api.updateTask(
+                    reference: taskRef,
+                    request: AgentTaskUpdateRequest(expectedVersion: 7, idempotencyKey: "ios:test:delete", operation: .drop),
+                    bearerToken: "test-device-token"
+                )
+                XCTAssertEqual(status, 200)
+                XCTAssertEqual(response.task.status, .dropped)
+                XCTAssertNil(response.nextOccurrenceTaskRef)
+            } catch let BrunnAPIError.server(actualStatus, _, _) {
+                XCTAssertEqual(actualStatus, status)
+                XCTAssertNotEqual(status, 200)
+            }
+            let request = try XCTUnwrap(recorder.snapshot().last)
+            XCTAssertEqual(request.httpMethod, "PATCH")
+            XCTAssertEqual(request.url?.path, "/api/v1/workspace/tasks/\(taskRef)")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-device-token")
+            let body = try XCTUnwrap(request.httpBody)
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(object["expected_version"] as? Int, 7)
+            XCTAssertEqual(object["operation"] as? [String: String], ["type": "drop", "source": "owner", "reason": "Deleted from iOS"])
+        }
+    }
+
     func testTaskMutationUsesBearerWithoutCookieOrCSRF() async throws {
         let host = "task-auth-\(UUID().uuidString.lowercased()).brunn.test"
         let baseURL = try XCTUnwrap(URL(string: "https://\(host)/api/v1"))

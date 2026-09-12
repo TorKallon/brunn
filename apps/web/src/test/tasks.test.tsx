@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { TaskDetail } from "../lib/types";
 import { defaultMe, installApiMock, renderApp } from "./renderApp";
 import {
   candidate,
@@ -14,6 +15,10 @@ import {
 } from "./taskFixtures";
 
 describe("agent-first task surfaces", () => {
+  beforeEach(() => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+  });
+  afterEach(() => vi.mocked(window.confirm).mockRestore());
   it("keeps the dashboard bounded, explains ranking, and expands only explicitly", async () => {
     const requests: URL[] = [];
     installApiMock({
@@ -262,7 +267,7 @@ describe("agent-first task surfaces", () => {
     await user.click(within(row).getByRole("button", { name: "Complete" }));
     await user.click(within(row).getByRole("button", { name: "Snooze one day" }));
     await user.click(within(row).getByRole("button", { name: "Confirm hard deadline" }));
-    await user.click(within(row).getByRole("button", { name: "Drop" }));
+    await user.click(within(row).getByRole("button", { name: "Delete task" }));
     await waitFor(() => expect(bodies).toHaveLength(4));
     expect(bodies).toEqual([
       expect.objectContaining({
@@ -282,7 +287,7 @@ describe("agent-first task surfaces", () => {
         operation: {
           type: "drop",
           source: "owner",
-          reason: "owner dropped from Web",
+          reason: "Deleted from Web",
         },
       }),
     ]);
@@ -297,7 +302,78 @@ describe("agent-first task surfaces", () => {
       `task-row-${nextCandidates[0].task_ref}`,
     )).at(-1)!;
     expect(within(viewOnlyRow).queryByRole("button", { name: "Complete" })).not.toBeInTheDocument();
+    expect(within(viewOnlyRow).queryByRole("button", { name: "Delete task" })).not.toBeInTheDocument();
     expect(within(viewOnlyRow).getByText("View only")).toBeInTheDocument();
+  });
+
+  it("cancels deletion, retains a failed task, then removes it from active lists after success", async () => {
+    let deleted = false;
+    let attempts = 0;
+    const item = nextCandidates[0];
+    installApiMock({
+      "GET /api/v1/workspace/tasks/candidates": (request: Request) => ({
+        status: "complete",
+        data: {
+          view: new URL(request.url).searchParams.get("view"),
+          items: deleted ? [] : [item], urgent_total: 1, next_remaining: 0, backlog_total: deleted ? 0 : 1,
+        },
+      }),
+      [`PATCH /api/v1/workspace/tasks/${item.task_ref}`]: () => {
+        attempts += 1;
+        if (attempts === 1) return { status: 503, body: { error: { code: "unavailable", message: "Please try again" } } };
+        deleted = true;
+        return { status: "committed", data: { task: { ...taskDetail.task, status: "dropped" }, action: "drop", replayed: false } };
+      },
+    });
+    const user = userEvent.setup();
+    renderApp("/dashboard");
+    const row = await screen.findByTestId(`task-row-${item.task_ref}`);
+    vi.mocked(window.confirm).mockReturnValueOnce(false);
+    await user.click(within(row).getByRole("button", { name: "Delete task" }));
+    expect(attempts).toBe(0);
+    expect(row).toBeInTheDocument();
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining(item.title));
+    await user.click(within(row).getByRole("button", { name: "Delete task" }));
+    expect(await screen.findByText("Please try again")).toBeInTheDocument();
+    expect(row).toBeInTheDocument();
+    await user.click(within(row).getByRole("button", { name: "Delete task" }));
+    await waitFor(() => expect(screen.queryByTestId(`task-row-${item.task_ref}`)).not.toBeInTheDocument());
+    expect(screen.getByText("Task deleted")).toBeInTheDocument();
+    expect(attempts).toBe(2);
+  });
+
+  it("reloads a conflicting detail version before retry and restores deleted history", async () => {
+    let current: TaskDetail = structuredClone(taskDetail.task);
+    const operations: Array<{ expected_version: number; operation: { type: string } }> = [];
+    installApiMock({
+      [`GET /api/v1/workspace/tasks/${current.task_ref}`]: () => ({ status: "complete", data: { task: current } }),
+      [`PATCH /api/v1/workspace/tasks/${current.task_ref}`]: async (request: Request) => {
+        const body = await request.json();
+        operations.push(body);
+        if (operations.length === 1) {
+          current = { ...current, version: 4, title: "Updated elsewhere" };
+          return { status: 409, body: { error: { code: "version_conflict", message: "Task changed elsewhere" } } };
+        }
+        current = { ...current, version: current.version + 1, status: body.operation.type === "drop" ? "dropped" : "open" };
+        return { status: "committed", data: { task: current, action: body.operation.type, replayed: false } };
+      },
+    });
+    const user = userEvent.setup();
+    renderApp(`/tasks/${current.task_ref}`);
+    const deleteButton = await screen.findByRole("button", { name: "Delete task" });
+    vi.mocked(window.confirm).mockReturnValueOnce(false);
+    await user.click(deleteButton);
+    expect(operations).toHaveLength(0);
+    await user.click(deleteButton);
+    expect(await screen.findByText("Task changed elsewhere")).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Updated elsewhere" });
+    await user.click(deleteButton);
+    const restore = await screen.findByRole("button", { name: "Restore task" });
+    expect(screen.queryByRole("button", { name: "Delete task" })).not.toBeInTheDocument();
+    expect(screen.getAllByText("Deleted").length).toBeGreaterThan(0);
+    await user.click(restore);
+    expect(await screen.findByRole("button", { name: "Delete task" })).toBeInTheDocument();
+    expect(operations.map((item) => [item.expected_version, item.operation.type])).toEqual([[3, "drop"], [4, "drop"], [5, "reopen"]]);
   });
 
   it("opens the deliberate paginated list and applies every supported filter", async () => {
@@ -473,15 +549,15 @@ describe("agent-first task surfaces", () => {
     const doneRow = await screen.findByTestId(`task-row-${done.task_ref}`);
     const droppedRow = screen.getByTestId(`task-row-${dropped.task_ref}`);
     expect(within(doneRow).getByRole("button", { name: "Reopen" })).toBeInTheDocument();
-    expect(within(doneRow).getByRole("button", { name: "Drop" })).toBeInTheDocument();
+    expect(within(doneRow).getByRole("button", { name: "Delete task" })).toBeInTheDocument();
     expect(within(doneRow).queryByRole("button", { name: "Complete" })).not.toBeInTheDocument();
     expect(within(doneRow).queryByRole("button", { name: "Snooze one day" })).not.toBeInTheDocument();
-    expect(within(droppedRow).getByRole("button", { name: "Reopen" })).toBeInTheDocument();
-    expect(within(droppedRow).queryByRole("button", { name: "Drop" })).not.toBeInTheDocument();
+    expect(within(droppedRow).getByRole("button", { name: "Restore task" })).toBeInTheDocument();
+    expect(within(droppedRow).queryByRole("button", { name: "Delete task" })).not.toBeInTheDocument();
 
-    await user.click(within(doneRow).getByRole("button", { name: "Drop" }));
+    await user.click(within(doneRow).getByRole("button", { name: "Delete task" }));
     await waitFor(() => expect(bodies).toHaveLength(1));
-    await user.click(within(droppedRow).getByRole("button", { name: "Reopen" }));
+    await user.click(within(droppedRow).getByRole("button", { name: "Restore task" }));
     await waitFor(() => expect(bodies).toHaveLength(2));
     expect(bodies).toEqual([
       {
@@ -490,7 +566,7 @@ describe("agent-first task surfaces", () => {
           operation: {
             type: "drop",
             source: "owner",
-            reason: "owner dropped from Web",
+            reason: "Deleted from Web",
           },
         }),
       },
@@ -533,7 +609,7 @@ describe("agent-first task surfaces", () => {
     expect(screen.getAllByText("agent:codex").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Reopen" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Snooze tomorrow" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Drop" }));
+    await user.click(screen.getByRole("button", { name: "Delete task" }));
     await waitFor(() =>
       expect(dropBody).toEqual(
         expect.objectContaining({
@@ -541,7 +617,7 @@ describe("agent-first task surfaces", () => {
           operation: {
             type: "drop",
             source: "owner",
-            reason: "owner dropped from Web",
+            reason: "Deleted from Web",
           },
         }),
       ),

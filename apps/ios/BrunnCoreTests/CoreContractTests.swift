@@ -882,6 +882,17 @@ final class CoreContractTests: XCTestCase {
         XCTAssertEqual(operation["completed_via"] as? String, "ios")
     }
 
+    func testTaskDeletionEncodesRecoverableDropWithoutCompletion() throws {
+        let request = AgentTaskUpdateRequest(expectedVersion: 7, idempotencyKey: "ios:test:delete", operation: .drop)
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any]
+        )
+        XCTAssertEqual(object["expected_version"] as? Int, 7)
+        XCTAssertEqual(object["idempotency_key"] as? String, "ios:test:delete")
+        let operation = try XCTUnwrap(object["operation"] as? [String: String])
+        XCTAssertEqual(operation, ["type": "drop", "source": "owner", "reason": "Deleted from iOS"])
+    }
+
     func testTaskCandidateDecodesWithoutEstimateOrTodayFields() throws {
         let json = #"""
         {"task_ref":"019f8800-0000-7000-8000-000000000002","entry_ref":"entry:two","version":1,"title":"Older server","status":"open","project":null,"required_contexts":[],"tier":5,"reason":"ready","provenance_markers":[],"pinned":false}

@@ -294,6 +294,51 @@ test("task tools preserve exact methods, paths, repeated candidate contexts, and
   }
 });
 
+test("completion attribution is a single connector-friendly string, not an ios literal union", async () => {
+  for (const surface of ["local", "remote"] as const) {
+    const calls: RecordedCall[] = [];
+    const { client, close } = await connectedPair(calls, { surface });
+    try {
+      const update = (await client.listTools()).tools.find((tool) => tool.name === "task.update");
+      const operation = update?.inputSchema.properties?.operation as {
+        anyOf: Array<{ properties: Record<string, Record<string, unknown>> }>;
+      };
+      const complete = operation.anyOf.find((branch) => branch.properties.type?.const === "complete");
+      const via = complete?.properties.completed_via;
+      assert.equal(via?.type, "string");
+      assert.equal(via?.anyOf, undefined);
+      assert.equal(via?.const, undefined);
+      assert.match(String(via?.description), /not the messaging channel/);
+      const pattern = new RegExp(String(via?.pattern), "u");
+      for (const actor of ["ios", "web", "agent:aether", "agent:chatgpt", "agent:codex.task-1"]) {
+        assert.equal(pattern.test(actor), true, actor);
+        await callOk(client, "task.update", {
+          task_ref: taskRef,
+          expected_version: 7,
+          idempotency_key: `complete:${surface}:${actor}`,
+          operation: { type: "complete", source: actor.startsWith("agent:") ? actor : "owner", completed_via: actor },
+        });
+        assert.equal(JSON.parse(calls.at(-1)?.body ?? "{}").operation.completed_via, actor);
+      }
+      const accepted = calls.length;
+      for (const actor of ["imessage", "agent:", "", "agent:with space", "ios:agent", `agent:${"a".repeat(201)}`]) {
+        assert.equal(pattern.test(actor), false, actor);
+        const response = await client.callTool({
+          name: "task.update",
+          arguments: {
+            task_ref: taskRef, expected_version: 7, idempotency_key: "invalid-attribution",
+            operation: { type: "complete", source: "agent:aether", completed_via: actor },
+          },
+        });
+        assert.equal(response.isError, true, actor);
+      }
+      assert.equal(calls.length, accepted, "Invalid attribution must not dispatch an API mutation");
+    } finally {
+      await close();
+    }
+  }
+});
+
 test("task.contexts maps every operation to its frozen HTTP route", async () => {
   const calls: RecordedCall[] = [];
   const { client, close } = await connectedPair(calls);
