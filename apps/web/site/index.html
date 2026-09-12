@@ -54,6 +54,7 @@
       "@type": "FAQPage",
       "mainEntity": [
         { "@type": "Question", "name": "What is brunn?", "acceptedAnswer": { "@type": "Answer", "text": "brunn is one memory and workspace for all your agents: a durable, portable place where the AI agents you use drop in what they learn and draw it back up later. It holds source material, checkpoints, tasks, briefings, files and credentials in one well that Claude Code, Codex, ChatGPT, Grok, Grok Bot, OpenClaw and any MCP client can open." } },
+        { "@type": "Question", "name": "Is brunn an MCP memory server?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. brunn serves persistent memory for AI agents over one hosted Model Context Protocol endpoint, so the same memory works for Claude Code, Codex, ChatGPT, Grok, Grok Bot and OpenClaw without a plugin per tool. It is more than an agent memory store: every answer is drawn from exact source versions, sessions leave checkpoints a fresh agent can resume, and the same well feeds the morning briefing, the task list and the Dreamer." } },
         { "@type": "Question", "name": "Which agents and tools work with brunn?", "acceptedAnswer": { "@type": "Answer", "text": "Anything that speaks the Model Context Protocol. brunn exposes one hosted, OAuth-protected MCP endpoint at brunn.ai/mcp, so Claude Code, Codex, ChatGPT, Claude.ai, Grok, Grok Bot, OpenClaw and other MCP clients share the same memory and you can switch between them mid-task. There is also an HTTP API, a local MCP adapter, a web app and a native iPhone app." } },
         { "@type": "Question", "name": "How is brunn different from a memory API like Mem0 or Zep?", "acceptedAnswer": { "@type": "Answer", "text": "Memory APIs store extracted facts for an application you build. brunn is the workspace for the agents you already use: every answer is drawn from exact, versioned sources you can inspect; sessions leave checkpoints a fresh agent can resume; and the same well feeds a morning briefing, a task list and a nightly Dreamer. It is a version of the knowledge-wiki pattern: raw sources stay untouched, and agent-maintained overviews compile them, with a review step before anything changes." } },
         { "@type": "Question", "name": "Where does my data live?", "acceptedAnswer": { "@type": "Answer", "text": "Plain Markdown and your stored files are the source of truth; search indexes and views are rebuilt from them. Export the whole well at any time as files and a manifest. The hosted service runs at brunn.ai. Credentials live in an encrypted vault outside the searchable corpus." } },
@@ -470,8 +471,8 @@ p{margin:0}
   <div class="wrap feature">
     <div class="copy">
       <p class="kicker">Memory</p>
-      <h2>Memory that holds, on whichever tool you open next.</h2>
-      <p>Your agents already know how to work. What they lose is the thread between sessions. brunn keeps it: a Claude Code session drops in a checkpoint at six, Codex draws it up at nine, Grok on your phone reads the same well at noon, a Grok Bot checks it on a schedule, and an OpenClaw agent works from it overnight.</p>
+      <h2>Persistent memory for Claude Code, Codex, ChatGPT, Grok, Grok Bot and OpenClaw.</h2>
+      <p>Your agents already know how to work. What they lose is the thread between sessions. brunn is an MCP memory server that keeps it: a Claude Code session drops in a checkpoint at six, Codex draws it up at nine, Grok on your phone reads the same well at noon, a Grok Bot checks it on a schedule, and an OpenClaw agent works from it overnight.</p>
       <ul class="tools" aria-label="Memory tools">
         <li><code>memory.open</code><span>Orient a fresh session: the relevant sources, the last checkpoint, what changed since.</span></li>
         <li><code>memory.query</code><span>Exact, keyword and semantic search across everything you've kept.</span></li>
@@ -675,6 +676,10 @@ p{margin:0}
       <details open>
         <summary>What is brunn?</summary>
         <div class="a"><p>One memory and workspace for all your agents: a durable, portable place where the AI agents you use drop in what they learn and draw it back up later. It holds source material, checkpoints, tasks, briefings, files and credentials in one well that Claude Code, Codex, ChatGPT, Grok, Grok Bot, OpenClaw and any MCP client can open. It is a place and a thing, never an AI of its own.</p></div>
+      </details>
+      <details>
+        <summary>Is brunn an MCP memory server?</summary>
+        <div class="a"><p>Yes. brunn serves persistent memory for AI agents over one hosted Model Context Protocol endpoint, so the same memory works for Claude Code, Codex, ChatGPT, Grok, Grok Bot and OpenClaw without a plugin per tool.</p><p>It is more than an agent memory store. Every answer is drawn from exact source versions, sessions leave checkpoints a fresh agent can resume, and the same well feeds the morning briefing, the task list and the Dreamer.</p></div>
       </details>
       <details>
         <summary>Which agents and tools work with it?</summary>
