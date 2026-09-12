@@ -1441,16 +1441,12 @@ private struct BriefingItemDisclosure: View {
                         .lineLimit(1)
 
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        SafeMarkdownText(markdown: item.headlineMD)
-                            .font(.headline)
+                        Text(plainHeadline)
+                            .font(.body)
                             .foregroundStyle(BrunnTheme.ink)
                             .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .fixedSize(horizontal: false, vertical: true)
-
-                        if let delta = item.delta {
-                            DeltaPill(delta: delta)
-                        }
 
                         Image(systemName: "chevron.down")
                             .font(.caption.weight(.bold))
@@ -1483,42 +1479,6 @@ private struct BriefingItemDisclosure: View {
 
     private var plainHeadline: String {
         String(SafeMarkdown.attributedString(item.headlineMD).characters)
-    }
-}
-
-private struct DeltaPill: View {
-    let delta: String
-
-    var body: some View {
-        Text(label)
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(tint)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: 5))
-            .overlay {
-                RoundedRectangle(cornerRadius: 5)
-                    .stroke(tint.opacity(0.32), lineWidth: 1)
-            }
-            .fixedSize()
-    }
-
-    private var label: String {
-        switch delta {
-        case "update": "UPDATE"
-        case "corroboration": "SEEN"
-        case "correction": "CORRECTION"
-        default: "NEW"
-        }
-    }
-
-    private var tint: Color {
-        switch delta {
-        case "update": BrunnTheme.pulse
-        case "corroboration": BrunnTheme.amber
-        case "correction": BrunnTheme.red
-        default: BrunnTheme.signal
-        }
     }
 }
 
