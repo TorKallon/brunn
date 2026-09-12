@@ -8,7 +8,7 @@ import { EmptyState, ErrorState, LoadingState, ReadOnlyNotice, StatusBadge } fro
 import { ApiError } from "../lib/api";
 import { useApi } from "../lib/auth";
 import { useCapability, useReadOnly } from "../lib/current";
-import { approvalBlock, isLegacyReviewItem, legacyReportTitle, reviewIdentity, type DreamerDecisionAction, type DreamerDecisionInput, type DreamerReviewData, type DreamerReviewItem, type DreamerReviewSource } from "../lib/dreamerReview";
+import { approvalBlock, decisionStateLine, isLegacyReviewItem, legacyReportTitle, reviewIdentity, type DreamerDecisionAction, type DreamerDecisionInput, type DreamerReviewData, type DreamerReviewItem, type DreamerReviewSource } from "../lib/dreamerReview";
 import { formatDate, humanize } from "../lib/format";
 import { newOperationId } from "../lib/workspace";
 import "../review.css";
@@ -71,9 +71,16 @@ function RunStatus({ data }: { data: DreamerReviewData }) {
       <span className="review-eyebrow">Application mode</span>
       <strong>{humanize(data.mode)}</strong>
       {data.paused ? <StatusBadge status="paused" /> : null}
-      <p>{data.mode === "report-only" ? "Approvals are held. No candidate is applied in report-only mode." : "Approval is recorded first. Application requires source and policy checks."}</p>
+      <p>{modeBanner(data)}</p>
     </div>
   </div>;
+}
+
+function modeBanner(data: DreamerReviewData): string {
+  if (data.paused) return "Dreaming is paused. Decisions are saved, but no run will act on them until it resumes.";
+  return data.mode === "report-only"
+    ? "Report-only: your approvals are saved and held. Nothing is written until Dreaming is switched to full mode."
+    : "Full mode: approvals are written by the next run after their sources are re-checked.";
 }
 
 function OlderReportDetail({ item }: { item: DreamerReviewItem }) {
@@ -170,7 +177,6 @@ function ReviewDetail({ item, historical, data, decisionVersion, changed, unavai
       <div className="review-detail-meta"><span className="review-eyebrow">{item.kind === "question" ? "Needs your call" : "Proposed"}</span><StatusBadge status={item.status} /></div>
       <h2>{item.title}</h2>
       <div className="review-origin"><code>{item.id}</code><span>From <EntryLink entryRef={item.run_entry_ref} version={item.run_version}>{item.run_id} · v{item.run_version}</EntryLink></span></div>
-      {data.mode === "report-only" ? <p className="review-mode-note">Report-only · Approvals are held. No candidate is applied in this mode.</p> : null}
     </header>
     {(changed || conflict) && !decisionMutation.isSuccess ? <div className="review-notice warning" role="status"><strong>This review has changed.</strong><p>{onReviewUpdated ? "The latest item is shown below. Read it and its decisions before another action. Your note is kept." : "This item is no longer in the pending inbox. Your note is kept."}</p>{onReviewUpdated ? <button className="button secondary" disabled={decisionMutation.isPending || uncertain} onClick={onReviewUpdated}>Review updated item</button> : null}</div> : null}
     {blocked && (item.kind !== "question" || item.stale || item.status === "needs_changes") ? <div className="review-notice warning"><strong>{item.stale || item.status === "needs_changes" ? "Needs another review" : item.status === "approved_held" ? "Approved and held" : "Candidate not ready"}</strong><p>{blocked}</p></div> : null}
@@ -187,21 +193,27 @@ function ReviewDetail({ item, historical, data, decisionVersion, changed, unavai
     <div className="review-decision" aria-label="Your decision">
       <h3>Your decision</h3>
       {!canDecide ? <p className="review-muted">Owner access is required to record decisions.</p> : null}
-      {data.mode === "report-only" ? <p className="review-muted">Approve records your decision and holds application until an authorized mode permits it.</p> : null}
       <label className="field"><span>Comment <span className="review-muted">(optional)</span></span><textarea rows={2} maxLength={4000} value={comment} onChange={(event) => onDraftChange({ ...draft, comment: event.target.value })} disabled={disabled || uncertain} placeholder="Add context for this decision" /></label>
       <div className="review-actions">
         {item.kind !== "question" ? <button className="button primary" type="button" disabled={disabled || uncertain || Boolean(blocked)} onClick={() => decide("approve")} title={blocked}><Check size={16} aria-hidden="true" />Approve</button> : null}
         <button className="button secondary" type="button" disabled={disabled || uncertain} onClick={() => decide("reject")}><X size={16} aria-hidden="true" />Reject</button>
         <button className="button secondary" type="button" disabled={disabled || uncertain} onClick={() => decide("defer")}><Clock3 size={16} aria-hidden="true" />Defer</button>
       </div>
+      <ul className="review-consequences">
+        {item.kind !== "question" ? <li><strong>Approve</strong>{data.mode === "report-only"
+          ? "Saves your approval and holds it. It is written at the first run after full mode is switched on, after its sources are re-checked. If they change first, it comes back here."
+          : "Written now if its sources still match; otherwise it comes back here."}</li> : null}
+        <li><strong>Reject</strong>Final. Nothing is written and this proposal does not come back.</li>
+        <li><strong>Defer</strong>Stays in this inbox. Nothing is written.</li>
+      </ul>
       <details className="review-correction" open={item.kind === "question" ? true : undefined}><summary><MessageSquareText size={16} aria-hidden="true" />{item.kind === "question" ? "Answer or correct this item" : "Suggest a correction"}</summary>
         <label className="field"><span>{item.kind === "question" ? "Answer or correction" : "Correction"}</span><textarea rows={3} maxLength={4000} value={correction} onChange={(event) => onDraftChange({ ...draft, correction: event.target.value })} disabled={disabled || uncertain} /></label>
-        <p className="review-muted">The note is recorded for a fresh candidate and review.</p>
+        <p className="review-muted">Goes to the next run, which drafts a new version for you to review. Nothing is written until you approve that version.</p>
         <button className="button secondary" type="button" disabled={disabled || uncertain || !correction.trim()} onClick={() => decide("correct")}>Save correction</button>
       </details>
       {decisionMutation.isPending ? <p role="status">Recording your decision…</p> : null}
       {decisionMutation.isError ? <ErrorState error={decisionMutation.error} title={conflict ? "Decision needs another review" : "Unable to confirm your decision"} retry={uncertain && pendingRequest.current ? () => decisionMutation.mutate(pendingRequest.current!) : undefined} /> : null}
-      {decisionMutation.isSuccess ? <div className="review-notice" role="status"><strong>Decision recorded</strong><p>{decisionMutation.data.data.message ?? humanize(decisionMutation.data.data.application_status)}</p></div> : null}
+      {decisionMutation.isSuccess ? <div className="review-notice" role="status"><strong>{decisionStateLine(decisionMutation.data.data.application_status, item.candidate?.target_path)}</strong>{decisionMutation.data.data.message ? <p>{decisionMutation.data.data.message}</p> : null}</div> : null}
     </div>
   </article>;
 }

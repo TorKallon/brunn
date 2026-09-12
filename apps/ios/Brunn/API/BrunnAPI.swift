@@ -420,6 +420,19 @@ public actor BrunnAPI {
         return response.data
     }
 
+    public func captureTask(
+        request: AgentTaskCaptureRequest,
+        bearerToken: String
+    ) async throws -> AgentTaskCaptureData {
+        let response: WorkspaceEnvelope<AgentTaskCaptureData> = try await post(
+            path: "workspace/tasks/capture",
+            body: request,
+            bearerToken: bearerToken,
+            sendCookies: false
+        )
+        return response.data
+    }
+
     public func taskDoneSummary(
         limit: Int = 25
     ) async throws -> WorkspaceEnvelope<AgentTaskDoneSummaryData> {
@@ -444,10 +457,6 @@ public actor BrunnAPI {
             path: "workspace/projects",
             queryItems: [URLQueryItem(name: "limit", value: "100")]
         )
-    }
-
-    public func taskTodoistStatus() async throws -> WorkspaceEnvelope<AgentTaskTodoistStatus> {
-        try await get(path: "workspace/integrations/todoist/status")
     }
 
     public func taskProjectState(slug: String) async throws -> AgentTaskProjectStateData {

@@ -138,6 +138,10 @@ const briefingTimes = z.object({
   first_seen_at: z.string().optional(),
 });
 
+const ORIENTATION_POINTER =
+  " Read document.get slug agent-orientation before writing; it states the background rules "
+  + "(enrichment, briefing, nightly project status) that tool schemas cannot.";
+
 const briefingItem = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/).describe(
     "Lowercase item slug, unique within the edition. Reuse the same id when republishing an " +
@@ -293,6 +297,9 @@ const taskCaptureItem = z.object({
   cost_of_delay: sourcedTaskCell(costOfDelay.nullable()).optional(),
   required_contexts: sourcedTaskCell(contextList).optional(),
   estimate_minutes: sourcedTaskCell(z.number().int().min(1).max(10_080).nullable()).optional(),
+  today: z.boolean().optional().describe(
+    "Set true when the owner wants this on their Today list now; the service records today_since with source owner.",
+  ),
   captured_from: printableUtf8String(4_096).optional().describe(
     "Exact conversation or entry reference supporting this capture; omit when none was supplied.",
   ),
@@ -360,6 +367,8 @@ const taskUpdateOperation = z.union([
   z.object({ type: z.literal("unpark"), source: taskWriteSource }).strict(),
   z.object({ type: z.literal("pin_today"), source: taskWriteSource }).strict(),
   z.object({ type: z.literal("unpin"), source: taskWriteSource }).strict(),
+  z.object({ type: z.literal("add_today"), source: taskWriteSource }).strict(),
+  z.object({ type: z.literal("sweep"), source: taskWriteSource }).strict(),
   z.object({ type: z.literal("confirm_hard"), source: taskWriteSource }).strict(),
   z.object({ type: z.literal("downgrade_to_soft"), source: taskWriteSource }).strict(),
 ]);
@@ -500,7 +509,9 @@ export function createBrunnMcpServer(
       "Brunn is the durable context store. Start substantive work with memory.open for the actual task, " +
       "then use memory.query and memory.read only for relevant evidence. Persist source material with " +
       "memory.capture, durable current state or corrections with memory.write, and resumable work with " +
-      "memory.checkpoint. If Brunn is unavailable, fail closed instead of inventing or substituting context.",
+      "memory.checkpoint. If Brunn is unavailable, fail closed instead of inventing or substituting context. "
+      + "Before writing tasks, briefings, or project records, read document.get slug agent-orientation for "
+      + "the background rules that tool schemas cannot state.",
   } : {});
 
   function registerJsonTool<Shape extends z.ZodRawShape>(
@@ -622,7 +633,9 @@ registerJsonTool(
 
 registerJsonTool(
   "memory.checkpoint",
-  "Write a deterministic checkpoint Markdown file with exact file/version/hash references and a workspace generation.",
+  "Write a deterministic checkpoint Markdown file with exact file/version/hash references and a workspace "
+  + "generation. A checkpoint with project set becomes that project's catch-up summary."
+  + ORIENTATION_POINTER,
   {
     session_id: checkpointIdentityReference,
     parent_checkpoint_id: checkpointIdentityReference.optional(),
@@ -846,7 +859,8 @@ registerJsonTool(
   "briefing.publish",
   "Publish or revise one typed briefing edition; Brunn renders the canonical Markdown entry " +
   "and updates the delivered-story ledger. Republishing the same date and edition revises the " +
-  "same entry.",
+  "same entry. The 30-second summary is derived from item headlines; summary_md is not accepted."
+  + ORIENTATION_POINTER,
   {
     date: editionDate,
     edition: z.string().regex(/^[a-z0-9][a-z0-9-]{1,31}$/).describe(
@@ -857,9 +871,6 @@ registerJsonTool(
     ),
     generated_at: z.string().max(64).optional().describe(
       "Exact RFC3339 timestamp when the briefing content was generated. Omit this field to use the publish time.",
-    ),
-    summary_md: z.array(z.string().max(1_000)).max(12).optional().describe(
-      "30-second version: one Markdown bullet per line, most important first.",
     ),
     sections: z.array(briefingSection).max(24).optional(),
     omitted: z.array(briefingOmission).max(64).optional().describe(
@@ -930,7 +941,8 @@ registerJsonTool(
   + "call means phone; buy, pick up, or drop off means errands; needs Nyx means home; renewal, expiry, "
   + "charges, or lost value may make a date hard; and infer evidenced cost or an obvious estimate. Source "
   + "every enrichment, never overwrite an owner value, and preserve the original sentence. Ask at most one "
-  + "clarifying question, only for consequential hard/soft ambiguity. This tool never returns the backlog.",
+  + "clarifying question, only for consequential hard/soft ambiguity. This tool never returns the backlog."
+  + ORIENTATION_POINTER,
   {
     idempotency_key: taskIdempotencyKey,
     items: z.array(taskCaptureItem).min(1).max(25),
@@ -944,9 +956,12 @@ registerJsonTool(
   + "Defaults to the bounded next five; next accepts at most 25. Urgent returns every visible tier-1/2 "
   + "task and must not be given a limit. Triage is bounded to ten. Use all only for an explicit owner request, "
   + "with deliberate_all=true and cursor pagination. The status, context, date_type, and source filters are "
-  + "valid only with view=all. as_of exists for deterministic testing; otherwise omit it.",
+  + "valid only with view=all. Quick returns visible tasks with estimate_minutes of five or less, ten by "
+  + "default and at most 25; today returns the owner's Today list (today_since set), oldest first, ignoring contexts. as_of "
+  + "exists for deterministic testing; otherwise omit it."
+  + ORIENTATION_POINTER,
   {
-    view: z.enum(["next", "urgent", "triage", "all"]).default("next"),
+    view: z.enum(["next", "urgent", "triage", "quick", "today", "all"]).default("next"),
     limit: z.number().int().min(1).max(25).optional().describe(
       "Omit for service defaults (next five, triage ten). Omit for urgent so every tier-1/2 item returns.",
     ),
@@ -1020,9 +1035,11 @@ registerJsonTool(
 registerJsonTool(
   "task.update",
   "Apply exactly one sourced correction or action to one task with optimistic concurrency. Actions are "
-  + "complete, reopen, snooze, drop, wait_on, unpark, pin_today, unpin, confirm_hard, and "
-  + "downgrade_to_soft. Every operation requires source; complete also requires completed_via and returns "
-  + "done_today_count. Replay an ambiguous result with the identical idempotency_key and payload.",
+  + "complete, reopen, snooze, drop, wait_on, unpark, pin_today, unpin, add_today, sweep, confirm_hard, "
+  + "and downgrade_to_soft. add_today puts a task on the owner's persisting Today list; sweep moves it back "
+  + "to the queue. Every operation requires source; complete also requires completed_via and returns "
+  + "done_today_count. Replay an ambiguous result with the identical idempotency_key and payload."
+  + ORIENTATION_POINTER,
   {
     task_ref: taskRef,
     expected_version: z.number().int().positive(),
@@ -1066,7 +1083,8 @@ registerJsonTool(
   + "suggested_existing and no write; ask the owner one question, then retry with confirm_new=true only if "
   + "they want a distinct context. Never merge automatically; merge is explicit and audited. List first to "
   + "obtain expected_from_version and expected_into_version for merge, expected_version for archive, and "
-  + "the surface-default expected_version; zero creates an unseeded surface and must not overwrite one.",
+  + "the surface-default expected_version; zero creates an unseeded surface and must not overwrite one."
+  + ORIENTATION_POINTER,
   {
     operation: contextOperation,
   },
@@ -1138,7 +1156,8 @@ registerJsonTool(
   "task.settings",
   "Get or optimistically update deterministic task windows, timezone, guard leads, quiet-hours override, "
   + "and per-surface context defaults. The mixed tool is conservatively annotated as a mutation; update "
-  + "requires a durable idempotency key and expected version.",
+  + "requires a durable idempotency key and expected version."
+  + ORIENTATION_POINTER,
   {
     operation: taskSettingsOperation,
   },
@@ -1155,7 +1174,8 @@ registerJsonTool(
   "project.register",
   "Create or update one open-vocabulary project registry record. Register aliases and optional hub_path "
   + "or repo_path so checkpoint linkage can use deterministic longest-prefix fallback. This stores registry "
-  + "metadata, not a task list.",
+  + "metadata, not a task list."
+  + ORIENTATION_POINTER,
   {
     slug: taskSlug,
     title: z.string().min(1).max(200),
@@ -1183,8 +1203,10 @@ registerJsonTool(
 
 registerJsonTool(
   "project.list",
-  "List the bounded project registry with deterministic current interest and activity. It never returns "
-  + "a wall of tasks; use project.state for one project's checkpoint and rollups.",
+  "List the bounded project registry with deterministic current interest and activity, plus each "
+  + "project's nightly status colour and reason. It never returns a wall of tasks; use project.state for "
+  + "one project's checkpoint and rollups."
+  + ORIENTATION_POINTER,
   {
     include_archived: z.boolean().default(false),
     limit: z.number().int().min(1).max(100).default(50),
@@ -1205,7 +1227,7 @@ registerJsonTool(
 registerJsonTool(
   "project.state",
   "Return one project's latest linked checkpoint objective and current state, next actions, open questions, "
-  + "checkpoint time, next three candidates, urgent and parked counts, waiting items with ages, current "
+  + "checkpoint time, up to ten next candidates, urgent and parked counts, waiting items with ages, current "
   + "interest, and last activity. It never returns the full task backlog.",
   {
     slug: taskSlug,

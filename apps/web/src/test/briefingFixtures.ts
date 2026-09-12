@@ -9,10 +9,8 @@ export const briefingListFixture = {
         entry_ref: "entry:aug1",
         version: 2,
         generated_at: "2026-08-01T06:30:00Z",
-        summary_md: [
-          "**OpenAI ships o5** with a new eval harness.",
-          "Datadog stayed quiet overnight.",
-        ],
+        first_headline:
+          "**[OpenAI ships o5 with a new eval harness](https://openai.com/blog/o5)**",
         section_titles: ["Frontier labs", "Portfolio"],
         item_count: 6,
       },
@@ -23,7 +21,7 @@ export const briefingListFixture = {
         entry_ref: "entry:jul31",
         version: 1,
         generated_at: "2026-07-31T06:30:00Z",
-        summary_md: ["Quiet day across the board."],
+        first_headline: null,
         section_titles: ["Frontier labs"],
         item_count: 2,
       },
@@ -50,13 +48,6 @@ export const briefingEditionFixture = {
       edition: "morning",
       timezone: "America/Los_Angeles",
       generated_at: "2026-08-01T06:30:00Z",
-      summary_md: [
-        "**OpenAI ships o5** with a new eval harness.",
-        "NVDA up 3.1% on earnings.",
-        "Sleep score 82, HRV steady.",
-        "Discord digest: two frontier-lab threads worth reading.",
-        "Datadog stayed quiet overnight.",
-      ],
       sections: [
         {
           topic: "frontier-labs",

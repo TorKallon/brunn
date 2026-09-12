@@ -341,7 +341,7 @@ extension DreamerReviewItem {
     public var approvalBlock: String? {
         if isLegacyNote { return "This older report is kept for reference and is not awaiting a decision." }
         if stale { return "The supporting evidence has changed. A fresh candidate needs another review." }
-        if status == "approved_held" { return "This candidate is already approved and held for authorized application." }
+        if status == "approved_held" { return "Approved and held; it applies once full mode is switched on." }
         if status == "needs_changes" { return "Your correction is awaiting a fresh candidate and another review." }
         if !reviewable { return blockedReason ?? "A concrete candidate and its evidence are needed before approval." }
         guard candidate?.hasContent == true else { return "There is no concrete candidate to approve yet." }

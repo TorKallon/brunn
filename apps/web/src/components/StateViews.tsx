@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { ApiError } from "../lib/api";
 import { humanize } from "../lib/format";
+import type { ProjectStatus } from "../lib/types";
 
 export type Tone = "neutral" | "success" | "warning" | "danger" | "info";
 
@@ -46,6 +47,16 @@ export function toneForStatus(status?: string): Tone {
     return "warning";
   if (["running", "processing", "queued", "in_progress"].includes(normalized)) return "info";
   return "neutral";
+}
+
+export function ProjectStatusDot({ status }: { status?: ProjectStatus }) {
+  return (
+    <span
+      className={`project-status-dot status-${status ?? "grey"}`}
+      role="img"
+      aria-label={`Status ${status ?? "grey"}`}
+    />
+  );
 }
 
 export function StatusBadge({ status }: { status?: string }) {

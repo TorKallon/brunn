@@ -105,6 +105,13 @@ private struct ArchiveRow: View {
                 Text(row.date)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                if let headline = row.firstHeadline, !headline.isEmpty {
+                    Text(String(SafeMarkdown.attributedString(headline).characters))
+                        .font(.subheadline)
+                        .foregroundStyle(BrunnTheme.ink)
+                        .lineLimit(2)
+                        .accessibilityIdentifier("archive-first-headline-\(row.entryRef)")
+                }
                 HStack(spacing: 7) {
                     Text("\(row.itemCount) \(row.itemCount == 1 ? "item" : "items")")
                     Text("·")

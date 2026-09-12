@@ -480,9 +480,10 @@ async fn list_and_get_editions_project_metadata_and_paginate() {
     assert_eq!(page_one[0]["version"], 2);
     assert_eq!(page_one[0]["section_titles"], json!(["AI", "Markets"]));
     assert_eq!(page_one[0]["item_count"], 3);
-    assert_eq!(
-        page_one[0]["summary_md"],
-        json!(["First bullet.", "Second bullet."]),
+    assert_eq!(page_one[0]["first_headline"], "**Updated take.**");
+    assert!(
+        page_one[0].get("summary_md").is_none(),
+        "stored summary_md must not be listed",
     );
 
     let (page_two, truncated) = list_editions_in_tx(
@@ -506,7 +507,7 @@ async fn list_and_get_editions_project_metadata_and_paginate() {
     );
     assert_eq!(page_two[1]["date"], "2026-07-25");
     assert_eq!(page_two[1]["edition"], "morning");
-    assert_eq!(page_two[1]["summary_md"], json!([]));
+    assert_eq!(page_two[1]["first_headline"], json!(null));
     assert_eq!(page_two[1]["section_titles"], json!([]));
     assert_eq!(page_two[1]["item_count"], 0);
 

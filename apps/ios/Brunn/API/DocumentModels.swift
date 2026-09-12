@@ -8,8 +8,10 @@ public struct PublishedDocument: Codable, Equatable, Sendable {
     public let sources: [PublishedDocumentSource]
     public let version: Int64
     public let currentVersion: Int64
-    public let publishedAt: String
-    public let updatedAt: String
+    // Build-served documents (for example `agent-orientation`) publish with
+    // no timestamps and no version history.
+    public let publishedAt: String?
+    public let updatedAt: String?
     public let versions: [PublishedDocumentVersion]
     public let url: String
     public let versionURL: String
@@ -20,7 +22,8 @@ public struct PublishedDocument: Codable, Equatable, Sendable {
     public func matches(_ link: DocumentLink) -> Bool {
         slug == link.slug && version > 0 && currentVersion >= version
             && version == (link.version ?? currentVersion)
-            && versions.contains { $0.version == version }
+            && (versions.contains { $0.version == version }
+                || (versions.isEmpty && version == currentVersion))
     }
 
     enum CodingKeys: String, CodingKey {

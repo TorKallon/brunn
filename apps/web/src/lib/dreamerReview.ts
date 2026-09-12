@@ -1,3 +1,5 @@
+import { humanize } from "./format";
+
 export type DreamerDecisionAction = "approve" | "reject" | "defer" | "correct";
 
 export interface DreamerReviewSource {
@@ -111,9 +113,27 @@ export function legacyReportTitle(item: DreamerReviewItem): string {
   return item.title.replace(/^Applies next run unless vetoed:\s*/i, "") || "Older report note";
 }
 
+/** Recorded state line shown once a decision is confirmed. */
+export function decisionStateLine(applicationStatus: string, targetPath?: string | null): string {
+  switch (applicationStatus) {
+    case "approved_held":
+      return "Approved · held. Applies at the first run after full mode is switched on; returns here if its sources change first.";
+    case "applied":
+      return targetPath ? `Applied · written to ${targetPath}` : "Applied.";
+    case "rejected":
+      return "Rejected · final.";
+    case "deferred":
+      return "Deferred · still here, nothing written.";
+    case "needs_changes":
+      return "Correction sent · a new version appears after the next run.";
+    default:
+      return humanize(applicationStatus);
+  }
+}
+
 export function approvalBlock(item: DreamerReviewItem): string | undefined {
   if (item.stale) return "The supporting evidence has changed. This item needs a fresh candidate and another review.";
-  if (item.status === "approved_held") return "This candidate is already approved and held for authorized application.";
+  if (item.status === "approved_held") return "Approved and held; it applies once full mode is switched on.";
   if (item.status === "needs_changes") return "Your correction is awaiting a fresh candidate and another review.";
   if (!item.reviewable) return item.blocked_reason || "This proposal describes future work. A concrete candidate and its evidence are needed before approval.";
   if (!item.candidate || !(item.candidate.body_md?.trim() || item.candidate.after_md?.trim())) {

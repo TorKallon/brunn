@@ -118,6 +118,10 @@ pub struct RunReport {
     pub counts: Value,
     #[serde(default)]
     pub research: Value,
+    /// Nightly project status: `{"assigned":n,"transitions":[...]}` or
+    /// `{"failure":"..."}`; null when the phase did not run.
+    #[serde(default)]
+    pub project_status: Value,
     /// Recent runner-generated diagnostics, never raw model or tool output.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub model_failures: Vec<ModelFailureRecord>,
@@ -326,6 +330,7 @@ impl Dreamer {
             persistence_error: None,
             counts: json!({}),
             research: json!({}),
+            project_status: Value::Null,
             model_failures: Vec::new(),
         };
         let mut runtime = self.runtime_status().await;
@@ -442,7 +447,8 @@ impl Dreamer {
             "detail": report.detail(), "execution_outcome":report.outcome,
             "auth_persistence":report.auth_persistence,"notification":report.notification,
             "completed_at":report.completed_at,"model":self.config.codex_model,
-            "codex_version":runtime.codex_version,"research":report.research
+            "codex_version":runtime.codex_version,"research":report.research,
+            "project_status":report.project_status
         });
         let terminal = self
             .runner
@@ -675,6 +681,29 @@ impl Dreamer {
             .unwrap_or_else(|| kind.time_budget());
         let finalizer_reserve = Duration::from_secs(15).min(budget / 10);
         let usable = budget.saturating_sub(finalizer_reserve);
+        // Project status runs first so a partial research run still assigns
+        // it; its failure never fails the run.
+        report.stage = "project_status".into();
+        let status_started = tokio::time::Instant::now();
+        let status_budget = Duration::from_secs(300).min(usable / 6);
+        report.project_status = match self
+            .project_status(
+                admission,
+                state_version,
+                report,
+                run_home,
+                env,
+                status_budget,
+            )
+            .await
+        {
+            Ok(value) => value,
+            Err(failure) => {
+                tracing::warn!(%failure, "project status not assigned");
+                json!({"failure":failure})
+            }
+        };
+        let usable = usable.saturating_sub(status_started.elapsed());
         if admission["research_protocol"] == 1 {
             let deadline = tokio::time::Instant::now() + usable;
             let mut location_outcome = None;
@@ -1112,6 +1141,59 @@ impl Dreamer {
         } else {
             RunOutcome::Completed
         }
+    }
+
+    async fn project_status(
+        &self,
+        admission: &Value,
+        state_version: &mut i64,
+        report: &mut RunReport,
+        run_home: &RunHome,
+        env: &BTreeMap<String, String>,
+        budget: Duration,
+    ) -> Result<Value, String> {
+        let fence = json!({"attempt_id":admission["attempt_id"],"fence":admission["fence"],"expected_state_version":*state_version});
+        let packet = self
+            .runner
+            .dreamer("project-status-packet", fence.clone())
+            .await
+            .map_err(|error| format!("project status packet unavailable: {error}"))?;
+        if packet["projects"].as_array().is_none_or(Vec::is_empty) {
+            return Ok(json!({"assigned":0,"transitions":[]}));
+        }
+        let input = super::project_status::prompt(&packet);
+        let answer_name = "project-status-answer.md";
+        let started = tokio::time::Instant::now();
+        match tokio::time::timeout(
+            budget,
+            self.exec_codex(run_home, env, &input, budget, answer_name),
+        )
+        .await
+        {
+            Ok(ExecResult::Finished) => {}
+            Ok(ExecResult::Failed(failure)) => {
+                let summary = failure.summary();
+                report.record_model_failure("project-status", started.elapsed(), failure);
+                return Err(format!("project status model call failed: {summary}"));
+            }
+            Ok(ExecResult::TimedOut) | Err(_) => {
+                return Err("project status timed out".into());
+            }
+        }
+        let raw = std::fs::read_to_string(run_home.work_dir.join(answer_name))
+            .map_err(|_| "project status output missing")?;
+        let projects = super::project_status::parse(&raw)?;
+        let mut request = fence;
+        request["projects"] = json!(projects);
+        let applied = self
+            .runner
+            .dreamer("project-status", request)
+            .await
+            .map_err(|error| format!("project status apply rejected: {error}"))?;
+        if let Some(version) = applied["state_version"].as_i64() {
+            *state_version = version;
+        }
+        Ok(json!({"assigned":applied["assigned"],"transitions":applied["transitions"]}))
     }
 
     async fn discover_narrative(

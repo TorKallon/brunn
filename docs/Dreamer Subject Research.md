@@ -138,6 +138,8 @@ Reuse the current runner/account, subject identities, entry/version store,
 retained drafts, pending changes and scheduler. Do not add a new memory backend,
 graph, checkpoint hierarchy or blanket revalidation of everything ever seen.
 Keep location/phone capture and its separate evidence contract out of this change.
+The nightly project-status phase is not subject research and produces no
+candidates.
 
 ## Acceptance and implementation handoff — Claude Code/Fable
 

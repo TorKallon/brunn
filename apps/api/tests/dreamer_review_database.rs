@@ -4765,3 +4765,342 @@ async fn unavailable_change_pages_advance_without_consuming_retained_evidence() 
 }
 
 mod subject_research;
+
+async fn register_project(f: &Fixture, slug: &str, hub_path: Option<&str>) {
+    ok(request(
+        &f.app,
+        &f.owner,
+        Method::PUT,
+        &format!("/v1/workspace/projects/{slug}"),
+        Some(
+            json!({"title":slug,"description":"Fixture project","hub_path":hub_path,"source":"owner","idempotency_key":format!("register-{slug}")}),
+        ),
+    )
+    .await);
+}
+async fn project_status_row(f: &Fixture, slug: &str) -> Value {
+    let list = ok(request(
+        &f.app,
+        &f.owner,
+        Method::GET,
+        "/v1/workspace/projects",
+        None,
+    )
+    .await);
+    list["data"]["projects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["slug"] == slug)
+        .cloned()
+        .unwrap()
+}
+
+#[tokio::test]
+async fn project_status_packet_and_apply_are_fenced_idempotent_and_visible() {
+    let Some(f) = fixture().await else { return };
+    control(&f, "report-only", 0).await;
+    write(
+        &f,
+        "Projects/Orchid/Hub.md",
+        "# Orchid\n\nRule: unbooked race lodging inside 45 days is yellow, inside 30 red.\n",
+        0,
+    )
+    .await;
+    register_project(&f, "orchid", Some("Projects/Orchid/Hub.md")).await;
+    register_project(&f, "shed", None).await;
+    let captured = ok(post(&f, &f.owner, "/v1/workspace/tasks/capture", json!({"idempotency_key":"orchid-capture","items":[
+        {"raw_text":"Book lodging","project":{"value":"orchid","source":"owner"},"hard_due":{"value":"2030-01-15T12:00:00Z","source":"owner"},"hard_due_lead_days":{"value":30,"source":"agent:planner"}},
+        {"raw_text":"Cancel old server","project":{"value":"orchid","source":"owner"},"cost_of_delay":{"value":{"flag":true,"since":"2026-08-01"},"source":"owner"}},
+        {"raw_text":"Future idea","project":{"value":"orchid","source":"owner"},"ready_at":{"value":"2030-09-03T12:00:00Z","source":"owner"}},
+        {"raw_text":"Already done","project":{"value":"orchid","source":"owner"}},
+        {"raw_text":"Vendor reply","project":{"value":"orchid","source":"owner"}}
+    ]})).await);
+    let refs: Vec<String> = captured["data"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["task_ref"].as_str().unwrap().to_owned())
+        .collect();
+    for (index, operation) in [
+        (
+            3,
+            json!({"type":"complete","source":"owner","completed_via":"web"}),
+        ),
+        (
+            4,
+            json!({"type":"wait_on","source":"owner","who_or_what":"vendor"}),
+        ),
+    ] {
+        ok(request(
+            &f.app,
+            &f.owner,
+            Method::PATCH,
+            &format!("/v1/workspace/tasks/{}", refs[index]),
+            Some(
+                json!({"expected_version":1,"idempotency_key":format!("orchid-op-{index}"),"operation":operation}),
+            ),
+        )
+        .await);
+    }
+    // Parking follows repeated snoozes; the projection is what the packet reads.
+    sqlx::query("UPDATE brunn.task_index SET parked=true WHERE user_id=$1 AND title='Future idea'")
+        .bind(f.owner.user)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    // A linked checkpoint: the entry carries checkpoint_state metadata and the
+    // link row names the project, as the checkpoint flow records them.
+    let checkpoint = ok(post(
+        &f,
+        &f.owner,
+        "/v1/workspace/write",
+        json!({"path":"Projects/Orchid/Checkpoint.md","content":"# Checkpoint\n","expected_version":0,
+            "metadata":{"checkpoint_state":{"project":"orchid","summary":"Lodging still unbooked."}}}),
+    )
+    .await)["data"]
+        .clone();
+    let checkpoint_id = Uuid::parse_str(
+        checkpoint["entry_ref"]
+            .as_str()
+            .unwrap()
+            .strip_prefix("entry:")
+            .unwrap(),
+    )
+    .unwrap();
+    sqlx::query("INSERT INTO brunn.task_checkpoint_links(user_id,checkpoint_entry_id,project_slug,attribution) VALUES($1,$2,'orchid','explicit')")
+        .bind(f.owner.user).bind(checkpoint_id).execute(&f.pool).await.unwrap();
+    let a = admit(&f).await;
+    let version = a["state_version"].as_i64().unwrap();
+
+    let packet = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/project-status-packet",
+        attempt(&a, version),
+    )
+    .await);
+    // Owner-local: the fixture's task timezone, not the Dreaming schedule zone.
+    let today = packet["today"].as_str().unwrap().to_owned();
+    assert!(chrono::NaiveDate::parse_from_str(&today, "%Y-%m-%d").is_ok());
+    let projects = packet["projects"].as_array().unwrap();
+    // Registered projects plus the seeded Todoist inbox, ordered by slug.
+    assert_eq!(
+        projects
+            .iter()
+            .map(|p| p["slug"].clone())
+            .collect::<Vec<_>>(),
+        json!(["orchid", "shed", "todoist-inbox"])
+            .as_array()
+            .unwrap()
+            .clone()
+    );
+    let orchid = &projects[0];
+    assert_eq!(orchid["slug"], "orchid");
+    assert!(["hot", "normal", "parked"].contains(&orchid["interest"].as_str().unwrap()));
+    assert!(
+        orchid["hub_excerpt"]
+            .as_str()
+            .unwrap()
+            .contains("Rule: unbooked race lodging")
+    );
+    assert_eq!(orchid["checkpoint"]["project"], "orchid");
+    assert_eq!(orchid["checkpoint"]["summary"], "Lodging still unbooked.");
+    assert_eq!(
+        orchid["current"],
+        json!({"status":"grey","reason":"","since":null})
+    );
+    let tasks = orchid["tasks"].as_array().unwrap();
+    assert_eq!(tasks.len(), 4, "done tasks are excluded: {tasks:?}");
+    assert_eq!(tasks[0]["title"], "Book lodging");
+    assert_eq!(tasks[0]["hard_due"], "2030-01-15T12:00:00Z");
+    assert_eq!(tasks[0]["hard_due_lead_days"], 30);
+    assert_eq!(
+        tasks[0]["provenance_markers"],
+        json!(["agent:planner", "derived"])
+    );
+    let by_title = |title: &str| tasks.iter().find(|t| t["title"] == title).unwrap().clone();
+    let cost = by_title("Cancel old server");
+    assert_eq!(cost["cost_flag"], true);
+    assert_eq!(cost["cost_since"], "2026-08-01");
+    assert_eq!(by_title("Future idea")["parked"], true);
+    let waiting = by_title("Vendor reply");
+    assert_eq!(waiting["status"], "waiting");
+    assert_eq!(waiting["waiting_on"]["who_or_what"], "vendor");
+    assert_eq!(projects[1]["slug"], "shed");
+    assert_eq!(projects[1]["hub_excerpt"], Value::Null);
+    assert_eq!(projects[1]["checkpoint"], Value::Null);
+    assert_eq!(projects[1]["tasks"], json!([]));
+
+    let mut wrong = attempt(&a, version);
+    wrong["fence"] = json!(Uuid::now_v7().to_string());
+    assert_eq!(
+        post(
+            &f,
+            &f.runner,
+            "/v1/workspace/dreamer/project-status-packet",
+            wrong.clone()
+        )
+        .await
+        .status,
+        StatusCode::CONFLICT
+    );
+    wrong["projects"] = json!([{"slug":"orchid","status":"grey","reason":"Idle."}]);
+    assert_eq!(
+        post(&f, &f.runner, "/v1/workspace/dreamer/project-status", wrong)
+            .await
+            .status,
+        StatusCode::CONFLICT
+    );
+    for invalid in [
+        json!([{"slug":"nope","status":"grey","reason":"Idle."}]),
+        json!([{"slug":"orchid","status":"amber","reason":"Idle."}]),
+        json!([{"slug":"orchid","status":"grey","reason":"  "}]),
+        json!([{"slug":"orchid","status":"grey","reason":"r".repeat(241)}]),
+        json!([{"slug":"orchid","status":"grey"}]),
+    ] {
+        let mut body = attempt(&a, version);
+        body["projects"] = invalid.clone();
+        assert_eq!(
+            post(&f, &f.runner, "/v1/workspace/dreamer/project-status", body)
+                .await
+                .status,
+            StatusCode::BAD_REQUEST,
+            "{invalid}"
+        );
+    }
+    assert_eq!(project_status_row(&f, "orchid").await["status"], "grey");
+
+    let mut body = attempt(&a, version);
+    body["projects"] = json!([
+        {"slug":"orchid","status":"yellow","reason":"Lodging unbooked inside the 45-day window."},
+        {"slug":"shed","status":"grey","reason":"No obligations."}
+    ]);
+    let applied = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/project-status",
+        body.clone(),
+    )
+    .await);
+    assert_eq!(applied["assigned"], 2);
+    assert_eq!(
+        applied["transitions"],
+        json!([{"slug":"orchid","from":"grey","to":"yellow"}])
+    );
+    // Applying records the summary on the active attempt, which advances the
+    // run state; later fenced calls must carry the returned version.
+    let mut version = applied["state_version"].as_i64().unwrap();
+    assert!(version > body["expected_state_version"].as_i64().unwrap());
+    body["expected_state_version"] = json!(version);
+    let row = project_status_row(&f, "orchid").await;
+    assert_eq!(row["status"], "yellow");
+    assert_eq!(
+        row["status_reason"],
+        "Lodging unbooked inside the 45-day window."
+    );
+    assert_eq!(row["status_previous"], "grey");
+    assert_eq!(row["status_since"], today);
+    assert_eq!(row["status_computed_on"], today);
+    let state = ok(request(
+        &f.app,
+        &f.owner,
+        Method::GET,
+        "/v1/workspace/projects/orchid/state",
+        None,
+    )
+    .await);
+    for key in [
+        "status",
+        "status_reason",
+        "status_previous",
+        "status_since",
+        "status_computed_on",
+    ] {
+        assert_eq!(state["data"]["project"][key], row[key], "{key}");
+    }
+    assert_eq!(
+        project_status_row(&f, "shed").await["status_previous"],
+        Value::Null
+    );
+
+    // Re-posting the same assignments changes nothing.
+    let again = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/project-status",
+        body.clone(),
+    )
+    .await);
+    assert_eq!(again["assigned"], 2);
+    assert_eq!(again["transitions"], json!([]));
+    version = again["state_version"].as_i64().unwrap();
+    body["expected_state_version"] = json!(version);
+    assert_eq!(project_status_row(&f, "orchid").await, row);
+
+    // A reason-only change keeps since/previous; an absent project is untouched.
+    body["projects"] = json!([{"slug":"orchid","status":"yellow","reason":"Still unbooked."}]);
+    let reworded = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/project-status",
+        body.clone(),
+    )
+    .await);
+    assert_eq!(reworded["assigned"], 1);
+    assert_eq!(reworded["transitions"], json!([]));
+    version = reworded["state_version"].as_i64().unwrap();
+    body["expected_state_version"] = json!(version);
+    let reworded = project_status_row(&f, "orchid").await;
+    assert_eq!(reworded["status_reason"], "Still unbooked.");
+    assert_eq!(reworded["status_since"], today);
+    assert_eq!(reworded["status_previous"], "grey");
+    assert_eq!(
+        project_status_row(&f, "shed").await["status_reason"],
+        "No obligations."
+    );
+
+    body["projects"] =
+        json!([{"slug":"orchid","status":"green","reason":"Lodging booked; race in January."}]);
+    let back = ok(post(&f, &f.runner, "/v1/workspace/dreamer/project-status", body).await);
+    assert_eq!(
+        back["transitions"],
+        json!([{"slug":"orchid","from":"yellow","to":"green"}])
+    );
+    let green = project_status_row(&f, "orchid").await;
+    assert_eq!(green["status_previous"], "yellow");
+    version = back["state_version"].as_i64().unwrap();
+    let packet = ok(post(
+        &f,
+        &f.runner,
+        "/v1/workspace/dreamer/project-status-packet",
+        attempt(&a, version),
+    )
+    .await);
+    assert_eq!(
+        packet["projects"][0]["current"],
+        json!({"status":"green","reason":"Lodging booked; race in January.","since":today})
+    );
+
+    // The terminal receipt carries the server-recorded summary of the last
+    // apply under its own field and heading; the runner's copy is a fallback.
+    let mut terminal = attempt(&a, version);
+    terminal["outcome"] = json!("completed");
+    terminal["auth_persistence"] = json!({"status":"persisted"});
+    terminal["notification"] = json!({"status":"not_needed"});
+    terminal["project_status"] =
+        json!({"assigned":2,"transitions":[{"slug":"orchid","from":"grey","to":"yellow"}]});
+    let finished = ok(post(&f, &f.runner, "/v1/workspace/dreamer/finish", terminal).await);
+    assert_eq!(
+        finished["latest_receipt"]["project_status"],
+        json!({"assigned":1,"transitions":[{"slug":"orchid","from":"yellow","to":"green"}]})
+    );
+    assert_eq!(finished["latest_receipt"]["applied_writes"], json!([]));
+    let (_, run, _) = current(&f, &format!("dreams/runs/{}.md", date()))
+        .await
+        .unwrap();
+    assert!(
+        run.contains("\n## Project status\nAssigned 1; transitions: orchid: yellow → green.\n"),
+        "{run}"
+    );
+}

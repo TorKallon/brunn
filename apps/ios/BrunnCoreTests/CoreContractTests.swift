@@ -109,7 +109,6 @@ final class CoreContractTests: XCTestCase {
               "date": "2026-08-02",
               "edition": "morning",
               "generated_at": "2026-08-02T06:30:00-07:00",
-              "summary_md": ["**One** useful line."],
               "sections": [{
                 "topic": "brunn",
                 "title": "Brunn",
@@ -142,12 +141,11 @@ final class CoreContractTests: XCTestCase {
 
         XCTAssertEqual(envelope.status, "complete")
         XCTAssertEqual(envelope.data.entryRef, "entry:morning")
-        XCTAssertEqual(envelope.data.briefing?.summaryMD?.first, "**One** useful line.")
         XCTAssertEqual(envelope.data.briefing?.sections?.first?.items.first?.headlineMD, "**Native iOS is active.**")
         XCTAssertEqual(envelope.data.versions.count, 2)
     }
 
-    func testStructuredBriefingPreservesEverySummarySectionItemAndRevision() throws {
+    func testStructuredBriefingPreservesEverySectionItemAndRevision() throws {
         let json = #"""
         {
           "status": "complete",
@@ -164,13 +162,6 @@ final class CoreContractTests: XCTestCase {
               "edition": "morning",
               "timezone": "America/Los_Angeles",
               "generated_at": "2026-08-02T06:30:00-07:00",
-              "summary_md": [
-                "Summary one",
-                "Summary two",
-                "Summary three",
-                "Summary four",
-                "Summary five"
-              ],
               "sections": [
                 {
                   "topic": "projects",
@@ -255,7 +246,6 @@ final class CoreContractTests: XCTestCase {
         )
         let payload = try XCTUnwrap(envelope.data.briefing)
 
-        XCTAssertEqual(payload.summaryMD?.count, 5)
         XCTAssertEqual(payload.sections?.map(\.topic), ["projects", "news", "metrics"])
         XCTAssertEqual(
             payload.sections?.flatMap(\.items).map(\.id),
@@ -271,58 +261,6 @@ final class CoreContractTests: XCTestCase {
         )
         XCTAssertEqual(payload.delta?.changed, ["project-update", "news-correction"])
         XCTAssertEqual(envelope.data.versions.map(\.version), [1, 2, 3])
-    }
-
-    func testBriefingDisplaySectionsGroupProjectParentsWithoutLosingTopics() {
-        let sections = [
-            BriefingSection(
-                topic: "calendar",
-                title: "Today's calendar",
-                items: [briefingItem(id: "calendar")]
-            ),
-            BriefingSection(
-                topic: "charlemagne",
-                title: "RTS LLC — Charlemagne",
-                items: [briefingItem(id: "charlemagne")]
-            ),
-            BriefingSection(
-                topic: "joyeuse",
-                title: "RTS LLC — Joyeuse",
-                items: [briefingItem(id: "joyeuse")]
-            ),
-            BriefingSection(
-                topic: "railway",
-                title: "Hobby Projects — Railway",
-                items: [briefingItem(id: "railway")]
-            ),
-            BriefingSection(
-                topic: "ai",
-                title: "AI — material updates",
-                items: [briefingItem(id: "ai")]
-            ),
-        ]
-
-        let groups = BriefingDisplaySection.grouped(sections)
-
-        XCTAssertEqual(groups.map(\.title), [
-            "Today's calendar",
-            "RTS LLC",
-            "Hobby Projects",
-            "AI — material updates",
-        ])
-        XCTAssertEqual(groups.map(\.itemCount), [1, 2, 1, 1])
-        XCTAssertEqual(groups[1].parts.map(\.itemLabel), ["Charlemagne", "Joyeuse"])
-        XCTAssertEqual(groups[1].parts.map(\.section.topic), ["charlemagne", "joyeuse"])
-        XCTAssertEqual(groups[1].parts.flatMap(\.section.items).map(\.id), [
-            "charlemagne",
-            "joyeuse",
-        ])
-        XCTAssertEqual(groups[2].parts.map(\.itemLabel), ["Railway"])
-        XCTAssertEqual(groups[3].parts.map(\.itemLabel), ["AI — material updates"])
-    }
-
-    private func briefingItem(id: String) -> BriefingItem {
-        BriefingItem(id: id, kind: "metric", headlineMD: id)
     }
 
     func testSearchCandidateAcceptsBudgetedTextWithoutExcerpt() throws {
@@ -670,7 +608,7 @@ final class CoreContractTests: XCTestCase {
               "entry_ref": "entry:morning",
               "version": 3,
               "generated_at": "2026-08-02T06:30:00-07:00",
-              "summary_md": ["One", "Two"],
+              "first_headline": "**One** useful [line](https://example.com).",
               "section_titles": ["Projects", "News"],
               "item_count": 4
             }],
@@ -694,9 +632,14 @@ final class CoreContractTests: XCTestCase {
             envelope.data.next?.afterPath,
             "Briefings/2026/Morning briefing - 2026-07-04.md"
         )
-        XCTAssertEqual(envelope.data.editions.first?.summaryMD, ["One", "Two"])
+        XCTAssertEqual(envelope.data.editions.first?.firstHeadline, "**One** useful [line](https://example.com).")
         XCTAssertEqual(envelope.data.editions.first?.sectionTitles, ["Projects", "News"])
         XCTAssertEqual(envelope.data.editions.first?.itemCount, 4)
+
+        let empty = #"""
+        {"date":"2026-08-01","edition":"evening","path":"Briefings/2026/Evening briefing - 2026-08-01.md","entry_ref":"entry:evening","version":1,"generated_at":null,"first_headline":null,"section_titles":[],"item_count":0}
+        """#.data(using: .utf8)!
+        XCTAssertNil(try JSONDecoder().decode(BriefingListRow.self, from: empty).firstHeadline)
     }
 
     func testTopicsSnapshotDecodesTruncationAndPendingRequestSignals() throws {
@@ -840,7 +783,7 @@ final class CoreContractTests: XCTestCase {
         XCTAssertFalse(emptyUrgent.next.isEmpty)
     }
 
-    func testProjectProjectionUsesOneUniqueFiveTaskBudget() {
+    func testProjectProjectionShowsTenUniqueNextTasksBeforeWaiting() {
         func candidate(_ suffix: Int) -> AgentTaskCandidate {
             AgentTaskCandidate(
                 taskRef: String(format: "019f8800-0000-7000-8000-%012d", suffix),
@@ -861,13 +804,13 @@ final class CoreContractTests: XCTestCase {
         }
 
         let projection = AgentTaskProjectProjection.bounded(
-            next: [candidate(1), candidate(2), candidate(3), candidate(4)],
-            waiting: [waiting(3), waiting(5), waiting(6), waiting(7), waiting(8)]
+            next: (1...12).map(candidate),
+            waiting: [waiting(3), waiting(13), waiting(14), waiting(15), waiting(16), waiting(17), waiting(18)]
         )
 
-        XCTAssertEqual(projection.next.count, 3)
-        XCTAssertEqual(projection.waiting.count, 2)
-        XCTAssertEqual(projection.taskCount, 5)
+        XCTAssertEqual(projection.next.count, 10)
+        XCTAssertEqual(projection.waiting.count, 5)
+        XCTAssertEqual(projection.taskCount, 15)
         XCTAssertEqual(
             Set((projection.next.map(\.taskRef) + projection.waiting.map(\.taskRef))).count,
             projection.taskCount
@@ -893,7 +836,9 @@ final class CoreContractTests: XCTestCase {
               "tier":3,
               "reason":"should do by Fri (est.)",
               "provenance_markers":["agent:aether"],
-              "pinned":false
+              "pinned":false,
+              "estimate_minutes":10,
+              "today_since":"2026-08-25"
             }],
             "urgent_total":0,
             "next_remaining":8,
@@ -908,6 +853,8 @@ final class CoreContractTests: XCTestCase {
         )
         XCTAssertEqual(envelope.data.items.first?.project, "health")
         XCTAssertEqual(envelope.data.items.first?.hasInferredProvenance, true)
+        XCTAssertEqual(envelope.data.items.first?.estimateMinutes, 10)
+        XCTAssertEqual(envelope.data.items.first?.todaySince, "2026-08-25")
         XCTAssertEqual(envelope.data.nextRemaining, 8)
 
         let targetJSON = #"""
@@ -933,5 +880,87 @@ final class CoreContractTests: XCTestCase {
         XCTAssertEqual(operation["type"] as? String, "complete")
         XCTAssertEqual(operation["source"] as? String, "owner")
         XCTAssertEqual(operation["completed_via"] as? String, "ios")
+    }
+
+    func testTaskCandidateDecodesWithoutEstimateOrTodayFields() throws {
+        let json = #"""
+        {"task_ref":"019f8800-0000-7000-8000-000000000002","entry_ref":"entry:two","version":1,"title":"Older server","status":"open","project":null,"required_contexts":[],"tier":5,"reason":"ready","provenance_markers":[],"pinned":false}
+        """#.data(using: .utf8)!
+        let candidate = try JSONDecoder().decode(AgentTaskCandidate.self, from: json)
+        XCTAssertNil(candidate.estimateMinutes)
+        XCTAssertNil(candidate.todaySince)
+    }
+
+    func testTaskUpdateEncodesTodayListActions() throws {
+        func type(of operation: AgentTaskUpdateOperation) throws -> String? {
+            let request = AgentTaskUpdateRequest(expectedVersion: 1, idempotencyKey: "ios:test", operation: operation)
+            let object = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any]
+            )
+            return (object["operation"] as? [String: Any])?["type"] as? String
+        }
+        XCTAssertEqual(try type(of: .addToday), "add_today")
+        XCTAssertEqual(try type(of: .sweep), "sweep")
+    }
+
+    func testTaskCaptureEncodesTodayFlagAndIOSOrigin() throws {
+        let request = AgentTaskCaptureRequest(rawText: "Call the vet", idempotencyKey: "ios_task_capture_test")
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any]
+        )
+        let item = try XCTUnwrap((object["items"] as? [[String: Any]])?.first)
+        XCTAssertEqual(object["idempotency_key"] as? String, "ios_task_capture_test")
+        XCTAssertEqual(item["raw_text"] as? String, "Call the vet")
+        XCTAssertEqual(item["captured_from"] as? String, "ios:today")
+        XCTAssertEqual(item["today"] as? Bool, true)
+        XCTAssertTrue(AgentTaskCaptureRequest(rawText: "x").idempotencyKey.hasPrefix("ios_task_capture_"))
+
+        let response = #"""
+        {"status":"committed","data":{"items":[{"client_ref":null,"task_ref":"019f8800-0000-7000-8000-000000000009","entry_ref":"entry:019f8800-0000-7000-8000-000000000009","version":1,"title":"Call the vet","enrichment":{"title":"Call the vet"},"context_suggestions":[],"suggested_existing":[]}],"replayed":false}}
+        """#.data(using: .utf8)!
+        let envelope = try JSONDecoder().decode(WorkspaceEnvelope<AgentTaskCaptureData>.self, from: response)
+        XCTAssertEqual(envelope.data.items.count, 1)
+        XCTAssertEqual(envelope.data.items.first?.taskRef, "019f8800-0000-7000-8000-000000000009")
+        XCTAssertEqual(envelope.data.items.first?.title, "Call the vet")
+        XCTAssertEqual(envelope.data.replayed, false)
+    }
+
+    func testProjectStatusDecodesTolerantlyFromOlderAndNewerServers() throws {
+        let older = #"""
+        {"projects":[{"slug":"brunn","title":"Brunn","interest":"hot","last_activity_at":null,"open_task_count":2,"last_checkpoint_at":null,"version":1}],"as_of":"2026-09-11T06:00:00Z"}
+        """#.data(using: .utf8)!
+        let legacy = try JSONDecoder().decode(AgentTaskProjectListData.self, from: older)
+        XCTAssertNil(legacy.projects.first?.status)
+
+        let newer = #"""
+        {"projects":[{"slug":"brunn","title":"Brunn","interest":"hot","last_activity_at":null,"open_task_count":2,"last_checkpoint_at":null,"version":1,"status":"red","status_reason":"Deadline slipped.","status_since":"2026-09-10","status_previous":"yellow","status_computed_on":"2026-09-11"},{"slug":"odd","title":"Odd","interest":"normal","open_task_count":0,"version":1,"status":"purple","status_reason":"","status_since":null,"status_previous":null,"status_computed_on":null}],"as_of":"2026-09-11T06:00:00Z"}
+        """#.data(using: .utf8)!
+        let current = try JSONDecoder().decode(AgentTaskProjectListData.self, from: newer)
+        XCTAssertEqual(current.projects[0].status, .red)
+        XCTAssertEqual(current.projects[0].statusReason, "Deadline slipped.")
+        XCTAssertEqual(current.projects[0].statusSince, "2026-09-10")
+        XCTAssertEqual(current.projects[0].statusPrevious, "yellow")
+        XCTAssertEqual(current.projects[0].statusComputedOn, "2026-09-11")
+        XCTAssertEqual(current.projects[1].status, .grey, "Unknown colours must fall back to grey")
+
+        let state = #"""
+        {"project":{"slug":"brunn","title":"Brunn","interest":"hot","last_activity_at":null,"version":1,"status":"green","status_reason":"On track.","status_since":"2026-09-01","status_previous":null,"status_computed_on":"2026-09-11"},"checkpoint":null,"urgent_count":0,"next":[],"waiting":[],"waiting_total":0,"waiting_remaining":0,"parked_count":0,"as_of":"2026-09-11T06:00:00Z"}
+        """#.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AgentTaskProjectStateData.self, from: state)
+        XCTAssertEqual(decoded.project.status, .green)
+        XCTAssertEqual(decoded.project.statusReason, "On track.")
+    }
+
+    func testOwnerDayCountsWholeLocalDays() throws {
+        let timezone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timezone
+        // 2026-09-11 at 00:30 local: the previous UTC day has not ended locally.
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 11, hour: 0, minute: 30)))
+        XCTAssertEqual(OwnerDay.daysSince("2026-09-11", now: now, timezone: timezone), 0)
+        XCTAssertEqual(OwnerDay.daysSince("2026-09-10", now: now, timezone: timezone), 1)
+        XCTAssertEqual(OwnerDay.daysSince("2026-09-01", now: now, timezone: timezone), 10)
+        XCTAssertNil(OwnerDay.daysSince("yesterday", now: now, timezone: timezone))
+        XCTAssertNil(OwnerDay.daysSince(nil, now: now, timezone: timezone))
     }
 }

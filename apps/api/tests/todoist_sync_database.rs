@@ -2077,3 +2077,72 @@ async fn project_only_renames_remap_todoist_owned_fields_but_preserve_owner_over
     assert_eq!(owner_project["project"]["value"], json!("alpha"));
     assert_eq!(owner_project["project"]["source"], json!("owner"));
 }
+
+#[tokio::test]
+async fn quick_label_is_a_todoist_estimate_not_a_context_and_yields_to_the_owner() {
+    let Some(pool) = connect_test_pool().await else {
+        return;
+    };
+    let owner = insert_owner(&pool).await;
+    let producer = todoist_producer(&pool, owner.user_id).await;
+    let quick_sync = |token: &str| {
+        sync_response(json!({
+            "sync_token":token,
+            "full_sync":false,
+            "projects":[],
+            "items":[{
+                "id":"QuickLabel00000001",
+                "content":"Renew the parking permit",
+                "description":"",
+                "project_id":"fixture-project",
+                "labels":["quick"],
+                "priority":1,
+                "checked":false,
+                "is_deleted":false,
+                "completed_at":null,
+                "due":null,
+                "deadline":null
+            }]
+        }))
+    };
+    apply_sync(
+        &pool,
+        owner.user_id,
+        producer,
+        &[quick_sync("quick-1")],
+        &[],
+    )
+    .await;
+    let (task_id, task) = external_task(&pool, owner.user_id, "QuickLabel00000001").await;
+    assert_eq!(task["estimate_minutes"]["value"], json!(5));
+    assert_eq!(task["estimate_minutes"]["source"], json!("todoist"));
+    assert_eq!(task["required_contexts"]["value"], json!([]));
+    let indexed = sqlx::query_scalar::<_, Option<i32>>(
+        "SELECT estimate_minutes FROM brunn.task_index WHERE user_id=$1 AND task_id=$2",
+    )
+    .bind(owner.user_id)
+    .bind(task_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(indexed, Some(5));
+
+    rewrite_task_metadata(&pool, &owner, task_id, |metadata| {
+        task_object(metadata).insert(
+            "estimate_minutes".to_owned(),
+            json!({"value":15,"source":"owner","set_at":"2026-08-27T07:00:00Z"}),
+        );
+    })
+    .await;
+    apply_sync(
+        &pool,
+        owner.user_id,
+        producer,
+        &[quick_sync("quick-2")],
+        &[],
+    )
+    .await;
+    let (_, task) = external_task(&pool, owner.user_id, "QuickLabel00000001").await;
+    assert_eq!(task["estimate_minutes"]["value"], json!(15));
+    assert_eq!(task["estimate_minutes"]["source"], json!("owner"));
+}

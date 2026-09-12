@@ -287,6 +287,24 @@ Todoist remains off absent secret metadata. Rollback disables Todoist/APNs,
 rolls services back, and preserves canonical task versions; it never writes to
 Todoist.
 
+## Addendum 2026-09-11
+
+- `today_since` is the owner's Today list: set by `task.update` action
+  `add_today` (or the capture `today` flag) and cleared by action `sweep` or
+  completion. It is distinct from `today_pin`, the one-day priority pick.
+- `task.candidates` gains two views: `quick` (`estimate_minutes` ≤ 5, a
+  constant, never a context) and `today` (`today_since` set). "Flag as quick"
+  writes `estimate_minutes` with source `owner`.
+- Todoist pull maps the `quick` label to `estimate_minutes` 5.
+- iOS drops the Todoist status card and the Web-settings link. Web settings
+  drop the Contexts, Engine, and Operations task-settings panels; the Todoist
+  panel stays. Task settings and contexts are changed through `task.settings`
+  and `task.contexts` only.
+- Project status is judged nightly by the Dreamer, which is the only writer of
+  `status`, `status_reason`, `status_since`, `status_previous`, and
+  `status_computed_on` on `task_projects`. `project.state` returns at most
+  10 next items.
+
 ## References
 
 - `sources/Projects/Brunn/Agent-first tasks - spec and Codex handoff - 2026-08-26.md`

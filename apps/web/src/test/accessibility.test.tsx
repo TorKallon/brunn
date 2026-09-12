@@ -82,7 +82,7 @@ describe("accessibility contracts", () => {
     expect(
       await screen.findByRole("heading", { name: "Settings" }),
     ).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Task operations" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Todoist" })).toBeInTheDocument();
     await expectNoAutomatedViolations(container);
   });
 
@@ -149,7 +149,6 @@ describe("accessibility contracts", () => {
     await user.click(
       await screen.findByRole("button", { name: /OpenAI ships o5/ }),
     );
-    await user.click(screen.getByRole("button", { name: "2 more" }));
     expect(
       screen.getByRole("region", { name: "Frontier labs item detail" }),
     ).toBeInTheDocument();

@@ -54,6 +54,9 @@ struct CachedTaskSurface: Codable, Equatable {
     let savedAt: Date
     let urgent: [AgentTaskCandidate]
     let next: [AgentTaskCandidate]
+    // Optional so a cache written before these lists existed still decodes.
+    var quick: [AgentTaskCandidate]? = nil
+    var today: [AgentTaskCandidate]? = nil
     let doneToday: AgentTaskDoneSummaryData?
     let projects: [AgentTaskProject]
     let contexts: [AgentTaskContext]

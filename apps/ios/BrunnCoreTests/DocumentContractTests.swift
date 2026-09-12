@@ -71,6 +71,31 @@ final class DocumentContractTests: XCTestCase {
         XCTAssertFalse(pinned.matches(DocumentLink(slug: "trip-plan")!))
     }
 
+    func testBuildServedDocumentWithoutTimestampsOrHistoryDecodesAndMatches() throws {
+        let json = #"""
+        {"status":"complete","data":{
+        "slug":"agent-orientation","title":"Agent orientation","summary":null,
+        "body_md":"# Orientation\n\nRead this first.",
+        "sources":[],
+        "version":1,"current_version":1,"published_at":null,"updated_at":null,
+        "entry_ref":null,"version_ref":null,"path":null,
+        "url":"https://brunn.ai/documents/agent-orientation",
+        "version_url":"https://brunn.ai/documents/agent-orientation?version=1",
+        "app_url":"brunn://document/agent-orientation",
+        "app_version_url":"brunn://document/agent-orientation?version=1",
+        "versions":[]
+        }}
+        """#
+        let document = try JSONDecoder().decode(WorkspaceEnvelope<PublishedDocument>.self, from: Data(json.utf8)).data
+        XCTAssertNil(document.publishedAt)
+        XCTAssertNil(document.updatedAt)
+        XCTAssertTrue(document.versions.isEmpty)
+        XCTAssertTrue(document.matches(DocumentLink(slug: "agent-orientation")!))
+        XCTAssertTrue(document.matches(DocumentLink(slug: "agent-orientation", version: 1)!))
+        XCTAssertFalse(document.matches(DocumentLink(slug: "agent-orientation", version: 2)!))
+        XCTAssertFalse(document.matches(DocumentLink(slug: "other")!))
+    }
+
     func testAuthenticatedRequestsAreBodylessUncachedAndNeverFallback() async throws {
         let harness = DocumentAPIHarness()
         defer { harness.close() }

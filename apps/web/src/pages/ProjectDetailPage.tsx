@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { ArrowLeft, Clock3, FolderKanban } from "lucide-react";
 import { Page, PageHeader, Section } from "../components/Page";
-import { EmptyState, ErrorState, LoadingState, StatusBadge } from "../components/StateViews";
+import { EmptyState, ErrorState, LoadingState, ProjectStatusDot, StatusBadge } from "../components/StateViews";
 import { TaskRow } from "../components/TaskRow";
 import { useApi } from "../lib/auth";
 import { useCapability } from "../lib/current";
@@ -71,11 +71,18 @@ function ProjectState({
 }) {
   const checkpoint = state.checkpoint;
   const checkpointState = checkpoint?.state;
-  const next = state.next.slice(0, 3);
-  const waitingSlots = Math.max(0, 5 - next.length);
-  const waiting = state.waiting.slice(0, waitingSlots);
+  const next = state.next.slice(0, 10);
+  const waiting = state.waiting.slice(0, 5);
+  const computedOn = state.project.status_computed_on;
   return (
     <>
+      <p className="project-status-line">
+        <ProjectStatusDot status={state.project.status} />
+        <span>
+          {state.project.status_reason || "No status yet"}
+          {computedOn && computedOn < localDate(-1) ? ` · as of ${computedOn}` : ""}
+        </span>
+      </p>
       <section className="project-state-summary" aria-label="Project summary">
         <div>
           <FolderKanban size={18} aria-hidden="true" />
@@ -119,7 +126,7 @@ function ProjectState({
           <EmptyState title="No linked checkpoint yet" detail="Task state still remains available below." />
         )}
       </Section>
-      <Section title="Next and waiting" meta="Five task rows maximum">
+      <Section title="Next and waiting" meta="Ten next and five waiting tasks maximum">
         <div className="project-task-sections">
           <div className="task-list">
             {next.map((item) => (
@@ -155,6 +162,17 @@ function CheckpointList({ title, items }: { title: string; items: string[] }) {
       <ul>{items.map((item) => <li key={item}>{item}</li>)}</ul>
     </section>
   );
+}
+
+/** Local calendar date, offset by `days`, as YYYY-MM-DD. */
+function localDate(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 function asList(value: string | string[] | undefined): string[] {

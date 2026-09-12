@@ -82,8 +82,8 @@ public struct AgentTaskProjectProjection: Sendable, Equatable {
     public static func bounded(
         next: [AgentTaskCandidate],
         waiting: [AgentTaskWaitingItem],
-        limit: Int = 5,
-        nextLimit: Int = 3
+        limit: Int = 15,
+        nextLimit: Int = 10
     ) -> AgentTaskProjectProjection {
         let budget = max(limit, 0)
         var seen = Set<String>()
@@ -105,6 +105,31 @@ public struct AgentTaskProjectProjection: Sendable, Equatable {
             next: projectedNext,
             waiting: projectedWaiting
         )
+    }
+}
+
+/// Whole owner-local days from an ISO `YYYY-MM-DD` day to `now`, using the
+/// device calendar in the given time zone. `nil` when the day is malformed.
+public enum OwnerDay {
+    public static func daysSince(
+        _ day: String?,
+        now: Date = .now,
+        timezone: TimeZone = .current
+    ) -> Int? {
+        guard let day else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timezone
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.calendar = calendar
+        parser.timeZone = timezone
+        parser.dateFormat = "yyyy-MM-dd"
+        guard let start = parser.date(from: day) else { return nil }
+        return calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: start),
+            to: calendar.startOfDay(for: now)
+        ).day
     }
 }
 
@@ -208,86 +233,6 @@ public struct BriefingNewsItem: Identifiable, Sendable, Equatable {
 
     public var isPriority: Bool {
         kind == .new || kind == .update || kind == .correction
-    }
-}
-
-public struct BriefingDisplaySectionPart: Identifiable, Sendable, Equatable {
-    public let section: BriefingSection
-    public let itemLabel: String
-
-    public var id: String {
-        section.topic
-    }
-
-    public init(section: BriefingSection, itemLabel: String) {
-        self.section = section
-        self.itemLabel = itemLabel
-    }
-}
-
-public struct BriefingDisplaySection: Identifiable, Sendable, Equatable {
-    public let id: String
-    public let title: String
-    public let parts: [BriefingDisplaySectionPart]
-
-    public var itemCount: Int {
-        parts.reduce(0) { $0 + $1.section.items.count }
-    }
-
-    public init(id: String, title: String, parts: [BriefingDisplaySectionPart]) {
-        self.id = id
-        self.title = title
-        self.parts = parts
-    }
-
-    public static func grouped(_ sections: [BriefingSection]) -> [BriefingDisplaySection] {
-        var groups: [BriefingDisplaySection] = []
-        var groupIndexes: [String: Int] = [:]
-
-        for section in sections {
-            let title = displayTitle(for: section.title)
-            let groupID = title.parent == nil ? "topic:\(section.topic)" : "parent:\(title.header)"
-            let part = BriefingDisplaySectionPart(
-                section: section,
-                itemLabel: title.itemLabel
-            )
-
-            if let index = groupIndexes[groupID] {
-                let group = groups[index]
-                groups[index] = BriefingDisplaySection(
-                    id: group.id,
-                    title: group.title,
-                    parts: group.parts + [part]
-                )
-            } else {
-                groupIndexes[groupID] = groups.count
-                groups.append(BriefingDisplaySection(
-                    id: groupID,
-                    title: title.header,
-                    parts: [part]
-                ))
-            }
-        }
-
-        return groups
-    }
-
-    private static let groupedParentTitles = ["RTS LLC", "Hobby Projects"]
-
-    private static func displayTitle(for title: String) -> (
-        header: String,
-        itemLabel: String,
-        parent: String?
-    ) {
-        for parent in groupedParentTitles {
-            let prefix = "\(parent) — "
-            guard title.hasPrefix(prefix) else { continue }
-            let child = String(title.dropFirst(prefix.count))
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !child.isEmpty else { continue }
-            return (parent, child, parent)
-        }
-        return (title, title, nil)
     }
 }
 

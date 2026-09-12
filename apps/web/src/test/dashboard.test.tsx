@@ -13,7 +13,7 @@ const todayBriefing = {
         entry_ref: "entry:briefing-today",
         version: 2,
         generated_at: "2026-08-02T14:00:00Z",
-        summary_md: ["The **morning briefing** is ready."],
+        first_headline: "The **morning briefing** is ready.",
         section_titles: ["Projects", "Outside world"],
         item_count: 8,
       },

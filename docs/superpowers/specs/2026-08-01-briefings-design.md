@@ -84,7 +84,9 @@ Identical content is a NoOp per the existing content-hash rule.
 Frontmatter (rendered): `kind: briefing_edition`, `date`, `edition`,
 `generated_at`, `timezone`.
 
-Metadata schema `briefing.v1` (stored, authoritative for projections):
+Metadata schema `briefing.v1` (stored, authoritative for projections). Since
+2026-09-11 `summary_md` is no longer accepted; the 30-second version is derived
+from the item headlines:
 
 ```json
 {
@@ -92,7 +94,6 @@ Metadata schema `briefing.v1` (stored, authoritative for projections):
   "date": "2026-08-01",
   "edition": "morning",
   "generated_at": "2026-08-01T06:30:00-07:00",
-  "summary_md": ["one bullet per 30-second line"],
   "sections": [
     {
       "topic": "ai",
@@ -271,7 +272,9 @@ breakpoints, axe coverage). New bundled deps: `marked` + `dompurify`
 (sanitized rendering; CSP already forbids external scripts — no CDN).
 
 Edition view: date header with generated/updated line and edition switcher;
-30-second summary block with progressive disclosure; sections as index rows
+30-second summary block with progressive disclosure (since 2026-09-11 derived
+from the item headlines: `summary_md` is no longer accepted by
+`briefing.publish`); sections as index rows
 (kicker = topic, bold sentence headline, state chip `New delta` / `Update` /
 `Event`); expand-in-place shows `detail_md`, `what_changed`, source links with
 timestamps; item actions: mark read, go deeper, feedback menu, mute topic.

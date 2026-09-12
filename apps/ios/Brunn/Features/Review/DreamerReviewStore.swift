@@ -17,6 +17,7 @@ final class DreamerReviewStore: ObservableObject {
     @Published private(set) var loadError: String?
     @Published private(set) var decisionError: String?
     @Published private(set) var decisionMessage: String?
+    @Published private(set) var decisionApplicationStatus: String?
     @Published private(set) var conflict = false
     @Published private(set) var pendingRequest: DreamerDecisionRequest?
     @Published var drafts: [String: Draft] = [:]
@@ -171,6 +172,7 @@ final class DreamerReviewStore: ObservableObject {
         selectedFromOlderReports = historical || item.isLegacyNote
         selectedDecisionVersion = data.decisionVersion
         decisionMessage = nil
+        decisionApplicationStatus = nil
         decisionError = nil
         conflict = false
     }
@@ -192,6 +194,7 @@ final class DreamerReviewStore: ObservableObject {
             drafts = [:]
             pendingRequest = nil
             decisionMessage = nil
+            decisionApplicationStatus = nil
             decisionError = nil
             loadError = nil
             selectedFromOlderReports = false
@@ -291,6 +294,7 @@ final class DreamerReviewStore: ObservableObject {
             guard generation == refreshGeneration else { return }
             pendingRequest = nil
             decisionMessage = result.message ?? result.applicationStatus.replacingOccurrences(of: "_", with: " ")
+            decisionApplicationStatus = result.applicationStatus
             await refresh(api: api, userID: userID)
         } catch {
             guard generation == refreshGeneration else { return }

@@ -164,6 +164,21 @@ test("both MCP profiles expose the exact public task surface with safe annotatio
         "todoist",
       ]);
       assert.equal(candidateProperties?.context?.pattern, "^[a-z0-9]+(?:-[a-z0-9]+)*$");
+      assert.deepEqual(candidateProperties?.view?.enum, [
+        "next",
+        "urgent",
+        "triage",
+        "quick",
+        "today",
+        "all",
+      ]);
+      assert.match(candidates?.description ?? "", /quick.*estimate_minutes.*five/i);
+      assert.match(candidates?.description ?? "", /today.*today_since/i);
+      assert.match(candidates?.description ?? "", /agent-orientation/);
+      assert.match(capture.description ?? "", /agent-orientation/);
+      const update = byName.get("task.update");
+      assert.match(update?.description ?? "", /add_today.*sweep/);
+      assert.match(update?.description ?? "", /agent-orientation/);
 
       const contexts = byName.get("task.contexts");
       assert.match(contexts?.description ?? "", /suggested_existing/);
@@ -173,7 +188,7 @@ test("both MCP profiles expose the exact public task surface with safe annotatio
 
       const state = byName.get("project.state");
       assert.match(state?.description ?? "", /latest linked checkpoint/i);
-      assert.match(state?.description ?? "", /next three/i);
+      assert.match(state?.description ?? "", /up to ten next/i);
       assert.match(state?.description ?? "", /waiting/i);
     } finally {
       await close();

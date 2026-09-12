@@ -110,11 +110,12 @@ final class AppModel: ObservableObject {
     @Published private(set) var tasks: [TaskItem] = []
     @Published private(set) var urgentTasks: [AgentTaskCandidate] = []
     @Published private(set) var nextTasks: [AgentTaskCandidate] = []
+    @Published private(set) var quickTasks: [AgentTaskCandidate] = []
+    @Published private(set) var todayTasks: [AgentTaskCandidate] = []
     @Published private(set) var doneToday: AgentTaskDoneSummaryData?
     @Published private(set) var taskContexts: [AgentTaskContext] = []
     @Published private(set) var selectedTaskContexts: Set<String> = []
     @Published private(set) var taskProjects: [AgentTaskProject] = []
-    @Published private(set) var todoistStatus: AgentTaskTodoistStatus?
     @Published var selectedProjectState: AgentTaskProjectStateData?
     @Published private(set) var taskNextRemaining = 0
     @Published private(set) var taskBacklogTotal = 0
@@ -377,9 +378,10 @@ final class AppModel: ObservableObject {
                 latestBriefing = nil
                 urgentTasks = []
                 nextTasks = []
+                quickTasks = []
+                todayTasks = []
                 doneToday = nil
                 taskProjects = []
-                todoistStatus = nil
                 taskContexts = []
                 selectedTaskContexts = []
                 taskNextRemaining = 0
@@ -480,25 +482,6 @@ final class AppModel: ObservableObject {
             : SampleData.agentTaskContexts
         selectedTaskContexts = ["phone", "online"]
         taskProjects = SampleData.agentTaskProjects
-        if ProcessInfo.processInfo.arguments.contains("--ui-test-todoist-error") {
-            todoistStatus = AgentTaskTodoistStatus(
-                environmentEnabled: true,
-                savedMode: "pull",
-                effectiveMode: "pull",
-                tokenConfigured: true,
-                configurationGeneration: 2,
-                lastOutcome: "error",
-                lastErrorCode: "todoist_apply_rejected"
-            )
-        } else {
-            todoistStatus = AgentTaskTodoistStatus(
-                environmentEnabled: false,
-                savedMode: "off",
-                effectiveMode: "off",
-                tokenConfigured: false,
-                configurationGeneration: 1
-            )
-        }
         taskNextRemaining = 7
         taskBacklogTotal = 18
         taskMessage = nil
@@ -609,11 +592,12 @@ final class AppModel: ObservableObject {
         tasks = []
         urgentTasks = []
         nextTasks = []
+        quickTasks = []
+        todayTasks = []
         doneToday = nil
         taskContexts = []
         selectedTaskContexts = []
         taskProjects = []
-        todoistStatus = nil
         selectedProjectState = nil
         taskNextRemaining = 0
         taskBacklogTotal = 0
@@ -1086,6 +1070,8 @@ final class AppModel: ObservableObject {
             }
             urgentTasks = cached.urgent
             nextTasks = cached.next
+            quickTasks = cached.quick ?? []
+            todayTasks = cached.today ?? []
             doneToday = cached.doneToday
             taskProjects = cached.projects
             taskContexts = cached.contexts
@@ -1144,22 +1130,31 @@ final class AppModel: ObservableObject {
                 limit: 17,
                 contextsAvailable: selected
             )
+            async let quickResponse = api.taskCandidates(
+                view: .quick,
+                contextsAvailable: selected
+            )
+            async let todayResponse = api.taskCandidates(
+                view: .today,
+                contextsAvailable: selected
+            )
             async let doneResponse = api.taskDoneSummary(limit: 25)
             async let projectResponse = api.taskProjects()
-            async let todoistStatusResponse: WorkspaceEnvelope<AgentTaskTodoistStatus>? =
-                try? api.taskTodoistStatus()
 
-            let (urgent, next, done, projects) = try await (
+            let (urgent, next, quick, today, done, projects) = try await (
                 urgentResponse,
                 nextResponse,
+                quickResponse,
+                todayResponse,
                 doneResponse,
                 projectResponse
             )
             urgentTasks = urgent.data.items
             nextTasks = next.data.items
+            quickTasks = quick.data.items
+            todayTasks = today.data.items
             doneToday = done.data
             taskProjects = projects.data.projects
-            todoistStatus = await todoistStatusResponse?.data
             taskNextRemaining = next.data.nextRemaining
             taskBacklogTotal = next.data.backlogTotal
             taskMessage = nil
@@ -1186,16 +1181,18 @@ final class AppModel: ObservableObject {
 
         let oldUrgent = urgentTasks
         let oldNext = nextTasks
-        let removesFromToday: Bool
+        let oldQuick = quickTasks
+        let oldToday = todayTasks
         switch operation {
         case .complete, .snooze, .snoozeUntil, .waitOn:
-            removesFromToday = true
-        default:
-            removesFromToday = false
-        }
-        if removesFromToday {
             urgentTasks.removeAll { $0.taskRef == candidate.taskRef }
             nextTasks.removeAll { $0.taskRef == candidate.taskRef }
+            quickTasks.removeAll { $0.taskRef == candidate.taskRef }
+            todayTasks.removeAll { $0.taskRef == candidate.taskRef }
+        case .sweep:
+            todayTasks.removeAll { $0.taskRef == candidate.taskRef }
+        default:
+            break
         }
         mutatingTaskRefs.insert(candidate.taskRef)
         defer { mutatingTaskRefs.remove(candidate.taskRef) }
@@ -1241,6 +1238,8 @@ final class AppModel: ObservableObject {
         } catch let error as BrunnAPIError {
             urgentTasks = oldUrgent
             nextTasks = oldNext
+            quickTasks = oldQuick
+            todayTasks = oldToday
             if error.isUnauthorized {
                 canWriteTasks = false
                 canManageNotifications = false
@@ -1256,7 +1255,61 @@ final class AppModel: ObservableObject {
         } catch {
             urgentTasks = oldUrgent
             nextTasks = oldNext
+            quickTasks = oldQuick
+            todayTasks = oldToday
             taskMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Captures one typed line straight onto today's list. The row appears at
+    /// once and is withdrawn if the server does not accept it.
+    @discardableResult
+    func captureTodayTask(_ rawText: String) async -> Bool {
+        let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return false }
+        guard canWriteTasks else {
+            taskMessage = "View only — this credential does not have task.write."
+            return false
+        }
+        guard isDemo || connectionValidated else {
+            taskMessage = "Reconnect before capturing a task. Offline changes are not queued."
+            return false
+        }
+        let request = AgentTaskCaptureRequest(rawText: text)
+        let placeholder = AgentTaskCandidate(
+            taskRef: request.idempotencyKey,
+            entryRef: "",
+            version: 0,
+            title: text,
+            tier: 5,
+            reason: "Captured just now"
+        )
+        todayTasks.insert(placeholder, at: 0)
+        if isDemo {
+            taskMessage = nil
+            return true
+        }
+        mutatingTaskRefs.insert(placeholder.taskRef)
+        defer { mutatingTaskRefs.remove(placeholder.taskRef) }
+        do {
+            guard let bearerToken = deviceTaskBearer() else {
+                throw BrunnAPIError.notConnected
+            }
+            _ = try await api.captureTask(request: request, bearerToken: bearerToken)
+            taskMessage = nil
+            await refreshTaskSurface()
+            return true
+        } catch {
+            todayTasks.removeAll { $0.taskRef == placeholder.taskRef }
+            if let error = error as? BrunnAPIError, error.isUnauthorized {
+                canWriteTasks = false
+                canManageNotifications = false
+                await validateStoredDeviceTaskCredential()
+                taskMessage = "Device task access is no longer valid. Set it up again before capturing tasks."
+            } else {
+                taskMessage = "The task could not be captured. \(error.localizedDescription)"
+            }
             return false
         }
     }
@@ -1370,7 +1423,9 @@ final class AppModel: ObservableObject {
                 tier: candidate.tier,
                 reason: candidate.reason,
                 provenanceMarkers: candidate.provenanceMarkers,
-                pinned: pinned
+                pinned: pinned,
+                estimateMinutes: candidate.estimateMinutes,
+                todaySince: candidate.todaySince
             )
             urgentTasks = urgentTasks.map { $0.taskRef == candidate.taskRef ? updated : $0 }
             nextTasks = nextTasks.map { $0.taskRef == candidate.taskRef ? updated : $0 }
@@ -1388,6 +1443,8 @@ final class AppModel: ObservableObject {
             savedAt: .now,
             urgent: urgentTasks,
             next: nextTasks,
+            quick: quickTasks,
+            today: todayTasks,
             doneToday: doneToday,
             projects: taskProjects,
             contexts: taskContexts,
@@ -2093,11 +2150,12 @@ final class AppModel: ObservableObject {
         tasks = []
         urgentTasks = []
         nextTasks = []
+        quickTasks = []
+        todayTasks = []
         doneToday = nil
         taskContexts = []
         selectedTaskContexts = []
         taskProjects = []
-        todoistStatus = nil
         selectedProjectState = nil
         taskNextRemaining = 0
         taskBacklogTotal = 0
@@ -2297,7 +2355,7 @@ final class AppModel: ObservableObject {
             entryRef: edition.entryRef,
             version: edition.currentVersion,
             generatedAt: edition.briefing?.generatedAt,
-            summaryMD: edition.briefing?.summaryMD ?? [],
+            firstHeadline: edition.briefing?.sections?.flatMap(\.items).first?.headlineMD,
             sectionTitles: edition.briefing?.sections?.map(\.title) ?? [],
             itemCount: edition.briefing?.sections?.reduce(0) { $0 + $1.items.count } ?? 0
         )

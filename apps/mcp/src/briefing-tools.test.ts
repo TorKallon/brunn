@@ -81,7 +81,6 @@ test("briefing.publish posts the typed edition verbatim and returns the envelope
     edition: "morning",
     timezone: "America/New_York",
     generated_at: "2026-08-01T10:30:00Z",
-    summary_md: ["**[Example](https://example.com/a)** shipped a launch."],
     sections: [{
       topic: "frontier-labs",
       title: "Frontier labs",

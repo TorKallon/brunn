@@ -25,7 +25,9 @@ use uuid::Uuid;
 use crate::{
     db::AppState,
     error::{ApiError, ApiResult},
-    secret_service, task_service,
+    secret_service,
+    task_engine::QUICK_TASK_MAX_MINUTES,
+    task_service,
 };
 
 const TODOIST_SYNC_URL: &str = "https://api.todoist.com/api/v1/sync";
@@ -929,6 +931,8 @@ pub(crate) struct MappedTodoistItem {
     pub(crate) soft_due: Option<NaiveDate>,
     pub(crate) hard_due: Option<DateTime<Utc>>,
     pub(crate) hard_due_note: Option<&'static str>,
+    /// The `quick` label is an estimate, not a context.
+    pub(crate) estimate_minutes: Option<i32>,
     pub(crate) recurrence: Option<MappedRecurrence>,
     pub(crate) occurrence_key: Option<String>,
     pub(crate) completed_at: Option<DateTime<Utc>>,
@@ -973,6 +977,10 @@ pub(crate) fn map_item(item: &TodoistItem, owner_timezone: Tz) -> ApiResult<Mapp
         .collect::<ApiResult<Vec<_>>>()?;
     labels.sort_by_key(|label| label.to_lowercase());
     labels.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+    let quick_label = labels
+        .iter()
+        .any(|label| label.eq_ignore_ascii_case("quick"));
+    labels.retain(|label| !label.eq_ignore_ascii_case("quick"));
 
     if let Some(due) = &item.due {
         validate_required_remote_text("Todoist due date", &due.date, 128)?;
@@ -1046,6 +1054,7 @@ pub(crate) fn map_item(item: &TodoistItem, owner_timezone: Tz) -> ApiResult<Mapp
         soft_due,
         hard_due,
         hard_due_note,
+        estimate_minutes: quick_label.then_some(QUICK_TASK_MAX_MINUTES),
         recurrence,
         occurrence_key,
         completed_at: item.completed_at,
@@ -1369,6 +1378,19 @@ mod tests {
         let no_due = map_item(&fixture.items[2], Tz::America__Los_Angeles).unwrap();
         assert!(no_due.hard_due.is_none());
         assert!(no_due.needs_triage);
+    }
+
+    #[test]
+    fn quick_label_becomes_an_estimate_instead_of_a_context() {
+        let mut fixture = fixture();
+        let item = &mut fixture.items[2];
+        item.labels = vec!["Quick".to_owned(), "hard".to_owned()];
+        let mapped = map_item(item, Tz::UTC).unwrap();
+        assert_eq!(mapped.estimate_minutes, Some(QUICK_TASK_MAX_MINUTES));
+        assert_eq!(mapped.labels, ["hard"]);
+
+        item.labels = vec!["hard".to_owned()];
+        assert_eq!(map_item(item, Tz::UTC).unwrap().estimate_minutes, None);
     }
 
     #[test]

@@ -61,6 +61,7 @@ struct TaskProjection {
     snooze_count: i32,
     parked: bool,
     today_pin: Option<NaiveDate>,
+    today_since: Option<NaiveDate>,
     triaged_at: Option<DateTime<Utc>>,
     done_at: Option<DateTime<Utc>>,
     dropped_at: Option<DateTime<Utc>>,
@@ -217,6 +218,7 @@ pub(crate) fn apply_sourced_field(
         "parked",
         "triaged_at",
         "today_pin",
+        "today_since",
         "recurrence",
         "completed_via",
         "dropped_reason",
@@ -868,10 +870,11 @@ async fn sync_task_projection_in_tx(
           soft_due,hard_due,hard_due_lead_days,cost_amount_cents,cost_period,
           cost_flag,cost_since,required_contexts,project_slug,estimate_minutes,
           waiting_on,snooze_count,parked,today_pin,triaged_at,done_at,dropped_at,
-          recurrence,provenance,source_timestamps,task,created_at,updated_at
+          recurrence,provenance,source_timestamps,task,created_at,updated_at,
+          today_since
         ) VALUES (
           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-          $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30
+          $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31
         )
         ON CONFLICT (user_id,task_id) DO UPDATE SET
           entry_id=EXCLUDED.entry_id,
@@ -901,7 +904,8 @@ async fn sync_task_projection_in_tx(
           source_timestamps=EXCLUDED.source_timestamps,
           task=EXCLUDED.task,
           created_at=LEAST(task_index.created_at,EXCLUDED.created_at),
-          updated_at=EXCLUDED.updated_at
+          updated_at=EXCLUDED.updated_at,
+          today_since=EXCLUDED.today_since
         "#,
     )
     .bind(user_id)
@@ -934,6 +938,7 @@ async fn sync_task_projection_in_tx(
     .bind(&projection.task)
     .bind(captured_at)
     .bind(version_created_at)
+    .bind(projection.today_since)
     .execute(&mut **tx)
     .await?;
     sync_task_identity_projection_in_tx(
@@ -1169,6 +1174,7 @@ fn parse_projection(metadata: &Value) -> ApiResult<TaskProjection> {
         .ok_or_else(|| ApiError::invalid("snooze_count must be a nonnegative integer"))?;
     let parked = boolean_value(task, "parked")?.unwrap_or(false);
     let today_pin = date_value(task, "today_pin")?;
+    let today_since = date_value(task, "today_since")?;
     let triaged_at = timestamp_value(task, "triaged_at")?;
     let done_at = direct_timestamp(task, "done_at")?;
     let dropped_at = direct_timestamp(task, "dropped_at")?;
@@ -1203,6 +1209,7 @@ fn parse_projection(metadata: &Value) -> ApiResult<TaskProjection> {
         snooze_count,
         parked,
         today_pin,
+        today_since,
         triaged_at,
         done_at,
         dropped_at,
@@ -1490,6 +1497,7 @@ fn collect_cell_provenance(task: &Map<String, Value>) -> ApiResult<(Value, Value
         "parked",
         "triaged_at",
         "today_pin",
+        "today_since",
         "recurrence",
         "completed_via",
         "dropped_reason",
@@ -1507,7 +1515,7 @@ fn collect_cell_provenance(task: &Map<String, Value>) -> ApiResult<(Value, Value
     Ok((json!(sources), json!(timestamps)))
 }
 
-fn effective_metadata(metadata: &Value) -> &Value {
+pub(crate) fn effective_metadata(metadata: &Value) -> &Value {
     metadata
         .get("client")
         .filter(|value| value.is_object())
@@ -1639,6 +1647,10 @@ pub(crate) struct CaptureItem {
     pub required_contexts: Option<SourcedInput>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub estimate_minutes: Option<SourcedInput>,
+    /// When true the task starts on the owner's Today list (today_since set
+    /// to the owner-local capture date with source owner).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub today: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -1692,6 +1704,12 @@ pub(crate) enum UpdateOperation {
         source: String,
     },
     Unpin {
+        source: String,
+    },
+    AddToday {
+        source: String,
+    },
+    Sweep {
         source: String,
     },
     ConfirmHard {
@@ -2089,6 +2107,15 @@ pub(crate) async fn capture_tasks(
     }
 
     let now = Utc::now();
+    let today = if request.items.iter().any(|item| item.today == Some(true)) {
+        Some(
+            owner_local_date_in_tx(&mut tx, auth.user_id.0, now)
+                .await?
+                .0,
+        )
+    } else {
+        None
+    };
     let mut prepared_contexts = Vec::<Vec<String>>::new();
     let mut unknown_contexts = BTreeMap::<String, String>::new();
     let mut review = Vec::new();
@@ -2210,6 +2237,17 @@ pub(crate) async fn capture_tasks(
             if let Some(cell) = cell {
                 task.insert(name.to_owned(), sourced_cell(&auth, cell, now)?);
             }
+        }
+        if item.today == Some(true) {
+            let source = if may_assert_owner(&auth) {
+                "owner".to_owned()
+            } else {
+                format!("agent:{}", auth.credential_id.0)
+            };
+            task.insert(
+                "today_since".to_owned(),
+                json!({"value": today, "source": source, "set_at": now}),
+            );
         }
         if let Some(cell) = &item.project {
             let requested = cell
@@ -2396,6 +2434,8 @@ fn update_operation_source(operation: &UpdateOperation) -> &str {
         | UpdateOperation::Unpark { source }
         | UpdateOperation::PinToday { source }
         | UpdateOperation::Unpin { source }
+        | UpdateOperation::AddToday { source }
+        | UpdateOperation::Sweep { source }
         | UpdateOperation::ConfirmHard { source }
         | UpdateOperation::DowngradeToSoft { source } => source,
     }
@@ -2497,6 +2537,8 @@ fn validate_action_state(operation: &UpdateOperation, status: &str) -> ApiResult
         | UpdateOperation::Unpark { .. }
         | UpdateOperation::PinToday { .. }
         | UpdateOperation::Unpin { .. }
+        | UpdateOperation::AddToday { .. }
+        | UpdateOperation::Sweep { .. }
         | UpdateOperation::ConfirmHard { .. }
         | UpdateOperation::DowngradeToSoft { .. } => !terminal,
     };
@@ -2758,7 +2800,7 @@ async fn insert_corrections_in_tx(
     Ok(first)
 }
 
-async fn owner_local_date_in_tx(
+pub(crate) async fn owner_local_date_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
     now: DateTime<Utc>,
@@ -2799,6 +2841,8 @@ pub(crate) async fn update_task(
             UpdateOperation::Unpark { .. } => "unpark",
             UpdateOperation::PinToday { .. } => "pin_today",
             UpdateOperation::Unpin { .. } => "unpin",
+            UpdateOperation::AddToday { .. } => "add_today",
+            UpdateOperation::Sweep { .. } => "sweep",
             UpdateOperation::ConfirmHard { .. } => "confirm_hard",
             UpdateOperation::DowngradeToSoft { .. } => "downgrade_to_soft",
         }
@@ -3007,7 +3051,9 @@ pub(crate) async fn update_task(
                 now,
                 None,
             )?;
-            direct_task_object_mut(&mut metadata)?.insert("done_at".to_owned(), json!(now));
+            let task = direct_task_object_mut(&mut metadata)?;
+            task.insert("done_at".to_owned(), json!(now));
+            task.remove("today_since");
             ("complete", "explicit completion")
         }
         UpdateOperation::Reopen { .. } => {
@@ -3119,6 +3165,7 @@ pub(crate) async fn update_task(
             }
             let task = direct_task_object_mut(&mut metadata)?;
             task.remove("done_at");
+            task.remove("today_since");
             task.insert("dropped_at".to_owned(), json!(now));
             ("drop", "explicit drop")
         }
@@ -3218,6 +3265,31 @@ pub(crate) async fn update_task(
                 None,
             )?;
             ("unpin", "explicit unpin")
+        }
+        UpdateOperation::AddToday { .. } => {
+            let (today, _) = owner_local_date_in_tx(&mut tx, auth.user_id.0, now).await?;
+            push_sourced_change(
+                &mut metadata,
+                &mut corrections,
+                "today_since",
+                json!(today),
+                &source,
+                now,
+                None,
+            )?;
+            ("add_today", "explicit today add")
+        }
+        UpdateOperation::Sweep { .. } => {
+            push_sourced_change(
+                &mut metadata,
+                &mut corrections,
+                "today_since",
+                Value::Null,
+                &source,
+                now,
+                None,
+            )?;
+            ("sweep", "explicit sweep")
         }
         UpdateOperation::ConfirmHard { .. } => {
             let hard_due = effective_metadata(&metadata)
@@ -3461,7 +3533,8 @@ SELECT task.task_id,task.entry_id,task.entry_version,task.title,task.status,
        task.cost_amount_cents,task.cost_period,task.cost_flag,task.cost_since,
        task.required_contexts,task.project_slug,task.parked,task.today_pin,
        task.triaged_at,task.created_at,task.provenance,task.source_timestamps,
-       project.interest_override,project.interest_set_at,project.last_activity_at
+       project.interest_override,project.interest_set_at,project.last_activity_at,
+       task.estimate_minutes,task.today_since
 FROM brunn.task_index AS task
 LEFT JOIN brunn.task_projects AS project
   ON project.user_id=task.user_id AND project.slug=task.project_slug
@@ -3475,6 +3548,25 @@ WHERE task.user_id=$1 AND task.status IN ('open','waiting')
 ORDER BY task.created_at,task.task_id
 "#;
 
+/// The Today list ignores contexts and ready_at: the owner placed each task
+/// deliberately, so only its open, unparked state matters.
+pub const TASK_TODAY_PROJECTION_SQL: &str = r#"
+SELECT task.task_id,task.entry_id,task.entry_version,task.title,task.status,
+       task.ready_at,task.soft_due,task.hard_due,task.hard_due_lead_days,
+       task.cost_amount_cents,task.cost_period,task.cost_flag,task.cost_since,
+       task.required_contexts,task.project_slug,task.parked,task.today_pin,
+       task.triaged_at,task.created_at,task.provenance,task.source_timestamps,
+       project.interest_override,project.interest_set_at,project.last_activity_at,
+       task.estimate_minutes,task.today_since
+FROM brunn.task_index AS task
+LEFT JOIN brunn.task_projects AS project
+  ON project.user_id=task.user_id AND project.slug=task.project_slug
+WHERE task.user_id=$1 AND task.status='open' AND NOT task.parked
+  AND task.today_since IS NOT NULL
+  AND ($2::text IS NULL OR task.project_slug=$2)
+ORDER BY task.today_since,task.created_at,task.task_id
+"#;
+
 /// The explicit backlog query is deliberately separate from the latency-gated
 /// bounded candidate query above. It projects terminal timestamps and applies
 /// list filters before Rust's sole ranking/cursor authority sees the rows.
@@ -3485,7 +3577,8 @@ SELECT task.task_id,task.entry_id,task.entry_version,task.title,task.status,
        task.required_contexts,task.project_slug,task.parked,task.today_pin,
        task.triaged_at,task.done_at,task.dropped_at,task.created_at,
        task.provenance,task.source_timestamps,
-       project.interest_override,project.interest_set_at,project.last_activity_at
+       project.interest_override,project.interest_set_at,project.last_activity_at,
+       task.estimate_minutes,task.today_since
 FROM brunn.task_index AS task
 LEFT JOIN brunn.task_projects AS project
   ON project.user_id=task.user_id AND project.slug=task.project_slug
@@ -3553,6 +3646,21 @@ fn parse_all_source(value: &str) -> ApiResult<AllSourceFilter> {
         "todoist" => Ok(AllSourceFilter::Todoist),
         _ => Err(ApiError::invalid(
             "source must be all, owner, agent, derived, or todoist",
+        )),
+    }
+}
+
+fn candidate_view(query: &CandidateQuery) -> ApiResult<TaskView> {
+    match query.view.as_deref().unwrap_or("next") {
+        "urgent" => Ok(TaskView::Urgent),
+        "next" => Ok(TaskView::Next),
+        "quick" => Ok(TaskView::Quick),
+        "today" => Ok(TaskView::Today),
+        "triage" => Ok(TaskView::Triage),
+        "all" if query.deliberate_all => Ok(TaskView::All),
+        "all" => Err(ApiError::invalid("view=all requires deliberate_all=true")),
+        _ => Err(ApiError::invalid(
+            "view must be urgent, next, quick, today, triage, or all",
         )),
     }
 }
@@ -3828,6 +3936,8 @@ fn snapshot_from_projection_row(
             "today_pin",
             projection_get!(Option<NaiveDate>, "today_pin", 16),
         )?,
+        estimate_minutes: projection_get!(Option<i32>, "estimate_minutes", 26),
+        today_since: projection_get!(Option<NaiveDate>, "today_since", 27),
         triaged_at: projection_get!(Option<DateTime<Utc>>, "triaged_at", 17),
     })
 }
@@ -3855,6 +3965,8 @@ fn ranked_item_json_from_row(
         "status": row.get::<String,_>("status"),
         "project": row.get::<Option<String>,_>("project_slug"),
         "required_contexts": row.get::<Vec<String>,_>("required_contexts"),
+        "estimate_minutes": row.get::<Option<i32>,_>("estimate_minutes"),
+        "today_since": row.get::<Option<NaiveDate>,_>("today_since"),
         "tier": ranked.tier,
         "reason": ranked.reason,
         "provenance_markers": ranked.provenance_markers,
@@ -3884,20 +3996,7 @@ pub(crate) async fn task_candidates(
 ) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
     auth.require(Capability::TaskRead)?;
     let query = parse_candidate_query(raw.as_deref())?;
-    let view = match query.view.as_deref().unwrap_or("next") {
-        "urgent" => TaskView::Urgent,
-        "next" => TaskView::Next,
-        "triage" => TaskView::Triage,
-        "all" if query.deliberate_all => TaskView::All,
-        "all" => {
-            return Err(ApiError::invalid("view=all requires deliberate_all=true"));
-        }
-        _ => {
-            return Err(ApiError::invalid(
-                "view must be urgent, next, triage, or all",
-            ));
-        }
-    };
+    let view = candidate_view(&query)?;
     if view == TaskView::Urgent && query.limit.is_some() {
         return Err(ApiError::invalid(
             "view=urgent is unbounded and does not accept limit",
@@ -3910,8 +4009,8 @@ pub(crate) async fn task_candidates(
     }
     let limit = query.limit.unwrap_or(match view {
         TaskView::Next | TaskView::Urgent => 5,
-        TaskView::Triage => 10,
-        TaskView::All => 25,
+        TaskView::Triage | TaskView::Quick => 10,
+        TaskView::Today | TaskView::All => 25,
     });
     if limit == 0 || limit > 25 || (view == TaskView::Triage && limit > 10) {
         return Err(ApiError::invalid(
@@ -3943,6 +4042,12 @@ pub(crate) async fn task_candidates(
             .bind(&project)
             .bind(&query.context)
             .bind(query.date_type.and_then(AllDateTypeFilter::sql_value))
+            .fetch_all(&mut *tx)
+            .await?
+    } else if view == TaskView::Today {
+        sqlx::query(TASK_TODAY_PROJECTION_SQL)
+            .bind(auth.user_id.0)
+            .bind(&project)
             .fetch_all(&mut *tx)
             .await?
     } else {
@@ -4056,7 +4161,14 @@ pub(crate) async fn task_candidates(
     };
     tx.commit().await?;
     let mut data = json!({
-        "view": match view { TaskView::Urgent => "urgent", TaskView::Next => "next", TaskView::Triage => "triage", TaskView::All => "all" },
+        "view": match view {
+            TaskView::Urgent => "urgent",
+            TaskView::Next => "next",
+            TaskView::Quick => "quick",
+            TaskView::Today => "today",
+            TaskView::Triage => "triage",
+            TaskView::All => "all",
+        },
         "as_of": as_of,
         "contexts_available": effective_contexts,
         "items": items,
@@ -5400,6 +5512,8 @@ pub(crate) async fn list_projects(
                project.repo_path,project.interest_override,project.interest_set_by,
                project.interest_set_at,project.last_activity_at,project.archived_at,
                project.created_by,project.version,project.created_at,project.updated_at,
+               project.status,project.status_reason,project.status_since,
+               project.status_previous,project.status_computed_on,
                COALESCE(aliases.values,'{}'::text[]) AS aliases,
                COALESCE(tasks.open_task_count,0) AS open_task_count,
                checkpoints.last_checkpoint_at
@@ -5466,6 +5580,10 @@ pub(crate) async fn list_projects(
             "archived":row.get::<Option<DateTime<Utc>>,_>("archived_at").is_some(),
             "open_task_count":row.get::<i64,_>("open_task_count"),
             "last_checkpoint_at":row.get::<Option<DateTime<Utc>>,_>("last_checkpoint_at"),
+            "status":row.get::<String,_>("status"),"status_reason":row.get::<String,_>("status_reason"),
+            "status_since":row.get::<Option<NaiveDate>,_>("status_since"),
+            "status_previous":row.get::<Option<String>,_>("status_previous"),
+            "status_computed_on":row.get::<Option<NaiveDate>,_>("status_computed_on"),
             "version":row.get::<i64,_>("version"),"created_by":row.get::<String,_>("created_by"),
         })
     }).collect::<Vec<_>>();
@@ -5567,7 +5685,7 @@ SELECT task.task_id,task.entry_id,task.entry_version,task.title,task.status,
        task.cost_amount_cents,task.cost_period,task.cost_flag,task.cost_since,
        task.required_contexts,task.project_slug,task.parked,task.today_pin,
        task.triaged_at,task.created_at,task.updated_at,task.waiting_on,
-       task.provenance,task.source_timestamps,
+       task.provenance,task.source_timestamps,task.estimate_minutes,task.today_since,
        project.interest_override,project.interest_set_at,project.last_activity_at
 FROM brunn.task_index AS task
 JOIN brunn.task_projects AS project
@@ -5587,7 +5705,7 @@ pub(crate) async fn project_state(
     validate_project_path_slug(&slug)?;
     let as_of = parse_project_state_as_of(raw.as_deref())?.unwrap_or_else(Utc::now);
     let mut tx = state.begin_read(&auth).await?;
-    let project=sqlx::query("SELECT title,interest_override,interest_set_at,last_activity_at,version FROM brunn.task_projects WHERE user_id=$1 AND slug=$2 AND archived_at IS NULL")
+    let project=sqlx::query("SELECT title,interest_override,interest_set_at,last_activity_at,version,status,status_reason,status_since,status_previous,status_computed_on FROM brunn.task_projects WHERE user_id=$1 AND slug=$2 AND archived_at IS NULL")
         .bind(auth.user_id.0).bind(&slug).fetch_optional(&mut *tx).await?
         .ok_or_else(||ApiError::not_found("project_not_found",&slug))?;
     let checkpoint=sqlx::query(
@@ -5629,7 +5747,7 @@ pub(crate) async fn project_state(
         &snapshots,
         &EngineCandidateRequest {
             view: TaskView::Next,
-            limit: 3,
+            limit: 10,
             contexts_available: contexts,
             include_waiting: false,
             include_parked: false,
@@ -5676,7 +5794,7 @@ pub(crate) async fn project_state(
     tx.commit().await?;
     Ok(envelope(
         ResponseStatus::Complete,
-        json!({"project":{"slug":slug,"title":project.get::<String,_>("title"),"interest":match interest{ProjectInterest::Hot=>"hot",ProjectInterest::Normal=>"normal",ProjectInterest::Parked=>"parked"},"last_activity_at":last,"version":project.get::<i64,_>("version")},"checkpoint":checkpoint,"urgent_count":ranked.urgent_total,"next":next,"waiting":waiting,"waiting_total":waiting_total,"waiting_remaining":waiting_total.saturating_sub(10),"parked_count":parked_count,"rollups":{"open":rollups.get::<i64,_>("open_count"),"waiting":rollups.get::<i64,_>("waiting_count"),"done":rollups.get::<i64,_>("done_count"),"dropped":rollups.get::<i64,_>("dropped_count")},"as_of":as_of}),
+        json!({"project":{"slug":slug,"title":project.get::<String,_>("title"),"interest":match interest{ProjectInterest::Hot=>"hot",ProjectInterest::Normal=>"normal",ProjectInterest::Parked=>"parked"},"last_activity_at":last,"version":project.get::<i64,_>("version"),"status":project.get::<String,_>("status"),"status_reason":project.get::<String,_>("status_reason"),"status_since":project.get::<Option<NaiveDate>,_>("status_since"),"status_previous":project.get::<Option<String>,_>("status_previous"),"status_computed_on":project.get::<Option<NaiveDate>,_>("status_computed_on")},"checkpoint":checkpoint,"urgent_count":ranked.urgent_total,"next":next,"waiting":waiting,"waiting_total":waiting_total,"waiting_remaining":waiting_total.saturating_sub(10),"parked_count":parked_count,"rollups":{"open":rollups.get::<i64,_>("open_count"),"waiting":rollups.get::<i64,_>("waiting_count"),"done":rollups.get::<i64,_>("done_count"),"dropped":rollups.get::<i64,_>("dropped_count")},"as_of":as_of}),
     ))
 }
 
@@ -6376,6 +6494,10 @@ async fn create_todoist_task_in_tx(
         json!({"value":mapped.soft_due,"source":"todoist","set_at":now}),
     );
     task.insert(
+        "estimate_minutes".to_owned(),
+        json!({"value":mapped.estimate_minutes,"source":"todoist","set_at":now}),
+    );
+    task.insert(
         "hard_due".to_owned(),
         json!({
             "value":mapped.hard_due,
@@ -6608,6 +6730,13 @@ async fn refresh_existing_todoist_task_in_tx(
             }
         }
         refresh_todoist_field(&mut metadata, "soft_due", json!(mapped.soft_due), now, None)?;
+        refresh_todoist_field(
+            &mut metadata,
+            "estimate_minutes",
+            json!(mapped.estimate_minutes),
+            now,
+            None,
+        )?;
         refresh_todoist_field(
             &mut metadata,
             "hard_due",
@@ -6989,6 +7118,7 @@ pub async fn materialize_next_todoist_occurrence_in_tx(
     next_task.remove("completed_via");
     next_task.remove("dropped_reason");
     next_task.remove("today_pin");
+    next_task.remove("today_since");
     let provenance = next_task
         .entry("provenance")
         .or_insert_with(|| json!({}))
@@ -7139,6 +7269,7 @@ async fn materialize_unparseable_completed_occurrence_in_tx(
     task.remove("dropped_at");
     task.remove("dropped_reason");
     task.remove("today_pin");
+    task.remove("today_since");
     if let Some(provenance) = task.get_mut("provenance").and_then(Value::as_object_mut) {
         provenance.insert("created_at".to_owned(), json!(completed_at));
         provenance.insert("created_by".to_owned(), json!("todoist"));
@@ -8342,6 +8473,18 @@ mod tests {
     }
 
     #[test]
+    fn candidate_views_parse_including_quick_and_today() {
+        let view = |raw: &str| candidate_view(&parse_candidate_query(Some(raw)).unwrap());
+        assert_eq!(view("").unwrap(), TaskView::Next);
+        assert_eq!(view("view=quick").unwrap(), TaskView::Quick);
+        assert_eq!(view("view=today").unwrap(), TaskView::Today);
+        assert_eq!(view("view=triage").unwrap(), TaskView::Triage);
+        assert_eq!(view("view=all&deliberate_all=true").unwrap(), TaskView::All);
+        assert!(view("view=all").is_err());
+        assert!(view("view=soon").is_err());
+    }
+
+    #[test]
     fn public_strings_and_portable_numeric_ranges_fail_closed() {
         let writer = auth(&["task.write"]);
         let capture = CaptureItem {
@@ -8358,6 +8501,7 @@ mod tests {
             cost_of_delay: None,
             required_contexts: None,
             estimate_minutes: None,
+            today: None,
         };
         assert!(validate_capture_item(&writer, &capture).is_err());
         assert!(validate_correction_value("title", &json!("bad\0title")).is_err());
@@ -8483,6 +8627,7 @@ mod tests {
                 }), "agent:codex"),
                 "required_contexts": cell(json!(["home", "online"]), "agent:codex"),
                 "today_pin": cell(json!("2026-08-27"), "owner"),
+                "today_since": cell(json!("2026-08-25"), "owner"),
                 "provenance": {
                     "captured_by": "agent:codex",
                     "created_at": "2026-08-27T07:00:00Z"
@@ -8497,6 +8642,8 @@ mod tests {
         assert_eq!(projection.cost_period.as_deref(), Some("week"));
         assert_eq!(projection.required_contexts, ["home", "online"]);
         assert_eq!(projection.today_pin.unwrap().to_string(), "2026-08-27");
+        assert_eq!(projection.today_since.unwrap().to_string(), "2026-08-25");
+        assert_eq!(projection.provenance["today_since"], "owner");
         assert_eq!(projection.provenance["soft_due"], "agent:codex");
     }
 

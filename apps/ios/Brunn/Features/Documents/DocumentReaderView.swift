@@ -96,14 +96,18 @@ struct DocumentReaderView: View {
             .accessibilityAddTraits(.isHeader)
             .accessibilityIdentifier("document-title")
 
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Published \(DisplayDate.metadata(document.publishedAt))")
-            if document.version > 1 {
-                Text("Updated \(DisplayDate.metadata(document.updatedAt)) · version \(document.version)")
+        if document.publishedAt != nil || (document.version > 1 && document.updatedAt != nil) {
+            VStack(alignment: .leading, spacing: 4) {
+                if let publishedAt = document.publishedAt {
+                    Text("Published \(DisplayDate.metadata(publishedAt))")
+                }
+                if document.version > 1, let updatedAt = document.updatedAt {
+                    Text("Updated \(DisplayDate.metadata(updatedAt)) · version \(document.version)")
+                }
             }
+            .font(.caption)
+            .foregroundStyle(BrunnTheme.ink)
         }
-        .font(.caption)
-        .foregroundStyle(BrunnTheme.ink)
 
         if request.version != nil {
             VStack(alignment: .leading, spacing: 8) {

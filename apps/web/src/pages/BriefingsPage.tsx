@@ -1,7 +1,6 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ChevronsDown, Sunrise } from "lucide-react";
-import { MarkdownView } from "../components/MarkdownView";
 import { Page, PageHeader, Section } from "../components/Page";
 import {
   EmptyState,
@@ -90,6 +89,14 @@ export function BriefingsPage() {
   );
 }
 
+/** First headline of an edition as plain text: emphasis and links stripped. */
+function plainHeadline(markdown: string): string {
+  return markdown
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[*_`]+/g, "")
+    .trim();
+}
+
 function BriefingListCard({ row }: { row: BriefingListRow }) {
   return (
     <Link
@@ -104,11 +111,8 @@ function BriefingListCard({ row }: { row: BriefingListRow }) {
         </div>
         <span>{formatRelative(row.generated_at)}</span>
       </header>
-      {row.summary_md.length ? (
-        <MarkdownView
-          className="briefing-card-summary"
-          markdown={row.summary_md[0]}
-        />
+      {row.first_headline ? (
+        <p className="briefing-card-summary">{plainHeadline(row.first_headline)}</p>
       ) : null}
       <footer>
         {row.section_titles.map((title) => (

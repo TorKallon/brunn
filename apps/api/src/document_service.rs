@@ -28,6 +28,12 @@ const SOURCE_LIMIT: usize = 32;
 const SOURCE_LABEL_LIMIT_CHARS: usize = 240;
 const SOURCE_URL_LIMIT_CHARS: usize = 2_048;
 
+/// Reserved slug served from the build, not the database.
+pub const AGENT_ORIENTATION_SLUG: &str = "agent-orientation";
+const AGENT_ORIENTATION_TITLE: &str = "Brunn agent orientation";
+const AGENT_ORIENTATION_SUMMARY: &str = "Background rules every agent must know before writing: task enrichment, briefing generation, nightly project status, dreaming.";
+const AGENT_ORIENTATION_MD: &str = include_str!("orientation/agent-orientation.md");
+
 static DOCUMENT_SLUG: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])$").expect("human document slug regex")
 });
@@ -263,6 +269,11 @@ pub async fn publish(
 ) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
     auth.require(Capability::Save)?;
     validate_publish_request(&request)?;
+    if request.slug == AGENT_ORIENTATION_SLUG {
+        return Err(ApiError::invalid(
+            "agent-orientation is a reserved slug served from the Brunn build",
+        ));
+    }
 
     let path = document_entry_path(&request.slug);
     let content = render_document_markdown(&request.title, &request.body_md);
@@ -536,6 +547,42 @@ fn validate_stored_document(slug: &str, document: &DocumentMetadata) -> ApiResul
     Ok(())
 }
 
+/// The embedded orientation document in the stored-document response shape.
+/// Entry-backed keys (`path`, `entry_ref`, `version_ref`, `published_at`,
+/// `updated_at`) are null: there is no entry, and no transaction is opened, so
+/// the envelope also carries no `workspace_generation` or `corpus_revision`.
+fn agent_orientation_document(
+    public_url: &str,
+    requested_version: Option<i64>,
+) -> ApiResult<Value> {
+    if requested_version.is_some_and(|version| version != 1) {
+        return Err(ApiError::not_found(
+            "document_not_found",
+            AGENT_ORIENTATION_SLUG,
+        ));
+    }
+    Ok(json!({
+        "slug": AGENT_ORIENTATION_SLUG,
+        "title": AGENT_ORIENTATION_TITLE,
+        "summary": AGENT_ORIENTATION_SUMMARY,
+        "sources": [],
+        "body_md": document_body(AGENT_ORIENTATION_TITLE, AGENT_ORIENTATION_MD)?,
+        "markdown": AGENT_ORIENTATION_MD,
+        "path": null,
+        "entry_ref": null,
+        "version_ref": null,
+        "version": 1,
+        "current_version": 1,
+        "published_at": null,
+        "updated_at": null,
+        "versions": [],
+        "url": document_url(public_url, AGENT_ORIENTATION_SLUG, None),
+        "version_url": document_url(public_url, AGENT_ORIENTATION_SLUG, Some(1)),
+        "app_url": document_app_url(AGENT_ORIENTATION_SLUG, None),
+        "app_version_url": document_app_url(AGENT_ORIENTATION_SLUG, Some(1)),
+    }))
+}
+
 pub async fn get_document(
     State(state): State<AppState>,
     Extension(auth): Extension<AuthContext>,
@@ -546,6 +593,10 @@ pub async fn get_document(
     validate_slug(&slug)?;
     if query.version.is_some_and(|version| version < 1) {
         return Err(ApiError::invalid("version must be a positive integer"));
+    }
+    if slug == AGENT_ORIENTATION_SLUG {
+        let data = agent_orientation_document(&state.config.public_url, query.version)?;
+        return Ok(Json(WorkspaceEnvelope::complete(data)));
     }
     let mut tx = state.begin_read(&auth).await?;
     let mut data = get_document_in_tx(

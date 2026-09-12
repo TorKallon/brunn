@@ -173,9 +173,10 @@ struct AgentTasksView: View {
 
                     AgentTaskSurface(
                         projection: projection,
+                        todayTasks: model.todayTasks,
+                        quickTasks: model.quickTasks,
                         doneToday: model.doneToday,
                         projects: model.taskProjects,
-                        todoistStatus: model.todoistStatus,
                         canWrite: model.canWriteTasks,
                         canRequestWriteAccess: !model.isDemo && model.connectionValidated,
                         hasStoredWriteAccess: model.hasStoredDeviceTaskCredential,
@@ -189,6 +190,7 @@ struct AgentTasksView: View {
                         requestWriteAccess: {
                             Task { await model.bootstrapDeviceTaskAccess() }
                         },
+                        capture: { text in await model.captureTodayTask(text) },
                         complete: complete,
                         open: { candidate in
                             Task { await model.openTask(reference: candidate.taskRef) }
@@ -357,9 +359,10 @@ private extension Array {
 
 private struct AgentTaskSurface: View {
     let projection: AgentTaskTodayProjection
+    let todayTasks: [AgentTaskCandidate]
+    let quickTasks: [AgentTaskCandidate]
     let doneToday: AgentTaskDoneSummaryData?
     let projects: [AgentTaskProject]
-    let todoistStatus: AgentTaskTodoistStatus?
     let canWrite: Bool
     let canRequestWriteAccess: Bool
     let hasStoredWriteAccess: Bool
@@ -371,6 +374,7 @@ private struct AgentTaskSurface: View {
     let moreTapCount: Int
     let nextRemaining: Int
     let requestWriteAccess: () -> Void
+    let capture: (String) async -> Bool
     let complete: (AgentTaskCandidate) -> Void
     let open: (AgentTaskCandidate) -> Void
     let action: (AgentTaskCandidate, AgentTaskUpdateOperation) -> Void
@@ -380,9 +384,14 @@ private struct AgentTaskSurface: View {
     let openProject: (AgentTaskProject) -> Void
 
     @State private var doneExpanded = false
+    @State private var captureText = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if !projects.isEmpty {
+                ProjectStatusStrip(projects: projects, open: openProject)
+            }
+
             if !canWrite {
                 VStack(alignment: .leading, spacing: 9) {
                     Label("Task actions are locked on this iPhone", systemImage: "lock")
@@ -437,8 +446,6 @@ private struct AgentTaskSurface: View {
                     .accessibilityIdentifier("task-message")
             }
 
-            AgentTaskTodoistStatusCard(status: todoistStatus)
-
             if !projection.urgent.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     TaskSectionHeader(
@@ -453,6 +460,54 @@ private struct AgentTaskSurface: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("task-urgent")
             }
+
+            VStack(alignment: .leading, spacing: 8) {
+                TaskSectionHeader(
+                    title: "TODAY",
+                    count: todayTasks.count,
+                    tint: BrunnTheme.signal
+                )
+                TextField("Add for today", text: $captureText)
+                    .textFieldStyle(.roundedBorder)
+                    .submitLabel(.done)
+                    .onSubmit(submitCapture)
+                    .disabled(!canWrite)
+                    .accessibilityIdentifier("task-today-capture")
+                if todayTasks.isEmpty {
+                    Text("Nothing captured for today.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .accessibilityIdentifier("task-today-empty")
+                } else {
+                    ForEach(todayTasks) { candidate in
+                        actionRow(candidate, trailer: ageBadge(candidate), inToday: true)
+                    }
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("task-today")
+
+            VStack(alignment: .leading, spacing: 8) {
+                TaskSectionHeader(
+                    title: "QUICK",
+                    count: quickTasks.count,
+                    tint: BrunnTheme.pulse
+                )
+                if quickTasks.isEmpty {
+                    Text("No quick tasks are ready.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .accessibilityIdentifier("task-quick-empty")
+                } else {
+                    ForEach(quickTasks) { candidate in
+                        actionRow(candidate, trailer: candidate.estimateMinutes.map { "\($0) min" })
+                    }
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("task-quick")
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
@@ -552,67 +607,53 @@ private struct AgentTaskSurface: View {
                         .stroke(BrunnTheme.success.opacity(0.30), lineWidth: 1)
                 }
             }
-
-            if !projects.isEmpty {
-                VStack(alignment: .leading, spacing: 9) {
-                    TaskSectionHeader(
-                        title: "PROJECTS",
-                        count: projects.count,
-                        tint: BrunnTheme.pulse
-                    )
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(projects.prefix(10)) { project in
-                                Button {
-                                    openProject(project)
-                                } label: {
-                                    VStack(alignment: .leading, spacing: 7) {
-                                        Text(project.title)
-                                            .font(.headline)
-                                            .foregroundStyle(BrunnTheme.ink)
-                                            .lineLimit(2)
-                                        Text("\(project.openTaskCount) open")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                        StatusPill(
-                                            text: project.interest.uppercased(),
-                                            color: project.interest == "hot" ? BrunnTheme.amber : BrunnTheme.pulse
-                                        )
-                                    }
-                                    .padding(12)
-                                    .frame(width: 172, alignment: .leading)
-                                    .frame(minHeight: 112, alignment: .leading)
-                                    .background(.background, in: RoundedRectangle(cornerRadius: 8))
-                                    .overlay {
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(BrunnTheme.line, lineWidth: 1)
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityIdentifier("task-project-\(project.slug)")
-                            }
-                        }
-                    }
-                }
-                .accessibilityIdentifier("task-projects")
-            }
-
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("agent-task-surface")
     }
 
+    private func submitCapture() {
+        let text = captureText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        captureText = ""
+        Task {
+            let accepted = await capture(text)
+            if !accepted, captureText.isEmpty {
+                captureText = text
+            }
+        }
+    }
+
+    /// "1d", "2d", … since the task joined today's list; nothing on its first day.
+    private func ageBadge(_ candidate: AgentTaskCandidate) -> String? {
+        guard let days = OwnerDay.daysSince(candidate.todaySince), days > 0 else { return nil }
+        return "\(days)d"
+    }
+
     @ViewBuilder
-    private func actionRow(_ candidate: AgentTaskCandidate) -> some View {
+    private func actionRow(
+        _ candidate: AgentTaskCandidate,
+        trailer: String? = nil,
+        inToday: Bool = false
+    ) -> some View {
         let row = AgentTaskCandidateRow(
             candidate: candidate,
             canWrite: canWrite,
             isMutating: mutatingRefs.contains(candidate.taskRef),
+            trailer: trailer,
             complete: { complete(candidate) },
             open: { open(candidate) }
         )
         if canWrite {
             row.contextMenu {
+                if inToday {
+                    Button("Complete", systemImage: "checkmark.circle") {
+                        complete(candidate)
+                    }
+                    Button("Move to queue", systemImage: "tray.and.arrow.down") {
+                        action(candidate, .sweep)
+                    }
+                }
                 Button("Tomorrow", systemImage: "sunrise") {
                     action(candidate, .snooze(days: 1))
                 }
@@ -628,11 +669,13 @@ private struct AgentTaskSurface: View {
                 Button("Wait on…", systemImage: "hourglass") {
                     waitOn(candidate)
                 }
-                Button(
-                    candidate.pinned ? "Unpin from Today" : "Pin to Today",
-                    systemImage: candidate.pinned ? "pin.slash" : "pin"
-                ) {
-                    action(candidate, candidate.pinned ? .unpin : .pinToday)
+                if !inToday {
+                    Button(
+                        candidate.pinned ? "Unpin from Today" : "Pin to Today",
+                        systemImage: candidate.pinned ? "pin.slash" : "pin"
+                    ) {
+                        action(candidate, candidate.pinned ? .unpin : .pinToday)
+                    }
                 }
                 if candidate.tier == 1 && candidate.hasInferredProvenance {
                     Button("Confirm hard deadline", systemImage: "checkmark.seal") {
@@ -649,103 +692,96 @@ private struct AgentTaskSurface: View {
     }
 }
 
-private struct AgentTaskTodoistStatusCard: View {
-    let status: AgentTaskTodoistStatus?
-
-    private var hasFailure: Bool {
-        guard let status else { return false }
-        if status.lastErrorCode != nil { return true }
-        return ["error", "failed", "failure"].contains(status.lastOutcome?.lowercased())
+private extension AgentTaskProjectStatus {
+    var tint: Color {
+        switch self {
+        case .red: BrunnTheme.red
+        case .yellow: BrunnTheme.amber
+        case .green: BrunnTheme.success
+        case .grey: Color.secondary
+        }
     }
+}
 
-    private var isActive: Bool {
-        status?.environmentEnabled == true
-            && status?.tokenConfigured == true
-            && status?.effectiveMode == "pull"
-            && !hasFailure
-    }
+/// One scrolling row of project chips: red, yellow, then green; grey
+/// projects fold into a single "idle" chip until tapped.
+private struct ProjectStatusStrip: View {
+    let projects: [AgentTaskProject]
+    let open: (AgentTaskProject) -> Void
 
-    private var title: String {
-        guard let status else { return "Todoist status unavailable" }
-        if !status.tokenConfigured { return "Todoist isn’t connected" }
-        if !status.environmentEnabled || status.effectiveMode == "off" {
-            return "Todoist import is off"
-        }
-        if hasFailure { return "Todoist import needs attention" }
-        if status.effectiveMode == "import_once" { return "Todoist one-time import" }
-        return "Todoist pull is active"
-    }
+    @State private var showsIdle = false
 
-    private var detail: String {
-        guard let status else {
-            return "Pull to refresh after the server connection is restored."
-        }
-        if !status.tokenConfigured {
-            return "No Todoist tasks can import until a token is saved in Web Settings."
-        }
-        if !status.environmentEnabled {
-            return "The deployment safety switch is off, so imports cannot run."
-        }
-        if status.effectiveMode == "off" {
-            return "Import is saved as off. Change it in Web Settings when you want to pull tasks."
-        }
-        if hasFailure {
-            if let code = status.lastErrorCode {
-                return "The last pull failed with the content-free status code \(code)."
+    private static let rank: [AgentTaskProjectStatus: Int] = [.red: 0, .yellow: 1, .green: 2]
+
+    private var ranked: [AgentTaskProject] {
+        projects.enumerated()
+            .compactMap { offset, project in
+                Self.rank[project.status ?? .grey].map { (project: project, order: ($0, offset)) }
             }
-            return "The last pull failed. Open Web Settings to review the integration."
-        }
-        if let outcome = status.lastOutcome {
-            return "Last pull: \(outcome.replacingOccurrences(of: "_", with: " "))."
-        }
-        return "Waiting for the first pull."
+            .sorted { $0.order < $1.order }
+            .map(\.project)
     }
 
-    private var tint: Color {
-        hasFailure ? BrunnTheme.red : isActive ? BrunnTheme.signal : BrunnTheme.amber
+    private var idle: [AgentTaskProject] {
+        projects.filter { Self.rank[$0.status ?? .grey] == nil }
     }
 
-    private var symbol: String {
-        hasFailure
-            ? "exclamationmark.triangle"
-            : isActive
-                ? "arrow.triangle.2.circlepath.circle"
-                : "pause.circle"
-    }
-
-    private var showsSettingsLink: Bool {
-        guard let status else { return true }
-        return hasFailure
-            || !status.tokenConfigured
-            || !status.environmentEnabled
-            || status.effectiveMode == "off"
+    private var hasNoStatusYet: Bool {
+        ranked.isEmpty && idle.allSatisfy { ($0.statusReason ?? "").isEmpty }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: symbol)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(tint)
-            Text(detail)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-
-            if showsSettingsLink,
-               let settingsURL = URL(string: "https://brunn.ai/settings")
-            {
-                Link(destination: settingsURL) {
-                    Label("Open Web Settings", systemImage: "safari")
-                        .frame(minHeight: 44)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                if hasNoStatusYet {
+                    chip(title: "No status yet", tint: Color.secondary)
+                } else {
+                    ForEach(ranked) { projectChip($0) }
+                    if showsIdle {
+                        ForEach(idle) { projectChip($0) }
+                    } else if !idle.isEmpty {
+                        Button {
+                            showsIdle = true
+                        } label: {
+                            chip(title: "\(idle.count) idle", tint: Color.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("task-projects-idle")
+                    }
                 }
-                .accessibilityIdentifier("task-todoist-settings")
             }
+            .padding(.vertical, 2)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background, in: RoundedRectangle(cornerRadius: 8))
-        .overlay { RoundedRectangle(cornerRadius: 8).stroke(BrunnTheme.line, lineWidth: 1) }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("task-todoist-status")
+        .accessibilityIdentifier("task-projects")
+    }
+
+    private func projectChip(_ project: AgentTaskProject) -> some View {
+        Button {
+            open(project)
+        } label: {
+            chip(title: project.title, tint: (project.status ?? .grey).tint)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(project.title), \((project.status ?? .grey).rawValue)")
+        .accessibilityIdentifier("task-project-\(project.slug)")
+    }
+
+    private func chip(title: String, tint: Color) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(tint)
+                .frame(width: 8, height: 8)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(BrunnTheme.ink)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 11)
+        .frame(minHeight: 36)
+        .background(.background, in: Capsule())
+        .overlay { Capsule().stroke(BrunnTheme.line, lineWidth: 1) }
     }
 }
 
@@ -775,6 +811,7 @@ private struct AgentTaskCandidateRow: View {
     let candidate: AgentTaskCandidate
     let canWrite: Bool
     let isMutating: Bool
+    var trailer: String? = nil
     let complete: () -> Void
     let open: () -> Void
 
@@ -822,6 +859,13 @@ private struct AgentTaskCandidateRow: View {
                                 .tracking(0.4)
                                 .foregroundStyle(BrunnTheme.pulse)
                                 .accessibilityLabel("Imported from Todoist")
+                        }
+                        if let trailer {
+                            Spacer(minLength: 4)
+                            Text(trailer)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .fixedSize()
                         }
                     }
                     if let project = candidate.project {
@@ -1104,17 +1148,52 @@ private struct AgentTaskProjectDetailView: View {
         .bounded(next: state.next, waiting: state.waiting)
     }
 
+    private var statusLine: String {
+        let reason = (state.project.statusReason ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        var text = reason.isEmpty ? "No status yet" : reason
+        if let computedOn = state.project.statusComputedOn,
+           let days = OwnerDay.daysSince(computedOn), days > 1
+        {
+            text += " · as of \(DisplayDate.metadata(computedOn))"
+        }
+        return text
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text(state.project.title)
                     .font(.largeTitle.bold())
                     .foregroundStyle(BrunnTheme.ink)
-                HStack {
-                    StatusPill(text: state.project.interest.uppercased(), color: BrunnTheme.pulse)
-                    Text("\(state.urgentCount) urgent · \(state.parkedCount) parked")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+
+                HStack(alignment: .firstTextBaseline, spacing: 9) {
+                    Circle()
+                        .fill((state.project.status ?? .grey).tint)
+                        .frame(width: 10, height: 10)
+                        .accessibilityLabel((state.project.status ?? .grey).rawValue)
+                    Text(statusLine)
+                        .font(.body)
+                        .foregroundStyle(BrunnTheme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("task-project-status")
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Open tasks").font(.headline)
+                    HStack {
+                        StatusPill(text: state.project.interest.uppercased(), color: BrunnTheme.pulse)
+                        Text("\(state.urgentCount) urgent · \(state.parkedCount) parked")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(taskProjection.next) { candidate in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(candidate.title).font(.subheadline.weight(.semibold))
+                            Text(candidate.reason).font(.caption).foregroundStyle(.secondary)
+                        }
+                        .accessibilityIdentifier("task-project-next-\(candidate.taskRef)")
+                    }
                 }
 
                 if let checkpoint = state.checkpoint {
@@ -1137,17 +1216,6 @@ private struct AgentTaskProjectDetailView: View {
                     .background(.background, in: RoundedRectangle(cornerRadius: 8))
                     .overlay {
                         RoundedRectangle(cornerRadius: 8).stroke(BrunnTheme.line, lineWidth: 1)
-                    }
-                }
-
-                if !taskProjection.next.isEmpty {
-                    Text("Next 3").font(.headline)
-                    ForEach(taskProjection.next) { candidate in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(candidate.title).font(.subheadline.weight(.semibold))
-                            Text(candidate.reason).font(.caption).foregroundStyle(.secondary)
-                        }
-                        .accessibilityIdentifier("task-project-next-\(candidate.taskRef)")
                     }
                 }
 
@@ -1229,8 +1297,7 @@ struct BriefingReader: View {
     let cachedAt: Date?
     let focusedItemID: String?
 
-    @State private var showAllSummary = true
-    @State private var expandedItems: Set<String> = []
+    @State private var expandedItemID: String?
     @State private var showsHistory = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1239,20 +1306,28 @@ struct BriefingReader: View {
             BriefingReaderHeader(briefing: briefing, cachedAt: cachedAt)
 
             if let payload = briefing.briefing {
-                if let summary = payload.summaryMD, !summary.isEmpty {
-                    BriefingSummary(
-                        lines: summary,
-                        showAll: $showAllSummary
-                    )
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(payload.sections ?? []) { section in
+                        ForEach(section.items) { item in
+                            BriefingItemDisclosure(
+                                item: item,
+                                sectionTitle: section.title,
+                                isExpanded: expandedItemID == item.id,
+                                onToggle: { toggle(item.id) }
+                            )
+                            .id(item.id)
+                        }
+                    }
                 }
-
-                ForEach(BriefingDisplaySection.grouped(payload.sections ?? [])) { section in
-                    BriefingSectionView(
-                        section: section,
-                        expandedItems: $expandedItems,
-                        toggle: toggle
-                    )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.background)
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(Color(uiColor: .separator))
+                        .frame(height: 1)
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("briefing-items")
             } else {
                 LegacyBriefing(markdown: briefing.markdown)
             }
@@ -1269,24 +1344,19 @@ struct BriefingReader: View {
         .accessibilityIdentifier("briefing-reader")
         .onAppear {
             if let focusedItemID {
-                expandedItems.insert(focusedItemID)
+                expandedItemID = focusedItemID
             }
         }
         .onChange(of: focusedItemID) { _, newValue in
             if let newValue {
-                expandedItems.insert(newValue)
+                expandedItemID = newValue
             }
         }
     }
 
+    /// One item open at a time: tapping another row swaps, tapping the open row closes.
     private func toggle(_ id: String) {
-        let update = {
-            if expandedItems.contains(id) {
-                expandedItems.remove(id)
-            } else {
-                expandedItems.insert(id)
-            }
-        }
+        let update = { expandedItemID = expandedItemID == id ? nil : id }
         if reduceMotion {
             update()
         } else {
@@ -1345,138 +1415,6 @@ private struct BriefingReaderHeader: View {
             text += " · Updated \(updated)"
         }
         return text
-    }
-}
-
-private struct BriefingSummary: View {
-    let lines: [String]
-    @Binding var showAll: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("30-SECOND SUMMARY")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.secondary)
-
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(Array(visibleLines.enumerated()), id: \.offset) { index, line in
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Circle()
-                            .fill(BrunnTheme.ink)
-                            .frame(width: 5, height: 5)
-                            .accessibilityHidden(true)
-                        SafeMarkdownText(markdown: line)
-                            .font(.body)
-                            .foregroundStyle(BrunnTheme.ink)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("briefing-summary-line-\(index)")
-                }
-            }
-
-            if lines.count > previewCount {
-                Button(showAll ? "Show less" : "\(lines.count - previewCount) more") {
-                    let update = { showAll.toggle() }
-                    if reduceMotion {
-                        update()
-                    } else {
-                        withAnimation(.easeInOut(duration: 0.18), update)
-                    }
-                }
-                .buttonStyle(.plain)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(BrunnTheme.ink)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .frame(minHeight: 44)
-                .background(.background, in: RoundedRectangle(cornerRadius: 6))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color(uiColor: .separator), lineWidth: 1)
-                }
-                .accessibilityLabel(
-                    showAll
-                        ? "Show fewer summary items"
-                        : "Show all \(lines.count) summary items"
-                )
-                .accessibilityIdentifier("briefing-summary-toggle")
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 13)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background, in: RoundedRectangle(cornerRadius: 6))
-        .overlay {
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(BrunnTheme.line, lineWidth: 1)
-        }
-        .overlay(alignment: .leading) {
-            UnevenRoundedRectangle(
-                topLeadingRadius: 6,
-                bottomLeadingRadius: 6
-            )
-            .fill(BrunnTheme.signal)
-            .frame(width: 3)
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("briefing-summary")
-    }
-
-    private let previewCount = 3
-
-    private var visibleLines: [String] {
-        showAll ? lines : Array(lines.prefix(previewCount))
-    }
-}
-
-private struct BriefingSectionView: View {
-    let section: BriefingDisplaySection
-    @Binding var expandedItems: Set<String>
-    let toggle: (String) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 9) {
-                Text(section.title)
-                    .font(.headline)
-                    .foregroundStyle(BrunnTheme.ink)
-                Text("\(section.itemCount) \(section.itemCount == 1 ? "item" : "items")")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-
-            Divider()
-
-            ForEach(section.parts) { part in
-                ForEach(part.section.items) { item in
-                    BriefingItemDisclosure(
-                        item: item,
-                        sectionTitle: part.itemLabel,
-                        isExpanded: expandedItems.contains(item.id),
-                        onToggle: { toggle(item.id) }
-                    )
-                    .id(item.id)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(Color(uiColor: .separator))
-                .frame(height: 1)
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier(
-            "briefing-section-\(section.parts.map(\.section.topic).joined(separator: "-"))"
-        )
     }
 }
 

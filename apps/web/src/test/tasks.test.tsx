@@ -6,11 +6,9 @@ import {
   candidate,
   doneToday,
   nextCandidates,
-  taskContexts,
   taskDetail,
   taskProjectState,
   taskProjects,
-  taskSettings,
   todoistStatus,
   urgentCandidates,
 } from "./taskFixtures";
@@ -86,11 +84,13 @@ describe("agent-first task surfaces", () => {
     expect(
       within(doneRegion).queryByRole("listitem"),
     ).not.toBeInTheDocument();
-    expect(
-      within(screen.getByRole("region", { name: "Task projects" })).getAllByRole(
-        "link",
-      ),
-    ).toHaveLength(5);
+    const projectLinks = within(
+      screen.getByRole("region", { name: "Task projects" }),
+    ).getAllByRole("link");
+    expect(projectLinks).toHaveLength(5);
+    expect(within(projectLinks[0]).getByRole("img", { name: "Status green" })).toHaveClass(
+      "status-green",
+    );
     expect(within(next).queryByText("Next task 6")).not.toBeInTheDocument();
     expect(
       within(urgent).getAllByText("hard deadline in 2 days (est.)").length,
@@ -549,6 +549,8 @@ describe("agent-first task surfaces", () => {
 
     renderApp("/projects/brunn");
     expect(await screen.findByRole("heading", { name: "Brunn" })).toBeInTheDocument();
+    expect(screen.getByText("No checkpoint in 9 days · as of 2026-08-20")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Status yellow" })).toHaveClass("status-yellow");
     expect(screen.getByText("Ship agent-first tasks")).toBeInTheDocument();
     expect(screen.getByText("Finish gate 12c")).toBeInTheDocument();
     expect(screen.getByText("Wait for review")).toBeInTheDocument();
@@ -556,54 +558,24 @@ describe("agent-first task surfaces", () => {
 });
 
 describe("task settings and trust boundaries", () => {
-  it("manages contexts, engine defaults, and Todoist with dual truth", async () => {
-    const mutationBodies: Array<{ path: string; body: unknown }> = [];
-    const record = (path: string, body: unknown) => {
-      mutationBodies.push({ path, body });
-      return { status: "committed", data: { replayed: false } };
-    };
+  it("configures Todoist from its own section with dual truth", async () => {
+    let configureBody: unknown;
     installApiMock({
-      "POST /api/v1/workspace/contexts/merge": async (request: Request) =>
-        record("merge", await request.json()),
-      "PATCH /api/v1/workspace/contexts/phone": async (request: Request) =>
-        record("archive", await request.json()),
-      "PUT /api/v1/workspace/contexts/available/web": async (request: Request) =>
-        record("surface", await request.json()),
-      "PUT /api/v1/workspace/tasks/settings": async (request: Request) => {
-        const body = await request.json();
-        mutationBodies.push({ path: "settings", body });
-        return {
-          status: "committed",
-          data: { settings: taskSettings.settings, replayed: false },
-        };
+      "PUT /api/v1/workspace/integrations/todoist/config": async (request: Request) => {
+        configureBody = await request.json();
+        return { status: "committed", data: { replayed: false } };
       },
-      "PUT /api/v1/workspace/integrations/todoist/config": async (request: Request) =>
-        record("todoist", await request.json()),
-      "POST /api/v1/workspace/integrations/todoist/pull": async (request: Request) =>
-        record("pull", await request.json()),
     });
     const user = userEvent.setup();
     renderApp("/settings");
 
-    expect(await screen.findByRole("heading", { name: "Contexts" })).toBeInTheDocument();
-    expect(screen.getByText("web")).toBeInTheDocument();
-    expect(screen.getByText("Suggested archive")).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText("Merge from"), "phone");
-    await user.selectOptions(screen.getByLabelText("Merge into"), "online");
-    await user.click(screen.getByRole("button", { name: "Merge contexts" }));
-
-    await user.clear(screen.getByLabelText("Hard deadline window (days)"));
-    await user.type(screen.getByLabelText("Hard deadline window (days)"), "9");
-    await user.click(screen.getByRole("button", { name: "Save engine settings" }));
-
+    expect(await screen.findByRole("heading", { name: "Todoist" })).toBeInTheDocument();
+    for (const heading of ["Contexts", "Readiness engine", "Task operations"]) {
+      expect(screen.queryByRole("heading", { name: heading })).not.toBeInTheDocument();
+    }
     expect(screen.getByText("Saved mode").parentElement).toHaveTextContent("Pull");
     expect(screen.getByText("Effective mode").parentElement).toHaveTextContent("Off");
     expect(screen.getByText("Environment kill switch is off")).toBeInTheDocument();
-    expect(
-      screen.getByText("Environment enabled · Effective enabled"),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/^Last /)).toBeInTheDocument();
-    expect(screen.getByText(/^Next /)).toBeInTheDocument();
     expect(screen.queryByText(/api token/i)).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Todoist mode"), "off");
     await user.click(screen.getByRole("button", { name: "Save Todoist mode" }));
@@ -613,25 +585,10 @@ describe("task settings and trust boundaries", () => {
       "Enable the environment gate, credential, and a pull mode first",
     );
 
-    await waitFor(() => {
-      expect(mutationBodies.map((item) => item.path)).toEqual(
-        expect.arrayContaining(["merge", "settings", "todoist"]),
-      );
-    });
-    expect(
-      mutationBodies.find((item) => item.path === "settings")?.body,
-    ).toEqual(
-      expect.objectContaining({
-        expected_version: 4,
-        hard_lead_days: 9,
-        due_day_local_time: "07:00",
-        quiet_override_enabled: true,
-      }),
-    );
-    expect(
-      mutationBodies.find((item) => item.path === "todoist")?.body,
-    ).toEqual(
-      expect.objectContaining({ expected_generation: 3, mode: "off" }),
+    await waitFor(() =>
+      expect(configureBody).toEqual(
+        expect.objectContaining({ expected_generation: 3, mode: "off" }),
+      ),
     );
   });
 
@@ -662,26 +619,17 @@ describe("task settings and trust boundaries", () => {
     );
   });
 
-  it("gates task.write and integration.manage independently", async () => {
+  it("keeps Todoist configuration behind integration.manage", async () => {
     const me = structuredClone(defaultMe);
     me.data.capabilities = me.data.capabilities.filter(
-      (capability) => !["task.write", "integration.manage"].includes(capability),
+      (capability) => capability !== "integration.manage",
     );
-    installApiMock({
-      "GET /api/v1/me": me,
-      "GET /api/v1/workspace/contexts": { status: "complete", data: taskContexts },
-      "GET /api/v1/workspace/projects": { status: "complete", data: taskProjects },
-      "GET /api/v1/workspace/tasks/done-summary": { status: "complete", data: doneToday },
-      "GET /api/v1/workspace/tasks/settings": { status: "complete", data: taskSettings },
-      "GET /api/v1/workspace/integrations/todoist/status": { status: "complete", data: todoistStatus },
-    });
+    installApiMock({ "GET /api/v1/me": me });
     renderApp("/settings");
 
-    expect(await screen.findByText("Task actions are view only")).toBeInTheDocument();
     expect(
       await screen.findByText("Todoist configuration is owner-only"),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Merge contexts" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save Todoist mode" })).not.toBeInTheDocument();
   });
 });

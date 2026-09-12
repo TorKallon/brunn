@@ -61,7 +61,13 @@ struct ReviewView: View {
                             Text("Nothing needs a decision. Older run notes are available below.")
                                 .foregroundStyle(.secondary)
                         }
-                    } header: { Text("\(data.reviewItems.count) for review") }
+                    } header: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(data.reviewItems.count) for review")
+                            Text("\(data.counts.approvedHeld) held · \(data.counts.applied) applied")
+                                .font(.caption).textCase(nil)
+                        }
+                    }
                     if store.selectionLocked && !showingDetail {
                         Button("Return to unconfirmed decision") { showingDetail = true }
                     }
@@ -156,17 +162,14 @@ struct ReviewView: View {
     @ViewBuilder
     private func overview(_ data: DreamerReviewData) -> some View {
         Section {
-            Text("Concrete proposals and questions that need your decision.")
+            Text(reviewModeBanner(data))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("review-mode-banner")
             if !data.available {
                 Label(data.unavailableReason ?? "A complete review snapshot is unavailable.", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(BrunnTheme.amber)
             }
-            LabeledContent("Application mode", value: reviewLabel(data.mode ?? "Unavailable"))
-            if data.paused { Label("Dreaming paused", systemImage: "pause.circle") }
-            Text(data.mode == "report-only"
-                 ? "Approvals are held. No candidate is applied in report-only mode."
-                 : "Approval is recorded first. Application requires source and policy checks.")
-                .font(.footnote).foregroundStyle(.secondary)
             DisclosureGroup("Run status") {
                 if let attempt = data.lastAttempt {
                     LabeledContent("Last attempt", value: reviewLabel(attempt.outcome))
@@ -182,10 +185,49 @@ struct ReviewView: View {
                     Text("Runs can produce review items while leaving unfinished work for later.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-                LabeledContent("Approved and held", value: "\(data.counts.approvedHeld)")
-                LabeledContent("Applied", value: "\(data.counts.applied)")
             }
         }
+    }
+}
+
+/// What a decision does under the current Dreaming mode, in the owner's words.
+private func reviewModeBanner(_ data: DreamerReviewData) -> String {
+    if data.paused {
+        return "Dreaming is paused. Decisions are saved, but no run will act on them until it resumes."
+    }
+    if data.mode == "report-only" {
+        return "Report-only: your approvals are saved and held. Nothing is written until Dreaming is switched to full mode."
+    }
+    return "Full mode: approvals are written by the next run after their sources are re-checked."
+}
+
+private func reviewApproveConsequence(reportOnly: Bool) -> String {
+    reportOnly
+        ? "Saves your approval and holds it. It is written at the first run after full mode is switched on, after its sources are re-checked. If they change first, it comes back here."
+        : "Written now if its sources still match; otherwise it comes back here."
+}
+
+private let reviewRejectConsequence = "Final. Nothing is written and this proposal does not come back."
+private let reviewDeferConsequence = "Stays in this inbox. Nothing is written."
+private let reviewCorrectionConsequence = "Goes to the next run, which drafts a new version for you to review. Nothing is written until you approve that version."
+
+private func reviewDecisionStateLine(applicationStatus: String, item: DreamerReviewItem) -> String {
+    switch applicationStatus {
+    case "approved_held":
+        return "Approved · held. Applies at the first run after full mode is switched on; returns here if its sources change first."
+    case "applied":
+        if let path = item.candidate?.targetPath, !path.isEmpty {
+            return "Applied · written to \(path)"
+        }
+        return "Applied."
+    case "rejected":
+        return "Rejected · final."
+    case "deferred":
+        return "Deferred · still here, nothing written."
+    case "needs_changes":
+        return "Correction sent · a new version appears after the next run."
+    default:
+        return reviewLabel(applicationStatus)
     }
 }
 
@@ -212,10 +254,6 @@ private struct ReviewDetailView: View {
                     if store.selectionIsHistorical {
                         Text("Kept for reference. This note is not awaiting a decision and will not be applied.")
                             .font(.footnote).foregroundStyle(.secondary)
-                    }
-                    if !store.selectionIsHistorical && store.data?.mode == "report-only" {
-                        Label("Report-only: approvals are held; nothing is applied.", systemImage: "pause.circle")
-                            .font(.footnote).foregroundStyle(BrunnTheme.signal)
                     }
                     if !store.selectionIsHistorical && (store.changed || store.conflict)
                         && (store.decisionMessage == nil || store.hasReplacement) {
@@ -338,10 +376,6 @@ private struct ReviewDetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(item.kind == "question" ? "Your answer" : "Your decision").font(.headline)
             if !store.canDecide { Text("A connected owner session is required to record decisions.").font(.footnote) }
-            if item.kind != "question" && store.data?.mode == "report-only" {
-                Text("Approve records your decision and holds application until an authorized mode permits it.")
-                    .font(.footnote).foregroundStyle(.secondary)
-            }
             if let error = store.loadError {
                 Label("Decisions are unavailable until Review refreshes: \(error)", systemImage: "exclamationmark.icloud")
                     .font(.footnote).foregroundStyle(BrunnTheme.amber)
@@ -353,15 +387,18 @@ private struct ReviewDetailView: View {
             if item.kind == "question" {
                 correctionEditor(item, question: true)
             }
-            VStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 10) {
                 if item.kind != "question" {
                     decisionButton("Approve", action: .approve, blocked: item.approvalBlock != nil)
                         .buttonStyle(.borderedProminent)
+                    consequence(reviewApproveConsequence(reportOnly: store.data?.mode == "report-only"))
                 }
                 HStack(spacing: 12) {
                     decisionButton("Reject", action: .reject)
                     decisionButton("Defer", action: .defer)
                 }.buttonStyle(.bordered)
+                consequence("Reject: \(reviewRejectConsequence)")
+                consequence("Defer: \(reviewDeferConsequence)")
             }
             if item.kind != "question" {
                 DisclosureGroup("Suggest a correction") {
@@ -377,7 +414,12 @@ private struct ReviewDetailView: View {
             if let message = store.decisionMessage {
                 Label(store.hasReplacement ? "Decision recorded for the earlier candidate" : "Decision recorded",
                       systemImage: "checkmark.circle").foregroundStyle(BrunnTheme.success)
-                Text(message).font(.footnote)
+                if let status = store.decisionApplicationStatus, let item = store.displayedItem {
+                    Text(reviewDecisionStateLine(applicationStatus: status, item: item))
+                        .font(.subheadline)
+                        .accessibilityIdentifier("review-decision-state")
+                }
+                Text(message).font(.footnote).foregroundStyle(.secondary)
             }
             if let error = store.decisionError {
                 Label("Unable to confirm your decision", systemImage: "exclamationmark.triangle")
@@ -402,12 +444,18 @@ private struct ReviewDetailView: View {
                 .lineLimit(4...10).textFieldStyle(.roundedBorder)
                 .disabled(store.decisionsDisabled)
                 .accessibilityIdentifier("review-correction")
-            Text(question ? "Your answer is recorded for a fresh candidate and review." : "Your note is recorded for a fresh candidate and review.")
-                .font(.footnote)
             decisionButton(question ? "Save answer" : "Save correction", action: .correct,
                            blocked: (store.drafts[item.id]?.correction ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .buttonStyle(.bordered)
+            consequence(reviewCorrectionConsequence)
         }
+    }
+
+    private func consequence(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private func decisionButton(_ label: String, action: DreamerDecisionAction, blocked: Bool = false) -> some View {

@@ -24,7 +24,7 @@ export function DocumentPage() {
   const isHistorical = Boolean(
     document && document.version !== document.current_version,
   );
-  const freshness = document
+  const freshness = document?.published_at
     ? document.version > 1
       ? `Published ${formatDate(document.published_at)} · Updated ${formatDate(document.updated_at)}`
       : `Published ${formatDate(document.published_at)}`

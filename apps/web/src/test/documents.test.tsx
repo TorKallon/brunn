@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import {
+  agentOrientationDocumentFixture,
   historicalPublishedDocumentFixture,
   publishedDocumentFixture,
 } from "./documentFixtures";
@@ -53,6 +54,24 @@ describe("request-directed published documents", () => {
     ).toBeNull();
     expect(screen.queryByText(/entry:11111111/)).toBeNull();
     expect(screen.queryByText(/Documents\/switzerland-itinerary/)).toBeNull();
+  });
+
+  it("renders the static agent-orientation document without entry, versions, or sources", async () => {
+    installApiMock({
+      "GET /api/v1/workspace/documents/agent-orientation": agentOrientationDocumentFixture,
+    });
+    renderApp("/documents/agent-orientation");
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Agent orientation" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Before writing" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/tool schemas cannot state/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Published/)).toBeNull();
+    expect(screen.queryByText(/Viewing version/)).toBeNull();
+    expect(screen.queryByRole("region", { name: "Sources" })).toBeNull();
   });
 
   it("pins a historical version and links back to the stable latest URL", async () => {

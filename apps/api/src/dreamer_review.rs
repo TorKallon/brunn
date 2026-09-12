@@ -27,6 +27,7 @@ use uuid::Uuid;
 const STATE_PATH: &str = "dreams/state.md";
 mod location_discovery;
 mod narrative_discovery;
+mod project_status;
 mod research;
 mod research_comparison;
 const MAX_INPUTS: usize = 128;
@@ -141,6 +142,10 @@ struct Attempt {
     admission_version: i64,
     #[serde(default)]
     location_work: Option<Value>,
+    /// Nightly project-status summary recorded by the apply endpoint under
+    /// this attempt; the run record and receipt read it from here.
+    #[serde(default)]
+    project_status: Value,
     #[serde(default)]
     narrative_context: Vec<Input>,
     #[serde(default)]
@@ -224,6 +229,14 @@ pub fn router() -> Router<AppState> {
         .route(
             "/workspace/dreamer/narrative-discover",
             post(narrative_discovery::discover),
+        )
+        .route(
+            "/workspace/dreamer/project-status-packet",
+            post(project_status::packet),
+        )
+        .route(
+            "/workspace/dreamer/project-status",
+            post(project_status::apply),
         )
         .route("/workspace/dreamer/finish", post(finish))
 }
@@ -1511,7 +1524,7 @@ pub async fn admit(
         let at = Utc::now();
         let detail = "The attempt lease expired without an accepted terminal result. Retained work is available for retry.";
         data.last_attempt = Some(
-            json!({"attempt_id":a.attempt_id,"producer_credential_id":a.producer_credential_id,"date":a.date,"outcome":"partial","detail":detail,"started_at":a.started_at,"finished_at":at,"recovered":true,"counts":counts(&data)}),
+            json!({"attempt_id":a.attempt_id,"producer_credential_id":a.producer_credential_id,"date":a.date,"outcome":"partial","detail":detail,"started_at":a.started_at,"finished_at":at,"recovered":true,"counts":counts(&data),"project_status":a.project_status}),
         );
         let run = write_run(&state, &mut tx, &auth, &mut data, &a, "partial", detail).await?;
         write_projection(
@@ -1579,6 +1592,7 @@ pub async fn admit(
         admission_hash: digest(&body),
         admission_version: version + 1,
         location_work: None,
+        project_status: Value::Null,
         narrative_context: Vec::new(),
         narrative_discovery: None,
     });
@@ -2032,6 +2046,12 @@ fn render_run(data: &RunState, a: &Attempt, outcome: &str, detail: &str) -> Stri
             i.candidate.title
         ));
     }
+    if !a.project_status.is_null() {
+        body.push_str(&format!(
+            "\n## Project status\n{}\n",
+            crate::dreamer::receipt::project_status_line(&a.project_status)
+        ));
+    }
     for (heading, question) in [("Proposed", false), ("Needs your call", true)] {
         body.push_str(&format!("\n## {heading}\n"));
         for i in data
@@ -2113,7 +2133,11 @@ fn projection(
             .then(a["version"].as_i64().cmp(&b["version"].as_i64()))
     });
     applied.dedup_by(|a, b| a["path"] == b["path"] && a["version"] == b["version"]);
-    json!({"schema":"dream.latest-receipt.v2","run_id":a.date,"receipt_ref":run["entry_ref"],"receipt_version":run["version"],"receipt_path":run["path"],"status":outcome,"completed_at":crate::dreamer::receipt::format_timestamp(completed),"mode":a.mode,"runner":"brunn-rust-dreamer","mode_flip":false,"probe_monitoring":null,"applied_writes":applied,"entering_veto_window_today":[],"pending_owner":owner,"pending_review_surfaces":[],"next_run_at":crate::dreamer::receipt::format_timestamp(next_run(completed))})
+    let mut latest = json!({"schema":"dream.latest-receipt.v2","run_id":a.date,"receipt_ref":run["entry_ref"],"receipt_version":run["version"],"receipt_path":run["path"],"status":outcome,"completed_at":crate::dreamer::receipt::format_timestamp(completed),"mode":a.mode,"runner":"brunn-rust-dreamer","mode_flip":false,"probe_monitoring":null,"applied_writes":applied,"entering_veto_window_today":[],"pending_owner":owner,"pending_review_surfaces":[],"next_run_at":crate::dreamer::receipt::format_timestamp(next_run(completed))});
+    if !a.project_status.is_null() {
+        latest["project_status"] = a.project_status.clone();
+    }
+    latest
 }
 async fn write_projection(
     state: &AppState,
@@ -3146,7 +3170,7 @@ pub async fn finish(
     let completed = Utc::now();
     let notification = record_notifications(&mut data, &body["notification"])?;
     data.last_attempt = Some(
-        json!({"attempt_id":a.attempt_id,"producer_credential_id":a.producer_credential_id,"date":a.date,"outcome":outcome,"detail":detail,"started_at":a.started_at,"finished_at":completed,"auth_persistence":body["auth_persistence"],"notification":notification,"execution_outcome":body["execution_outcome"],"model":body["model"],"codex_version":body["codex_version"],"counts":counts(&data),"research":research_progress}),
+        json!({"attempt_id":a.attempt_id,"producer_credential_id":a.producer_credential_id,"date":a.date,"outcome":outcome,"detail":detail,"started_at":a.started_at,"finished_at":completed,"auth_persistence":body["auth_persistence"],"notification":notification,"execution_outcome":body["execution_outcome"],"model":body["model"],"codex_version":body["codex_version"],"counts":counts(&data),"research":research_progress,"project_status":if a.project_status.is_null(){body.get("project_status").filter(|value|crate::dreamer::receipt::project_status(value).is_ok()).cloned().unwrap_or(Value::Null)}else{a.project_status.clone()}}),
     );
     let run = write_run(&state, &mut tx, &auth, &mut data, &a, &outcome, &detail).await?;
     if outcome == "completed" {
@@ -4026,6 +4050,7 @@ pub async fn decide(
             admission_hash: String::new(),
             admission_version: 0,
             location_work: None,
+            project_status: Value::Null,
             narrative_context: Vec::new(),
             narrative_discovery: None,
         };
@@ -4037,11 +4062,15 @@ pub async fn decide(
     tx.commit().await?;
     state.workspace_features.invalidate(user).await;
     let message = match item.status.as_str() {
-        "approved_held" => "Approved. Application is held until publication is explicitly enabled.",
-        "applied" => "Approved and applied after validating the source versions.",
-        "rejected" => "Rejected. This proposal remains in decision history.",
-        "deferred" => "Deferred. The proposal remains in your inbox.",
-        _ => "Correction recorded. A revised candidate is needed before approval.",
+        "approved_held" => {
+            "Approved and held. It is written at the first run after Dreaming is switched to full mode, after its sources are re-checked; if they change first it comes back for another look."
+        }
+        "applied" => "Approved and written now; its sources were re-checked first.",
+        "rejected" => "Rejected. Final; nothing is written and this proposal does not come back.",
+        "deferred" => "Deferred. It stays in this inbox; nothing is written.",
+        _ => {
+            "Correction sent. The next run drafts a new version for you to review; nothing is written until you approve it."
+        }
     };
     Ok(Json(
         json!({"status":"complete","data":{"saved":true,"decision":decision,"application_status":item.status,"message":message,"state_version":version}}),

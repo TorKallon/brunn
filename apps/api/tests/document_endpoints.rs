@@ -89,11 +89,7 @@ async fn document_http(
     (status, serde_json::from_slice(&bytes).unwrap())
 }
 
-#[tokio::test]
-async fn authenticated_publish_and_get_return_additive_links_through_the_real_router() {
-    let Some(pool) = connect_test_pool().await else {
-        return;
-    };
+async fn test_router() -> Router {
     let database = std::env::var("BRUNN_TEST_DATABASE_URL").unwrap();
     let role_url = |role: &str| {
         let mut url = url::Url::parse(&database).unwrap();
@@ -107,7 +103,15 @@ async fn authenticated_publish_and_get_return_additive_links_through_the_real_ro
     config.database_url_admin = None;
     config.apns_delivery_enabled = false;
     config.semantic_lane = false;
-    let app = router(AppState::connect(config).await.unwrap());
+    router(AppState::connect(config).await.unwrap())
+}
+
+#[tokio::test]
+async fn authenticated_publish_and_get_return_additive_links_through_the_real_router() {
+    let Some(pool) = connect_test_pool().await else {
+        return;
+    };
+    let app = test_router().await;
     let (owner, token) = document_principal(&pool).await;
     let (_, other) = document_principal(&pool).await;
     let body = json!({"slug":"http-plan","title":"HTTP plan","body_md":"First body.","expected_version":0});
@@ -428,4 +432,92 @@ async fn reads_only_marked_history_and_unmarked_current_head_unpublishes() {
     assert_eq!(pinned["body_md"], historical["body_md"]);
     assert_eq!(pinned["app_version_url"], historical["app_version_url"]);
     tx.rollback().await.unwrap();
+}
+
+const AGENT_ORIENTATION_MD: &str = include_str!("../src/orientation/agent-orientation.md");
+
+#[test]
+fn agent_orientation_stays_short() {
+    let lines = AGENT_ORIENTATION_MD.lines().collect::<Vec<_>>();
+    assert!(lines.len() < 70, "{} lines", lines.len());
+    for line in lines {
+        assert!(line.chars().count() <= 100, "line too long: {line}");
+    }
+}
+
+#[tokio::test]
+async fn agent_orientation_is_served_from_the_build_and_cannot_be_published() {
+    let Some(pool) = connect_test_pool().await else {
+        return;
+    };
+    let app = test_router().await;
+    let (_, token) = document_principal(&pool).await;
+    let (status, current) = document_http(
+        &app,
+        Some(&token),
+        "/v1/workspace/documents/agent-orientation",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{current}");
+    let data = &current["data"];
+    assert_eq!(data["slug"], "agent-orientation");
+    assert_eq!(data["title"], "Brunn agent orientation");
+    assert_eq!(data["markdown"], AGENT_ORIENTATION_MD);
+    assert_eq!(
+        AGENT_ORIENTATION_MD,
+        format!(
+            "# Brunn agent orientation\n\n{}\n",
+            data["body_md"].as_str().unwrap()
+        )
+    );
+    assert_eq!(data["version"], 1);
+    assert_eq!(data["current_version"], 1);
+    assert_eq!(data["versions"], json!([]));
+    assert_eq!(data["sources"], json!([]));
+    assert_eq!(data["entry_ref"], Value::Null);
+    assert_eq!(
+        data["app_version_url"],
+        "brunn://document/agent-orientation?version=1"
+    );
+    let (status, pinned) = document_http(
+        &app,
+        Some(&token),
+        "/v1/workspace/documents/agent-orientation?version=1",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(pinned["data"]["body_md"], data["body_md"]);
+    assert_eq!(
+        document_http(
+            &app,
+            Some(&token),
+            "/v1/workspace/documents/agent-orientation?version=2",
+            None
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    let body = json!({"slug":"agent-orientation","title":"Mine","body_md":"Override.","expected_version":0});
+    let (status, refused) = document_http(
+        &app,
+        Some(&token),
+        "/v1/workspace/documents/publish",
+        Some(body),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}");
+    assert_eq!(
+        refused["error"]["message"],
+        "agent-orientation is a reserved slug served from the Brunn build"
+    );
+    let stored = sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM brunn.entries WHERE lower(path)='documents/agent-orientation.md'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(stored, 0);
 }

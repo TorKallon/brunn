@@ -457,6 +457,8 @@ impl ApiClient {
                     | "checkpoint"
                     | "location-discover"
                     | "narrative-discover"
+                    | "project-status"
+                    | "project-status-packet"
                     | "research-next"
                     | "research-progress"
             ) && detail == "Review or run state changed; reload before retrying"

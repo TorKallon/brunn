@@ -1986,33 +1986,60 @@ final class BrunnTests: XCTestCase {
         XCTAssertNil(request.value(forHTTPHeaderField: "X-CSRF-Token"))
     }
 
-    func testTodoistStatusReadIsContentFreeAndUsesTheReadSession() async throws {
-        defer { NotificationRequestURLProtocol.handler = nil }
+    func testTaskCaptureUsesBearerWithoutCookieOrCSRF() async throws {
+        let host = "task-capture-\(UUID().uuidString.lowercased()).brunn.test"
+        let baseURL = try XCTUnwrap(URL(string: "https://\(host)/api/v1"))
+        let cookieStorage = HTTPCookieStorage.shared
+        let sessionCookie = try XCTUnwrap(HTTPCookie(properties: [
+            .domain: host,
+            .path: "/",
+            .name: "brunn_session",
+            .value: "must-not-leak",
+            .secure: "TRUE",
+        ]))
+        cookieStorage.setCookie(sessionCookie)
+        defer {
+            cookieStorage.deleteCookie(sessionCookie)
+            NotificationRequestURLProtocol.handler = nil
+        }
         let recorder = NotificationRequestRecorder()
         NotificationRequestURLProtocol.handler = { request in
             recorder.append(request)
             return StubbedHTTPResponse(json: #"""
-            {"status":"complete","data":{"environment_enabled":false,"saved_mode":"off","effective_mode":"off","token_configured":false,"configuration_generation":3,"last_run_at":null,"last_outcome":null,"last_error_code":null,"next_run_at":null}}
+            {"status":"committed","data":{"items":[{"client_ref":null,"task_ref":"019f8800-0000-7000-8000-000000000009","entry_ref":"entry:019f8800-0000-7000-8000-000000000009","version":1,"title":"Call the vet","enrichment":{"title":"Call the vet"},"context_suggestions":[],"suggested_existing":[]}],"replayed":false}}
             """#)
         }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        configuration.httpCookieStorage = cookieStorage
+        configuration.httpShouldSetCookies = true
         let api = BrunnAPI(
-            configuration: .init(baseURL: try XCTUnwrap(URL(string: "https://todoist-status.brunn.test/api/v1"))),
-            session: URLSession(configuration: configuration)
+            configuration: .init(baseURL: baseURL),
+            session: URLSession(configuration: configuration),
+            cookieStorage: cookieStorage
         )
 
-        let response = try await api.taskTodoistStatus()
+        let captured = try await api.captureTask(
+            request: AgentTaskCaptureRequest(rawText: "Call the vet", idempotencyKey: "ios_task_capture_test"),
+            bearerToken: "exact-narrow-token"
+        )
 
-        XCTAssertFalse(response.data.environmentEnabled)
-        XCTAssertFalse(response.data.tokenConfigured)
-        XCTAssertEqual(response.data.savedMode, "off")
-        XCTAssertEqual(response.data.effectiveMode, "off")
-        XCTAssertEqual(response.data.configurationGeneration, 3)
+        XCTAssertEqual(captured.items.first?.taskRef, "019f8800-0000-7000-8000-000000000009")
+        XCTAssertEqual(captured.items.first?.title, "Call the vet")
+        XCTAssertEqual(captured.replayed, false)
         let request = try XCTUnwrap(recorder.snapshot().first)
-        XCTAssertEqual(request.httpMethod, "GET")
-        XCTAssertEqual(request.url?.path, "/api/v1/workspace/integrations/todoist/status")
-        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.path, "/api/v1/workspace/tasks/capture")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer exact-narrow-token")
+        XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
+        XCTAssertNil(request.value(forHTTPHeaderField: "X-CSRF-Token"))
+        let body = try XCTUnwrap(request.httpBody)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let item = try XCTUnwrap((object["items"] as? [[String: Any]])?.first)
+        XCTAssertEqual(object["idempotency_key"] as? String, "ios_task_capture_test")
+        XCTAssertEqual(item["raw_text"] as? String, "Call the vet")
+        XCTAssertEqual(item["captured_from"] as? String, "ios:today")
+        XCTAssertEqual(item["today"] as? Bool, true)
     }
 
     @MainActor
@@ -3107,7 +3134,6 @@ final class BrunnTests: XCTestCase {
         let sections = try XCTUnwrap(payload.sections)
         let items = sections.flatMap(\.items)
 
-        XCTAssertEqual(payload.summaryMD?.count, 7)
         XCTAssertEqual(sections.map(\.topic), ["brunn", "platform", "reading-experience"])
         XCTAssertEqual(
             items.map(\.id),

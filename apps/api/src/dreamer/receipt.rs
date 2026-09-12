@@ -129,9 +129,73 @@ fn canonical_payload(payload: &Value) -> Result<Value, String> {
     Ok(value)
 }
 
+/// The nightly project status signal: `{"assigned":n,"transitions":[...]}`
+/// or `{"failure":"..."}`. Optional; receipts before it remain valid.
+pub fn project_status(value: &Value) -> Result<(), String> {
+    if value.get("failure").is_some() {
+        fields(value, &["failure"])?;
+        text(value, "failure", 1000)?;
+        return Ok(());
+    }
+    fields(value, &["assigned", "transitions"])?;
+    value["assigned"].as_u64().ok_or("invalid assigned")?;
+    let transitions = value["transitions"]
+        .as_array()
+        .ok_or("invalid transitions")?;
+    if transitions.len() > 300 {
+        return Err("transitions exceed bounds".into());
+    }
+    for row in transitions {
+        fields(row, &["slug", "from", "to"])?;
+        text(row, "slug", 100)?;
+        for key in ["from", "to"] {
+            if !super::project_status::STATUSES.contains(&text(row, key, 8)?) {
+                return Err(format!("invalid transition {key}"));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// One line for the run document's "Project status" heading.
+pub fn project_status_line(value: &Value) -> String {
+    if let Some(failure) = value["failure"].as_str() {
+        return format!("Not assigned: {failure}");
+    }
+    let transitions = value["transitions"]
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .map(|row| {
+                    format!(
+                        "{}: {} → {}",
+                        row["slug"].as_str().unwrap_or(""),
+                        row["from"].as_str().unwrap_or(""),
+                        row["to"].as_str().unwrap_or("")
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    format!(
+        "Assigned {}; transitions: {}.",
+        value["assigned"],
+        if transitions.is_empty() {
+            "none".to_owned()
+        } else {
+            transitions.join(", ")
+        }
+    )
+}
+
 /// Validate every row; never silently drop old pending recommendations to fit v2.
 pub fn validate(payload: &Value) -> Result<(), String> {
-    fields(payload, FIELDS)?;
+    let mut names = FIELDS.to_vec();
+    if let Some(status) = payload.get("project_status") {
+        project_status(status)?;
+        names.push("project_status");
+    }
+    fields(payload, &names)?;
     if payload["schema"] != SCHEMA {
         return Err("unsupported receipt schema".into());
     }
@@ -342,6 +406,43 @@ mod tests {
         let mut value = receipt();
         value["pending_owner"] = json!([{"recommendation_id":"2026-09-07/1","summary":"Review","reason":"Owner decision required","published_at":"2026-09-07T10:10:00Z","age_days":0}]);
         assert!(render_latest(&value).is_err());
+    }
+
+    #[test]
+    fn project_status_is_optional_bounded_and_rendered() {
+        let mut value = receipt();
+        assert_eq!(
+            parse_latest(&render_latest(&value).unwrap()).unwrap(),
+            value
+        );
+        value["project_status"] =
+            json!({"assigned":3,"transitions":[{"slug":"orchid","from":"grey","to":"yellow"}]});
+        let rendered = render_latest(&value).unwrap();
+        assert_eq!(parse_latest(&rendered).unwrap(), value);
+        assert!(rendered.contains("\"project_status\":{\"assigned\":3"));
+        assert_eq!(
+            project_status_line(&value["project_status"]),
+            "Assigned 3; transitions: orchid: grey → yellow."
+        );
+        assert_eq!(
+            project_status_line(&json!({"assigned":2,"transitions":[]})),
+            "Assigned 2; transitions: none."
+        );
+        assert_eq!(
+            project_status_line(&json!({"failure":"packet unavailable"})),
+            "Not assigned: packet unavailable"
+        );
+        for invalid in [
+            json!({"assigned":1}),
+            json!({"assigned":1,"transitions":[{"slug":"orchid","from":"grey","to":"amber"}]}),
+            json!({"assigned":1,"transitions":[{"slug":"orchid","from":"grey"}]}),
+            json!({"failure":""}),
+            json!(null),
+        ] {
+            let mut value = receipt();
+            value["project_status"] = invalid.clone();
+            assert!(render_latest(&value).is_err(), "{invalid}");
+        }
     }
 
     #[test]

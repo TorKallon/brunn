@@ -29,6 +29,7 @@ test("remote profile exposes only hosted-safe tools with bounded reads", async (
     assert.equal(client.getServerVersion()?.name, "Brunn");
     assert.match(client.getInstructions() ?? "", /Start substantive work with memory\.open/);
     assert.match(client.getInstructions() ?? "", /memory\.checkpoint/);
+    assert.match(client.getInstructions() ?? "", /document\.get slug agent-orientation/);
     const response = await client.listTools();
     const expectedNames = [
       "asset.list",

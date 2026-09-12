@@ -53,9 +53,14 @@ pub enum TaskStatus {
 pub enum TaskView {
     Urgent,
     Next,
+    Quick,
+    Today,
     Triage,
     All,
 }
+
+/// Longest estimate (minutes) a task may carry and still count as quick.
+pub const QUICK_TASK_MAX_MINUTES: i32 = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskSnapshot {
@@ -78,6 +83,9 @@ pub struct TaskSnapshot {
     pub parked: bool,
     pub waiting: bool,
     pub today_pin: Option<Sourced<NaiveDate>>,
+    pub estimate_minutes: Option<i32>,
+    /// Owner-local date the task was added to the Today list; cleared by sweep.
+    pub today_since: Option<NaiveDate>,
     pub triaged_at: Option<DateTime<Utc>>,
 }
 
@@ -139,11 +147,21 @@ pub fn rank_tasks(
 
     let mut evaluated = tasks
         .iter()
-        .filter(|task| is_visible(task, request))
+        .filter(|task| match request.view {
+            TaskView::Today => is_on_today_list(task),
+            TaskView::Quick => is_visible(task, request) && is_quick(task),
+            TaskView::Urgent | TaskView::Next | TaskView::Triage | TaskView::All => {
+                is_visible(task, request)
+            }
+        })
         .map(|task| evaluate(task, request.as_of, settings))
         .collect::<Vec<_>>();
 
-    evaluated.sort_by(compare_ranked);
+    if request.view == TaskView::Today {
+        evaluated.sort_by(compare_today);
+    } else {
+        evaluated.sort_by(compare_ranked);
+    }
 
     let urgent_total = evaluated.iter().filter(|item| item.tier <= 2).count();
     let next_limit = request.limit.min(MAX_NEXT_LIMIT);
@@ -154,7 +172,9 @@ pub fn rank_tasks(
             .into_iter()
             .filter(|item| item.tier <= 2)
             .collect(),
-        TaskView::Next => evaluated.into_iter().take(next_limit).collect(),
+        TaskView::Next | TaskView::Quick | TaskView::Today => {
+            evaluated.into_iter().take(next_limit).collect()
+        }
         TaskView::Triage => {
             let mut triage = evaluated
                 .into_iter()
@@ -294,6 +314,17 @@ fn is_visible(task: &TaskSnapshot, request: &CandidateRequest) -> bool {
             .iter()
             .all(|context| request.contexts_available.contains(context))
     })
+}
+
+fn is_quick(task: &TaskSnapshot) -> bool {
+    task.estimate_minutes
+        .is_some_and(|minutes| minutes <= QUICK_TASK_MAX_MINUTES)
+}
+
+/// The owner placed the task deliberately, so contexts and ready_at do not
+/// apply; only leaving the open state or parking removes it.
+fn is_on_today_list(task: &TaskSnapshot) -> bool {
+    task.status == TaskStatus::Open && !task.parked && task.today_since.is_some()
 }
 
 struct EvaluatedTask<'a> {
@@ -544,6 +575,13 @@ fn compare_ranked(left: &EvaluatedTask<'_>, right: &EvaluatedTask<'_>) -> Orderi
         .then_with(|| stable_task_order(left.task, right.task))
 }
 
+fn compare_today(left: &EvaluatedTask<'_>, right: &EvaluatedTask<'_>) -> Ordering {
+    left.task
+        .today_since
+        .cmp(&right.task.today_since)
+        .then_with(|| stable_task_order(left.task, right.task))
+}
+
 fn compare_tier_order(left: &TierOrder, right: &TierOrder) -> Ordering {
     match (left, right) {
         (TierOrder::Hard { due: left }, TierOrder::Hard { due: right }) => left.cmp(right),
@@ -704,6 +742,8 @@ mod tests {
             parked: false,
             waiting: false,
             today_pin: None,
+            estimate_minutes: None,
+            today_since: None,
             triaged_at: Some(instant(1, 0)),
         }
     }
@@ -1261,6 +1301,91 @@ mod tests {
         assert_eq!(urgent.items.len(), 30);
         assert_eq!(urgent.urgent_total, 30);
         assert_eq!(urgent.next_remaining, 29);
+    }
+
+    #[test]
+    fn quick_and_today_views_select_and_order_by_their_own_rules() {
+        let as_of = instant(27, 12);
+        let phone = || BTreeSet::from(["phone".to_owned()]);
+        let quick_call = |id: u128, minutes: i32| {
+            let mut task = task(id, "quick-call", 1);
+            task.required_contexts = Some(source(vec!["phone".to_owned()], "owner"));
+            task.estimate_minutes = Some(minutes);
+            task
+        };
+        let today = |id: u128, title: &str, since: u32, created: u32| {
+            let mut task = task(id, title, created);
+            task.today_since = Some(date(since));
+            task
+        };
+        let mut not_ready = today(4, "not-ready", 26, 1);
+        not_ready.ready_at = Some(source(instant(30, 0), "owner"));
+        not_ready.required_contexts = Some(source(vec!["office".to_owned()], "owner"));
+        let mut parked = today(5, "parked", 25, 1);
+        parked.parked = true;
+        let mut waiting = today(6, "waiting", 25, 1);
+        waiting.status = TaskStatus::Waiting;
+        let mut waiting_request = request(TaskView::Today, as_of, 25);
+        waiting_request.include_waiting = true;
+        waiting_request.include_parked = true;
+
+        let mut quick_with_context = request(TaskView::Quick, as_of, 10);
+        quick_with_context.contexts_available = phone();
+        let cases: Vec<(&str, Vec<TaskSnapshot>, CandidateRequest, Vec<&str>)> = vec![
+            (
+                "quick with its context satisfied",
+                vec![quick_call(1, 5), task(2, "unestimated", 1)],
+                quick_with_context,
+                vec!["quick-call"],
+            ),
+            (
+                "quick with its context unsatisfied",
+                vec![quick_call(1, 5)],
+                request(TaskView::Quick, as_of, 10),
+                vec![],
+            ),
+            (
+                "quick excludes a six-minute estimate",
+                vec![quick_call(1, QUICK_TASK_MAX_MINUTES + 1)],
+                {
+                    let mut request = request(TaskView::Quick, as_of, 10);
+                    request.contexts_available = phone();
+                    request
+                },
+                vec![],
+            ),
+            (
+                "today orders by today_since then created_at",
+                vec![
+                    today(1, "newer-later", 27, 3),
+                    today(2, "older-later", 27, 2),
+                    today(3, "earlier", 26, 9),
+                ],
+                request(TaskView::Today, as_of, 25),
+                vec!["earlier", "older-later", "newer-later"],
+            ),
+            (
+                "today ignores contexts and ready_at",
+                vec![not_ready, task(7, "not-on-today", 1)],
+                request(TaskView::Today, as_of, 25),
+                vec!["not-ready"],
+            ),
+            (
+                "today excludes parked and waiting even when requested",
+                vec![parked, waiting, today(8, "open", 27, 1)],
+                waiting_request,
+                vec!["open"],
+            ),
+        ];
+        for (name, tasks, request, expected) in cases {
+            let ranked = rank_tasks(&tasks, &request, &EngineSettings::default());
+            let titles = ranked
+                .items
+                .iter()
+                .map(|item| item.title.as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(titles, expected, "{name}");
+        }
     }
 
     #[test]

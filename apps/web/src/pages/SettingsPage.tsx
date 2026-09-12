@@ -2,7 +2,7 @@ import { Moon, Sun } from "lucide-react";
 import { useState } from "react";
 import { DreamingSettings } from "../components/DreamingSettings";
 import { DefinitionList, Page, PageHeader, Section } from "../components/Page";
-import { TaskSettingsPanels } from "../components/TaskSettingsPanels";
+import { TodoistSettings } from "../components/TodoistSettings";
 import {
   type Appearance,
   readAppearance,
@@ -92,7 +92,7 @@ export function SettingsPage() {
 
       <DreamingSettings />
 
-      <TaskSettingsPanels />
+      <TodoistSettings />
     </Page>
   );
 }

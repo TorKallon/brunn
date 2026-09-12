@@ -75,6 +75,8 @@ struct Mock {
     draft_custody_fault: Option<String>,
     draft_submit_fault: Option<String>,
     draft_zero_ids: bool,
+    project_status_projects: Vec<Value>,
+    project_status_posts: Vec<Value>,
 }
 #[path = "dreamer_run_contract/research_contract.rs"]
 mod research_contract;
@@ -330,6 +332,18 @@ async fn candidates(State(shared): State<Shared>, Json(body): Json<Value>) -> Re
     }
     Json(result).into_response()
 }
+async fn project_status_packet(State(shared): State<Shared>) -> Json<Value> {
+    let s = shared.lock().unwrap();
+    Json(json!({"projects":s.project_status_projects,"today":"2026-09-07"}))
+}
+async fn project_status(State(shared): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
+    let mut s = shared.lock().unwrap();
+    let assigned = body["projects"].as_array().map_or(0, Vec::len);
+    s.state_version += 1;
+    let state_version = s.state_version;
+    s.project_status_posts.push(body);
+    Json(json!({"assigned":assigned,"transitions":[],"state_version":state_version}))
+}
 async fn finish(State(shared): State<Shared>, Json(body): Json<Value>) -> Response {
     let mut s = shared.lock().unwrap();
     if s.fail_finish {
@@ -397,6 +411,11 @@ async fn build_with_budget(
             "/v1/workspace/dreamer/narrative-discover",
             post(narrative_discover),
         )
+        .route(
+            "/v1/workspace/dreamer/project-status-packet",
+            post(project_status_packet),
+        )
+        .route("/v1/workspace/dreamer/project-status", post(project_status))
         .route("/v1/workspace/dreamer/finish", post(finish))
         .route("/v1/workspace/notifications/publish", post(notify))
         .with_state(shared.clone());
@@ -544,6 +563,63 @@ async fn verified_runs_record_the_codex_account_and_weekly_usage_without_tokens(
     assert_eq!(runtime["usage"]["primary"]["window_minutes"], 10080);
     assert!(runtime["usage"]["primary"]["resets_at"].is_string());
     assert!(!runtime.to_string().contains("token"));
+}
+
+#[tokio::test]
+async fn malformed_project_status_output_leaves_status_untouched_and_the_run_proceeds() {
+    let (s, d, dir) = build(HAPPY).await;
+    enable(&s);
+    s.lock().unwrap().project_status_projects =
+        vec![json!({"slug":"orchid","title":"Orchid","tasks":[],"current":{"status":"grey"}})];
+    let report = d.run_once(today(), RunKind::Manual).await;
+    assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
+    assert_eq!(
+        report.project_status,
+        json!({"failure":"project status JSON is malformed"})
+    );
+    let calls = std::fs::read_to_string(dir.path().join("calls")).unwrap();
+    assert!(calls.find("project-status-answer.md").unwrap() < calls.find("\nanswer.md").unwrap());
+    let prompt =
+        std::fs::read_to_string(dir.path().join("prompt-project-status-answer.md")).unwrap();
+    assert!(prompt.contains("\"slug\":\"orchid\""));
+    let state = s.lock().unwrap();
+    assert!(state.project_status_posts.is_empty());
+    assert_eq!(state.runs[0]["project_status"], report.project_status);
+    assert_eq!(state.submitted.len(), 1);
+}
+
+#[tokio::test]
+async fn project_status_is_applied_before_research_and_carried_into_the_terminal_request() {
+    let behavior = format!(
+        r#"
+if [ "$OUTPUT_NAME" = 'project-status-answer.md' ]; then
+ echo '{{"projects":[{{"slug":"orchid","status":"yellow","reason":"Lodging unbooked inside the 45-day window."}}]}}' > "$OUTPUT_PATH"
+ exit 0
+fi
+{HAPPY}
+"#
+    );
+    let (s, d, _dir) = build(&behavior).await;
+    enable(&s);
+    s.lock().unwrap().project_status_projects =
+        vec![json!({"slug":"orchid","title":"Orchid","tasks":[],"current":{"status":"grey"}})];
+    let report = d.run_once(today(), RunKind::Manual).await;
+    assert_eq!(report.outcome, RunOutcome::Completed, "{report:?}");
+    assert_eq!(
+        report.project_status,
+        json!({"assigned":1,"transitions":[]})
+    );
+    let state = s.lock().unwrap();
+    assert_eq!(state.project_status_posts.len(), 1);
+    assert_eq!(
+        state.project_status_posts[0]["projects"],
+        json!([{"slug":"orchid","status":"yellow","reason":"Lodging unbooked inside the 45-day window."}])
+    );
+    assert_eq!(
+        state.project_status_posts[0]["fence"],
+        state.submitted[0]["fence"]
+    );
+    assert_eq!(state.runs[0]["project_status"], report.project_status);
 }
 
 #[tokio::test]

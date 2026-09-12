@@ -97,7 +97,7 @@ export interface MeData {
 }
 
 export type TaskStatus = "open" | "waiting" | "done" | "dropped";
-export type TaskView = "urgent" | "next" | "triage" | "all";
+export type TaskView = "urgent" | "next" | "quick" | "today" | "triage" | "all";
 export type TaskDateTypeFilter = "all" | "hard" | "cost" | "soft" | "none";
 export type TaskSourceFilter = "all" | "owner" | "agent" | "derived" | "todoist";
 
@@ -113,6 +113,8 @@ export interface TaskCandidate {
   reason: string;
   provenance_markers: string[];
   pinned: boolean;
+  estimate_minutes?: number | null;
+  today_since?: string | null;
 }
 
 export interface TaskCandidatesQuery {
@@ -245,26 +247,7 @@ export interface TaskContextListData {
   next_cursor?: string | null;
 }
 
-export interface TaskSettings {
-  timezone: string;
-  hard_lead_days: number;
-  hard_second_lead_hours: number;
-  due_day_local_time: string;
-  soft_window_days: number;
-  triage_after_days: number;
-  waiting_followup_days: number;
-  quiet_hours_start: string;
-  quiet_hours_end: string;
-  quiet_override_enabled: boolean;
-  quiet_override_within_hours: number;
-  surface_defaults: Record<string, TaskSurfaceDefault>;
-  version: number;
-  updated_at: string;
-}
-
-export interface TaskSettingsData {
-  settings: TaskSettings;
-}
+export type ProjectStatus = "grey" | "green" | "yellow" | "red";
 
 export interface TaskProject {
   slug: string;
@@ -274,6 +257,11 @@ export interface TaskProject {
   hub_path?: string | null;
   repo_path?: string | null;
   interest: "hot" | "normal" | "parked";
+  status?: ProjectStatus;
+  status_reason?: string;
+  status_since?: string | null;
+  status_previous?: ProjectStatus | null;
+  status_computed_on?: string | null;
   interest_override?: string | null;
   interest_set_by?: string | null;
   interest_set_at?: string | null;
@@ -299,7 +287,19 @@ export interface ProjectCheckpointState {
 }
 
 export interface TaskProjectStateData {
-  project: Pick<TaskProject, "slug" | "title" | "interest" | "last_activity_at" | "version">;
+  project: Pick<
+    TaskProject,
+    | "slug"
+    | "title"
+    | "interest"
+    | "last_activity_at"
+    | "version"
+    | "status"
+    | "status_reason"
+    | "status_since"
+    | "status_previous"
+    | "status_computed_on"
+  >;
   checkpoint?: {
     entry_ref: string;
     version: number;
@@ -331,15 +331,6 @@ export interface TodoistStatusData {
   effective_mode: "off" | "import_once" | "pull";
   token_configured: boolean;
   configuration_generation: number;
-  last_run_at?: string | null;
-  last_outcome?: string | null;
-  last_error_code?: string | null;
-  next_run_at?: string | null;
-}
-
-export interface TaskGuardStatusData {
-  environment_enabled: boolean;
-  effective_enabled: boolean;
   last_run_at?: string | null;
   last_outcome?: string | null;
   last_error_code?: string | null;
@@ -961,7 +952,7 @@ export interface BriefingListRow {
   entry_ref: string;
   version: number;
   generated_at?: string | null;
-  summary_md: string[];
+  first_headline?: string | null;
   section_titles: string[];
   item_count: number;
 }
@@ -1142,14 +1133,15 @@ export interface PublishedDocumentVersion {
 export interface PublishedDocumentData {
   slug: string;
   title: string;
+  entry_ref?: string | null;
   summary?: string | null;
   sources: PublishedDocumentSource[];
   body_md: string;
   markdown: string;
   version: number;
   current_version: number;
-  published_at: string;
-  updated_at: string;
+  published_at?: string | null;
+  updated_at?: string | null;
   versions: PublishedDocumentVersion[];
   url: string;
   version_url: string;

@@ -326,7 +326,7 @@ final class BrunnUITests: XCTestCase {
     }
 
     @MainActor
-    func testDemoReaderUsesThePhoneWidthAndShowsTheCompleteSummary() {
+    func testDemoReaderUsesThePhoneWidthAndExpandsOneItemAtATime() {
         let app = launchDemo()
         openToday(in: app)
 
@@ -334,55 +334,43 @@ final class BrunnUITests: XCTestCase {
 
         let reader = element("briefing-reader", in: app)
         let title = element("briefing-reader-title", in: app)
-        let summary = element("briefing-summary", in: app)
+        let items = element("briefing-items", in: app)
+        let first = element("briefing-item-ios-direction", in: app)
+        let second = element("briefing-item-existing-contracts", in: app)
         XCTAssertTrue(reader.waitForExistence(timeout: 3))
         XCTAssertTrue(title.exists)
-        XCTAssertTrue(summary.exists)
+        XCTAssertTrue(items.exists)
+        XCTAssertTrue(first.exists)
+        XCTAssertFalse(app.staticTexts["30-SECOND SUMMARY"].exists)
 
-        let horizontalInset = summary.frame.minX - app.frame.minX
         XCTAssertLessThanOrEqual(
-            horizontalInset,
+            items.frame.minX - app.frame.minX,
             20,
-            "The briefing summary should not retain a timeline gutter on compact screens."
+            "The briefing list should not retain a timeline gutter on compact screens."
         )
         XCTAssertGreaterThanOrEqual(
-            summary.frame.width / app.frame.width,
+            items.frame.width / app.frame.width,
             0.90,
-            "The primary reading card should use at least 90% of the phone width."
+            "The briefing list should use at least 90% of the phone width."
         )
+        XCTAssertFalse(element("briefing-item-detail-ios-direction", in: app).exists, "The reader loads collapsed.")
 
-        for index in 0 ..< 7 {
-            XCTAssertTrue(
-                element("briefing-summary-line-\(index)", in: app).exists,
-                "Demo mode must expose every deterministic summary line by default."
-            )
-        }
+        scroll(first, intoViewIn: app)
+        first.tap()
+        XCTAssertTrue(element("briefing-item-detail-ios-direction", in: app).waitForExistence(timeout: 2))
 
-        keepScreenshot(named: "briefing-reader-complete-summary", from: app)
-    }
-
-    @MainActor
-    func testSummaryCanCollapseAndRestoreWithoutLosingPriorityItems() {
-        let app = launchDemo()
-        openToday(in: app)
-        let toggle = element("briefing-summary-toggle", in: app)
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-
-        scroll(toggle, intoViewIn: app)
-        XCTAssertEqual(toggle.label, "Show fewer summary items")
-        toggle.tap()
-
+        scroll(second, intoViewIn: app)
+        second.tap()
+        XCTAssertTrue(element("briefing-item-detail-existing-contracts", in: app).waitForExistence(timeout: 2))
         XCTAssertTrue(
-            element("briefing-summary-line-4", in: app).waitForNonExistence(timeout: 2)
+            element("briefing-item-detail-ios-direction", in: app).waitForNonExistence(timeout: 2),
+            "Expanding one item collapses the other."
         )
-        XCTAssertEqual(toggle.label, "Show all 7 summary items")
-        for index in 0 ..< 3 {
-            XCTAssertTrue(element("briefing-summary-line-\(index)", in: app).exists)
-        }
 
-        toggle.tap()
-        XCTAssertTrue(element("briefing-summary-line-4", in: app).waitForExistence(timeout: 2))
-        XCTAssertEqual(toggle.label, "Show fewer summary items")
+        second.tap()
+        XCTAssertTrue(element("briefing-item-detail-existing-contracts", in: app).waitForNonExistence(timeout: 2))
+
+        keepScreenshot(named: "briefing-reader-accordion", from: app)
     }
 
     @MainActor
@@ -391,9 +379,6 @@ final class BrunnUITests: XCTestCase {
         openToday(in: app)
         XCTAssertTrue(element("briefing-reader", in: app).waitForExistence(timeout: 5))
 
-        XCTAssertTrue(element("briefing-section-brunn", in: app).exists)
-        XCTAssertTrue(element("briefing-section-platform", in: app).exists)
-        XCTAssertTrue(element("briefing-section-reading-experience", in: app).exists)
         XCTAssertTrue(element("briefing-item-ios-direction", in: app).exists)
         XCTAssertTrue(element("briefing-item-existing-contracts", in: app).exists)
         XCTAssertTrue(element("briefing-item-delivery-correction", in: app).exists)
@@ -524,8 +509,11 @@ final class BrunnUITests: XCTestCase {
 
         XCTAssertTrue(element("agent-task-surface", in: app).waitForExistence(timeout: 5))
         XCTAssertFalse(element("task-contexts-card", in: app).exists)
-        XCTAssertTrue(element("task-todoist-status", in: app).exists)
+        XCTAssertTrue(element("task-projects", in: app).exists)
+        XCTAssertTrue(element("task-project-charlemagne", in: app).exists)
         XCTAssertTrue(element("task-urgent", in: app).exists)
+        XCTAssertTrue(element("task-today", in: app).exists)
+        XCTAssertTrue(element("task-quick", in: app).exists)
         XCTAssertTrue(element("task-next-card", in: app).exists)
         XCTAssertTrue(element("task-done-today", in: app).exists)
         XCTAssertFalse(element("task-view-only", in: app).exists)
@@ -586,20 +574,10 @@ final class BrunnUITests: XCTestCase {
         )
         XCTAssertTrue(complete.waitForExistence(timeout: 2))
         XCTAssertFalse(complete.isEnabled)
+        let capture = element("task-today-capture", in: viewOnlyApp)
+        XCTAssertTrue(capture.exists)
+        XCTAssertFalse(capture.isEnabled)
         viewOnlyApp.terminate()
-
-        let failedTodoistApp = launchDemo(extraArguments: ["--ui-test-todoist-error"])
-        openTasks(in: failedTodoistApp)
-        XCTAssertTrue(
-            failedTodoistApp.staticTexts["Todoist import needs attention"]
-                .waitForExistence(timeout: 3)
-        )
-        XCTAssertTrue(
-            failedTodoistApp.staticTexts[
-                "The last pull failed with the content-free status code todoist_apply_rejected."
-            ].exists
-        )
-        XCTAssertTrue(element("task-todoist-settings", in: failedTodoistApp).exists)
     }
 
     @MainActor

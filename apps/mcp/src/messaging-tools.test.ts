@@ -64,8 +64,8 @@ const MESSAGING_TOOL_NAMES = [
 // byte-exact description while keeping this regression snapshot readable.
 // Updated only for the additive native document-link guidance (September 9, 2026).
 const EXISTING_DESCRIPTION_HASHES = {
-  local: "1b5413355317a80858752da7671e86ed15790f4c195ef4c1325caef51a8baaf1",
-  remote: "68e9d7ef24d0bc632ddcebe5b956b10671a62247cef64c7e65e0c67938e30d3c",
+  local: "04c3be2b861b6d9092ea087f46520cb693720a93e9c40ce87a40cb927272689e",
+  remote: "f1479aa847678a0ee5fb78a7248cab21665b04fd752f6e333122de67b31a3e69",
 } as const;
 
 const MESSAGING_DESCRIPTIONS = {

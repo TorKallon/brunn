@@ -15,7 +15,7 @@ import { useCapability } from "../lib/current";
 import { taskQuickOperation, type TaskQuickAction } from "../lib/taskOperations";
 import type { TaskCandidate } from "../lib/types";
 import { newOperationId } from "../lib/workspace";
-import { ErrorState, LoadingState } from "./StateViews";
+import { ErrorState, LoadingState, ProjectStatusDot } from "./StateViews";
 import { TaskRow } from "./TaskRow";
 
 const DEFAULT_WEB_CONTEXTS = ["online"];
@@ -263,7 +263,10 @@ export function TaskDashboard() {
                   params={{ slug: project.slug }}
                 >
                   <span>
-                    <strong>{project.title}</strong>
+                    <strong>
+                      <ProjectStatusDot status={project.status} />
+                      {project.title}
+                    </strong>
                     <small>{project.open_task_count} open</small>
                   </span>
                   <span className={`project-interest interest-${project.interest}`}>

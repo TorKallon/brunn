@@ -331,6 +331,17 @@ compare-and-set, followed by readback. A failed custody or receipt write is a
 failure, even when Codex exited successfully. Keep the existing encryption key
 and authenticated vault contents across deployment; no reconnect is needed.
 
+Each attempt begins with the project-status phase, bounded to five minutes.
+The runner reads `/workspace/dreamer/project-status-packet` and writes its
+judgement to `/workspace/dreamer/project-status`; both are runner-only
+endpoints. The phase applies in report-only and full mode alike because it
+writes project records (`status`, `status_reason`, `status_since`,
+`status_previous`, `status_computed_on`), not workspace content. The receipt
+records it under `project_status`; a failed phase leaves every project's status
+untouched and the attempt continues. Separately, the `agent-orientation`
+document slug is reserved: `GET /v1/workspace/documents/agent-orientation` is
+served from the API build, and publishing to that slug is refused.
+
 The wrapper uses the runner credential for fenced admission, research,
 candidate acceptance and terminal reporting. Admission retains exact input
 references and an upper generation. `dreams/state.md` holds the scheduler and

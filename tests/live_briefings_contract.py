@@ -162,10 +162,6 @@ def publish_payload(
         "edition": "morning",
         "timezone": "UTC",
         "generated_at": f"{date}T06:30:00Z",
-        "summary_md": [
-            f"Live contract incident {marker} was disclosed overnight.",
-            "AMZN opened up $32.85.",
-        ],
         "sections": [
             {
                 "topic": "ai",

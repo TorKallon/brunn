@@ -40,10 +40,8 @@ import type {
   TaskContextListData,
   TaskDetailData,
   TaskDoneSummaryData,
-  TaskGuardStatusData,
   TaskProjectListData,
   TaskProjectStateData,
-  TaskSettingsData,
   TaskUpdateData,
   TodoistStatusData,
   VerificationResult,
@@ -172,19 +170,9 @@ export interface BrunnApi {
   taskCapture(payload: JsonObject): Promise<ApiEnvelope<TaskCaptureData>>;
   taskUpdate(taskRef: string, payload: JsonObject): Promise<ApiEnvelope<TaskUpdateData>>;
   taskContexts(includeArchived?: boolean): Promise<ApiEnvelope<TaskContextListData>>;
-  taskContextCreate(payload: JsonObject): Promise<ApiEnvelope<JsonValue>>;
-  taskContextsMerge(payload: JsonObject): Promise<ApiEnvelope<JsonValue>>;
-  taskContextArchive(slug: string, payload: JsonObject): Promise<ApiEnvelope<JsonValue>>;
-  taskContextsSetAvailable(
-    surface: string,
-    payload: JsonObject,
-  ): Promise<ApiEnvelope<JsonValue>>;
   taskProjects(): Promise<ApiEnvelope<TaskProjectListData>>;
   taskProjectState(slug: string): Promise<ApiEnvelope<TaskProjectStateData>>;
   taskProjectSetInterest(slug: string, payload: JsonObject): Promise<ApiEnvelope<JsonValue>>;
-  taskSettings(): Promise<ApiEnvelope<TaskSettingsData>>;
-  taskSettingsUpdate(payload: JsonObject): Promise<ApiEnvelope<TaskSettingsData>>;
-  taskGuardStatus(): Promise<ApiEnvelope<TaskGuardStatusData>>;
   todoistStatus(): Promise<ApiEnvelope<TodoistStatusData>>;
   todoistConfigure(payload: JsonObject): Promise<ApiEnvelope<JsonValue>>;
   todoistPull(payload: JsonObject): Promise<ApiEnvelope<JsonValue>>;
@@ -564,15 +552,6 @@ export function createApiClient(): BrunnApi {
       });
       return get<TaskContextListData>(`/workspace/contexts?${query.toString()}`);
     },
-    taskContextCreate: (payload) => post<JsonValue>("/workspace/contexts", payload),
-    taskContextsMerge: (payload) => post<JsonValue>("/workspace/contexts/merge", payload),
-    taskContextArchive: (slug, payload) =>
-      patch<JsonValue>(`/workspace/contexts/${encodeURIComponent(slug)}`, payload),
-    taskContextsSetAvailable: (surface, payload) =>
-      put<JsonValue>(
-        `/workspace/contexts/available/${encodeURIComponent(surface)}`,
-        payload,
-      ),
     taskProjects: () => get<TaskProjectListData>("/workspace/projects?limit=100"),
     taskProjectState: (slug) =>
       get<TaskProjectStateData>(
@@ -583,11 +562,6 @@ export function createApiClient(): BrunnApi {
         `/workspace/projects/${encodeURIComponent(slug)}/interest`,
         payload,
       ),
-    taskSettings: () => get<TaskSettingsData>("/workspace/tasks/settings"),
-    taskSettingsUpdate: (payload) =>
-      put<TaskSettingsData>("/workspace/tasks/settings", payload),
-    taskGuardStatus: () =>
-      get<TaskGuardStatusData>("/workspace/tasks/guard/status"),
     todoistStatus: () =>
       get<TodoistStatusData>("/workspace/integrations/todoist/status"),
     todoistConfigure: (payload) =>

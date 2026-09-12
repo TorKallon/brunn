@@ -252,7 +252,7 @@ export function DreamingSettings() {
         </dl>
       </div>
 
-      <p className="settings-note">Review proposals and questions in the Review inbox. Approval in report-only mode remains held; a date alone does not authorize application.</p>
+      <p className="settings-note">Review proposals and questions in the Review inbox. In report-only mode approvals are saved and held; nothing is written until you switch Dreaming to full mode by editing dreams/CONTROL.md.</p>
 
       {connect.state === "failed" ? (
         <p className="dreaming-connect-failed" role="alert">

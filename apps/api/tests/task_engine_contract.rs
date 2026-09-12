@@ -44,6 +44,8 @@ fn task(title: &str, created_day: u32) -> TaskSnapshot {
         parked: false,
         waiting: false,
         today_pin: None,
+        estimate_minutes: None,
+        today_since: None,
         triaged_at: Some(instant(1, 0)),
     }
 }

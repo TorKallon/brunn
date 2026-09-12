@@ -11,6 +11,9 @@ longer written and can be retired after one clean week).
 
 ## 6:30 morning prompt
 
+The live prompt runs on Aether's host, not from this repository; a change here
+must be applied there by hand.
+
 ```text
 Create and deliver Rourke's morning briefing for <today's date,
 America/Los_Angeles> with strict net-new filtering.
@@ -49,16 +52,23 @@ local files, never send an undeduped briefing.
    Record every drop as an omitted entry {story_key, urls, reason}.
 5. Publish one briefing.publish call:
    - date, edition "morning", timezone "America/Los_Angeles", generated_at,
-     summary_md (5-9 bullets), sections ordered by topic section_order,
-     omitted, idempotency_key "briefing-<date>-morning".
+     sections ordered by topic section_order, omitted, idempotency_key
+     "briefing-<date>-morning". summary_md is not accepted; the 30-second
+     summary is the item headlines.
+   - One topic per item; more items beat merged ones.
    - Item style per topic instructions: headline_md is one bold linked
      sentence to the original publisher; body_md one to two sentences;
-     why_it_matters always; detail_md carries the fuller brief (3-5
-     sentences, measurements, context) for expand-in-place; story {key,
+     why_it_matters only when it says something specific to that item,
+     otherwise empty; detail_md carries the fuller brief (3-5 sentences,
+     measurements, context) for expand-in-place and never restates a
+     figure already in the headline or body; story {key,
      urls, title, entities, event_at} on every news item — reuse story keys
      from dedupe results verbatim; times with published_at/event_at/
      first_seen_at when known.
    - Include "health" only when genuinely fresh early data exists.
+   - Include a "Projects" section with one tracker item per project whose
+     project.list status_since is today, escalations first. Unchanged
+     colours are not reported.
 6. Deliver the usual concise iMessage summary linking the briefing.
 7. memory.checkpoint the run: objective, include/omit decisions, publish
    receipt refs.

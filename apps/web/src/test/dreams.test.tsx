@@ -51,7 +51,8 @@ describe("Dreamer Review inbox", () => {
     await user.click(row);
     expect(screen.getByRole("heading", { name: fullTitle })).toHaveTextContent(fullTitle);
     expect(screen.getByText(ending)).toBeInTheDocument();
-    expect(screen.getByText("Report-only · Approvals are held. No candidate is applied in this mode.")).toBeInTheDocument();
+    expect(screen.getByText("Report-only: your approvals are saved and held. Nothing is written until Dreaming is switched to full mode.")).toBeInTheDocument();
+    expect(screen.getByText(/^Saves your approval and holds it\./)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Previous review item" })).toBeDisabled();
     await user.type(screen.getByRole("textbox", { name: "Comment (optional)" }), "Keep the original caveat.");
     await user.click(screen.getByRole("button", { name: "Next review item" }));
@@ -118,6 +119,7 @@ describe("Dreamer Review inbox", () => {
     await user.type(screen.getByRole("textbox", { name: "Comment (optional)" }), "The source is correct.");
     await user.click(screen.getByRole("button", { name: "Approve" }));
     expect(await screen.findByText("Approved and held by report-only mode.")).toBeInTheDocument();
+    expect(screen.getByText("Approved · held. Applies at the first run after full mode is switched on; returns here if its sources change first.")).toBeInTheDocument();
     expect(payload).toEqual({ item_id: candidate.id, run_entry_ref: candidate.run_entry_ref, run_version: 3, candidate_hash: candidate.candidate_hash, expected_decisions_version: 7, decision: "approve", comment: "The source is correct.", idempotency_key: expect.any(String) });
     expect(await screen.findByText("Approved Held")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();

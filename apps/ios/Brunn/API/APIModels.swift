@@ -128,54 +128,10 @@ public enum AgentTaskStatus: String, Codable, Sendable, Equatable {
 public enum AgentTaskView: String, Codable, Sendable, Equatable {
     case urgent
     case next
+    case quick
+    case today
     case triage
     case all
-}
-
-public struct AgentTaskTodoistStatus: Codable, Sendable, Equatable {
-    public let environmentEnabled: Bool
-    public let savedMode: String
-    public let effectiveMode: String
-    public let tokenConfigured: Bool
-    public let configurationGeneration: Int
-    public let lastRunAt: String?
-    public let lastOutcome: String?
-    public let lastErrorCode: String?
-    public let nextRunAt: String?
-
-    public init(
-        environmentEnabled: Bool,
-        savedMode: String,
-        effectiveMode: String,
-        tokenConfigured: Bool,
-        configurationGeneration: Int,
-        lastRunAt: String? = nil,
-        lastOutcome: String? = nil,
-        lastErrorCode: String? = nil,
-        nextRunAt: String? = nil
-    ) {
-        self.environmentEnabled = environmentEnabled
-        self.savedMode = savedMode
-        self.effectiveMode = effectiveMode
-        self.tokenConfigured = tokenConfigured
-        self.configurationGeneration = configurationGeneration
-        self.lastRunAt = lastRunAt
-        self.lastOutcome = lastOutcome
-        self.lastErrorCode = lastErrorCode
-        self.nextRunAt = nextRunAt
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case environmentEnabled = "environment_enabled"
-        case savedMode = "saved_mode"
-        case effectiveMode = "effective_mode"
-        case tokenConfigured = "token_configured"
-        case configurationGeneration = "configuration_generation"
-        case lastRunAt = "last_run_at"
-        case lastOutcome = "last_outcome"
-        case lastErrorCode = "last_error_code"
-        case nextRunAt = "next_run_at"
-    }
 }
 
 public struct AgentTaskCandidate: Identifiable, Codable, Sendable, Equatable {
@@ -190,6 +146,8 @@ public struct AgentTaskCandidate: Identifiable, Codable, Sendable, Equatable {
     public let reason: String
     public let provenanceMarkers: [String]
     public let pinned: Bool
+    public let estimateMinutes: Int?
+    public let todaySince: String?
 
     public var id: String { taskRef }
     public var hasInferredProvenance: Bool { !provenanceMarkers.isEmpty }
@@ -205,7 +163,9 @@ public struct AgentTaskCandidate: Identifiable, Codable, Sendable, Equatable {
         tier: Int,
         reason: String,
         provenanceMarkers: [String] = [],
-        pinned: Bool = false
+        pinned: Bool = false,
+        estimateMinutes: Int? = nil,
+        todaySince: String? = nil
     ) {
         self.taskRef = taskRef
         self.entryRef = entryRef
@@ -218,6 +178,8 @@ public struct AgentTaskCandidate: Identifiable, Codable, Sendable, Equatable {
         self.reason = reason
         self.provenanceMarkers = provenanceMarkers
         self.pinned = pinned
+        self.estimateMinutes = estimateMinutes
+        self.todaySince = todaySince
     }
 
     enum CodingKeys: String, CodingKey {
@@ -232,6 +194,8 @@ public struct AgentTaskCandidate: Identifiable, Codable, Sendable, Equatable {
         case reason
         case provenanceMarkers = "provenance_markers"
         case pinned
+        case estimateMinutes = "estimate_minutes"
+        case todaySince = "today_since"
     }
 }
 
@@ -459,8 +423,41 @@ public struct AgentTaskProject: Identifiable, Codable, Sendable, Equatable {
     public let openTaskCount: Int
     public let lastCheckpointAt: String?
     public let version: Int
+    public let status: AgentTaskProjectStatus?
+    public let statusReason: String?
+    public let statusSince: String?
+    public let statusPrevious: String?
+    public let statusComputedOn: String?
 
     public var id: String { slug }
+
+    public init(
+        slug: String,
+        title: String,
+        interest: String,
+        lastActivityAt: String? = nil,
+        openTaskCount: Int,
+        lastCheckpointAt: String? = nil,
+        version: Int,
+        status: AgentTaskProjectStatus? = nil,
+        statusReason: String? = nil,
+        statusSince: String? = nil,
+        statusPrevious: String? = nil,
+        statusComputedOn: String? = nil
+    ) {
+        self.slug = slug
+        self.title = title
+        self.interest = interest
+        self.lastActivityAt = lastActivityAt
+        self.openTaskCount = openTaskCount
+        self.lastCheckpointAt = lastCheckpointAt
+        self.version = version
+        self.status = status
+        self.statusReason = statusReason
+        self.statusSince = statusSince
+        self.statusPrevious = statusPrevious
+        self.statusComputedOn = statusComputedOn
+    }
 
     enum CodingKeys: String, CodingKey {
         case slug
@@ -470,6 +467,24 @@ public struct AgentTaskProject: Identifiable, Codable, Sendable, Equatable {
         case openTaskCount = "open_task_count"
         case lastCheckpointAt = "last_checkpoint_at"
         case version
+        case status
+        case statusReason = "status_reason"
+        case statusSince = "status_since"
+        case statusPrevious = "status_previous"
+        case statusComputedOn = "status_computed_on"
+    }
+}
+
+/// Nightly project health. Older servers omit it; unknown colours decode as grey.
+public enum AgentTaskProjectStatus: String, Codable, Sendable, Equatable {
+    case grey
+    case green
+    case yellow
+    case red
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = AgentTaskProjectStatus(rawValue: raw) ?? .grey
     }
 }
 
@@ -559,6 +574,35 @@ public struct AgentTaskProjectStateData: Codable, Sendable, Equatable {
         public let interest: String
         public let lastActivityAt: String?
         public let version: Int
+        public let status: AgentTaskProjectStatus?
+        public let statusReason: String?
+        public let statusSince: String?
+        public let statusPrevious: String?
+        public let statusComputedOn: String?
+
+        public init(
+            slug: String,
+            title: String,
+            interest: String,
+            lastActivityAt: String? = nil,
+            version: Int,
+            status: AgentTaskProjectStatus? = nil,
+            statusReason: String? = nil,
+            statusSince: String? = nil,
+            statusPrevious: String? = nil,
+            statusComputedOn: String? = nil
+        ) {
+            self.slug = slug
+            self.title = title
+            self.interest = interest
+            self.lastActivityAt = lastActivityAt
+            self.version = version
+            self.status = status
+            self.statusReason = statusReason
+            self.statusSince = statusSince
+            self.statusPrevious = statusPrevious
+            self.statusComputedOn = statusComputedOn
+        }
 
         enum CodingKeys: String, CodingKey {
             case slug
@@ -566,6 +610,11 @@ public struct AgentTaskProjectStateData: Codable, Sendable, Equatable {
             case interest
             case lastActivityAt = "last_activity_at"
             case version
+            case status
+            case statusReason = "status_reason"
+            case statusSince = "status_since"
+            case statusPrevious = "status_previous"
+            case statusComputedOn = "status_computed_on"
         }
     }
 
@@ -616,6 +665,8 @@ public enum AgentTaskUpdateOperation: Sendable, Equatable, Encodable {
     case waitOn(String)
     case pinToday
     case unpin
+    case addToday
+    case sweep
     case confirmHard
     case downgradeToSoft
     case correct(field: String, value: AgentTaskCorrectionValue, note: String?)
@@ -653,6 +704,10 @@ public enum AgentTaskUpdateOperation: Sendable, Equatable, Encodable {
             try container.encode("pin_today", forKey: .type)
         case .unpin:
             try container.encode("unpin", forKey: .type)
+        case .addToday:
+            try container.encode("add_today", forKey: .type)
+        case .sweep:
+            try container.encode("sweep", forKey: .type)
         case .confirmHard:
             try container.encode("confirm_hard", forKey: .type)
         case .downgradeToSoft:
@@ -687,6 +742,53 @@ public struct AgentTaskUpdateRequest: Encodable, Sendable, Equatable {
         case idempotencyKey = "idempotency_key"
         case operation
     }
+}
+
+/// One owner-typed task captured straight onto today's list.
+public struct AgentTaskCaptureRequest: Encodable, Sendable, Equatable {
+    public struct Item: Encodable, Sendable, Equatable {
+        public let rawText: String
+        public let capturedFrom: String
+        public let today: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case rawText = "raw_text"
+            case capturedFrom = "captured_from"
+            case today
+        }
+    }
+
+    public let idempotencyKey: String
+    public let items: [Item]
+
+    public init(
+        rawText: String,
+        idempotencyKey: String = "ios_task_capture_\(UUID().uuidString.lowercased())"
+    ) {
+        self.idempotencyKey = idempotencyKey
+        items = [Item(rawText: rawText, capturedFrom: "ios:today", today: true)]
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case idempotencyKey = "idempotency_key"
+        case items
+    }
+}
+
+/// Capture receipt: one entry per captured item, in request order.
+public struct AgentTaskCaptureData: Decodable, Sendable, Equatable {
+    public struct Item: Decodable, Sendable, Equatable {
+        public let taskRef: String
+        public let title: String
+
+        enum CodingKeys: String, CodingKey {
+            case taskRef = "task_ref"
+            case title
+        }
+    }
+
+    public let items: [Item]
+    public let replayed: Bool?
 }
 
 public struct WorkspaceDashboardData: Codable, Sendable, Equatable {
@@ -1004,7 +1106,8 @@ public struct BriefingListRow: Codable, Sendable, Equatable, Identifiable {
     public let entryRef: String
     public let version: Int
     public let generatedAt: String?
-    public let summaryMD: [String]
+    /// The first item's `headline_md`, or nil for an edition with no items.
+    public let firstHeadline: String?
     public let sectionTitles: [String]
     public let itemCount: Int
 
@@ -1019,7 +1122,7 @@ public struct BriefingListRow: Codable, Sendable, Equatable, Identifiable {
         entryRef: String,
         version: Int,
         generatedAt: String? = nil,
-        summaryMD: [String] = [],
+        firstHeadline: String? = nil,
         sectionTitles: [String] = [],
         itemCount: Int = 0
     ) {
@@ -1029,7 +1132,7 @@ public struct BriefingListRow: Codable, Sendable, Equatable, Identifiable {
         self.entryRef = entryRef
         self.version = version
         self.generatedAt = generatedAt
-        self.summaryMD = summaryMD
+        self.firstHeadline = firstHeadline
         self.sectionTitles = sectionTitles
         self.itemCount = itemCount
     }
@@ -1041,7 +1144,7 @@ public struct BriefingListRow: Codable, Sendable, Equatable, Identifiable {
         case entryRef = "entry_ref"
         case version
         case generatedAt = "generated_at"
-        case summaryMD = "summary_md"
+        case firstHeadline = "first_headline"
         case sectionTitles = "section_titles"
         case itemCount = "item_count"
     }
@@ -1126,7 +1229,6 @@ public struct BriefingPayload: Codable, Sendable, Equatable {
     public let edition: String
     public let timezone: String?
     public let generatedAt: String?
-    public let summaryMD: [String]?
     public let sections: [BriefingSection]?
     public let delta: BriefingDelta?
 
@@ -1136,7 +1238,6 @@ public struct BriefingPayload: Codable, Sendable, Equatable {
         edition: String,
         timezone: String? = nil,
         generatedAt: String? = nil,
-        summaryMD: [String]? = [],
         sections: [BriefingSection]? = [],
         delta: BriefingDelta? = nil
     ) {
@@ -1145,7 +1246,6 @@ public struct BriefingPayload: Codable, Sendable, Equatable {
         self.edition = edition
         self.timezone = timezone
         self.generatedAt = generatedAt
-        self.summaryMD = summaryMD
         self.sections = sections
         self.delta = delta
     }
@@ -1156,7 +1256,6 @@ public struct BriefingPayload: Codable, Sendable, Equatable {
         case edition
         case timezone
         case generatedAt = "generated_at"
-        case summaryMD = "summary_md"
         case sections
         case delta
     }

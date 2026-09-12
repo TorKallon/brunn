@@ -2,9 +2,7 @@ import type {
   TaskCandidate,
   TaskContextListData,
   TaskDoneSummaryData,
-  TaskGuardStatusData,
   TaskProjectListData,
-  TaskSettingsData,
   TodoistStatusData,
 } from "../lib/types";
 
@@ -93,25 +91,6 @@ export const taskContexts: TaskContextListData = {
   next_cursor: null,
 };
 
-export const taskSettings: TaskSettingsData = {
-  settings: {
-    timezone: "America/Los_Angeles",
-    hard_lead_days: 7,
-    hard_second_lead_hours: 48,
-    due_day_local_time: "07:00:00",
-    soft_window_days: 3,
-    triage_after_days: 7,
-    waiting_followup_days: 7,
-    quiet_hours_start: "22:00:00",
-    quiet_hours_end: "07:00:00",
-    quiet_override_enabled: true,
-    quiet_override_within_hours: 24,
-    surface_defaults: taskContexts.surface_defaults,
-    version: 4,
-    updated_at: now,
-  },
-};
-
 export const todoistStatus: TodoistStatusData = {
   environment_enabled: false,
   saved_mode: "pull",
@@ -124,15 +103,6 @@ export const todoistStatus: TodoistStatusData = {
   next_run_at: null,
 };
 
-export const taskGuardStatus: TaskGuardStatusData = {
-  environment_enabled: true,
-  effective_enabled: true,
-  last_run_at: "2026-08-27T10:57:00Z",
-  last_outcome: "complete",
-  last_error_code: null,
-  next_run_at: "2026-08-27T11:02:00Z",
-};
-
 export const taskProjects: TaskProjectListData = {
   projects: [
     {
@@ -143,6 +113,11 @@ export const taskProjects: TaskProjectListData = {
       hub_path: "sources/Projects/Brunn/Brunn.md",
       repo_path: "/Volumes/NyxFastData/dev/projects/brunn",
       interest: "hot",
+      status: "green",
+      status_reason: "Checkpoint 2 days ago, 8 open tasks, nothing overdue",
+      status_since: "2026-08-25",
+      status_previous: "yellow",
+      status_computed_on: "2026-08-27",
       interest_override: "hot",
       interest_set_by: "owner",
       interest_set_at: "2026-08-26T00:00:00Z",
@@ -226,6 +201,11 @@ export const taskProjectState = {
     slug: "brunn",
     title: "Brunn",
     interest: "hot" as const,
+    status: "yellow" as const,
+    status_reason: "No checkpoint in 9 days",
+    status_since: "2026-08-20",
+    status_previous: "green" as const,
+    status_computed_on: "2026-08-20",
     last_activity_at: "2026-08-27T11:00:00Z",
     version: 2,
   },
@@ -293,14 +273,6 @@ export function defaultTaskRoutes(): Record<string, unknown> {
     "GET /api/v1/workspace/projects": {
       status: "complete",
       data: taskProjects,
-    },
-    "GET /api/v1/workspace/tasks/settings": {
-      status: "complete",
-      data: taskSettings,
-    },
-    "GET /api/v1/workspace/tasks/guard/status": {
-      status: "complete",
-      data: taskGuardStatus,
     },
     "GET /api/v1/workspace/integrations/todoist/status": {
       status: "complete",

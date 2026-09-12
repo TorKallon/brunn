@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
 import { BriefingItemRow } from "../components/BriefingItemRow";
 import { MarkdownView } from "../components/MarkdownView";
 import { Page, PageHeader, Section } from "../components/Page";
@@ -17,16 +16,12 @@ import { useReadOnly } from "../lib/current";
 import { formatDate, humanize } from "../lib/format";
 import { editionTitle, useBriefingsIndex } from "./BriefingsPage";
 
-const SUMMARY_PREVIEW_COUNT = 3;
-
 export function BriefingEditionPage() {
   const { date } = useParams({ from: "/authenticated/briefings/$date" });
   const { edition, item: targetItem } = useSearch({ from: "/authenticated/briefings/$date" });
   const api = useApi();
   const readOnly = useReadOnly();
   const navigate = useNavigate();
-  const [summaryOpen, setSummaryOpen] = useState(false);
-  useEffect(() => setSummaryOpen(false), [date, edition]);
 
   const editionQuery = useQuery({
     queryKey: ["briefings", date, edition],
@@ -38,11 +33,6 @@ export function BriefingEditionPage() {
 
   const data = editionQuery.data?.data;
   const briefing = data?.briefing ?? null;
-  const summary = briefing?.summary_md ?? [];
-  const visibleSummary = summaryOpen
-    ? summary
-    : summary.slice(0, SUMMARY_PREVIEW_COUNT);
-  const hiddenCount = summary.length - SUMMARY_PREVIEW_COUNT;
 
   // The index is newest-first; the nearest older row is the previous day and
   // the last newer row is the next day.
@@ -129,26 +119,6 @@ export function BriefingEditionPage() {
 
       {data && briefing ? (
         <div className="briefing-thread">
-          {summary.length ? (
-            <section className="briefing-summary" aria-label="30-second summary">
-              <h2>30-second summary</h2>
-              <div className="briefing-summary-list">
-                {visibleSummary.map((line, index) => (
-                  <MarkdownView key={index} markdown={line} />
-                ))}
-              </div>
-              {hiddenCount > 0 ? (
-                <button
-                  className="button secondary"
-                  type="button"
-                  aria-expanded={summaryOpen}
-                  onClick={() => setSummaryOpen((value) => !value)}
-                >
-                  {summaryOpen ? "Show less" : `${hiddenCount} more`}
-                </button>
-              ) : null}
-            </section>
-          ) : null}
           {groupBriefingSections(briefing.sections ?? []).map((section) => (
             <Section
               key={section.id}

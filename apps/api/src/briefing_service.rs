@@ -26,7 +26,6 @@ use crate::{
     workspace_features,
 };
 
-pub const SUMMARY_LINE_LIMIT: usize = 12;
 pub const SECTION_LIMIT: usize = 24;
 pub const SECTION_ITEM_LIMIT: usize = 32;
 pub const OMISSION_LIMIT: usize = 64;
@@ -43,7 +42,6 @@ pub const STORY_TITLE_LIMIT_CHARS: usize = 500;
 pub const ENTITY_LIMIT_CHARS: usize = 120;
 pub const ENTITY_LIMIT: usize = 16;
 pub const OMISSION_REASON_LIMIT_CHARS: usize = 1_000;
-pub const SUMMARY_LINE_LIMIT_CHARS: usize = 1_000;
 pub const TIMEZONE_LIMIT_CHARS: usize = 64;
 pub const GENERATED_AT_LIMIT_CHARS: usize = 64;
 
@@ -69,7 +67,9 @@ pub struct BriefingPublishRequest {
     pub edition: String,
     pub timezone: Option<String>,
     pub generated_at: Option<String>,
-    #[serde(default)]
+    /// Retired: the 30-second version is derived from the item headlines.
+    /// Kept only so a client still sending it gets a clear rejection.
+    #[serde(default, skip_serializing)]
     pub summary_md: Vec<String>,
     #[serde(default)]
     pub sections: Vec<BriefingSection>,
@@ -153,9 +153,10 @@ pub fn validate_publish_request(request: &BriefingPublishRequest) -> ApiResult<(
     if let Some(generated_at) = &request.generated_at {
         require_char_limit("generated_at", generated_at, GENERATED_AT_LIMIT_CHARS)?;
     }
-    require_collection_limit("summary_md", request.summary_md.len(), SUMMARY_LINE_LIMIT)?;
-    for line in &request.summary_md {
-        require_char_limit("summary_md line", line, SUMMARY_LINE_LIMIT_CHARS)?;
+    if !request.summary_md.is_empty() {
+        return Err(ApiError::invalid(
+            "summary_md is no longer accepted; the summary is the ordered item headlines",
+        ));
     }
     require_collection_limit("sections", request.sections.len(), SECTION_LIMIT)?;
     require_collection_limit("omitted", request.omitted.len(), OMISSION_LIMIT)?;
@@ -280,13 +281,18 @@ pub fn render_edition_markdown(request: &BriefingPublishRequest) -> String {
     if let Some(stamp) = &generated {
         blocks.push(format!("Generated at {} {}.", stamp.local, stamp.zone));
     }
-    if !request.summary_md.is_empty() {
-        let bullets = request
-            .summary_md
-            .iter()
-            .map(|line| format!("- {}", line.trim()))
-            .collect::<Vec<_>>()
-            .join("\n");
+    let bullets = request
+        .sections
+        .iter()
+        .flat_map(|section| {
+            section
+                .items
+                .iter()
+                .map(|item| format!("- {}: {}", section.title.trim(), item.headline_md.trim()))
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if !bullets.is_empty() {
         blocks.push(format!("## 30-second version\n\n{bullets}"));
     }
     for section in &request.sections {
@@ -1721,6 +1727,19 @@ pub async fn list_editions_in_tx(
                         .map_or(0, Vec::len)
                 })
                 .sum();
+            let first_headline = sections
+                .into_iter()
+                .flatten()
+                .filter_map(|section| {
+                    section
+                        .get("items")?
+                        .as_array()?
+                        .first()?
+                        .get("headline_md")
+                        .cloned()
+                })
+                .next()
+                .unwrap_or(Value::Null);
             json!({
                 "date": date,
                 "edition": edition,
@@ -1728,7 +1747,7 @@ pub async fn list_editions_in_tx(
                 "entry_ref": format!("entry:{entry_id}"),
                 "version": row.get::<i64, _>("current_version"),
                 "generated_at": briefing.get("generated_at").cloned().unwrap_or(Value::Null),
-                "summary_md": briefing.get("summary_md").cloned().unwrap_or_else(|| json!([])),
+                "first_headline": first_headline,
                 "section_titles": section_titles,
                 "item_count": item_count,
             })
@@ -2348,10 +2367,7 @@ mod tests {
             edition: "morning".to_owned(),
             timezone: Some("America/Los_Angeles".to_owned()),
             generated_at: Some("2026-08-01T06:30:00-07:00".to_owned()),
-            summary_md: vec![
-                "OpenAI disclosed an evaluation-agent incident.".to_owned(),
-                "AMZN opened up $32.85.".to_owned(),
-            ],
+            summary_md: Vec::new(),
             sections: vec![
                 BriefingSection {
                     topic: "ai".to_owned(),
@@ -2419,8 +2435,8 @@ mod tests {
             \n\
             ## 30-second version\n\
             \n\
-            - OpenAI disclosed an evaluation-agent incident.\n\
-            - AMZN opened up $32.85.\n\
+            - AI: **[OpenAI incident disclosed](https://example.com/openai)**\n\
+            - Markets: **AMZN opened up $32.85.**\n\
             \n\
             ## AI\n\
             \n\
@@ -2518,10 +2534,6 @@ mod tests {
     fn validation_rejects_oversize_fields_and_collections() {
         let mut request = fixture_request();
         request.sections[0].items[0].headline_md = "h".repeat(HEADLINE_LIMIT_CHARS + 1);
-        assert!(validate_publish_request(&request).is_err());
-
-        let mut request = fixture_request();
-        request.summary_md = vec!["line".to_owned(); SUMMARY_LINE_LIMIT + 1];
         assert!(validate_publish_request(&request).is_err());
 
         let mut request = fixture_request();
@@ -2632,7 +2644,22 @@ mod tests {
         );
         assert!(briefing.get("idempotency_key").is_none());
         assert!(briefing.get("expected_version").is_none());
+        assert!(briefing.get("summary_md").is_none());
         assert!(briefing.get("delta").is_none(), "publish injects the delta");
+    }
+
+    #[test]
+    fn validation_rejects_a_supplied_summary() {
+        let mut request = fixture_request();
+        request.summary_md = vec!["Old-style summary line.".to_owned()];
+        assert!(validate_publish_request(&request).is_err());
+    }
+
+    #[test]
+    fn render_omits_the_summary_without_items() {
+        let mut request = fixture_request();
+        request.sections.clear();
+        assert!(!render_edition_markdown(&request).contains("## 30-second version"));
     }
 
     #[test]
@@ -2945,12 +2972,6 @@ mod tests {
                 "omission reason",
                 Box::new(|request| {
                     request.omitted[0].reason = "r".repeat(OMISSION_REASON_LIMIT_CHARS + 1);
-                }),
-            ),
-            (
-                "summary line",
-                Box::new(|request| {
-                    request.summary_md = vec!["s".repeat(SUMMARY_LINE_LIMIT_CHARS + 1)];
                 }),
             ),
             (

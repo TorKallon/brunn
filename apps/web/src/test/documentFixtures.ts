@@ -56,6 +56,31 @@ export const publishedDocumentFixture = {
   },
 };
 
+/** The static build-served document: no entry, no versions, no sources. */
+export const agentOrientationDocumentFixture = {
+  status: "complete",
+  data: {
+    slug: "agent-orientation",
+    title: "Agent orientation",
+    summary: "Background rules that tool schemas cannot state.",
+    sources: [],
+    body_md: "## Before writing\n\nRead the project hub before adding tasks.",
+    markdown: "# Agent orientation\n\n## Before writing\n\nRead the project hub before adding tasks.",
+    path: null,
+    entry_ref: null,
+    version_ref: null,
+    version: 1,
+    current_version: 1,
+    published_at: null,
+    updated_at: null,
+    versions: [],
+    url: "https://brunn.test/documents/agent-orientation",
+    version_url: "https://brunn.test/documents/agent-orientation?version=1",
+    app_url: "https://brunn.test/app/documents/agent-orientation",
+    app_version_url: "https://brunn.test/app/documents/agent-orientation?version=1",
+  },
+};
+
 export function historicalPublishedDocumentFixture(version = 2) {
   return {
     ...publishedDocumentFixture,

@@ -17,8 +17,8 @@ function readOnlyMe() {
 }
 
 describe("briefings daily thread", () => {
-  it("lists briefing editions with summaries and section chips", async () => {
-    installApiMock({
+  it("lists briefing editions with a plain first-headline preview and section chips", async () => {
+    const fetchMock = installApiMock({
       "GET /api/v1/workspace/briefings": briefingListFixture,
     });
     renderApp("/briefings", "read-token");
@@ -29,22 +29,36 @@ describe("briefings daily thread", () => {
     const card = await screen.findByRole("link", {
       name: /Morning briefing - 2026-08-01/,
     });
-    expect(card).toBeInTheDocument();
-    expect(within(card).getByText(/eval harness/)).toBeInTheDocument();
+    expect(
+      within(card).getByText("OpenAI ships o5 with a new eval harness"),
+    ).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some(([input]) => /\/briefings\/2026-/.test(String(input))),
+    ).toBe(false);
+    expect(within(card).queryByRole("link")).not.toBeInTheDocument();
+    expect(card.querySelector("strong")).toBeNull();
     expect(within(card).getByText("Portfolio")).toBeInTheDocument();
     expect(within(card).getByText("6 items")).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: /Morning briefing - 2026-07-31/ }),
-    ).toBeInTheDocument();
+    const legacy = screen.getByRole("link", {
+      name: /Morning briefing - 2026-07-31/,
+    });
+    expect(legacy.querySelector(".briefing-card-summary")).toBeNull();
   });
 
-  it("renders the edition header, summary disclosure, and section groups", async () => {
+  it("renders the edition header and section groups without a summary block", async () => {
     installApiMock({
       "GET /api/v1/workspace/briefings": briefingListFixture,
-      "GET /api/v1/workspace/briefings/2026-08-01/morning":
-        briefingEditionFixture,
+      "GET /api/v1/workspace/briefings/2026-08-01/morning": {
+        ...briefingEditionFixture,
+        data: {
+          ...briefingEditionFixture.data,
+          briefing: {
+            ...briefingEditionFixture.data.briefing,
+            summary_md: ["Older editions may still carry a summary."],
+          },
+        },
+      },
     });
-    const user = userEvent.setup();
     renderApp("/briefings/2026-08-01?edition=morning", "read-token");
 
     expect(
@@ -55,18 +69,10 @@ describe("briefings daily thread", () => {
     expect(
       await screen.findByText(/^Generated .+ · Updated .+$/),
     ).toBeInTheDocument();
-
-    expect(screen.getByText(/Sleep score 82/)).toBeInTheDocument();
+    expect(screen.queryByText("30-second summary")).not.toBeInTheDocument();
     expect(
-      screen.queryByText(/Discord digest/),
+      screen.queryByText(/Older editions may still carry a summary/),
     ).not.toBeInTheDocument();
-    const disclosure = screen.getByRole("button", { name: "2 more" });
-    expect(disclosure).toHaveAttribute("aria-expanded", "false");
-    await user.click(disclosure);
-    expect(screen.getByText(/Discord digest/)).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Show less" }),
-    ).toHaveAttribute("aria-expanded", "true");
 
     expect(
       screen.getByRole("heading", { name: "Frontier labs" }),

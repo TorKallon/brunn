@@ -13,15 +13,6 @@ enum SampleData {
             edition: "morning",
             timezone: "America/Los_Angeles",
             generatedAt: "2026-08-02T06:30:00-07:00",
-            summaryMD: [
-                "The **native iOS reader** now follows the dense, full-width mobile briefing layout.",
-                "Today exposes the complete summary, every section, and expandable source-backed details.",
-                "News collects the latest new, updated, and corrected items without an assistant hop.",
-                "Archive preserves date, edition, and revision navigation through deployed briefing APIs.",
-                "Tracked topics and pending deep-dives are visible without turning the phone into a second notes store.",
-                "The latest edition remains available in a bounded, data-protected offline cache.",
-                "Private briefing prose stays out of default lock-screen payloads until an authenticated APNs delivery service exists.",
-            ],
             sections: [
                 BriefingSection(
                     topic: "brunn",
@@ -131,7 +122,7 @@ enum SampleData {
             entryRef: briefing.entryRef,
             version: briefing.currentVersion,
             generatedAt: briefing.briefing?.generatedAt,
-            summaryMD: briefing.briefing?.summaryMD ?? [],
+            firstHeadline: briefing.briefing?.sections?.flatMap(\.items).first?.headlineMD,
             sectionTitles: briefing.briefing?.sections?.map(\.title) ?? [],
             itemCount: briefing.briefing?.sections?.reduce(0) { $0 + $1.items.count } ?? 0
         ),
@@ -142,7 +133,7 @@ enum SampleData {
             entryRef: "entry:demo-evening",
             version: 1,
             generatedAt: "2026-08-01T17:30:00-07:00",
-            summaryMD: ["A compact end-of-day edition with two source-backed updates."],
+            firstHeadline: "**Two source-backed updates** closed out the day.",
             sectionTitles: ["Brunn", "Reading experience"],
             itemCount: 2
         ),
@@ -153,7 +144,7 @@ enum SampleData {
             entryRef: "entry:demo-prior-morning",
             version: 3,
             generatedAt: "2026-08-01T06:30:00-07:00",
-            summaryMD: ["The prior morning edition remains available by date and revision."],
+            firstHeadline: "The prior morning edition remains available by date and revision.",
             sectionTitles: ["Platform"],
             itemCount: 1
         ),
@@ -322,7 +313,6 @@ enum SampleData {
                 edition: edition,
                 timezone: briefing.briefing?.timezone,
                 generatedAt: "\(date)T06:30:00-07:00",
-                summaryMD: ["A source-backed \(edition) edition from \(date)."],
                 sections: Array((briefing.briefing?.sections ?? []).prefix(1))
             ),
             markdown: "# \(edition.capitalized) briefing - \(date)",
@@ -506,9 +496,9 @@ enum SampleData {
     )
 
     static let agentTaskProjects: [AgentTaskProject] = [
-        AgentTaskProject(slug: "brunn", title: "Brunn", interest: "hot", lastActivityAt: "2026-08-27T05:45:00-07:00", openTaskCount: 4, lastCheckpointAt: "2026-08-27T05:40:00-07:00", version: 3),
-        AgentTaskProject(slug: "charlemagne", title: "Charlemagne", interest: "hot", lastActivityAt: "2026-08-26T19:00:00-07:00", openTaskCount: 1, lastCheckpointAt: "2026-08-26T18:00:00-07:00", version: 2),
-        AgentTaskProject(slug: "metis", title: "Metis", interest: "normal", lastActivityAt: "2026-08-20T12:00:00-07:00", openTaskCount: 1, lastCheckpointAt: "2026-08-20T12:00:00-07:00", version: 1),
+        AgentTaskProject(slug: "brunn", title: "Brunn", interest: "hot", lastActivityAt: "2026-08-27T05:45:00-07:00", openTaskCount: 4, lastCheckpointAt: "2026-08-27T05:40:00-07:00", version: 3, status: .green, statusReason: "The signing renewal is the only open deadline and it is on track.", statusSince: "2026-08-25", statusComputedOn: "2026-08-27"),
+        AgentTaskProject(slug: "charlemagne", title: "Charlemagne", interest: "hot", lastActivityAt: "2026-08-26T19:00:00-07:00", openTaskCount: 1, lastCheckpointAt: "2026-08-26T18:00:00-07:00", version: 2, status: .red, statusReason: "The oversized machine has been billing for two weeks with no downgrade scheduled.", statusSince: "2026-08-26", statusPrevious: "yellow", statusComputedOn: "2026-08-27"),
+        AgentTaskProject(slug: "metis", title: "Metis", interest: "normal", lastActivityAt: "2026-08-20T12:00:00-07:00", openTaskCount: 1, lastCheckpointAt: "2026-08-20T12:00:00-07:00", version: 1, status: .grey, statusReason: "", statusComputedOn: "2026-08-27"),
     ]
 
     static func agentTaskDetail(reference: String) -> AgentTaskDetail? {
@@ -547,7 +537,12 @@ enum SampleData {
                 title: project.title,
                 interest: project.interest,
                 lastActivityAt: project.lastActivityAt,
-                version: project.version
+                version: project.version,
+                status: project.status,
+                statusReason: project.statusReason,
+                statusSince: project.statusSince,
+                statusPrevious: project.statusPrevious,
+                statusComputedOn: project.statusComputedOn
             ),
             checkpoint: AgentTaskProjectCheckpoint(
                 checkpointAt: project.lastCheckpointAt ?? "2026-08-27T05:00:00-07:00",
@@ -559,7 +554,7 @@ enum SampleData {
                 )
             ),
             urgentCount: agentUrgentTasks.filter { $0.project == project.slug }.count,
-            next: Array(agentNextTasks.filter { $0.project == project.slug }.prefix(3)),
+            next: Array(agentNextTasks.filter { $0.project == project.slug }.prefix(10)),
             waiting: [],
             waitingTotal: 0,
             waitingRemaining: 0,
