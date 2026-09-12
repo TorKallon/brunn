@@ -38,6 +38,11 @@ COPY infra/postgres/init/ /docker-entrypoint-initdb.d/
 
 USER postgres:postgres
 
-# The production lexical heap plus GIN/HNSW working set is about 1.95 GiB.
-# Reserve enough cache for it without consuming the 8 GiB container's OS headroom.
-CMD ["postgres", "-c", "shared_buffers=3GB", "-c", "effective_cache_size=6GB", "-c", "shared_preload_libraries=pg_prewarm"]
+# Measured 2026-09-12 in production: one lexical candidate call touches about
+# 0.4-1.1K shared buffers and one semantic call about 3.2K (under 30 MB), so the
+# buffer pool only needs the hot index pages plus hydration rows. A pinned,
+# prewarmed 3 GB pool inside an 8 GiB container was billed continuously by
+# Railway (memory usage includes page cache) for no measured read-path gain.
+# 1 GB of shared buffers inside a 2 GiB container leaves the kernel about 1 GB
+# of file cache; effective_cache_size tells the planner about both.
+CMD ["postgres", "-c", "shared_buffers=1GB", "-c", "effective_cache_size=1536MB"]

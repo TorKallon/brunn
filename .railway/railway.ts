@@ -104,10 +104,15 @@ const db = service("db", {
     limitOverride: {
       containers: {
         cpu: 2,
-        // The 2026-09-03 corpus has a ~4 GB search_chunks relation (including
-        // ~1.5 GB HNSW and ~2 GB TOAST). At 4 GiB, file-cache refaults pushed
-        // lexical reads and vector writes past the one-second warning gate.
-        memoryBytes: 8 * 1024 * 1024 * 1024,
+        // Railway bills resident memory including page cache, so this limit is
+        // the ceiling on what the database can cost: the kernel reclaims file
+        // cache at the cgroup limit. Measured 2026-09-12: lexical and semantic
+        // candidate calls touch under 30 MB each, so 1 GB of shared buffers
+        // plus about 1 GB of file cache covers the hot set. Raise this back to
+        // 8 GiB (and restore the 3 GB prewarmed pool in
+        // infra/postgres/Dockerfile) only on measured foreground latency
+        // regression, not on resident-memory pressure alone.
+        memoryBytes: 2 * 1024 * 1024 * 1024,
       },
     },
   },

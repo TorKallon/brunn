@@ -57,13 +57,17 @@ class RailwayContractTests(unittest.TestCase):
             DATABASE_DOCKERFILE,
         )
 
-    def test_database_runtime_reserves_shared_cache_and_autoprewarm(self):
+    def test_database_runtime_bounds_shared_cache_without_prewarm(self):
         self.assertIn(
-            'CMD ["postgres", "-c", "shared_buffers=3GB", "-c", '
-            '"effective_cache_size=6GB", "-c", '
-            '"shared_preload_libraries=pg_prewarm"]',
+            'CMD ["postgres", "-c", "shared_buffers=1GB", "-c", '
+            '"effective_cache_size=1536MB"]',
             DATABASE_DOCKERFILE,
         )
+        self.assertNotIn("pg_prewarm", DATABASE_DOCKERFILE)
+        db_block = RAILWAY.split('const db = service("db"', 1)[1].split(
+            'const dreamer = service("dreamer"', 1
+        )[0]
+        self.assertIn("memoryBytes: 2 * 1024 * 1024 * 1024", db_block)
 
     def test_public_web_is_the_only_domain_boundary(self):
         self.assertNotIn("domains:", RAILWAY)
