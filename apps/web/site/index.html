@@ -1,0 +1,754 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>brunn — one memory and workspace for all your agents</title>
+<meta name="description" content="One portable memory and workspace for Claude Code, Codex, ChatGPT, Grok, Grok Bot and OpenClaw, plus a morning briefing, tasks and a nightly Dreamer.">
+<link rel="canonical" href="https://brunn.ai/">
+<meta name="theme-color" content="#06152C">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://brunn.ai/">
+<meta property="og:site_name" content="brunn">
+<meta property="og:title" content="brunn — one memory and workspace for all your agents">
+<meta property="og:description" content="One portable memory and workspace for Claude Code, Codex, ChatGPT, Grok, Grok Bot and OpenClaw. Switch agents without losing the thread.">
+<meta property="og:image" content="https://brunn.ai/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="A point of light held above still water in a deep blue night.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="brunn — one memory and workspace for all your agents">
+<meta name="twitter:description" content="One portable memory and workspace for Claude Code, Codex, ChatGPT, Grok, Grok Bot and OpenClaw. Switch agents without losing the thread.">
+<meta name="twitter:image" content="https://brunn.ai/og.png">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://brunn.ai/#org",
+      "name": "brunn",
+      "url": "https://brunn.ai/",
+      "logo": "https://brunn.ai/apple-touch-icon.png",
+      "parentOrganization": { "@type": "Organization", "name": "Kallon Labs" }
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://brunn.ai/#app",
+      "name": "brunn",
+      "url": "https://brunn.ai/",
+      "applicationCategory": "DeveloperApplication",
+      "applicationSubCategory": "AI agent memory",
+      "operatingSystem": "Web, iOS, Docker",
+      "description": "One portable memory and workspace for all your agents. Claude Code, Codex, ChatGPT, Grok, Grok Bot and OpenClaw share one durable, source-backed well over MCP, so you can switch agents without losing state. Plus a morning briefing, tasks, and a nightly Dreamer.",
+      "image": "https://brunn.ai/og.png",
+      "publisher": { "@id": "https://brunn.ai/#org" },
+      "offers": { "@type": "Offer", "availability": "https://schema.org/PreOrder", "price": "0", "priceCurrency": "USD", "description": "Coming soon." }
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        { "@type": "Question", "name": "What is brunn?", "acceptedAnswer": { "@type": "Answer", "text": "brunn is one memory and workspace for all your agents: a durable, portable place where the AI agents you use drop in what they learn and draw it back up later. It holds source material, checkpoints, tasks, briefings, files and credentials in one well that Claude Code, Codex, ChatGPT, Grok, Grok Bot, OpenClaw and any MCP client can open." } },
+        { "@type": "Question", "name": "Which agents and tools work with brunn?", "acceptedAnswer": { "@type": "Answer", "text": "Anything that speaks the Model Context Protocol. brunn exposes one hosted, OAuth-protected MCP endpoint at brunn.ai/mcp, so Claude Code, Codex, ChatGPT, Claude.ai, Grok, Grok Bot, OpenClaw and other MCP clients share the same memory and you can switch between them mid-task. There is also an HTTP API, a local MCP adapter, a web app and a native iPhone app." } },
+        { "@type": "Question", "name": "How is brunn different from a memory API like Mem0 or Zep?", "acceptedAnswer": { "@type": "Answer", "text": "Memory APIs store extracted facts for an application you build. brunn is the workspace for the agents you already use: every answer is drawn from exact, versioned sources you can inspect; sessions leave checkpoints a fresh agent can resume; and the same well feeds a morning briefing, a task list and a nightly Dreamer. It is a version of the knowledge-wiki pattern: raw sources stay untouched, and agent-maintained overviews compile them, with a review step before anything changes." } },
+        { "@type": "Question", "name": "Where does my data live?", "acceptedAnswer": { "@type": "Answer", "text": "Plain Markdown and your stored files are the source of truth; search indexes and views are rebuilt from them. Export the whole well at any time as files and a manifest. The hosted service runs at brunn.ai. Credentials live in an encrypted vault outside the searchable corpus." } },
+        { "@type": "Question", "name": "Is brunn open source? Can I self-host it?", "acceptedAnswer": { "@type": "Answer", "text": "Not yet. An open-source release is probable: the code is being cleaned up and the self-host path (a Rust API, PostgreSQL and S3-compatible storage under Docker Compose) made simple first. When it is ready, the repository will be linked from this page." } },
+        { "@type": "Question", "name": "How do you pronounce brunn?", "acceptedAnswer": { "@type": "Answer", "text": "One syllable: brun, rhyming with 'put'. It comes from the Old Norse brunnr, a well, as in Mímisbrunnr, the well of memory beneath the world tree. It is written in lowercase." } }
+      ]
+    }
+  ]
+}
+</script>
+<style>
+/* ---- Still Water tokens (docs/Brand.md) ---- */
+:root{
+  --night-950:#030B18;--night-900:#06152C;--night-800:#0B2144;--night-700:#132D58;
+  --night-edge:#102A50;--night-line:#21385C;--night-line-bright:#294D89;
+  --on-night:#F5F8FF;--on-night-muted:#BDC9E2;--on-night-faint:#9FB0D2;--night-ink:#0A1638;
+  --signal-700:#2444B7;--signal-600:#3158D9;--signal-500:#4A6FE8;--signal-400:#607DFF;
+  --signal-300:#8FA9FF;--signal-200:#A9BCFF;--signal-100:#C7D9FF;--signal-soft:#E9EDFF;
+  --signal-wash:#F4F6FF;--signal-ink:#263F9E;--signal-line:#A9BCE8;
+  --bg:#F5F6FA;--surface:#FFFFFF;--surface-subtle:#F0F2F8;--surface-strong:#E4E8F2;
+  --code-bg:#F5F7FB;--code-ink:#232B3B;--line:#D9DDE8;--line-strong:#BCC4D6;
+  --ink:#1B2130;--ink-2:#3E4557;--ink-3:#4A5468;--muted:#5D6780;--faint:#6B7690;
+  --green:#177A4F;--green-soft:#E3F3EA;--green-line:#9CC9B4;
+  --amber:#8B5B09;--amber-soft:#FAF0D9;--amber-line:#DBBA7B;
+  --red:#A23B3B;--pulse:#0F97A8;--data-neutral:#8A96AC;
+  --serif:Georgia,"Iowan Old Style","Times New Roman",serif;
+  --sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --shadow-hero:0 18px 50px rgb(6 21 44 / 16%);
+  --shadow-card:0 8px 24px rgb(11 22 52 / 10%);
+  --r-sm:6px;--r-md:10px;--r-lg:16px;
+  --w:1120px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:1rem;line-height:1.6;color-scheme:light}
+img,svg{max-width:100%;display:block}
+a{color:var(--signal-600);text-decoration:none}
+a:hover{color:var(--signal-700);text-decoration:underline;text-underline-offset:.16em}
+:focus-visible{outline:2px solid var(--signal-400);outline-offset:2px}
+h1,h2,h3{margin:0;font-family:var(--serif);font-weight:500;letter-spacing:-.02em;text-wrap:balance}
+p{margin:0}
+.wrap{max-width:var(--w);margin:0 auto;padding:0 28px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.kicker{font-family:var(--sans);font-size:.7rem;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--signal-600)}
+.on-night .kicker{color:var(--signal-300)}
+.mono{font-family:var(--mono);font-size:.86em}
+.btn{display:inline-flex;align-items:center;gap:.5rem;padding:.72rem 1.15rem;border-radius:var(--r-sm);font-weight:600;font-size:.92rem;line-height:1;border:1px solid transparent;cursor:pointer;white-space:nowrap}
+.btn:hover{text-decoration:none}
+.btn.primary{background:var(--signal-600);color:#fff}
+.btn.primary:hover{background:var(--signal-700);color:#fff}
+.btn.secondary{background:var(--surface);border-color:var(--line-strong);color:var(--ink)}
+.btn.secondary:hover{background:var(--surface-subtle);color:var(--ink)}
+.on-night .btn.primary{background:var(--signal-300);color:var(--night-ink)}
+.on-night .btn.primary:hover{background:var(--signal-200);color:var(--night-ink)}
+.on-night .btn.secondary{background:rgb(255 255 255 / 8%);border-color:var(--night-line-bright);color:var(--on-night)}
+.on-night .btn.secondary:hover{background:rgb(255 255 255 / 13%);color:var(--on-night)}
+.soon{font-size:.66rem;font-weight:600;letter-spacing:.14em;text-transform:uppercase;padding:.22rem .5rem;border-radius:999px;background:var(--signal-soft);color:var(--signal-ink);border:1px solid var(--signal-line)}
+.on-night .soon{background:rgb(143 169 255 / 14%);color:var(--signal-200);border-color:rgb(143 169 255 / 35%)}
+
+/* ---- Night chrome ---- */
+.on-night{background:var(--night-900);color:var(--on-night)}
+.on-night a{color:var(--signal-200)}
+.on-night a:hover{color:var(--signal-100)}
+
+/* ---- Nav ---- */
+.nav{position:sticky;top:0;z-index:10;background:rgb(6 21 44 / 92%);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--night-line)}
+.nav .wrap{display:flex;align-items:center;gap:1.5rem;height:64px}
+.brand{display:inline-flex;align-items:center;gap:.6rem;color:var(--on-night)}
+.brand:hover{text-decoration:none;color:var(--on-night)}
+.brand span{font-family:var(--serif);font-weight:500;letter-spacing:-.03em;font-size:1.35rem;line-height:1}
+.nav-links{display:flex;gap:1.35rem;margin-left:1rem;font-size:.9rem;font-weight:500}
+.nav-links a{color:var(--on-night-muted)}
+.nav-links a:hover{color:var(--on-night);text-decoration:none}
+.nav-right{margin-left:auto;display:flex;align-items:center;gap:.9rem}
+.nav-right .signin{font-size:.9rem;font-weight:500;color:var(--on-night-muted)}
+.nav-right .signin:hover{color:var(--on-night);text-decoration:none}
+.icon-link{display:inline-flex;width:34px;height:34px;align-items:center;justify-content:center;border-radius:var(--r-sm);color:var(--on-night-muted)}
+.icon-link:hover{background:rgb(255 255 255 / 8%);color:var(--on-night);text-decoration:none}
+.icon-link svg{width:18px;height:18px;fill:currentColor}
+.nav .btn{padding:.6rem 1rem}
+@media (max-width:900px){.nav-links{display:none}.nav-right .signin{display:none}}
+
+/* ---- Hero ---- */
+.hero{position:relative;overflow:hidden;background:linear-gradient(180deg,var(--night-900) 0%,var(--night-950) 100%)}
+.hero::before{content:"";position:absolute;inset:0;background:radial-gradient(60% 50% at 18% 12%,rgb(74 111 232 / 22%) 0%,rgb(74 111 232 / 0%) 70%);pointer-events:none}
+.hero .wrap{position:relative;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:3rem;align-items:center;padding-top:5.5rem;padding-bottom:6.5rem}
+.hero h1{font-size:clamp(2.3rem,4.6vw,3.5rem);line-height:1.08;letter-spacing:-.03em;margin-top:1rem}
+.hero .lede{margin-top:1.35rem;font-size:1.12rem;line-height:1.6;color:var(--on-night-muted);max-width:34rem}
+.hero .lede strong{color:var(--on-night);font-weight:600}
+.hero .cta{display:flex;flex-wrap:wrap;align-items:center;gap:.8rem;margin-top:2rem}
+.works{margin-top:2.6rem;display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 1.1rem;font-size:.82rem;color:var(--on-night-faint)}
+.works .lbl{letter-spacing:.14em;text-transform:uppercase;font-weight:600;font-size:.66rem}
+.works b{font-weight:500;color:var(--on-night-muted)}
+.waterline{position:absolute;left:0;right:0;bottom:0;height:150px;pointer-events:none}
+@media (max-width:900px){.hero .wrap{grid-template-columns:1fr;padding-top:3.5rem;padding-bottom:8rem}.hero .lede{max-width:none}.waterline{height:110px}}
+
+/* Session card (terminal) */
+.session{background:var(--night-950);border:1px solid var(--night-line-bright);border-radius:var(--r-md);box-shadow:var(--shadow-hero);font-family:var(--mono);font-size:.76rem;line-height:1.55;color:var(--on-night-muted);overflow:hidden}
+.session .bar{display:flex;align-items:center;gap:.6rem;padding:.55rem .9rem;border-bottom:1px solid var(--night-line);font-family:var(--sans);font-size:.72rem;color:var(--on-night-faint)}
+.session .bar i{width:9px;height:9px;border-radius:50%;background:var(--night-line-bright);display:inline-block}
+.session .bar i.on{background:var(--signal-300)}
+.session pre{margin:0;padding:1rem 1.1rem 1.1rem;white-space:pre;font:inherit;overflow-x:auto}
+@media (max-width:600px){.session pre{white-space:pre-wrap;word-break:break-word}}
+.session .c{color:var(--signal-300)}
+.session .k{color:var(--on-night)}
+.session .d{color:var(--on-night-faint)}
+.session .ok{color:var(--signal-100)}
+
+/* ---- Hand-off thread ---- */
+.thread{list-style:none;margin:3rem 0 0;padding:0;display:grid;grid-template-columns:repeat(5,1fr);gap:1.5rem;position:relative}
+.thread::before{content:"";position:absolute;left:0;right:0;top:5px;height:1px;background:var(--line-strong)}
+.thread li{position:relative;padding-top:1.4rem}
+.thread li::before{content:"";position:absolute;top:0;left:0;width:11px;height:11px;border-radius:50%;background:var(--signal-600);box-shadow:0 0 0 3px var(--bg)}
+.thread .when{display:block;font-size:.72rem;color:var(--faint);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.thread .who{display:inline-block;margin-top:.3rem;font-weight:600;font-size:.95rem;color:var(--ink)}
+.thread p{margin-top:.4rem;font-size:.9rem;color:var(--ink-2);line-height:1.5}
+.thread-note{margin-top:2rem;font-size:.86rem;color:var(--muted)}
+@media (max-width:900px){.thread{grid-template-columns:1fr;gap:1.2rem}.thread::before{left:5px;top:0;bottom:0;width:1px;height:auto}.thread li{padding-top:0;padding-left:1.6rem}.thread li::before{top:.35rem}}
+
+/* ---- Sections ---- */
+.section{padding:5.5rem 0}
+.section + .section{border-top:1px solid var(--line)}
+.section-head{max-width:40rem}
+.section-head h2{font-size:clamp(1.75rem,3vw,2.35rem);line-height:1.15;margin-top:.6rem}
+.section-head p{margin-top:1rem;font-size:1.05rem;color:var(--ink-2);max-width:36rem}
+.feature{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4rem;align-items:center}
+.feature.flip .copy{order:2}
+.feature .copy h2{font-size:clamp(1.75rem,3vw,2.35rem);line-height:1.15;margin-top:.6rem}
+.feature .copy > p{margin-top:1rem;font-size:1.05rem;color:var(--ink-2);max-width:32rem}
+.points{list-style:none;padding:0;margin:1.6rem 0 0;display:grid;gap:.9rem;max-width:32rem}
+.points li{display:grid;grid-template-columns:8px 1fr;gap:.85rem;align-items:start;color:var(--ink-2);font-size:.97rem}
+.points li::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--signal-600);margin-top:.55rem}
+.points b{color:var(--ink);font-weight:600}
+@media (max-width:900px){.feature{grid-template-columns:1fr;gap:2.5rem}.feature.flip .copy{order:0}.section{padding:4rem 0}}
+
+/* ---- Proof strip ---- */
+.proof{padding:3.6rem 0;background:var(--surface);border-bottom:1px solid var(--line)}
+.proof .wrap{display:grid;grid-template-columns:repeat(3,1fr);gap:2.5rem}
+.proof h3{font-size:1.2rem;line-height:1.3;font-weight:600}
+.proof p{margin-top:.5rem;color:var(--ink-2);font-size:.95rem}
+.proof .col{border-left:3px solid var(--signal-600);padding-left:1.1rem}
+@media (max-width:900px){.proof .wrap{grid-template-columns:1fr;gap:1.8rem}}
+
+/* ---- Product mocks (shared) ---- */
+.mock{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);box-shadow:var(--shadow-card);font-size:.86rem;overflow:hidden}
+.mock .head{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.8rem 1rem;border-bottom:1px solid var(--line);background:var(--surface)}
+.mock .head b{font-weight:600;font-size:.9rem}
+.mock .head small{color:var(--faint);font-size:.76rem;font-variant-numeric:tabular-nums}
+.chip{display:inline-block;font-size:.64rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;padding:.16rem .45rem;border-radius:4px;background:var(--surface-subtle);color:var(--ink-3);white-space:nowrap}
+.chip.new{background:var(--signal-soft);color:var(--signal-ink)}
+.chip.ok{background:var(--green-soft);color:var(--green)}
+.chip.warn{background:var(--amber-soft);color:var(--amber)}
+.chip.teal{background:#E1F3F5;color:#0F7583}
+.mock .caption{font-size:.64rem;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);padding:.75rem 1rem .3rem}
+.mock .row{display:grid;grid-template-columns:1fr auto;gap:.8rem;align-items:baseline;padding:.6rem 1rem;border-top:1px solid var(--line)}
+.mock .row:first-of-type{border-top:0}
+.mock .row .t{color:var(--ink);line-height:1.4}
+.mock .row .t a{color:var(--ink);font-weight:600}
+.mock .row .m{color:var(--faint);font-size:.76rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mock .row .sub{display:block;color:var(--muted);font-size:.8rem;margin-top:.15rem}
+.mock .foot{padding:.7rem 1rem;border-top:1px solid var(--line);background:var(--code-bg);color:var(--muted);font-size:.78rem}
+.mock-note{margin-top:.8rem;font-size:.78rem;color:var(--faint);text-align:center}
+
+/* Checkpoint mock */
+.ckpt{padding:1rem 1.1rem}
+.ckpt .obj{font-family:var(--serif);font-size:1.15rem;line-height:1.3;letter-spacing:-.01em;color:var(--ink)}
+.ckpt dl{margin:.9rem 0 0;display:grid;grid-template-columns:auto 1fr;gap:.45rem 1rem;font-size:.84rem}
+.ckpt dt{color:var(--faint);font-size:.66rem;font-weight:600;letter-spacing:.14em;text-transform:uppercase;padding-top:.2rem}
+.ckpt dd{margin:0;color:var(--ink-2)}
+.ckpt dd ul{margin:0;padding-left:1rem}
+.ckpt dd li+li{margin-top:.15rem}
+.src{display:flex;flex-wrap:wrap;gap:.4rem}
+.src span{font-family:var(--mono);font-size:.74rem;background:var(--code-bg);color:var(--code-ink);border:1px solid var(--line);border-radius:4px;padding:.12rem .4rem}
+.src span i{font-style:normal;color:var(--faint)}
+.tools{margin:1.6rem 0 0;padding:0;list-style:none;display:grid;grid-template-columns:auto 1fr;gap:.55rem 1rem;font-size:.9rem;max-width:34rem;align-items:start}
+.tools li{display:contents}
+.tools code{margin-top:.15rem}
+.tools code{font-family:var(--mono);font-size:.8rem;color:var(--signal-ink);background:var(--signal-wash);border:1px solid var(--signal-line);border-radius:4px;padding:.1rem .4rem;white-space:nowrap}
+.tools span{color:var(--ink-2)}
+
+/* ---- iPhone app mocks (dark workroom, Still Water dark tokens) ---- */
+.ios{--ibg:#0A1322;--icard:#050B16;--iline:#1B2946;--iink:#E7EDF9;--imuted:#93A0BE;--ifaint:#8894B2;--ilink:#8FA9FF;--iteal:#5FB9D0;--igreen:#66C695;--ipink:#E08894;
+  width:min(320px,100%);margin:0 auto;background:var(--night-950);border-radius:42px;padding:10px;box-shadow:var(--shadow-hero);border:1px solid var(--night-line-bright);font-family:var(--sans)}
+.ios .screen{position:relative;background:var(--ibg);color:var(--iink);border-radius:34px;overflow:hidden;font-size:.8rem;line-height:1.35;padding-bottom:4.4rem}
+.ios .status{display:flex;justify-content:space-between;align-items:center;padding:.7rem 1.4rem .2rem;font-size:.74rem;font-weight:600;font-variant-numeric:tabular-nums}
+.ios .sig{display:inline-flex;gap:2px;align-items:flex-end}
+.ios .sig i{width:3px;background:var(--iink);border-radius:1px;height:6px}
+.ios .sig i:nth-child(2){height:8px}.ios .sig i:nth-child(3){height:10px}
+.ios .top{position:relative;text-align:center;font-weight:600;font-size:1rem;padding:.7rem 1rem .9rem}
+.ios .refresh{position:absolute;right:.9rem;top:.55rem;width:26px;height:26px;border-radius:50%;background:rgb(255 255 255 / 8%)}
+.ios .refresh::after{content:"";position:absolute;inset:7px;border:1.5px solid var(--ilink);border-radius:50%;border-right-color:transparent}
+.ios .pad{padding:0 .9rem}
+.ios .h1{font-size:1.15rem;font-weight:700;letter-spacing:-.01em;line-height:1.25}
+.ios .meta{margin-top:.25rem;font-size:.68rem;color:var(--ifaint)}
+.ios .list{margin:.8rem .8rem 0;background:var(--icard);border-radius:10px;overflow:hidden}
+.ios .item{display:grid;grid-template-columns:1fr 14px;gap:.2rem .6rem;padding:.6rem .8rem;border-top:1px solid var(--iline);align-items:center}
+.ios .item:first-child{border-top:0}
+.ios .cap{grid-column:1/3;font-size:.6rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ifaint)}
+.ios .hl{font-size:.8rem;color:var(--iink);line-height:1.35}
+.ios .chev{width:8px;height:8px;border-right:1.5px solid var(--imuted);border-bottom:1.5px solid var(--imuted);transform:rotate(45deg);justify-self:center;margin-top:-4px}
+.ios .chips{display:flex;gap:.4rem;padding:.2rem .8rem .7rem;overflow:hidden;white-space:nowrap}
+.ios .chips span{flex:none;background:var(--icard);border-radius:999px;padding:.35rem .7rem .35rem .55rem;font-size:.76rem;font-weight:600}
+.ios .chips span::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ifaint);margin-right:.4rem;vertical-align:middle}
+.ios .sec{margin:.5rem 0 .4rem;font-size:.66rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;display:flex;align-items:center;gap:.4rem}
+.ios .sec::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.ios .sec b{font-weight:500;color:var(--ifaint);letter-spacing:0}
+.ios .sec.urgent{color:var(--ipink)}.ios .sec.today{color:var(--ilink)}.ios .sec.quick{color:var(--iteal)}
+.ios .task{display:grid;grid-template-columns:20px 1fr;gap:.7rem;align-items:start;margin:0 .8rem .4rem;background:var(--icard);border-radius:10px;padding:.65rem .8rem}
+.ios .ring{width:16px;height:16px;border:1.5px solid var(--igreen);border-radius:50%;margin-top:.1rem}
+.ios .tt{font-size:.82rem;font-weight:600;line-height:1.3}
+.ios .tag{display:block;font-weight:500;font-size:.7rem;color:var(--iteal);margin-top:.15rem}
+.ios .tm{display:block;font-weight:400;font-size:.7rem;color:var(--ifaint);margin-top:.15rem}
+.ios .tm.stale{color:#D9A251}
+.ios .add{margin:0 .8rem .4rem;background:var(--icard);border-radius:10px;padding:.6rem .8rem;color:var(--ifaint);font-size:.82rem}
+.ios .note{font-size:.7rem;color:var(--imuted);line-height:1.45;padding-bottom:.6rem;border-bottom:1px solid var(--iline)}
+.ios .runrow{display:grid;grid-template-columns:1fr 14px;align-items:center;padding:.7rem 0;font-size:.95rem;border-bottom:1px solid var(--iline)}
+.ios .count{margin-top:.7rem;font-size:.95rem;font-weight:600}
+.ios .count small{display:block;font-size:.7rem;color:var(--ifaint);font-weight:400}
+.ios .seg{display:grid;grid-template-columns:repeat(3,1fr);margin:.6rem 0 .4rem;background:var(--icard);border-radius:999px;padding:3px;font-size:.72rem;text-align:center}
+.ios .seg span{padding:.35rem 0;border-radius:999px;color:var(--imuted)}
+.ios .seg .on{background:rgb(255 255 255 / 12%);color:var(--iink);font-weight:600}
+.ios .runrow .chev,.ios .rv .chev{transform:rotate(-45deg);margin-top:.35rem}
+.ios .rv{display:grid;grid-template-columns:18px 1fr 14px;gap:.6rem;align-items:start;margin:0 .9rem;padding:.7rem 0;border-top:1px solid var(--iline)}
+.ios .rv:nth-of-type(1){border-top:0}
+.ios .ic{width:14px;height:16px;border:1.5px solid var(--ilink);border-radius:2px;margin-top:.15rem;position:relative}
+.ios .ic::after{content:"";position:absolute;left:3px;top:4px;width:6px;height:1.5px;background:var(--ilink);box-shadow:0 3px 0 var(--ilink)}
+.ios .ic.q{border-color:#D9A251}.ios .ic.q::after{background:#D9A251;box-shadow:0 3px 0 #D9A251}
+.ios .rv .tt{font-weight:500;font-size:.8rem}
+.ios .st{display:block;font-size:.7rem;color:var(--ilink);margin-top:.2rem;font-weight:400}
+.ios .tabs{position:absolute;left:.7rem;right:.7rem;bottom:.6rem;display:flex;justify-content:space-around;align-items:center;padding:.5rem .3rem;border-radius:999px;background:rgb(16 27 48 / 92%);border:1px solid var(--iline);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.ios .tabs span{display:flex;flex-direction:column;align-items:center;gap:.15rem;font-size:.56rem;font-weight:600;color:var(--imuted);padding:.25rem .45rem;border-radius:999px}
+.ios .tabs span.on{color:var(--ilink);background:rgb(255 255 255 / 8%)}
+.ios .tabs svg{width:17px;height:17px;fill:currentColor}
+.ios .tabs svg[fill="none"]{fill:none}
+.ios .tabs i{font-style:normal}
+
+/* dark workroom variant of the web mock */
+.mock.dark{background:#101B30;border-color:#223255;color:#D7DFEE}
+.mock.dark .head{background:#101B30;border-color:#223255}
+.mock.dark .head b{color:#D7DFEE}
+.mock.dark .head small,.mock.dark .foot{color:#93A0BE}
+.mock.dark .foot{background:#0D1626;border-color:#223255}
+.mock.dark .ckpt .obj{color:#D7DFEE}
+.mock.dark .ckpt dt{color:#8894B2}
+.mock.dark .ckpt dd{color:#C6D0E4}
+.mock.dark .src span{background:#0D1626;color:#C6D1E8;border-color:#223255}
+.mock.dark .src span i{color:#8894B2}
+
+/* ---- How it works ---- */
+.steps{margin-top:3rem;display:grid;grid-template-columns:repeat(3,1fr);gap:2rem;counter-reset:step}
+.step{position:relative;padding-top:1.2rem;border-top:1px solid var(--line-strong)}
+.step::before{counter-increment:step;content:counter(step);position:absolute;top:-.7rem;left:0;width:1.4rem;height:1.4rem;border-radius:50%;background:var(--signal-600);color:#fff;font-size:.72rem;font-weight:600;display:grid;place-items:center}
+.step h3{font-size:1.25rem;font-weight:600;margin-top:.2rem}
+.step p{margin-top:.5rem;color:var(--ink-2);font-size:.95rem}
+.cmd{margin-top:.9rem;background:var(--night-950);color:var(--on-night-muted);border:1px solid var(--night-line-bright);border-radius:var(--r-sm);padding:.7rem .85rem;font-family:var(--mono);font-size:.74rem;line-height:1.5;overflow-x:auto;white-space:pre}
+.cmd b{color:var(--signal-300);font-weight:500}
+@media (max-width:900px){.steps{grid-template-columns:1fr}}
+
+/* ---- Hold grid ---- */
+.hold{margin-top:3rem;display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem}
+.hold div{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:1.3rem 1.35rem}
+.hold h3{font-size:1.05rem;font-weight:600;font-family:var(--sans);letter-spacing:0}
+.hold p{margin-top:.4rem;color:var(--ink-2);font-size:.92rem}
+@media (max-width:900px){.hold{grid-template-columns:1fr 1fr}}
+@media (max-width:600px){.hold{grid-template-columns:1fr}}
+
+/* ---- Source (GitHub) ---- */
+.source{margin-top:3rem;display:flex;flex-wrap:wrap;align-items:center;gap:1.2rem 2rem;padding:1.4rem 1.6rem;border:1px dashed var(--line-strong);border-radius:var(--r-md);background:var(--surface)}
+.source p{flex:1 1 24rem;color:var(--ink-2);font-size:.95rem}
+.source .btn svg{width:18px;height:18px;fill:currentColor}
+
+/* ---- FAQ ---- */
+.faq{margin-top:2.5rem;max-width:44rem;border-top:1px solid var(--line)}
+.faq details{border-bottom:1px solid var(--line)}
+.faq summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:1.05rem 0;font-family:var(--serif);font-size:1.15rem;letter-spacing:-.01em;color:var(--ink)}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";font-family:var(--sans);color:var(--signal-600);font-size:1.3rem;line-height:1;flex:none}
+.faq details[open] summary::after{content:"–"}
+.faq .a{padding:0 0 1.2rem;color:var(--ink-2);max-width:40rem}
+.faq .a p+p{margin-top:.6rem}
+
+/* ---- Final CTA ---- */
+.final{position:relative;overflow:hidden;background:linear-gradient(180deg,var(--night-900),var(--night-950))}
+.final::before{content:"";position:absolute;inset:0;background:radial-gradient(50% 45% at 20% 10%,rgb(74 111 232 / 18%),rgb(74 111 232 / 0%) 70%);pointer-events:none}
+.final .wrap{position:relative;padding:6rem 28px 7rem;text-align:center;max-width:44rem}
+.final h2{font-size:clamp(2rem,4vw,2.9rem);line-height:1.12;letter-spacing:-.03em}
+.final p{margin-top:1rem;color:var(--on-night-muted);font-size:1.08rem}
+.final .fine{margin-top:1.4rem;font-size:.84rem;color:var(--on-night-faint)}
+.final .fine a{color:var(--signal-200)}
+
+/* ---- Footer ---- */
+.footer{background:var(--night-950);color:var(--on-night-faint);border-top:1px solid var(--night-line);font-size:.86rem}
+.footer .wrap{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:2rem;padding:3.2rem 28px 2.4rem}
+.footer .brand{color:var(--on-night)}
+.footer .tag{margin-top:.8rem;max-width:20rem;color:var(--on-night-faint)}
+.footer h4{margin:0 0 .7rem;font-size:.66rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--on-night-muted)}
+.footer ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.footer a{color:var(--on-night-faint)}
+.footer a:hover{color:var(--on-night)}
+.footer .legal{border-top:1px solid var(--night-line)}
+.footer .legal .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.6rem 1.5rem;padding:1.1rem 28px;font-size:.78rem}
+.footer .legal a{color:var(--on-night-faint)}
+@media (max-width:900px){.footer .wrap{grid-template-columns:1fr 1fr}}
+@media (max-width:600px){.footer .wrap{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header class="nav on-night">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="brunn home">
+      <span>brunn</span>
+    </a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#handoff">Switch</a>
+      <a href="#memory">Memory</a>
+      <a href="#briefing">Briefing</a>
+      <a href="#tasks">Tasks</a>
+      <a href="#dreamer">Dreamer</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="nav-right">
+      <!-- GitHub: set href when the repository is public. -->
+      <a class="icon-link" href="#source" aria-label="Source code" title="Source code">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      </a>
+      <a class="signin" href="/login">Sign in</a>
+      <a class="btn primary" href="#soon">Coming soon</a>
+    </div>
+  </div>
+</header>
+
+<main>
+<section class="hero on-night">
+  <div class="wrap">
+    <div>
+      <p class="kicker">For Claude Code, Codex, ChatGPT, Grok, Grok Bot and OpenClaw</p>
+      <h1>One memory and workspace for all your agents.</h1>
+      <p class="lede">brunn is the well your agents draw from: <strong>durable, portable, source-backed memory</strong> that every session opens, reads and adds to. Start in Claude Code, continue in Codex, ask Grok from your phone, hand a scheduled job to a Grok Bot, and let an OpenClaw agent run the night. <strong>Nothing is lost between them.</strong> Around it, a morning briefing, a task list, and a Dreamer that reads while you sleep.</p>
+      <div class="cta">
+        <a class="btn primary" href="#how">See how it connects</a>
+        <span class="soon">Coming soon</span>
+      </div>
+      <p class="works"><span class="lbl">Connects over MCP</span> <b>Claude Code</b> · <b>Codex</b> · <b>ChatGPT</b> · <b>Claude.ai</b> · <b>Grok</b> · <b>Grok Bot</b> · <b>OpenClaw</b></p>
+    </div>
+    <figure class="session" aria-label="Example: a fresh agent session opening brunn">
+      <div class="bar"><i class="on"></i><i></i><i></i><span>fresh session · Claude Code</span></div>
+<pre><span class="c">›</span> <span class="k">memory.open</span>   task: "finish the API cutover"
+<span class="d">  drawn up from 3 sources · checkpoint Thu 18:42</span>
+  decisions  one worker replica; pool unpinned
+  open       confirm the 8 GiB database limit
+  next       migration 057, then the restore drill
+
+<span class="c">›</span> <span class="k">memory.read</span>   Projects/API cutover.md <span class="d">v14</span>
+<span class="c">›</span> <span class="k">secret.get</span>    railway-token <span class="d">· never in the corpus</span>
+
+<span class="c">›</span> <span class="k">memory.checkpoint</span>  "057 applied; drill passed"
+<span class="ok">  held. next session starts here.</span></pre>
+    </figure>
+  </div>
+  <svg class="waterline" viewBox="0 0 1200 150" preserveAspectRatio="none" aria-hidden="true">
+    <defs>
+      <linearGradient id="wl" x1="0" x2="1"><stop offset="0" stop-color="#C7D9FF" stop-opacity="0"/><stop offset=".55" stop-color="#C7D9FF" stop-opacity=".55"/><stop offset=".78" stop-color="#F5F8FF" stop-opacity=".95"/><stop offset="1" stop-color="#C7D9FF" stop-opacity=".2"/></linearGradient>
+      <radialGradient id="pt"><stop offset="0" stop-color="#FFFFFF"/><stop offset=".35" stop-color="#C7D9FF"/><stop offset="1" stop-color="#4A6FE8" stop-opacity="0"/></radialGradient>
+    </defs>
+    <line x1="0" y1="70" x2="1200" y2="70" stroke="url(#wl)" stroke-width="1"/>
+    <circle cx="936" cy="46" r="14" fill="url(#pt)" opacity=".55"/>
+    <circle cx="936" cy="46" r="3" fill="#F5F8FF"/>
+    <rect x="934.5" y="72" width="3" height="26" fill="#C7D9FF" opacity=".5"/>
+    <ellipse cx="936" cy="86" rx="46" ry="5" fill="none" stroke="#C7D9FF" stroke-opacity=".28" stroke-width="1"/>
+    <ellipse cx="936" cy="94" rx="78" ry="8" fill="none" stroke="#C7D9FF" stroke-opacity=".16" stroke-width="1"/>
+    <ellipse cx="936" cy="104" rx="132" ry="12" fill="none" stroke="#C7D9FF" stroke-opacity=".08" stroke-width="1"/>
+  </svg>
+</section>
+
+<section class="proof" aria-label="Why brunn">
+  <div class="wrap">
+    <div class="col">
+      <h3>Every session starts oriented.</h3>
+      <p>One call draws up the sources, decisions and next actions that matter for the task at hand, bounded to a token budget. No re-explaining, no pasting yesterday's transcript.</p>
+    </div>
+    <div class="col">
+      <h3>Every answer has a source.</h3>
+      <p>Agents read the exact version they cite. Anything a model writes is versioned, diffable and revertible. Nothing hides in the well.</p>
+    </div>
+    <div class="col">
+      <h3>Portable by design.</h3>
+      <p>Plain Markdown and your files are the source of truth. Export the whole well any time as files and a manifest, and take it to any client that speaks MCP.</p>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="handoff">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="kicker">Switch agents freely</p>
+      <h2>Bounce between agents. Never lose the thread.</h2>
+      <p>Each agent is good at something different. With one well underneath them, you pick whichever is closest to hand, and it already knows where things stand. No re-explaining, no pasting a transcript from the other tool.</p>
+    </div>
+    <ol class="thread" aria-label="One task passing between five agents">
+      <li><span class="when">Thu 18:42</span><span class="who">Claude Code</span><p>Applies migration 057 and leaves a checkpoint: restore drill still to run.</p></li>
+      <li><span class="when">Fri 09:04</span><span class="who">Codex</span><p>Opens the same task, runs the drill, records that it passed.</p></li>
+      <li><span class="when">Fri 12:30</span><span class="who">Grok, on the phone</span><p>"Where did we land on the cutover?" Answered from the well, with the sources.</p></li>
+      <li><span class="when">Fri 15:00</span><span class="who">Grok Bot</span><p>A scheduled bot confirms the database limit and drops the answer in.</p></li>
+      <li><span class="when">Sat 06:30</span><span class="who">OpenClaw</span><p>Writes the morning briefing: the project went green overnight.</p></li>
+    </ol>
+    <p class="thread-note">Every hand-off is a versioned checkpoint or entry you can open. Any MCP client can join the thread.</p>
+  </div>
+</section>
+
+<section class="section" id="memory">
+  <div class="wrap feature">
+    <div class="copy">
+      <p class="kicker">Memory</p>
+      <h2>Memory that holds, on whichever tool you open next.</h2>
+      <p>Your agents already know how to work. What they lose is the thread between sessions. brunn keeps it: a Claude Code session drops in a checkpoint at six, Codex draws it up at nine, Grok on your phone reads the same well at noon, a Grok Bot checks it on a schedule, and an OpenClaw agent works from it overnight.</p>
+      <ul class="tools" aria-label="Memory tools">
+        <li><code>memory.open</code><span>Orient a fresh session: the relevant sources, the last checkpoint, what changed since.</span></li>
+        <li><code>memory.query</code><span>Exact, keyword and semantic search across everything you've kept.</span></li>
+        <li><code>memory.read</code><span>Read a pinned version, so a citation means what it meant.</span></li>
+        <li><code>memory.capture</code><span>Drop in source material with provenance: a page, a thread, a file.</span></li>
+        <li><code>memory.checkpoint</code><span>Leave goals, decisions, open questions and next actions for the next agent.</span></li>
+        <li><code>secret.get</code><span>Use credentials from an encrypted vault that never enters the corpus.</span></li>
+      </ul>
+    </div>
+    <div>
+      <figure class="mock dark" aria-label="Example checkpoint">
+        <div class="head"><b>Checkpoint</b><small>held Thu 18:42 · from Claude Code</small></div>
+        <div class="ckpt">
+          <p class="obj">Finish the API cutover and retire the legacy protocol.</p>
+          <dl>
+            <dt>Decisions</dt><dd><ul><li>Keep one worker replica; the second was only for the backfill.</li><li>Stop pinning the Postgres buffer pool on Railway.</li></ul></dd>
+            <dt>Open</dt><dd>Confirm the 8 GiB database limit holds after import.</dd>
+            <dt>Next</dt><dd><ul><li>Apply migration 057.</li><li>Run the restore drill against last night's backup.</li></ul></dd>
+            <dt>Sources</dt><dd class="src"><span>Projects/API cutover.md <i>v14</i></span><span>Ops/Railway limits.md <i>v3</i></span><span>runs/2026-09-11.md <i>v1</i></span></dd>
+          </dl>
+        </div>
+        <div class="foot">Resumed 3 times since · last by Codex, Fri 09:04</div>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="briefing">
+  <div class="wrap feature flip">
+    <div class="copy">
+      <p class="kicker">Morning briefing</p>
+      <h2>One briefing every morning, already deduped.</h2>
+      <p>Your agents do the research overnight. brunn holds the topics, remembers every story it has already told you, and publishes one edition to the web and your phone. Read it in thirty seconds; expand what matters.</p>
+      <ul class="points">
+        <li><span><b>Topics in plain prose.</b> Tell any agent "add a section on Seattle air quality, June through October" and it's a topic.</span></li>
+        <li><span><b>Nothing twice.</b> A story ledger drops repeats across days and flags real updates as updates.</span></li>
+        <li><span><b>Go deeper.</b> Ask for more on any item; the answer lands in tomorrow's edition.</span></li>
+        <li><span><b>Your projects, your calendar, your numbers.</b> The same edition carries what changed overnight in your own work.</span></li>
+      </ul>
+    </div>
+    <div>
+      <div class="ios" aria-label="Example morning briefing in the iPhone app">
+        <div class="screen">
+          <div class="status"><span>9:41</span><span class="sig"><i></i><i></i><i></i></span></div>
+          <div class="top">Today</div>
+          <div class="pad">
+            <p class="h1">Morning briefing - 2026-09-12</p>
+            <p class="meta">Generated Sep 12, 2026 at 06:31 · Updated Sep 12, 2026 at 10:00</p>
+          </div>
+          <div class="list">
+            <div class="item"><span class="cap">Today's calendar</span><span class="hl">Two events today; the first is at 10:30.</span><span class="chev"></span></div>
+            <div class="item"><span class="cap">Projects — API cutover</span><span class="hl">Restore drill passed overnight; the project is green.</span><span class="chev"></span></div>
+            <div class="item"><span class="cap">Hobby projects — hosting</span><span class="hl">This billing period is pacing near $48 with 13 days left.</span><span class="chev"></span></div>
+            <div class="item"><span class="cap">Dreaming</span><span class="hl">Last recorded attempt: completed — September 12 at 2:14 AM, run 2026-09-11.</span><span class="chev"></span></div>
+            <div class="item"><span class="cap">AI</span><span class="hl">Anthropic ships persistent memory for managed agents.</span><span class="chev"></span></div>
+            <div class="item"><span class="cap">Stock watchlist</span><span class="hl">NVDA closed up $3.40 on a supplier catalyst.</span><span class="chev"></span></div>
+          </div>
+          <div class="tabs"><span class=""><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg><i>Home</i></span><span class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v4M5.6 6.6l2.8 2.8M18.4 6.6l-2.8 2.8M3 15h18M6 19h12"/><path d="M8 15a4 4 0 0 1 8 0"/></svg><i>Today</i></span><span class=""><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="6" cy="8" r="2.5"/><path d="M13 8h7M13 16h7"/><circle cx="6" cy="16" r="2.5"/><path d="M5 8l1 1 2-2"/></svg><i>Tasks</i></span><span class=""><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h6M14 3v5h5M14 3l5 5M9 9h3M9 13h5"/><circle cx="17" cy="17" r="3"/><path d="M19.5 19.5 22 22"/></svg><i>Review</i></span><span class=""><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg><i>More</i></span></div>
+        </div>
+      </div>
+      <p class="mock-note">Example edition. Sections and topics are yours to define.</p>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="tasks">
+  <div class="wrap feature">
+    <div class="copy">
+      <p class="kicker">Tasks</p>
+      <h2>Say it once. It lands in the list.</h2>
+      <p>Mention a task to any agent, or type it into the phone, and it's captured. Agents fill in the project, the context and an estimate later, and never overwrite what you set yourself.</p>
+      <ul class="points">
+        <li><span><b>Urgent</b> shows what's on fire.</span></li>
+        <li><span><b>Quick</b> holds the two-minute jobs, so a spare moment clears three of them.</span></li>
+        <li><span><b>Today</b> is fast capture that rolls over, with a day count that makes a stale item look stale. Sweep it to the queue when it can wait.</span></li>
+        <li><span><b>Projects</b> get a colour each night from their own rules, written in prose, so the briefing can tell you what changed.</span></li>
+      </ul>
+    </div>
+    <div>
+      <div class="ios" aria-label="Example task list in the iPhone app">
+        <div class="screen">
+          <div class="status"><span>9:41</span><span class="sig"><i></i><i></i><i></i></span></div>
+          <div class="top">Tasks</div>
+          <div class="chips"><span>Home</span><span>API cutover</span><span>Cabin trip</span><span>Garden</span></div>
+          <div class="pad"><p class="sec urgent">Urgent <b>2</b></p></div>
+          <div class="task"><span class="ring"></span><span class="tt">Renew the domain before it lapses<span class="tag">api-cutover</span><span class="tm">hard deadline tomorrow (est.)</span></span></div>
+          <div class="task"><span class="ring"></span><span class="tt">Book cabin lodging<span class="tag">family-and-travel</span><span class="tm">hard deadline overdue by 3 days (est.)</span></span></div>
+          <div class="pad"><p class="sec today">Today <b>2</b></p></div>
+          <div class="add">Add for today</div>
+          <div class="task"><span class="ring"></span><span class="tt">Reply to the school about Thursday<span class="tm">added today</span></span></div>
+          <div class="task"><span class="ring"></span><span class="tt">Send the neighbour the fence quote<span class="tm stale">6 days on the list</span></span></div>
+          <div class="pad"><p class="sec quick">Quick <b>3</b></p></div>
+          <div class="task"><span class="ring"></span><span class="tt">Start the dishwasher clean cycle<span class="tag">home</span><span class="tm">about 2 minutes</span></span></div>
+          <div class="tabs"><span class=""><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg><i>Home</i></span><span class=""><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v4M5.6 6.6l2.8 2.8M18.4 6.6l-2.8 2.8M3 15h18M6 19h12"/><path d="M8 15a4 4 0 0 1 8 0"/></svg><i>Today</i></span><span class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="6" cy="8" r="2.5"/><path d="M13 8h7M13 16h7"/><circle cx="6" cy="16" r="2.5"/><path d="M5 8l1 1 2-2"/></svg><i>Tasks</i></span><span class=""><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h6M14 3v5h5M14 3l5 5M9 9h3M9 13h5"/><circle cx="17" cy="17" r="3"/><path d="M19.5 19.5 22 22"/></svg><i>Review</i></span><span class=""><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg><i>More</i></span></div>
+        </div>
+      </div>
+      <p class="mock-note">Example list. Projects and sections come from your own tasks.</p>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="dreamer">
+  <div class="wrap feature flip">
+    <div class="copy">
+      <p class="kicker">Dreamer</p>
+      <h2>While you sleep, the Dreamer reads.</h2>
+      <p>Every night, a bounded research pass works through what changed: it keeps one dated overview per person, project and topic, links related notes, and proposes edits with the evidence attached. In the morning, you review. Nothing changes silently.</p>
+      <ul class="points">
+        <li><span><b>Best-known understanding, with an honest review date.</b> Each overview says what it's reviewed through and what's still open.</span></li>
+        <li><span><b>Every claim pinned to a source version.</b> Contradictions are surfaced, not smoothed over.</span></li>
+        <li><span><b>A review window you control.</b> Approve, reject, defer, or correct. Unrejected proposals go live after the window you set.</span></li>
+        <li><span><b>A knowledge wiki, kept for you.</b> It's a version of the knowledge-wiki pattern: raw sources stay untouched, and the overviews that compile them link to each other and back to the evidence.</span></li>
+        <li><span><b>Questions when it isn't sure.</b> Answer in the app, or just tell an agent.</span></li>
+      </ul>
+    </div>
+    <div>
+      <div class="ios" aria-label="Example Review screen in the iPhone app">
+        <div class="screen">
+          <div class="status"><span>9:41</span><span class="sig"><i></i><i></i><i></i></span></div>
+          <div class="top">Review<span class="refresh"></span></div>
+          <div class="pad">
+            <p class="note">Proposals apply on the first run after 24 hours unless you reject, defer, or request a correction. Each revision gets a new review window.</p>
+            <div class="runrow"><span>Run status</span><span class="chev"></span></div>
+            <p class="count">3 for review<small>0 held · 18 applied</small></p>
+            <div class="seg"><span class="on">All</span><span>Proposals</span><span>Questions</span></div>
+          </div>
+          <div class="rv"><span class="ic"></span><span class="tt">API cutover — overview through Sep 11 and the retired protocol<span class="st">Pending</span></span><span class="chev"></span></div>
+          <div class="rv"><span class="ic"></span><span class="tt">Cabin trip — lodging window, route options and packing list<span class="st">Pending</span></span><span class="chev"></span></div>
+          <div class="rv"><span class="ic q"></span><span class="tt">Which calendar should count for the school schedule?<span class="st">Question</span></span><span class="chev"></span></div>
+          <div class="tabs"><span class=""><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg><i>Home</i></span><span class=""><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v4M5.6 6.6l2.8 2.8M18.4 6.6l-2.8 2.8M3 15h18M6 19h12"/><path d="M8 15a4 4 0 0 1 8 0"/></svg><i>Today</i></span><span class=""><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="6" cy="8" r="2.5"/><path d="M13 8h7M13 16h7"/><circle cx="6" cy="16" r="2.5"/><path d="M5 8l1 1 2-2"/></svg><i>Tasks</i></span><span class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h6M14 3v5h5M14 3l5 5M9 9h3M9 13h5"/><circle cx="17" cy="17" r="3"/><path d="M19.5 19.5 22 22"/></svg><i>Review</i></span><span class=""><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg><i>More</i></span></div>
+        </div>
+      </div>
+      <p class="mock-note">Example queue. Proposals show the before, the after, and every source.</p>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="how">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="kicker">How it connects</p>
+      <h2>Three steps to connect.</h2>
+      <p>brunn is one hosted MCP endpoint with OAuth. Each client, from Claude Code to a Grok Bot, gets its own credential, and you can revoke any of them without touching the others.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <h3>Connect a client</h3>
+        <p>Add the endpoint to Claude Code, Codex, ChatGPT, Grok, OpenClaw or any MCP client and approve it once.</p>
+        <pre class="cmd"><b>$</b> claude mcp add --transport http brunn \
+    https://brunn.ai/mcp
+<b>$</b> codex mcp add brunn --url https://brunn.ai/mcp</pre>
+      </div>
+      <div class="step">
+        <h3>Work as usual</h3>
+        <p>Agents open the well at the start of a task, read exact sources as they go, and leave a checkpoint when they stop.</p>
+        <pre class="cmd"><b>›</b> memory.open   task: "…"
+<b>›</b> memory.read   path, version
+<b>›</b> memory.checkpoint</pre>
+      </div>
+      <div class="step">
+        <h3>Come back tomorrow</h3>
+        <p>The next session, on any tool, picks up the thread. The briefing lands at 6:30. The Dreamer's proposals are waiting in Review.</p>
+        <pre class="cmd"><b>6:30</b>  Morning edition published
+<b>2:00</b>  Dreamer pass · 3 proposals
+<b>now</b>   memory.open → resumed</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="hold">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="kicker">Built to hold</p>
+      <h2>Inspectable, portable, and yours.</h2>
+      <p>Nothing in the well moves on its own. brunn is built so you can always see what's in it and take all of it with you.</p>
+    </div>
+    <div class="hold">
+      <div><h3>Markdown is the truth</h3><p>Your notes and files are the canonical record. Search indexes, embeddings and every dashboard can be rebuilt from them.</p></div>
+      <div><h3>Versioned, with provenance</h3><p>Every entry keeps its history and its sources. Model-written changes show their diff, their reason and a revert.</p></div>
+      <div><h3>An encrypted secret vault</h3><p>Tokens and keys live outside the searchable corpus, exports and logs. Agents use them without ever seeing them in memory.</p></div>
+      <div><h3>Read-only credentials</h3><p>Give an agent the full reasoning surface with every mutation denied. Revoke any client on its own.</p></div>
+      <div><h3>Export, import, restore</h3><p>Take the whole well with you as files and a manifest. Backups and restore drills are part of the product, not an afterthought.</p></div>
+      <div><h3>Open source, probably</h3><p>An open-source release is in the works. The code is being cleaned up and the self-host path (Rust API, PostgreSQL, S3-compatible storage, Docker Compose) made simple first.</p></div>
+    </div>
+    <div class="source" id="source">
+      <p><b>Source.</b> An open-source release is probable, not promised. When the code is cleaned up and easy to self-host, the repository will be linked here and from the top of this page.</p>
+      <!-- GitHub: set href when the repository is public. -->
+      <a class="btn secondary" href="#source" aria-disabled="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg> GitHub <span class="soon">Soon</span></a>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="faq">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="kicker">FAQ</p>
+      <h2>Common questions.</h2>
+    </div>
+    <div class="faq">
+      <details open>
+        <summary>What is brunn?</summary>
+        <div class="a"><p>One memory and workspace for all your agents: a durable, portable place where the AI agents you use drop in what they learn and draw it back up later. It holds source material, checkpoints, tasks, briefings, files and credentials in one well that Claude Code, Codex, ChatGPT, Grok, Grok Bot, OpenClaw and any MCP client can open. It is a place and a thing, never an AI of its own.</p></div>
+      </details>
+      <details>
+        <summary>Which agents and tools work with it?</summary>
+        <div class="a"><p>Anything that speaks the Model Context Protocol. brunn exposes one hosted, OAuth-protected MCP endpoint at <span class="mono">brunn.ai/mcp</span>, so Claude Code, Codex, ChatGPT, Claude.ai, Grok, Grok Bot, OpenClaw and other MCP clients share the same memory, and you can switch between them mid-task. There is also an HTTP API, a local MCP adapter, the web app, and a native iPhone app for the briefing, tasks and alerts.</p></div>
+      </details>
+      <details>
+        <summary>How is it different from a memory API like Mem0 or Zep?</summary>
+        <div class="a"><p>Memory APIs store extracted facts for an application you build. brunn is the workspace for the agents you already use. Every answer is drawn from exact, versioned sources you can inspect. Sessions leave checkpoints a fresh agent can resume. And the same well feeds a morning briefing, a task list and a nightly Dreamer.</p><p>It is a version of the knowledge-wiki pattern: raw sources stay untouched, and agent-maintained overviews compile them, with a review step before anything changes. It is not a RAG layer, a knowledge graph, or an agent runtime.</p></div>
+      </details>
+      <details>
+        <summary>Where does my data live?</summary>
+        <div class="a"><p>Plain Markdown and your stored files are the source of truth; indexes and views are rebuilt from them. Export the whole well at any time as files and a manifest. The hosted service runs at brunn.ai. Credentials live in an encrypted vault outside the searchable corpus.</p></div>
+      </details>
+      <details>
+        <summary>Is it open source? Can I self-host it?</summary>
+        <div class="a"><p>Not yet. An open-source release is probable: the code is being cleaned up and the self-host path (a Rust API, PostgreSQL and S3-compatible storage under Docker Compose) made simple first. When it's ready, the repository will be linked from this page.</p></div>
+      </details>
+      <details>
+        <summary>How do you say it?</summary>
+        <div class="a"><p>One syllable, <em>brun</em>, rhyming with "put". From the Old Norse <em>brunnr</em>, a well: Mímisbrunnr, the well of memory beneath the world tree. Always lowercase.</p></div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section class="final on-night" id="soon">
+  <div class="wrap">
+    <p class="kicker">Coming soon</p>
+    <h2>Everything you've kept, still there when you come back.</h2>
+    <p>brunn is in daily use by its makers and will open to more people soon. <a href="#" rel="me noopener" title="X account coming soon">Follow on X</a> for the announcement.</p>
+  </div>
+</section>
+</main>
+
+<footer class="footer">
+  <div class="wrap">
+    <div>
+      <a class="brand" href="/" aria-label="brunn home"><span>brunn</span></a>
+      <p class="tag">The well your agents draw from. Everything you've kept, still there when you come back.</p>
+    </div>
+    <div>
+      <h4>Product</h4>
+      <ul>
+        <li><a href="#memory">Memory</a></li>
+        <li><a href="#briefing">Morning briefing</a></li>
+        <li><a href="#tasks">Tasks</a></li>
+        <li><a href="#dreamer">Dreamer</a></li>
+        <li><a href="#hold">Built to hold</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4>Use</h4>
+      <ul>
+        <li><a href="/login">Sign in</a></li>
+        <li><a href="#soon">Coming soon</a></li>
+        <li><a href="#how">Connect a client</a></li>
+        <li><a href="#faq">FAQ</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4>Elsewhere</h4>
+      <ul>
+        <!-- Placeholders: set hrefs when the accounts exist. -->
+        <li><a href="#source">GitHub</a></li>
+        <li><a href="#" rel="me noopener" title="Coming soon">X</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="legal">
+    <div class="wrap">
+      <span>© 2026 Kallon Labs. brunn is made by Kallon Labs.</span>
+      <span>Still water: nothing in the well moves on its own.</span>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

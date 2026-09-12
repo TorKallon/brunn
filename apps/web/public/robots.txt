@@ -1,0 +1,18 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /mcp
+Disallow: /login
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /dashboard
+Disallow: /briefings
+Disallow: /tasks
+Disallow: /dreams
+Disallow: /explore
+Disallow: /control
+Disallow: /alerts
+Disallow: /agents
+Disallow: /settings
+
+Sitemap: https://brunn.ai/sitemap.xml
