@@ -62,10 +62,10 @@ const MESSAGING_TOOL_NAMES = [
 
 // These hashes bind both each pre-messaging tool name and its complete,
 // byte-exact description while keeping this regression snapshot readable.
-// Updated only for the additive native document-link guidance (September 9, 2026).
+// Updated for explicit owner-requested task completion guidance (September 12, 2026).
 const EXISTING_DESCRIPTION_HASHES = {
-  local: "04c3be2b861b6d9092ea087f46520cb693720a93e9c40ce87a40cb927272689e",
-  remote: "f1479aa847678a0ee5fb78a7248cab21665b04fd752f6e333122de67b31a3e69",
+  local: "b3282f502e665aa2a541c8597c448b4b41861b87fa17678e2f2014454e498c39",
+  remote: "c7b509fdc1ea01f46e95cd2ad497298f3c086d32f418c840bd2c34078b873485",
 } as const;
 
 const MESSAGING_DESCRIPTIONS = {
