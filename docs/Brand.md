@@ -28,9 +28,16 @@ inside exactly three still hairline ripples, each fainter than the last. The
 point is what an agent dropped in, still shining when it comes back. Nothing
 leaves the well; stillness is the promise.
 
-The generated canonical masters are `assets/brand/brunn-well-2048.png` and
-`assets/brand/brunn-well-1024.png` (opaque, full-bleed RGB, no baked corner
-mask; platforms apply their own shape). `assets/brand/brunn-well.svg` is the
+The icon refinement approved on 2026-09-12 gives the sapphire surround a
+gently curved shoulder, a narrow upper-edge highlight, and deeper lower-edge
+shading. The crescent and point stay restrained; the surface depth must not
+compete with them. Keep the field smooth and the edges clearly defined.
+
+The generated source is `assets/brand/brunn-well-source.png` (native 1254 px).
+The asset script derives `assets/brand/brunn-well-1024.png` from it. Both are
+opaque, full-bleed RGB, with blue continuing into every corner; platforms
+apply their own shape. Never ship the review mockup's pale background,
+pre-applied mask, or external contact shadow. `assets/brand/brunn-well.svg` is the
 A+ composition reference, not the shipping raster artwork. At 180 and 120 px,
 the mark reads as a well with a star in it. At 60 px, the ripples may vanish,
 but the opening and point must remain. It must never read as a lens, eye,
@@ -342,19 +349,20 @@ Approved one-line directions include:
 
 ## 10. Asset inventory and regeneration
 
-- Generated masters: `assets/brand/brunn-well-2048.png`,
-  `assets/brand/brunn-well-1024.png`, `assets/brand/brunn-waterline-1024.png`,
+- Generated masters: `assets/brand/brunn-well-source.png`,
+  `assets/brand/brunn-waterline-1024.png`,
   and `assets/brand/brunn-hero-wide.png`.
 - Vector masters: `assets/brand/brunn-well.svg` (A+ composition reference),
   `assets/brand/brunn-well-glyph.svg` (≤ 48 px), and
   `assets/brand/brunn-well-mono.svg` (host-tinted mask).
-- Derived iOS assets: `AppIcon.png`, `AppIcon-tinted.png`,
+- Derived 1024 px master and iOS assets: `assets/brand/brunn-well-1024.png`,
+  `AppIcon.png`, `AppIcon-tinted.png`,
   `LaunchWaterline.imageset`, and `LaunchBackground.colorset`.
 - Derived web assets: `favicon.svg`, `favicon-32.png`, `favicon-16.png`,
   `apple-touch-icon.png`, `og.png`, and the in-app raster mark.
 
 Regenerate derivatives with the single script
 `apps/ios/Tools/generate_app_icon.swift`; it accepts the canonical raster and
-vector masters and emits the iOS and web sizes. WebP output requires `cwebp`
+vector sources and emits the 1024 px master and iOS and web sizes. WebP output requires `cwebp`
 from the WebP tools (`brew install webp` on macOS). The image model is never
 used for the favicon glyph, mono mask, wordmark, or any other type.

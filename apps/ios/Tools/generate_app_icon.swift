@@ -22,7 +22,7 @@ func sourceURL(for option: String, defaultPath: String) -> URL {
 
 let markSource = sourceURL(
     for: "--mark",
-    defaultPath: "assets/brand/brunn-well-1024.png"
+    defaultPath: "assets/brand/brunn-well-source.png"
 )
 let monoSource = sourceURL(
     for: "--mono",
@@ -55,8 +55,8 @@ func requireSquareMaster(_ source: URL, name: String) throws -> Data {
     guard let bitmap = NSBitmapImageRep(data: data) else {
         fatalError("The \(name) master is not a readable bitmap")
     }
-    guard bitmap.pixelsWide == 1024, bitmap.pixelsHigh == 1024 else {
-        fatalError("The \(name) master must be exactly 1024 × 1024 pixels")
+    guard bitmap.pixelsWide >= 1024, bitmap.pixelsWide == bitmap.pixelsHigh else {
+        fatalError("The \(name) master must be square and at least 1024 × 1024 pixels")
     }
     guard bitmap.representation(using: .png, properties: [:]) != nil, !bitmap.hasAlpha else {
         fatalError("The \(name) master must be an opaque PNG")
@@ -231,9 +231,11 @@ func openGraphPNG(from source: URL) throws -> Data {
     return data
 }
 
-let markPNG = try requireSquareMaster(markSource, name: "Still Water mark")
+_ = try requireSquareMaster(markSource, name: "Still Water mark")
 _ = try requireSquareMaster(waterlineSource, name: "Still Water waterline")
 
+let markPNG = try rasterizedPNG(from: markSource, size: 1024, hasAlpha: false)
+try write(markPNG, to: repositoryRoot.appendingPathComponent("assets/brand/brunn-well-1024.png"))
 try write(markPNG, to: appIconDirectory.appendingPathComponent("AppIcon.png"))
 try write(
     rasterizedPNG(from: monoSource, size: 1024, hasAlpha: true),
