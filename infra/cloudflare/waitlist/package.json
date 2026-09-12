@@ -1,0 +1,13 @@
+{
+  "name": "brunn-waitlist-worker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "list": "wrangler kv key list --binding WAITLIST --prefix email: --remote"
+  },
+  "devDependencies": {
+    "wrangler": "4.131.1"
+  }
+}

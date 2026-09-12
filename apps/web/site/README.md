@@ -16,11 +16,14 @@ FAQPage) is inline in the page head.
 
 Placeholders to fill in before launch:
 
-- Coming-soon section (`#soon`): there is no sign-up form yet. When sign-ups
-  open, add the form here and point the nav button at it.
+- Early-access form (`#soon`) posts to `/waitlist`, a Cloudflare Worker in
+  `infra/cloudflare/waitlist/`. The Worker redirects to `/#joined` or
+  `/#retry`; the page shows those messages with CSS `:target`.
 - GitHub: the nav icon, the "Source" block, and the footer link all point at
   `#source`. Replace with the repository URL if the code is opened.
-- X: the two links marked `title="Coming soon"` point at `#`.
+- X: no links yet; add them when the account exists.
+- `privacy.html` is served at `/privacy` and names hello@brunn.ai, which
+  Cloudflare Email Routing forwards to the owner.
 
 The page uses the lowercase wordmark only; the well mark is deliberately not
 shown on this page (owner direction, 2026-09-12).

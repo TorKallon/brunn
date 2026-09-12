@@ -96,7 +96,7 @@ img,svg{max-width:100%;display:block}
 a{color:var(--signal-600);text-decoration:none}
 a:hover{color:var(--signal-700);text-decoration:underline;text-underline-offset:.16em}
 :focus-visible{outline:2px solid var(--signal-400);outline-offset:2px}
-h1,h2,h3{margin:0;font-family:var(--serif);font-weight:500;letter-spacing:-.02em;text-wrap:balance}
+h1,h2,h3{margin:0;font-family:var(--serif);font-weight:500;letter-spacing:-.02em;text-wrap:balance;font-variant-numeric:lining-nums}
 p{margin:0}
 .wrap{max-width:var(--w);margin:0 auto;padding:0 28px}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -147,9 +147,10 @@ p{margin:0}
 .hero .lede{margin-top:1.35rem;font-size:1.12rem;line-height:1.6;color:var(--on-night-muted);max-width:34rem}
 .hero .lede strong{color:var(--on-night);font-weight:600}
 .hero .cta{display:flex;flex-wrap:wrap;align-items:center;gap:.8rem;margin-top:2rem}
-.works{margin-top:2.6rem;display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 1.1rem;font-size:.82rem;color:var(--on-night-faint)}
-.works .lbl{letter-spacing:.14em;text-transform:uppercase;font-weight:600;font-size:.66rem}
-.works b{font-weight:500;color:var(--on-night-muted)}
+.works{margin-top:2.6rem;display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;font-size:.82rem;color:var(--on-night-faint)}
+.works .lbl{letter-spacing:.14em;text-transform:uppercase;font-weight:600;font-size:.66rem;margin-right:.5rem}
+.works b{font-weight:500;color:var(--on-night-muted);border:1px solid var(--night-line-bright);border-radius:999px;padding:.2rem .6rem;font-size:.76rem;background:rgb(255 255 255 / 5%)}
+@media (max-width:600px){.hero .desk{display:none}.hero .lede{font-size:1.02rem}}
 .waterline{position:absolute;left:0;right:0;bottom:0;height:150px;pointer-events:none}
 @media (max-width:900px){.hero .wrap{grid-template-columns:1fr;padding-top:3.5rem;padding-bottom:8rem}.hero .lede{max-width:none}.waterline{height:110px}}
 
@@ -222,7 +223,7 @@ p{margin:0}
 
 /* Checkpoint mock */
 .ckpt{padding:1rem 1.1rem}
-.ckpt .obj{font-family:var(--serif);font-size:1.15rem;line-height:1.3;letter-spacing:-.01em;color:var(--ink)}
+.ckpt .obj{font-variant-numeric:lining-nums;font-family:var(--serif);font-size:1.15rem;line-height:1.3;letter-spacing:-.01em;color:var(--ink)}
 .ckpt dl{margin:.9rem 0 0;display:grid;grid-template-columns:auto 1fr;gap:.45rem 1rem;font-size:.84rem}
 .ckpt dt{color:var(--faint);font-size:.66rem;font-weight:600;letter-spacing:.14em;text-transform:uppercase;padding-top:.2rem}
 .ckpt dd{margin:0;color:var(--ink-2)}
@@ -331,7 +332,7 @@ p{margin:0}
 /* ---- FAQ ---- */
 .faq{margin-top:2.5rem;max-width:44rem;border-top:1px solid var(--line)}
 .faq details{border-bottom:1px solid var(--line)}
-.faq summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:1.05rem 0;font-family:var(--serif);font-size:1.15rem;letter-spacing:-.01em;color:var(--ink)}
+.faq summary{cursor:pointer;list-style:none;font-variant-numeric:lining-nums;display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:1.05rem 0;font-family:var(--serif);font-size:1.15rem;letter-spacing:-.01em;color:var(--ink)}
 .faq summary::-webkit-details-marker{display:none}
 .faq summary::after{content:"+";font-family:var(--sans);color:var(--signal-600);font-size:1.3rem;line-height:1;flex:none}
 .faq details[open] summary::after{content:"–"}
@@ -344,7 +345,16 @@ p{margin:0}
 .final .wrap{position:relative;padding:6rem 28px 7rem;text-align:center;max-width:44rem}
 .final h2{font-size:clamp(2rem,4vw,2.9rem);line-height:1.12;letter-spacing:-.03em}
 .final p{margin-top:1rem;color:var(--on-night-muted);font-size:1.08rem}
-.final .fine{margin-top:1.4rem;font-size:.84rem;color:var(--on-night-faint)}
+.wait{margin:2.2rem auto 0;display:flex;gap:.6rem;max-width:30rem;position:relative}
+.wait input[type="email"]{flex:1;min-width:0;padding:.75rem .95rem;border-radius:var(--r-sm);border:1px solid var(--night-line-bright);background:rgb(255 255 255 / 6%);color:var(--on-night);font:inherit;font-size:.95rem}
+.wait input[type="email"]::placeholder{color:var(--on-night-faint)}
+.wait input[type="email"]:focus{outline:none;border-color:var(--signal-300);box-shadow:0 0 0 3px rgb(143 169 255 / 25%)}
+.wait .trap{position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden}
+@media (max-width:600px){.wait{flex-direction:column}}
+.final .fine{margin-top:1rem;font-size:.84rem;color:var(--on-night-faint)}
+.final .joined,.final .retry{display:none;font-weight:600}
+.final .joined:target{display:block;color:var(--signal-100)}
+.final .retry:target{display:block;color:#E08894}
 .final .fine a{color:var(--signal-200)}
 
 /* ---- Footer ---- */
@@ -384,7 +394,7 @@ p{margin:0}
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
       </a>
       <a class="signin" href="/login">Sign in</a>
-      <a class="btn primary" href="#soon">Coming soon</a>
+      <a class="btn primary" href="#soon">Get early access</a>
     </div>
   </div>
 </header>
@@ -395,12 +405,12 @@ p{margin:0}
     <div>
       <p class="kicker">For Claude Code, Codex, ChatGPT, Grok, Grok Bot and OpenClaw</p>
       <h1>One memory and workspace for all your agents.</h1>
-      <p class="lede">brunn is the well your agents draw from: <strong>durable, portable, source-backed memory</strong> that every session opens, reads and adds to. Start in Claude Code, continue in Codex, ask Grok from your phone, hand a scheduled job to a Grok Bot, and let an OpenClaw agent run the night. <strong>Nothing is lost between them.</strong> Around it, a morning briefing, a task list, and a Dreamer that reads while you sleep.</p>
+      <p class="lede">brunn is the well your agents draw from: <strong>durable, portable, source-backed memory</strong> that every session opens, reads and adds to. Start in Claude Code, continue in Codex, ask Grok from your phone, hand a scheduled job to a Grok Bot, and let an OpenClaw agent run the night. <strong>Nothing is lost between them.</strong> <span class="desk">Around it, a morning briefing, a task list, and a Dreamer that reads while you sleep.</span></p>
       <div class="cta">
-        <a class="btn primary" href="#how">See how it connects</a>
-        <span class="soon">Coming soon</span>
+        <a class="btn primary" href="#soon">Get early access</a>
+        <a class="btn secondary" href="#how">See how it connects</a>
       </div>
-      <p class="works"><span class="lbl">Connects over MCP</span> <b>Claude Code</b> · <b>Codex</b> · <b>ChatGPT</b> · <b>Claude.ai</b> · <b>Grok</b> · <b>Grok Bot</b> · <b>OpenClaw</b></p>
+      <p class="works"><span class="lbl">Connects over MCP</span> <b>Claude Code</b><b>Codex</b><b>ChatGPT</b><b>Claude.ai</b><b>Grok</b><b>Grok Bot</b><b>OpenClaw</b></p>
     </div>
     <figure class="session" aria-label="Example: a fresh agent session opening brunn">
       <div class="bar"><i class="on"></i><i></i><i></i><span>fresh session · Claude Code</span></div>
@@ -471,7 +481,7 @@ p{margin:0}
   <div class="wrap feature">
     <div class="copy">
       <p class="kicker">Memory</p>
-      <h2>Persistent memory for Claude Code, Codex, ChatGPT, Grok, Grok Bot and OpenClaw.</h2>
+      <h2>Persistent memory for every agent you use.</h2>
       <p>Your agents already know how to work. What they lose is the thread between sessions. brunn is an MCP memory server that keeps it: a Claude Code session drops in a checkpoint at six, Codex draws it up at nine, Grok on your phone reads the same well at noon, a Grok Bot checks it on a schedule, and an OpenClaw agent works from it overnight.</p>
       <ul class="tools" aria-label="Memory tools">
         <li><code>memory.open</code><span>Orient a fresh session: the relevant sources, the last checkpoint, what changed since.</span></li>
@@ -620,10 +630,11 @@ p{margin:0}
     <div class="steps">
       <div class="step">
         <h3>Connect a client</h3>
-        <p>Add the endpoint to Claude Code, Codex, ChatGPT, Grok, OpenClaw or any MCP client and approve it once.</p>
+        <p>Add the endpoint to any MCP client and approve it once in the browser.</p>
         <pre class="cmd"><b>$</b> claude mcp add --transport http brunn \
     https://brunn.ai/mcp
-<b>$</b> codex mcp add brunn --url https://brunn.ai/mcp</pre>
+<b>$</b> codex mcp add brunn --url https://brunn.ai/mcp
+<b>$</b> codex mcp login brunn</pre>
       </div>
       <div class="step">
         <h3>Work as usual</h3>
@@ -656,7 +667,7 @@ p{margin:0}
       <div><h3>An encrypted secret vault</h3><p>Tokens and keys live outside the searchable corpus, exports and logs. Agents use them without ever seeing them in memory.</p></div>
       <div><h3>Read-only credentials</h3><p>Give an agent the full reasoning surface with every mutation denied. Revoke any client on its own.</p></div>
       <div><h3>Export, import, restore</h3><p>Take the whole well with you as files and a manifest. Backups and restore drills are part of the product, not an afterthought.</p></div>
-      <div><h3>Open source, probably</h3><p>An open-source release is in the works. The code is being cleaned up and the self-host path (Rust API, PostgreSQL, S3-compatible storage, Docker Compose) made simple first.</p></div>
+      <div><h3>Built to self-host</h3><p>A Rust API and worker, PostgreSQL with pgvector, and S3-compatible storage under Docker Compose. The same stack runs brunn.ai.</p></div>
     </div>
     <div class="source" id="source">
       <p><b>Source.</b> An open-source release is probable, not promised. When the code is cleaned up and easy to self-host, the repository will be linked here and from the top of this page.</p>
@@ -709,7 +720,16 @@ p{margin:0}
   <div class="wrap">
     <p class="kicker">Coming soon</p>
     <h2>Everything you've kept, still there when you come back.</h2>
-    <p>brunn is in daily use by its makers and will open to more people soon. <a href="#" rel="me noopener" title="X account coming soon">Follow on X</a> for the announcement.</p>
+    <p>brunn is in daily use by its makers and will open to more people soon. Leave your email and we'll write once, when access opens.</p>
+    <form class="wait" method="post" action="/waitlist" aria-describedby="wait-note">
+      <label class="sr-only" for="email">Email address</label>
+      <input id="email" type="email" name="email" placeholder="you@example.com" autocomplete="email" required maxlength="254">
+      <label class="trap" aria-hidden="true">Leave this empty <input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+      <button class="btn primary" type="submit">Get early access</button>
+    </form>
+    <p class="fine" id="wait-note">One email when it's your turn. No newsletter. <a href="/privacy">How we handle your address</a>.</p>
+    <p class="fine joined" id="joined" role="status">You're on the list. We'll write once, when it's your turn.</p>
+    <p class="fine retry" id="retry" role="alert">That address didn't look right. Try again.</p>
   </div>
 </section>
 </main>
@@ -734,7 +754,8 @@ p{margin:0}
       <h4>Use</h4>
       <ul>
         <li><a href="/login">Sign in</a></li>
-        <li><a href="#soon">Coming soon</a></li>
+        <li><a href="#soon">Get early access</a></li>
+        <li><a href="/privacy">Privacy</a></li>
         <li><a href="#how">Connect a client</a></li>
         <li><a href="#faq">FAQ</a></li>
       </ul>
@@ -742,15 +763,14 @@ p{margin:0}
     <div>
       <h4>Elsewhere</h4>
       <ul>
-        <!-- Placeholders: set hrefs when the accounts exist. -->
+        <!-- Set the GitHub href when the repository is public. -->
         <li><a href="#source">GitHub</a></li>
-        <li><a href="#" rel="me noopener" title="Coming soon">X</a></li>
       </ul>
     </div>
   </div>
   <div class="legal">
     <div class="wrap">
-      <span>© 2026 Kallon Labs. brunn is made by Kallon Labs.</span>
+      <span>© 2026 Kallon Labs</span>
       <span>Still water: nothing in the well moves on its own.</span>
     </div>
   </div>

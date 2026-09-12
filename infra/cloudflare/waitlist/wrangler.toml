@@ -1,0 +1,13 @@
+name = "brunn-waitlist"
+account_id = "84491e6f4c07cb5dbb50d0b5bbafa513"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+workers_dev = false
+
+routes = [
+  { pattern = "brunn.ai/waitlist", zone_name = "brunn.ai" },
+]
+
+[[kv_namespaces]]
+binding = "WAITLIST"
+id = "5b26d035ddc04c1a9c736659eb3853ea"

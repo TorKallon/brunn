@@ -23,9 +23,10 @@ RUN install -d -o 101 -g 101 -m 0755 /etc/nginx/templates
 COPY --chmod=0644 apps/web/nginx.railway.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY apps/web/site/index.html /usr/share/nginx/html/site/index.html
+COPY apps/web/site/privacy.html /usr/share/nginx/html/site/privacy.html
 # COPY --chmod would also apply to the directory it creates, so fix modes explicitly.
 RUN chmod 0755 /usr/share/nginx/html/site \
-    && chmod 0644 /usr/share/nginx/html/site/index.html
+    && chmod 0644 /usr/share/nginx/html/site/index.html /usr/share/nginx/html/site/privacy.html
 
 USER 101:101
 EXPOSE 8080
