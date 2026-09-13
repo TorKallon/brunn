@@ -322,6 +322,53 @@ async fn insert_delivery(
     .execute(pool)
     .await
     .expect("insert APNs contract credential");
+    let event_key = if kind == "task_guard" {
+        // Delivery now rechecks the current task. A dangling task reference is
+        // intentionally suppressed, so this payload fixture needs a real,
+        // still-current deadline instead of a fabricated queue-only event.
+        let task_id = target["task_ref"]
+            .as_str()
+            .unwrap()
+            .parse::<Uuid>()
+            .unwrap();
+        let entry_id = Uuid::now_v7();
+        let now = Utc::now();
+        let due = now + chrono::Duration::hours(6);
+        let task = json!({"id":task_id,"title":"APNs contract task",
+            "status":{"value":"open","source":"owner","set_at":now},
+            "hard_due":{"value":due,"source":"owner","set_at":now}});
+        let mut tx = pool.begin().await.expect("begin current task fixture");
+        sqlx::query("INSERT INTO brunn.entries (id,user_id,path,title,kind,media_type,current_version) VALUES ($1,$2,$3,'APNs contract task','markdown','text/markdown',0)")
+            .bind(entry_id).bind(user_id).bind(format!(".brunn/tasks/{task_id}.md"))
+            .execute(&mut *tx).await.expect("insert current task entry");
+        let content = "# APNs contract task\n";
+        sqlx::query("INSERT INTO brunn.entry_versions (id,user_id,entry_id,version,content_sha256,content,size_bytes,metadata,created_by_credential_id) VALUES ($1,$2,$3,1,$4,$5,$6,$7,$8)")
+            .bind(Uuid::now_v7()).bind(user_id).bind(entry_id)
+            .bind(hex::encode(Sha256::digest(content.as_bytes())))
+            .bind(content).bind(content.len() as i64)
+            .bind(json!({"kind":"task","schema":"task.v1","task":task}))
+            .bind(credential_id).execute(&mut *tx).await.expect("insert current task version");
+        sqlx::query("UPDATE brunn.entries SET current_version=1 WHERE user_id=$1 AND id=$2")
+            .bind(user_id)
+            .bind(entry_id)
+            .execute(&mut *tx)
+            .await
+            .expect("advance task head");
+        sqlx::query("INSERT INTO brunn.task_index (user_id,task_id,entry_id,entry_version,title,status,hard_due,provenance,source_timestamps,task,created_at,updated_at) VALUES ($1,$2,$3,1,'APNs contract task','open',$4,$5,$6,$7,$8,$8)")
+            .bind(user_id).bind(task_id).bind(entry_id).bind(due)
+            .bind(json!({"hard_due":"owner"})).bind(json!({"hard_due":now}))
+            .bind(task).bind(now).execute(&mut *tx).await.expect("project current task");
+        tx.commit().await.expect("commit current task fixture");
+        let lead: i32 =
+            sqlx::query_scalar("SELECT hard_lead_days FROM brunn.task_settings WHERE user_id=$1")
+                .bind(user_id)
+                .fetch_one(pool)
+                .await
+                .expect("current deadline lead");
+        format!("task-deadline:{task_id}:{lead}d")
+    } else {
+        format!("messaging-apns-contract:{notification_id}")
+    };
     sqlx::query(
         r#"
         INSERT INTO brunn.notification_installations (
@@ -346,6 +393,15 @@ async fn insert_delivery(
     .execute(pool)
     .await
     .expect("insert APNs contract installation");
+    let producer_credential_id = if kind == "task_guard" {
+        sqlx::query_scalar("SELECT brunn.ensure_task_guard_producer($1)")
+            .bind(user_id)
+            .fetch_one(pool)
+            .await
+            .expect("use the actual task guard producer")
+    } else {
+        credential_id
+    };
     sqlx::query(
         r#"
         INSERT INTO brunn.notifications (
@@ -359,8 +415,8 @@ async fn insert_delivery(
     )
     .bind(notification_id)
     .bind(user_id)
-    .bind(credential_id)
-    .bind(format!("messaging-apns-contract:{notification_id}"))
+    .bind(producer_credential_id)
+    .bind(event_key)
     .bind(hex::encode(Sha256::digest(notification_id.as_bytes())))
     .bind(format!("messaging-apns-contract:{notification_id}"))
     .bind(kind)
