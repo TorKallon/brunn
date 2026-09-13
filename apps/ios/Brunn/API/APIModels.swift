@@ -283,6 +283,33 @@ public struct AgentTaskDocument: Codable, Sendable, Equatable {
     }
 }
 
+extension AgentTaskDocument {
+    public init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: CodingKeys.self)
+        id = try fields.decode(String.self, forKey: .id)
+        title = try fields.decode(String.self, forKey: .title)
+
+        // Clearing a sourced field preserves its provenance with value: null.
+        // Treat that as absent for display, while still rejecting wrong types.
+        func sourced<Value>(_ type: Value.Type, _ key: CodingKeys) throws -> AgentTaskSourcedValue<Value>?
+        where Value: Codable & Sendable & Equatable {
+            guard let field = try fields.decodeIfPresent(AgentTaskSourcedValue<Value?>.self, forKey: key),
+                  let value = field.value else { return nil }
+            return AgentTaskSourcedValue(value: value, source: field.source, setAt: field.setAt, note: field.note)
+        }
+
+        status = try sourced(String.self, .status)
+        notes = try sourced(String.self, .notes)
+        project = try sourced(String.self, .project)
+        readyAt = try sourced(String.self, .readyAt)
+        softDue = try sourced(String.self, .softDue)
+        hardDue = try sourced(String.self, .hardDue)
+        requiredContexts = try sourced([String].self, .requiredContexts)
+        estimateMinutes = try sourced(Int.self, .estimateMinutes)
+        todayPin = try sourced(String.self, .todayPin)
+    }
+}
+
 public struct AgentTaskDetail: Identifiable, Codable, Sendable, Equatable {
     public let taskRef: String
     public let entryRef: String

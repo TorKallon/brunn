@@ -1246,8 +1246,16 @@ final class AppModel: ObservableObject {
                 await validateStoredDeviceTaskCredential()
                 taskMessage = "Device task access is no longer valid. Set it up again before changing tasks."
             } else if case let .server(status, _, _) = error, status == 409 {
-                presentedTask = try? await api.task(reference: candidate.taskRef)
+                if presentedTask?.taskRef == candidate.taskRef {
+                    presentedTask = try? await api.task(reference: candidate.taskRef)
+                }
+                await refreshTaskSurface()
                 taskMessage = "This task changed elsewhere. Its current version has been reloaded."
+            } else if case .decoding = error {
+                // A successful write can precede a response-decoding failure.
+                // Reconcile with the server instead of leaving the restored row.
+                await refreshTaskSurface()
+                taskMessage = error.localizedDescription
             } else {
                 taskMessage = error.localizedDescription
             }

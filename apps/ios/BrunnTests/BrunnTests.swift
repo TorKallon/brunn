@@ -1936,6 +1936,93 @@ final class BrunnTests: XCTestCase {
         XCTAssertTrue(model.mutatingTaskRefs.isEmpty)
     }
 
+    @MainActor
+    func testQuickCompletionWithClearedDatesStaysCompleted() async throws {
+        try await exerciseQuickCompletion(status: 200, malformed: false)
+    }
+
+    @MainActor
+    func testQuickCompletionConflictReloadsListWithoutOpeningDetail() async throws {
+        try await exerciseQuickCompletion(status: 409, malformed: false)
+    }
+
+    @MainActor
+    func testQuickCompletionUnreadableSuccessReconcilesSavedState() async throws {
+        try await exerciseQuickCompletion(status: 200, malformed: true)
+    }
+
+    @MainActor
+    private func exerciseQuickCompletion(status: Int, malformed: Bool) async throws {
+        let recorder = NotificationRequestRecorder()
+        let taskRef = "019f8800-0000-7000-8000-000000000001"
+        let timestamp = "2026-09-12T22:00:00Z"
+        let candidate = #"{"task_ref":"019f8800-0000-7000-8000-000000000001","entry_ref":"entry:one","version":7,"title":"Quick test","status":"open","required_contexts":[],"tier":5,"reason":"Quick","provenance_markers":[],"pinned":false,"estimate_minutes":5}"#
+        let detail = #"{"task_ref":"019f8800-0000-7000-8000-000000000001","entry_ref":"entry:one","version":8,"title":"Quick test","status":"done","task":{"id":"019f8800-0000-7000-8000-000000000001","title":"Quick test","hard_due":{"value":null,"source":"owner","set_at":"2026-09-12T22:00:00Z"}},"created_at":"2026-09-12T22:00:00Z","updated_at":"2026-09-12T22:00:00Z"}"#
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            let path = request.url?.path ?? ""
+            if request.httpMethod == "PATCH" {
+                if status == 409 {
+                    return StubbedHTTPResponse(statusCode: 409, json: #"{"error":{"code":"task_changed","message":"Already completed elsewhere"}}"#)
+                }
+                return StubbedHTTPResponse(json: malformed ? #"{"status":"committed","data":{}}"# :
+                    "{\"status\":\"committed\",\"data\":{\"task\":\(detail),\"action\":\"complete\",\"done_today_count\":1,\"replayed\":false}}")
+            }
+            if path.hasSuffix("/me") {
+                return StubbedHTTPResponse(json: #"{"user":{"id":"user:quick","display_name":"Owner"},"credential_id":"credential:12121212-1212-4212-8212-121212121212","capabilities":["task.write","notification:manage"],"read_only":false}"#)
+            }
+            if path.hasSuffix("/workspace/contexts") {
+                return StubbedHTTPResponse(json: #"{"status":"complete","data":{"contexts":[],"surface_defaults":{}}}"#)
+            }
+            let saved = recorder.snapshot().contains { $0.httpMethod == "PATCH" }
+            if path.hasSuffix("/tasks/candidates") {
+                let view = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "view" }?.value ?? "quick"
+                return StubbedHTTPResponse(json: "{\"status\":\"complete\",\"data\":{\"view\":\"\(view)\",\"as_of\":\"\(timestamp)\",\"contexts_available\":[],\"items\":[\(saved ? "" : candidate)],\"urgent_total\":0,\"next_remaining\":0,\"backlog_total\":0}}")
+            }
+            if path.hasSuffix("/tasks/done-summary") {
+                return StubbedHTTPResponse(json: "{\"status\":\"complete\",\"data\":{\"from\":\"\(timestamp)\",\"through\":\"\(timestamp)\",\"timezone\":\"UTC\",\"as_of\":\"\(timestamp)\",\"count\":\(saved ? 1 : 0),\"done_today_count\":\(saved ? 1 : 0),\"items\":[]}}")
+            }
+            if path.hasSuffix("/workspace/projects") {
+                return StubbedHTTPResponse(json: "{\"status\":\"complete\",\"data\":{\"projects\":[],\"as_of\":\"\(timestamp)\"}}")
+            }
+            if path.hasSuffix("/tasks/\(taskRef)") {
+                return StubbedHTTPResponse(json: "{\"status\":\"complete\",\"data\":{\"task\":\(detail)}}")
+            }
+            return StubbedHTTPResponse(statusCode: 503, json: #"{"error":{"code":"unrelated","message":"Outside task fixture"}}"#)
+        }
+        defer { NotificationRequestURLProtocol.handler = nil }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [NotificationRequestURLProtocol.self]
+        let api = BrunnAPI(configuration: .init(baseURL: URL(string: "https://quick-\(UUID().uuidString).brunn.test/api/v1")!),
+                           session: URLSession(configuration: config))
+        let cacheDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: cacheDirectory) }
+        let owner = MeData(user: UserSummary(id: "user:quick", displayName: "Owner"),
+                           credentialID: "credential:web", capabilities: ["task.read"], readOnly: false)
+        let model = AppModel(api: api,
+            credentialStore: TestCredentialStore(credential: DeviceTaskCredential(
+                credentialRef: "credential:12121212-1212-4212-8212-121212121212", token: "fixture-token",
+                userID: "user:quick", capabilities: ["task.write", "notification:manage"])),
+            briefingCache: BriefingCache(fileURL: cacheDirectory.appendingPathComponent("briefing.json")),
+            taskSurfaceCache: TaskSurfaceCache(fileURL: cacheDirectory.appendingPathComponent("tasks.json")),
+            loginLoader: { _, _, _ in owner }, dashboardLoader: { _, _ in SampleData.dashboard },
+            notificationListLoader: { _, _ in NotificationListResponse(items: [], nextCursor: nil, unreadCount: 0) })
+        await model.connect(email: "fixture@example.test", password: "fixture")
+        for _ in 0..<200 {
+            if !model.isRefreshingTasks && !model.quickTasks.isEmpty { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(model.canWriteTasks, model.deviceTaskAccessMessage ?? "No device error")
+        let row = try XCTUnwrap(model.quickTasks.first)
+        let accepted = await model.performTaskAction(row, operation: .complete)
+        XCTAssertEqual(accepted, status == 200 && !malformed)
+        XCTAssertFalse((model.quickTasks + model.nextTasks + model.urgentTasks + model.todayTasks)
+            .contains { $0.taskRef == taskRef })
+        XCTAssertEqual(model.doneToday?.count, 1)
+        XCTAssertNil(model.presentedTask, "A list conflict should not unexpectedly open the detail sheet.")
+        XCTAssertEqual(recorder.snapshot().filter { $0.httpMethod == "PATCH" }.count, 1)
+    }
+
     func testTaskDeletionUsesExistingEndpointAndSurfacesConflict() async throws {
         let recorder = NotificationRequestRecorder()
         let taskRef = "019f8800-0000-7000-8000-000000000001"
