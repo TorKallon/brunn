@@ -126,6 +126,8 @@ public enum AgentTaskStatus: String, Codable, Sendable, Equatable {
 }
 
 public enum AgentTaskView: String, Codable, Sendable, Equatable {
+    case available
+    case timing
     case urgent
     case next
     case quick
@@ -135,6 +137,11 @@ public enum AgentTaskView: String, Codable, Sendable, Equatable {
 }
 
 public struct AgentTaskCandidate: Identifiable, Codable, Sendable, Equatable {
+    public let mustShow: Bool?
+    public let timing: AgentTaskTimingAttention?
+    public let hardDue: String?
+    public let hardDueSource: String?
+    public let readyAt: String?
     public let taskRef: String
     public let entryRef: String
     public let version: Int
@@ -151,6 +158,10 @@ public struct AgentTaskCandidate: Identifiable, Codable, Sendable, Equatable {
 
     public var id: String { taskRef }
     public var hasInferredProvenance: Bool { !provenanceMarkers.isEmpty }
+    public var hasInferredHardDeadline: Bool {
+        guard let source = hardDueSource else { return timing == nil && tier == 1 && hasInferredProvenance }
+        return hardDue != nil && source != "owner"
+    }
 
     public init(
         taskRef: String,
@@ -165,7 +176,12 @@ public struct AgentTaskCandidate: Identifiable, Codable, Sendable, Equatable {
         provenanceMarkers: [String] = [],
         pinned: Bool = false,
         estimateMinutes: Int? = nil,
-        todaySince: String? = nil
+        todaySince: String? = nil,
+        mustShow: Bool? = nil,
+        timing: AgentTaskTimingAttention? = nil,
+        hardDue: String? = nil,
+        hardDueSource: String? = nil,
+        readyAt: String? = nil
     ) {
         self.taskRef = taskRef
         self.entryRef = entryRef
@@ -180,6 +196,11 @@ public struct AgentTaskCandidate: Identifiable, Codable, Sendable, Equatable {
         self.pinned = pinned
         self.estimateMinutes = estimateMinutes
         self.todaySince = todaySince
+        self.mustShow = mustShow
+        self.timing = timing
+        self.hardDue = hardDue
+        self.hardDueSource = hardDueSource
+        self.readyAt = readyAt
     }
 
     enum CodingKeys: String, CodingKey {
@@ -196,6 +217,11 @@ public struct AgentTaskCandidate: Identifiable, Codable, Sendable, Equatable {
         case pinned
         case estimateMinutes = "estimate_minutes"
         case todaySince = "today_since"
+        case mustShow = "must_show"
+        case timing
+        case hardDue = "hard_due"
+        case hardDueSource = "hard_due_source"
+        case readyAt = "ready_at"
     }
 }
 
@@ -255,7 +281,50 @@ public struct AgentTaskSourcedValue<Value: Codable & Sendable & Equatable>: Coda
     }
 }
 
+public struct AgentTaskTimingAttention: Codable, Sendable, Equatable {
+    public let needsAttention: Bool
+    public let serious: Bool
+    public let timingUnknown: Bool
+    public let riskOn: String?
+    public let dueOn: String?
+    public let reason: String
+    enum CodingKeys: String, CodingKey {
+        case needsAttention = "needs_attention", serious, timingUnknown = "timing_unknown"
+        case riskOn = "risk_on", dueOn = "due_on", reason
+    }
+}
+
+public struct AgentTaskConsequence: Codable, Sendable, Equatable {
+    public var description: String
+    public var severity: String
+    public var timing: RiskTiming?
+    public struct RiskTiming: Codable, Sendable, Equatable {
+        public var kind: String
+        public var startsOn: String?
+        public var endsOn: String?
+        public var days: Int?
+        enum CodingKeys: String, CodingKey {
+            case kind, startsOn = "starts_on", endsOn = "ends_on", days
+        }
+    }
+}
+
+/// Optional members allow reading existing Todoist rules without interpreting
+/// or rewriting them as native recurrence.
+public struct AgentTaskRecurrence: Codable, Sendable, Equatable {
+    public var kind: String?
+    public var mode: String?
+    public var everyDays: Int?
+    public var timezone: String?
+    public var anchorOn: String?
+    enum CodingKeys: String, CodingKey {
+        case kind, mode, everyDays = "every_days", timezone, anchorOn = "anchor_on"
+    }
+}
+
 public struct AgentTaskDocument: Codable, Sendable, Equatable {
+    public let consequence: AgentTaskSourcedValue<AgentTaskConsequence>?
+    public let recurrence: AgentTaskSourcedValue<AgentTaskRecurrence>?
     public let id: String
     public let title: String
     public let status: AgentTaskSourcedValue<String>?
@@ -269,6 +338,7 @@ public struct AgentTaskDocument: Codable, Sendable, Equatable {
     public let todayPin: AgentTaskSourcedValue<String>?
 
     enum CodingKeys: String, CodingKey {
+        case consequence, recurrence
         case id
         case title
         case status
@@ -307,6 +377,8 @@ extension AgentTaskDocument {
         requiredContexts = try sourced([String].self, .requiredContexts)
         estimateMinutes = try sourced(Int.self, .estimateMinutes)
         todayPin = try sourced(String.self, .todayPin)
+        consequence = try sourced(AgentTaskConsequence.self, .consequence)
+        recurrence = try sourced(AgentTaskRecurrence.self, .recurrence)
     }
 }
 
@@ -339,6 +411,8 @@ public struct AgentTaskDetailData: Codable, Sendable, Equatable {
 }
 
 public struct AgentTaskUpdateData: Codable, Sendable, Equatable {
+    public let deferralWarning: String?
+    public let previousReadyAt: String?
     public let task: AgentTaskDetail
     public let action: String
     public let correctionRef: String?
@@ -347,6 +421,7 @@ public struct AgentTaskUpdateData: Codable, Sendable, Equatable {
     public let replayed: Bool
 
     enum CodingKeys: String, CodingKey {
+        case deferralWarning = "deferral_warning", previousReadyAt = "previous_ready_at"
         case task
         case action
         case correctionRef = "correction_ref"
@@ -669,6 +744,8 @@ public struct AgentTaskProjectStateData: Codable, Sendable, Equatable {
 }
 
 public enum AgentTaskCorrectionValue: Sendable, Equatable, Encodable {
+    case consequence(AgentTaskConsequence)
+    case recurrence(AgentTaskRecurrence)
     case string(String)
     case strings([String])
     case integer(Int)
@@ -677,6 +754,8 @@ public enum AgentTaskCorrectionValue: Sendable, Equatable, Encodable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
+        case let .consequence(value): try container.encode(value)
+        case let .recurrence(value): try container.encode(value)
         case let .string(value): try container.encode(value)
         case let .strings(value): try container.encode(value)
         case let .integer(value): try container.encode(value)
@@ -686,6 +765,7 @@ public enum AgentTaskCorrectionValue: Sendable, Equatable, Encodable {
 }
 
 public enum AgentTaskUpdateOperation: Sendable, Equatable, Encodable {
+    case tomorrow
     case complete
     case drop
     case snooze(days: Int)
@@ -700,6 +780,7 @@ public enum AgentTaskUpdateOperation: Sendable, Equatable, Encodable {
     case correct(field: String, value: AgentTaskCorrectionValue, note: String?)
 
     private enum CodingKeys: String, CodingKey {
+        case tomorrow
         case type
         case source
         case completedVia = "completed_via"
@@ -716,6 +797,9 @@ public enum AgentTaskUpdateOperation: Sendable, Equatable, Encodable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("owner", forKey: .source)
         switch self {
+        case .tomorrow:
+            try container.encode("snooze", forKey: .type)
+            try container.encode(true, forKey: .tomorrow)
         case .complete:
             try container.encode("complete", forKey: .type)
             try container.encode("ios", forKey: .completedVia)

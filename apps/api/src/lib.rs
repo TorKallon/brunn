@@ -55,6 +55,7 @@ pub mod simple_worker;
 pub mod task_engine;
 pub mod task_guard;
 pub mod task_service;
+pub mod task_timing;
 pub mod telemetry;
 pub mod todoist_sync;
 pub mod upload_service;

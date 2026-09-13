@@ -17,7 +17,7 @@ export function taskQuickOperation(action: TaskQuickAction): JsonObject {
   if (action === "complete") {
     return { type: "complete", source: "owner", completed_via: "web" };
   }
-  if (action === "snooze") return { type: "snooze", source: "owner", days: 1 };
+  if (action === "snooze") return { type: "snooze", source: "owner", tomorrow: true };
   if (action === "confirm_hard") return { type: "confirm_hard", source: "owner" };
   if (action === "drop") {
     return {

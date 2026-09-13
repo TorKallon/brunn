@@ -40,6 +40,9 @@ public struct AgentTaskTodayProjection: Sendable, Equatable {
     public let next: [AgentTaskCandidate]
 
     public var all: [AgentTaskCandidate] { urgent + next }
+    public func attentionPreview(expanded: Bool = false) -> [AgentTaskCandidate] {
+        urgent.enumerated().filter { expanded || $0.offset < 3 || $0.element.mustShow == true }.map(\.element)
+    }
 
     public static func bounded(
         urgent: [AgentTaskCandidate],
@@ -51,24 +54,14 @@ public struct AgentTaskTodayProjection: Sendable, Equatable {
         let matches: (AgentTaskCandidate) -> Bool = { candidate in
             Set(candidate.requiredContexts).isSubset(of: contextsAvailable)
         }
-        let filteredUrgent = urgent.filter(matches)
+        let filteredUrgent = urgent.filter { $0.mustShow == true || matches($0) }
         let filteredNext = next.filter(matches)
         var seen = Set<String>()
 
-        let ordered = (filteredUrgent + filteredNext).filter { seen.insert($0.taskRef).inserted }
-        let pins = Array(ordered.filter(\.pinned).prefix(max(pinAllowance, 0)))
-        let regular = Array(ordered.filter { !$0.pinned }.prefix(max(baseLimit, 0)))
-        let selectedIDs = Set((pins + regular).map(\.taskRef))
-
-        // Preserve each server-defined order and never render a task twice,
-        // including a malformed duplicate inside either server list.
-        var renderedIDs = Set<String>()
-        let projectedUrgent = filteredUrgent.filter {
-            selectedIDs.contains($0.taskRef) && renderedIDs.insert($0.taskRef).inserted
-        }
-        let projectedNext = filteredNext.filter {
-            selectedIDs.contains($0.taskRef) && renderedIDs.insert($0.taskRef).inserted
-        }
+        let projectedUrgent = filteredUrgent.filter { seen.insert($0.taskRef).inserted }
+        // Needs attention never spends Next's independent nonurgent budget.
+        // Pins retain server ordering but do not add hidden extra rows.
+        let projectedNext = Array(filteredNext.filter { $0.tier > 2 && seen.insert($0.taskRef).inserted }.prefix(max(baseLimit, 0)))
         return AgentTaskTodayProjection(urgent: projectedUrgent, next: projectedNext)
     }
 }

@@ -140,6 +140,7 @@ struct DreamingUsageCard: View {
 private let taskDeletionMessage = "This removes this task from active lists, not its history. You can restore it on the web from All tasks → Deleted. Other recurring occurrences are unchanged."
 
 struct AgentTasksView: View {
+    @State private var showsTiming = false
     @EnvironmentObject private var model: AppModel
     @State private var moreTapCount = 0
     @State private var showsBoundedList = false
@@ -160,13 +161,13 @@ struct AgentTasksView: View {
     }
 
     private var matchingFetchedTasks: [AgentTaskCandidate] {
-        (model.urgentTasks + model.nextTasks)
+        model.nextTasks
             .uniqued(by: \.taskRef)
-            .filter { Set($0.requiredContexts).isSubset(of: model.selectedTaskContexts) }
+            .filter { $0.tier > 2 && Set($0.requiredContexts).isSubset(of: model.selectedTaskContexts) }
     }
 
     private var remainingReadyCount: Int {
-        model.taskNextRemaining + max(matchingFetchedTasks.count - projection.all.count, 0)
+        model.taskNextRemaining + max(matchingFetchedTasks.count - projection.next.count, 0)
     }
 
     private var boundedListTasks: [AgentTaskCandidate] {
@@ -179,6 +180,14 @@ struct AgentTasksView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     if let message = model.connectionMessage, !model.isDemo {
                         ConnectionBanner(message: message, isDemo: model.isDemo)
+                    }
+                    if model.taskDeferralUndo != nil {
+                        Button("Undo deferral") { Task { await model.undoTaskDeferral() } }
+                            .buttonStyle(.bordered).frame(minHeight: 44)
+                    }
+                    if let captured = model.lastCapturedTaskRef {
+                        Button("Add timing to captured task") { Task { await model.openTask(reference: captured) } }
+                            .buttonStyle(.bordered).frame(minHeight: 44)
                     }
 
                     AgentTaskSurface(
@@ -220,7 +229,6 @@ struct AgentTasksView: View {
                             Task { await model.loadProject(project) }
                         }
                     )
-
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12)
@@ -235,6 +243,10 @@ struct AgentTasksView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     BrandMark()
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Timing-sensitive", systemImage: "calendar.badge.clock") { showsTiming = true }
+                        .accessibilityIdentifier("task-timing-open")
                 }
             }
             .refreshable {
@@ -251,6 +263,35 @@ struct AgentTasksView: View {
             .sheet(item: $model.presentedTask) { task in
                 AgentTaskDetailView(task: task)
                     .environmentObject(model)
+            }
+            .sheet(isPresented: $showsTiming) {
+                NavigationStack {
+                    List {
+                        Text("Upcoming, deferred, and timing to clarify. Unknown timing does not schedule a reminder.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        if let message = model.taskMessage { Text(message).foregroundStyle(BrunnTheme.amber) }
+                        ForEach(model.timingTasks) { candidate in
+                            Button {
+                                showsTiming = false
+                                Task { await model.openTask(reference: candidate.taskRef) }
+                            } label: {
+                                VStack(alignment: .leading) {
+                                    Text(candidate.title).foregroundStyle(BrunnTheme.ink)
+                                    Text(candidate.hardDue != nil ? candidate.reason : candidate.timing?.reason ?? candidate.reason).font(.caption).foregroundStyle(.secondary)
+                                    if let readyAt = candidate.readyAt { Text("Resurfaces: \(readyAt)").font(.caption) }
+                                }
+                            }
+                        }
+                        if model.isLoadingTaskTiming { ProgressView() }
+                        if model.timingNextCursor != nil {
+                            Button("More") { Task { await model.loadTimingTasks(reset: false) } }
+                        }
+                        Button("Refresh") { Task { await model.loadTimingTasks() } }
+                    }
+                    .navigationTitle("Timing-sensitive")
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showsTiming = false } } }
+                    .task { await model.loadTimingTasks() }
+                }
             }
             .alert(
                 "Delete task?",
@@ -412,6 +453,20 @@ private struct AgentTaskSurface: View {
 
     @State private var doneExpanded = false
     @State private var captureText = ""
+    @State private var urgentExpanded = false
+    @State private var quickExpanded = false
+
+    private var visibleUrgent: [AgentTaskCandidate] {
+        projection.attentionPreview(expanded: urgentExpanded)
+    }
+    private var remainingToday: [AgentTaskCandidate] {
+        let placed = Set(projection.all.map(\.taskRef))
+        return todayTasks.filter { !placed.contains($0.taskRef) }
+    }
+    private var remainingQuick: [AgentTaskCandidate] {
+        let placed = Set((projection.all + todayTasks).map(\.taskRef))
+        return quickTasks.filter { !placed.contains($0.taskRef) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -476,65 +531,21 @@ private struct AgentTaskSurface: View {
             if !projection.urgent.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     TaskSectionHeader(
-                        title: "URGENT",
+                        title: "NEEDS ATTENTION",
                         count: projection.urgent.count,
                         tint: BrunnTheme.red
                     )
-                    ForEach(projection.urgent) { candidate in
+                    ForEach(visibleUrgent) { candidate in
                         actionRow(candidate)
+                    }
+                    if projection.urgent.count > visibleUrgent.count || urgentExpanded {
+                        Button(urgentExpanded ? "Show less" : "Show all \(projection.urgent.count)") { urgentExpanded.toggle() }
+                            .frame(minHeight: 44)
                     }
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("task-urgent")
             }
-
-            VStack(alignment: .leading, spacing: 8) {
-                TaskSectionHeader(
-                    title: "TODAY",
-                    count: todayTasks.count,
-                    tint: BrunnTheme.signal
-                )
-                TextField("Add for today", text: $captureText)
-                    .textFieldStyle(.roundedBorder)
-                    .submitLabel(.done)
-                    .onSubmit(submitCapture)
-                    .disabled(!canWrite)
-                    .accessibilityIdentifier("task-today-capture")
-                if todayTasks.isEmpty {
-                    Text("Nothing captured for today.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .accessibilityIdentifier("task-today-empty")
-                } else {
-                    ForEach(todayTasks) { candidate in
-                        actionRow(candidate, trailer: ageBadge(candidate), inToday: true)
-                    }
-                }
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("task-today")
-
-            VStack(alignment: .leading, spacing: 8) {
-                TaskSectionHeader(
-                    title: "QUICK",
-                    count: quickTasks.count,
-                    tint: BrunnTheme.pulse
-                )
-                if quickTasks.isEmpty {
-                    Text("No quick tasks are ready.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .accessibilityIdentifier("task-quick-empty")
-                } else {
-                    ForEach(quickTasks) { candidate in
-                        actionRow(candidate, trailer: candidate.estimateMinutes.map { "\($0) min" })
-                    }
-                }
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("task-quick")
 
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
@@ -575,7 +586,7 @@ private struct AgentTaskSurface: View {
                     .accessibilityIdentifier("task-five-more")
                 }
 
-                Text("\(max(nextRemaining, 0)) more ready · \(nextRemaining == 0 ? "Today is clear" : "backlog stays hidden")")
+                Text(nextRemaining == 0 ? "No more ready tasks" : "\(nextRemaining) more ready · backlog stays hidden")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("task-remaining-count")
@@ -588,6 +599,57 @@ private struct AgentTaskSurface: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("task-next-card")
+
+            VStack(alignment: .leading, spacing: 8) {
+                TaskSectionHeader(
+                    title: "TODAY",
+                    count: todayTasks.count,
+                    tint: BrunnTheme.signal
+                )
+                TextField("Add for today", text: $captureText)
+                    .textFieldStyle(.roundedBorder)
+                    .submitLabel(.done)
+                    .onSubmit(submitCapture)
+                    .disabled(!canWrite)
+                    .accessibilityIdentifier("task-today-capture")
+                if remainingToday.isEmpty {
+                    Text("Nothing captured for today.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .accessibilityIdentifier("task-today-empty")
+                } else {
+                    ForEach(remainingToday) { candidate in
+                        actionRow(candidate, trailer: ageBadge(candidate), inToday: true)
+                    }
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("task-today")
+
+            VStack(alignment: .leading, spacing: 8) {
+                TaskSectionHeader(
+                    title: "QUICK",
+                    count: remainingQuick.count,
+                    tint: BrunnTheme.pulse
+                )
+                if remainingQuick.isEmpty {
+                    Text("No quick tasks are ready.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .accessibilityIdentifier("task-quick-empty")
+                } else {
+                    ForEach(Array(remainingQuick.prefix(quickExpanded ? 25 : 3))) { candidate in
+                        actionRow(candidate, trailer: candidate.estimateMinutes.map { "\($0) min" })
+                    }
+                    if remainingQuick.count > 3 {
+                        Button(quickExpanded ? "Show less" : "More quick tasks") { quickExpanded.toggle() }.frame(minHeight: 44)
+                    }
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("task-quick")
 
             if let doneToday {
                 VStack(alignment: .leading, spacing: 8) {
@@ -668,6 +730,7 @@ private struct AgentTaskSurface: View {
             canWrite: canWrite,
             isMutating: mutatingRefs.contains(candidate.taskRef),
             trailer: trailer,
+            tomorrow: canWrite ? { action(candidate, .tomorrow) } : nil,
             complete: { complete(candidate) },
             open: { open(candidate) }
         )
@@ -682,7 +745,7 @@ private struct AgentTaskSurface: View {
                     }
                 }
                 Button("Tomorrow", systemImage: "sunrise") {
-                    action(candidate, .snooze(days: 1))
+                    action(candidate, .tomorrow)
                 }
                 Button("3 days", systemImage: "calendar.badge.clock") {
                     action(candidate, .snooze(days: 3))
@@ -704,7 +767,7 @@ private struct AgentTaskSurface: View {
                         action(candidate, candidate.pinned ? .unpin : .pinToday)
                     }
                 }
-                if candidate.tier == 1 && candidate.hasInferredProvenance {
+                if candidate.hasInferredHardDeadline {
                     Button("Confirm hard deadline", systemImage: "checkmark.seal") {
                         action(candidate, .confirmHard)
                     }
@@ -844,6 +907,7 @@ private struct AgentTaskCandidateRow: View {
     let canWrite: Bool
     let isMutating: Bool
     var trailer: String? = nil
+    var tomorrow: (() -> Void)? = nil
     let complete: () -> Void
     let open: () -> Void
 
@@ -866,6 +930,13 @@ private struct AgentTaskCandidateRow: View {
             .accessibilityLabel(canWrite ? "Complete \(candidate.title)" : "View only")
             .accessibilityIdentifier("task-complete-\(candidate.taskRef)")
 
+            if let tomorrow {
+                Button(action: tomorrow) { Image(systemName: "sunrise").frame(width: 44, height: 44) }
+                    .buttonStyle(.plain).disabled(isMutating)
+                    .accessibilityLabel("Tomorrow: \(candidate.title)")
+                    .accessibilityHint("Defer to next local morning without moving the deadline")
+            }
+
             Button(action: open) {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -873,6 +944,7 @@ private struct AgentTaskCandidateRow: View {
                             .font(.headline)
                             .foregroundStyle(BrunnTheme.ink)
                             .multilineTextAlignment(.leading)
+                        if candidate.todaySince != nil { Text("Today").font(.caption).foregroundStyle(BrunnTheme.signal) }
                         if candidate.pinned {
                             Image(systemName: "pin.fill")
                                 .font(.caption)
@@ -971,6 +1043,131 @@ private struct AgentTaskBoundedList: View {
     }
 }
 
+private struct TaskDateInput: View {
+    let title: String
+    @Binding var value: String
+    var includesTime = false
+    var timezone = TimeZone.current
+    private var formatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timezone
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }
+    private func text(_ date: Date) -> String {
+        includesTime ? ISO8601DateFormatter().string(from: date) : formatter.string(from: date)
+    }
+    var body: some View {
+        VStack(alignment: .leading) {
+            Toggle(title, isOn: Binding(get: { !value.isEmpty }, set: { value = $0 ? text(.now) : "" }))
+            if !value.isEmpty {
+                DatePicker(title, selection: Binding(get: {
+                    (includesTime ? ISO8601DateFormatter().date(from: value) : formatter.date(from: value)) ?? .now
+                }, set: { value = text($0) }), displayedComponents: includesTime ? [.date, .hourAndMinute] : [.date])
+                    .environment(\.timeZone, timezone)
+            }
+        }
+    }
+}
+
+private struct NativeTaskTimingEditor: View {
+    let task: AgentTaskDetail
+    let pending: Bool
+    let save: (String, AgentTaskCorrectionValue) -> Void
+    @State private var softDue: String
+    @State private var hardDue: String
+    @State private var description: String
+    @State private var severity: String
+    @State private var riskKind: String
+    @State private var startsOn: String
+    @State private var endsOn: String
+    @State private var tolerance: String
+    @State private var mode: String
+    @State private var days: String
+    @State private var timezone: String
+    @State private var anchor: String
+
+    init(task: AgentTaskDetail, pending: Bool, save: @escaping (String, AgentTaskCorrectionValue) -> Void) {
+        self.task = task; self.pending = pending; self.save = save
+        let consequence = task.task.consequence?.value
+        let recurrence = task.task.recurrence?.value
+        _softDue = State(initialValue: task.task.softDue?.value ?? "")
+        _hardDue = State(initialValue: task.task.hardDue?.value ?? "")
+        _description = State(initialValue: consequence?.description ?? "")
+        _severity = State(initialValue: consequence?.severity ?? "ordinary")
+        _riskKind = State(initialValue: consequence?.timing?.kind ?? "unknown")
+        _startsOn = State(initialValue: consequence?.timing?.startsOn ?? "")
+        _endsOn = State(initialValue: consequence?.timing?.endsOn ?? "")
+        _tolerance = State(initialValue: consequence?.timing?.days.map(String.init) ?? "")
+        _mode = State(initialValue: recurrence?.kind == "native" ? recurrence?.mode ?? "none" : "none")
+        _days = State(initialValue: recurrence?.everyDays.map(String.init) ?? "")
+        _timezone = State(initialValue: recurrence?.timezone ?? TimeZone.current.identifier)
+        _anchor = State(initialValue: recurrence?.anchorOn ?? "")
+    }
+
+    var body: some View {
+        DisclosureGroup("Timing and recurrence") {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Save each field separately. An intended date is not a hard deadline. Unknown timing does not schedule a reminder.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                TaskDateInput(title: "Intended date", value: $softDue, timezone: TimeZone(identifier: timezone) ?? .current)
+                Button("Save intended date") { save("soft_due", softDue.isEmpty ? .null : .string(softDue)) }
+                TaskDateInput(title: "Actual cutoff", value: $hardDue, includesTime: true)
+                Button("Save cutoff") { save("hard_due", hardDue.isEmpty ? .null : .string(hardDue)) }
+                Divider()
+                TextField("What happens if it slips?", text: $description, axis: .vertical)
+                Picker("Consequence", selection: $severity) {
+                    Text("Ordinary").tag("ordinary")
+                    Text("Serious loss or harm").tag("serious")
+                }
+                Picker("Risk timing", selection: $riskKind) {
+                    Text("Not known yet").tag("unknown")
+                    Text("Known date/window").tag("window")
+                    Text("Days after intended date").tag("after_due")
+                }
+                if riskKind == "window" {
+                    TaskDateInput(title: "Window starts", value: $startsOn, timezone: TimeZone(identifier: timezone) ?? .current)
+                    TaskDateInput(title: "Window ends (optional)", value: $endsOn, timezone: TimeZone(identifier: timezone) ?? .current)
+                } else if riskKind == "after_due" {
+                    TextField("Supported tolerance in days", text: $tolerance).keyboardType(.numberPad)
+                }
+                Button("Save consequence") {
+                    let timing: AgentTaskConsequence.RiskTiming? = riskKind == "unknown" ? nil : .init(
+                        kind: riskKind, startsOn: riskKind == "window" ? startsOn : nil,
+                        endsOn: riskKind == "window" && !endsOn.isEmpty ? endsOn : nil,
+                        days: riskKind == "after_due" ? Int(tolerance) : nil)
+                    save("consequence", description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .null : .consequence(.init(description: description, severity: severity, timing: timing)))
+                }
+                .disabled((riskKind == "after_due" && Int(tolerance).map { !(0...3650).contains($0) } != false) || (riskKind == "window" && startsOn.isEmpty))
+                Divider()
+                if task.task.recurrence != nil && task.task.recurrence?.value.kind != "native" {
+                    Text("Imported recurrence is retained. Ask the agent to review it before replacing it.").font(.footnote)
+                } else {
+                    Picker("Repeat", selection: $mode) {
+                        Text("Does not repeat").tag("none")
+                        Text("After actual completion").tag("after_completion")
+                        Text("Fixed calendar").tag("calendar")
+                    }
+                    if mode != "none" {
+                        TextField("Every (days)", text: $days).keyboardType(.numberPad)
+                        TextField("Timezone", text: $timezone)
+                        if mode == "calendar" { TaskDateInput(title: "Calendar anchor", value: $anchor, timezone: TimeZone(identifier: timezone) ?? .current) }
+                    }
+                    Text("The intended date is the current occurrence's due date. Completing creates the next occurrence; Tomorrow does not.").font(.footnote).foregroundStyle(.secondary)
+                    Button("Save recurrence") {
+                        save("recurrence", mode == "none" ? .null : .recurrence(.init(kind: "native", mode: mode, everyDays: Int(days), timezone: timezone, anchorOn: mode == "calendar" ? anchor : nil)))
+                    }
+                    .disabled((mode != "none" && Int(days).map { !(1...3650).contains($0) } != false) || (mode == "calendar" && anchor.isEmpty))
+                }
+            }
+            .textFieldStyle(.roundedBorder)
+            .buttonStyle(.bordered)
+            .disabled(pending)
+        }
+    }
+}
+
 private struct AgentTaskDetailView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -1038,6 +1235,28 @@ private struct AgentTaskDetailView: View {
                     if let hardDue = task.task.hardDue {
                         LabeledContent("Hard deadline", value: hardDue.value)
                         SourceLine(source: hardDue.source)
+                    }
+                    if let softDue = task.task.softDue {
+                        LabeledContent("Intended date", value: softDue.value)
+                        SourceLine(source: softDue.source)
+                    }
+                    if let consequence = task.task.consequence {
+                        LabeledContent(consequence.value.severity == "serious" ? "Serious consequence" : "Consequence", value: consequence.value.description)
+                        SourceLine(source: consequence.source)
+                    }
+                    if let recurrence = task.task.recurrence {
+                        Text(recurrence.value.kind == "native" ? "Every \(recurrence.value.everyDays ?? 0) days · \(recurrence.value.mode == "after_completion" ? "after actual completion" : "fixed calendar")" : "Imported recurrence (preserved)")
+                        SourceLine(source: recurrence.source)
+                    }
+                    if model.canWriteTasks, task.status == .open || task.status == .waiting {
+                        NativeTaskTimingEditor(task: task, pending: model.mutatingTaskRefs.contains(task.taskRef)) { field, value in
+                            Task { _ = await model.performTaskAction(candidate, operation: .correct(field: field, value: value, note: "Owner timing on iOS")) }
+                        }.id("\(task.taskRef):\(task.version)")
+                        Button("Tomorrow", systemImage: "sunrise") { Task { _ = await model.performTaskAction(candidate, operation: .tomorrow) } }
+                            .buttonStyle(.bordered).frame(minHeight: 44)
+                    }
+                    if model.taskDeferralUndo != nil {
+                        Button("Undo deferral") { Task { await model.undoTaskDeferral() } }.frame(minHeight: 44)
                     }
                     if let contexts = task.task.requiredContexts, !contexts.value.isEmpty {
                         LabeledContent("Contexts", value: contexts.value.joined(separator: ", "))

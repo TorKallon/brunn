@@ -24,7 +24,9 @@ export function TaskRow({
   showActions?: boolean;
 }) {
   const inferredHardDeadline =
-    item.tier === 1 && item.provenance_markers.some(isInferredSource);
+    item.hard_due != null && (item.hard_due_source != null
+      ? isInferredSource(item.hard_due_source)
+      : item.timing == null && item.provenance_markers.some(isInferredSource));
   const active = item.status === "open" || item.status === "waiting";
   return (
     <article
@@ -58,6 +60,9 @@ export function TaskRow({
         </div>
         <div className="task-reason-row">
           <span>{item.reason}</span>
+          {item.today_since ? <span>Today</span> : null}
+          {item.ready_at && new Date(item.ready_at) > new Date() ? <span>Deferred until {new Date(item.ready_at).toLocaleString()}</span> : null}
+          {item.timing?.timing_unknown && !item.hard_due ? <span>Timing needs clarification</span> : null}
           {item.status === "dropped" ? <span>Deleted</span> : null}
           {item.provenance_markers.map((source) => (
             <span
@@ -97,14 +102,15 @@ export function TaskRow({
                     <Check size={16} aria-hidden="true" />
                   </button>
                   <button
-                    className="task-action"
+                    className="task-action task-action-tomorrow"
                     type="button"
-                    aria-label="Snooze one day"
-                    title="Snooze one day"
+                    aria-label="Tomorrow"
+                    title="Tomorrow — next local morning; deadlines do not move"
                     disabled={pending}
                     onClick={() => onAction(item, "snooze")}
                   >
                     <CalendarClock size={16} aria-hidden="true" />
+                    <span>Tomorrow</span>
                   </button>
                 </>
               ) : (

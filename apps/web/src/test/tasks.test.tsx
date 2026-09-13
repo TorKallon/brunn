@@ -28,7 +28,7 @@ describe("agent-first task surfaces", () => {
         const view = url.searchParams.get("view");
         const limit = Number(url.searchParams.get("limit") ?? "5");
         const items =
-          view === "urgent" ? urgentCandidates.slice(0, 3) : nextCandidates;
+          view === "urgent" ? urgentCandidates.slice(0, 3) : view === "available" ? nextCandidates.slice(3) : [];
         return {
           status: "complete",
           data: {
@@ -76,14 +76,14 @@ describe("agent-first task surfaces", () => {
         await screen.findByRole("navigation", { name: "Primary navigation" }),
       ).queryByRole("link", { name: "Tasks" }),
     ).not.toBeInTheDocument();
-    const urgent = await screen.findByRole("region", { name: "Urgent tasks" });
+    const urgent = await screen.findByRole("region", { name: "Needs attention" });
     const next = screen.getByRole("region", { name: "Next tasks" });
     expect(within(urgent).getAllByTestId("task-row")).toHaveLength(3);
-    expect(within(next).getAllByTestId("task-row")).toHaveLength(2);
+    expect(within(next).getAllByTestId("task-row")).toHaveLength(5);
     expect([
       ...within(urgent).getAllByTestId("task-row"),
       ...within(next).getAllByTestId("task-row"),
-    ]).toHaveLength(5);
+    ]).toHaveLength(8);
     const doneRegion = screen.getByRole("region", { name: "Done today" });
     expect(within(doneRegion).getByText("8")).toBeInTheDocument();
     expect(
@@ -96,7 +96,7 @@ describe("agent-first task surfaces", () => {
     expect(within(projectLinks[0]).getByRole("img", { name: "Status green" })).toHaveClass(
       "status-green",
     );
-    expect(within(next).queryByText("Next task 6")).not.toBeInTheDocument();
+    expect(within(next).queryByText("Next task 9")).not.toBeInTheDocument();
     expect(
       within(urgent).getAllByText("hard deadline in 2 days (est.)").length,
     ).toBeGreaterThan(0);
@@ -120,7 +120,7 @@ describe("agent-first task surfaces", () => {
     expect(
       requests.some(
         (url) =>
-          url.searchParams.get("view") === "next" &&
+          url.searchParams.get("view") === "available" &&
           url.searchParams.get("limit") === "10" &&
           url.searchParams.getAll("contexts_available").includes("online"),
       ),
@@ -131,7 +131,7 @@ describe("agent-first task surfaces", () => {
     );
   });
 
-  it("allows at most two pinned rows above the default five-task union", async () => {
+  it("gives Next five independent slots when Needs attention contains pinned work", async () => {
     const pinned = Array.from({ length: 3 }, (_, index) =>
       candidate(index + 20, {
         title: `Pinned task ${index + 1}`,
@@ -141,7 +141,7 @@ describe("agent-first task surfaces", () => {
     installApiMock({
       "GET /api/v1/workspace/tasks/candidates": (request: Request) => {
         const view = new URL(request.url).searchParams.get("view");
-        const items = view === "urgent" ? pinned : nextCandidates;
+        const items = view === "urgent" ? pinned : view === "available" ? nextCandidates.slice(1) : [];
         return {
           status: "complete",
           data: {
@@ -159,14 +159,14 @@ describe("agent-first task surfaces", () => {
     });
     renderApp("/dashboard");
 
-    const urgent = await screen.findByRole("region", { name: "Urgent tasks" });
+    const urgent = await screen.findByRole("region", { name: "Needs attention" });
     const next = screen.getByRole("region", { name: "Next tasks" });
-    expect(within(urgent).getAllByTestId("task-row")).toHaveLength(2);
+    expect(within(urgent).getAllByTestId("task-row")).toHaveLength(3);
     expect(within(next).getAllByTestId("task-row")).toHaveLength(5);
     expect([
       ...within(urgent).getAllByTestId("task-row"),
       ...within(next).getAllByTestId("task-row"),
-    ]).toHaveLength(7);
+    ]).toHaveLength(8);
   });
 
   it("renders the urgent empty state without an empty Urgent card", async () => {
@@ -259,13 +259,13 @@ describe("agent-first task surfaces", () => {
     });
     const user = userEvent.setup();
     renderApp("/dashboard");
-    const urgentRegion = await screen.findByRole("region", { name: "Urgent tasks" });
+    const urgentRegion = await screen.findByRole("region", { name: "Needs attention" });
     const row = await within(urgentRegion).findByTestId(
       `task-row-${nextCandidates[0].task_ref}`,
     );
 
     await user.click(within(row).getByRole("button", { name: "Complete" }));
-    await user.click(within(row).getByRole("button", { name: "Snooze one day" }));
+    await user.click(within(row).getByRole("button", { name: "Tomorrow" }));
     await user.click(within(row).getByRole("button", { name: "Confirm hard deadline" }));
     await user.click(within(row).getByRole("button", { name: "Delete task" }));
     await waitFor(() => expect(bodies).toHaveLength(4));
@@ -276,7 +276,7 @@ describe("agent-first task surfaces", () => {
       }),
       expect.objectContaining({
         expected_version: 1,
-        operation: { type: "snooze", source: "owner", days: 1 },
+        operation: { type: "snooze", source: "owner", tomorrow: true },
       }),
       expect.objectContaining({
         expected_version: 1,

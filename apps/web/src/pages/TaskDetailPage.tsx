@@ -21,6 +21,8 @@ import { formatDate, humanize } from "../lib/format";
 import type { JsonObject, JsonValue, TaskDetail } from "../lib/types";
 import { newOperationId } from "../lib/workspace";
 import { confirmTaskDeletion, taskQuickOperation } from "../lib/taskOperations";
+import { TaskTimingEditor } from "../components/TaskTimingEditor";
+import { TaskDeferralFeedback } from "../components/TaskDeferralFeedback";
 
 export function TaskDetailPage() {
   const { taskRef } = useParams({ from: "/authenticated/tasks/$taskRef" });
@@ -70,7 +72,8 @@ export function TaskDetailPage() {
         <ErrorState error={query.error} retry={() => void query.refetch()} title="Unable to load task" />
       ) : null}
       {mutation.isError ? <ErrorState error={mutation.error} title="Task action failed" /> : null}
-      {mutation.isSuccess ? (
+      <TaskDeferralFeedback key={`${mutation.data?.data.task.task_ref}:${mutation.data?.data.task.version}`} data={mutation.data?.data} />
+      {mutation.isSuccess && mutation.data.data.action !== "snooze" ? (
         <p className="task-feedback" role="status">
           <Check size={16} aria-hidden="true" />
           {mutation.data.data.action === "drop"
@@ -105,7 +108,7 @@ export function TaskDetailPage() {
                   <CircleDotDashed size={16} aria-hidden="true" />
                   <span>
                     <strong>{humanize(field)}</strong>
-                    <small>{formatTaskValue(cell.value)}</small>
+                    <small>{formatTaskValue(cell.value, field)}</small>
                   </span>
                   <span>
                     <code>{cell.source}</code>
@@ -119,6 +122,9 @@ export function TaskDetailPage() {
               ) : null}
             </div>
           </Section>
+          {canWrite ? (
+            <TaskTimingEditor key={`${task.task_ref}:${task.version}`} task={task} pending={mutation.isPending} save={operation => mutation.mutate(operation)} />
+          ) : null}
           {canWrite ? (
             <TitleCorrectionForm
               task={task}
@@ -170,9 +176,9 @@ function TaskDetailActions({
       )}
       {active ? (
         <>
-          <button className="button secondary" type="button" disabled={pending} onClick={() => mutate({ type: "snooze", source: "owner", days: 1 })}>
+          <button className="button secondary" type="button" disabled={pending} onClick={() => mutate(taskQuickOperation("snooze"))}>
             <CalendarClock size={16} aria-hidden="true" />
-            Snooze tomorrow
+            Tomorrow
           </button>
           <button className="button secondary" type="button" disabled={pending} onClick={() => mutate({ type: "pin_today", source: "owner" })}>
             <Pin size={16} aria-hidden="true" />
@@ -249,6 +255,8 @@ function taskDefinitionItems(task: TaskDetail) {
     { label: "Contexts", value: formatTaskValue(cells.required_contexts?.value) },
     { label: "Estimate", value: cells.estimate_minutes ? `${formatTaskValue(cells.estimate_minutes.value)} min` : "Not set" },
     { label: "Cost of delay", value: formatTaskValue(cells.cost_of_delay?.value) },
+    { label: "Consequence", value: formatTaskValue(cells.consequence?.value, "consequence") },
+    { label: "Recurrence", value: formatTaskValue(cells.recurrence?.value, "recurrence") },
   ];
 }
 
@@ -273,10 +281,23 @@ function sourcedCell(value: JsonValue | undefined) {
   };
 }
 
-function formatTaskValue(value: JsonValue | undefined): string {
+function formatTaskValue(value: JsonValue | undefined, field?: string): string {
   if (value === undefined || value === null || value === "") return "Not set";
   if (Array.isArray(value)) return value.map((item) => formatTaskValue(item)).join(", ");
-  if (typeof value === "object") return JSON.stringify(value);
+  if (typeof value === "object") {
+    if (field === "consequence" && typeof value.description === "string") {
+      const timing = value.timing && typeof value.timing === "object" && !Array.isArray(value.timing) ? value.timing : {};
+      const when = timing.kind === "window"
+        ? `Risk from ${String(timing.starts_on)}${timing.ends_on ? `–${String(timing.ends_on)}` : ""}`
+        : timing.kind === "after_due" ? `Risk ${String(timing.days)} days after intended date` : "Risk timing not set";
+      return `${value.severity === "serious" ? "Serious" : "Ordinary"} · ${value.description} · ${when}`;
+    }
+    if (field === "recurrence") {
+      if (value.kind !== "native") return "Imported recurrence (preserved)";
+      return `Every ${String(value.every_days)} days · ${value.mode === "after_completion" ? "after actual completion" : `fixed calendar from ${String(value.anchor_on)}`} · ${String(value.timezone)}`;
+    }
+    return JSON.stringify(value);
+  }
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/u.test(value)) return formatDate(value);
   return String(value);

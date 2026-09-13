@@ -66,6 +66,7 @@ struct TaskProjection {
     done_at: Option<DateTime<Utc>>,
     dropped_at: Option<DateTime<Utc>>,
     recurrence: Option<Value>,
+    consequence: Option<Value>,
     provenance: Value,
     source_timestamps: Value,
     task: Value,
@@ -203,6 +204,7 @@ pub(crate) fn apply_sourced_field(
     explicit_correction: bool,
 ) -> ApiResult<Option<CorrectionDelta>> {
     const ENRICHABLE_FIELDS: &[&str] = &[
+        "consequence",
         "notes",
         "project",
         "status",
@@ -871,10 +873,10 @@ async fn sync_task_projection_in_tx(
           cost_flag,cost_since,required_contexts,project_slug,estimate_minutes,
           waiting_on,snooze_count,parked,today_pin,triaged_at,done_at,dropped_at,
           recurrence,provenance,source_timestamps,task,created_at,updated_at,
-          today_since
+          today_since,consequence
         ) VALUES (
           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-          $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31
+          $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
         )
         ON CONFLICT (user_id,task_id) DO UPDATE SET
           entry_id=EXCLUDED.entry_id,
@@ -905,7 +907,8 @@ async fn sync_task_projection_in_tx(
           task=EXCLUDED.task,
           created_at=LEAST(task_index.created_at,EXCLUDED.created_at),
           updated_at=EXCLUDED.updated_at,
-          today_since=EXCLUDED.today_since
+          today_since=EXCLUDED.today_since,
+          consequence=EXCLUDED.consequence
         "#,
     )
     .bind(user_id)
@@ -939,6 +942,7 @@ async fn sync_task_projection_in_tx(
     .bind(captured_at)
     .bind(version_created_at)
     .bind(projection.today_since)
+    .bind(&projection.consequence)
     .execute(&mut **tx)
     .await?;
     sync_task_identity_projection_in_tx(
@@ -1179,6 +1183,13 @@ fn parse_projection(metadata: &Value) -> ApiResult<TaskProjection> {
     let done_at = direct_timestamp(task, "done_at")?;
     let dropped_at = direct_timestamp(task, "dropped_at")?;
     let recurrence = owned_value(task, "recurrence")?;
+    if let Some(value) = recurrence.as_ref().filter(|v| !v.is_null()) {
+        crate::task_timing::NativeRecurrence::parse(value).map_err(ApiError::invalid)?;
+    }
+    let consequence = owned_value(task, "consequence")?.filter(|v| !v.is_null());
+    if let Some(value) = &consequence {
+        crate::task_timing::Consequence::parse(value).map_err(ApiError::invalid)?;
+    }
     if recurrence
         .as_ref()
         .is_some_and(|value| json_has_forbidden_control(value, false))
@@ -1214,6 +1225,7 @@ fn parse_projection(metadata: &Value) -> ApiResult<TaskProjection> {
         done_at,
         dropped_at,
         recurrence,
+        consequence,
         provenance,
         source_timestamps,
         task: Value::Object(task.clone()),
@@ -1482,6 +1494,7 @@ fn collect_cell_provenance(task: &Map<String, Value>) -> ApiResult<(Value, Value
     let mut sources = BTreeMap::new();
     let mut timestamps = BTreeMap::new();
     for field in [
+        "consequence",
         "notes",
         "project",
         "status",
@@ -1644,6 +1657,10 @@ pub(crate) struct CaptureItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost_of_delay: Option<SourcedInput>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consequence: Option<SourcedInput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recurrence: Option<SourcedInput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub required_contexts: Option<SourcedInput>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub estimate_minutes: Option<SourcedInput>,
@@ -1675,12 +1692,16 @@ pub(crate) enum UpdateOperation {
     Complete {
         source: String,
         completed_via: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        completed_at: Option<DateTime<Utc>>,
     },
     Reopen {
         source: String,
     },
     Snooze {
         source: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        tomorrow: bool,
         #[serde(default)]
         until: Option<DateTime<Utc>>,
         #[serde(default)]
@@ -1932,6 +1953,8 @@ fn validate_capture_item(auth: &AuthContext, item: &CaptureItem) -> ApiResult<()
         ));
     }
     for cell in [
+        item.consequence.as_ref(),
+        item.recurrence.as_ref(),
         item.notes.as_ref(),
         item.project.as_ref(),
         item.ready_at.as_ref(),
@@ -1957,6 +1980,8 @@ fn validate_capture_item(auth: &AuthContext, item: &CaptureItem) -> ApiResult<()
         }
     }
     for (field, cell) in [
+        ("consequence", item.consequence.as_ref()),
+        ("recurrence", item.recurrence.as_ref()),
         ("notes", item.notes.as_ref()),
         ("project", item.project.as_ref()),
         ("ready_at", item.ready_at.as_ref()),
@@ -2189,6 +2214,8 @@ pub(crate) async fn capture_tasks(
         let task_id = Uuid::now_v7();
         let title = capture_title(item);
         let actor = [
+            item.consequence.as_ref(),
+            item.recurrence.as_ref(),
             item.notes.as_ref(),
             item.project.as_ref(),
             item.ready_at.as_ref(),
@@ -2226,6 +2253,8 @@ pub(crate) async fn capture_tasks(
             json!({"value":"open","source":"derived","set_at":now}),
         );
         for (name, cell) in [
+            ("consequence", item.consequence.as_ref()),
+            ("recurrence", item.recurrence.as_ref()),
             ("notes", item.notes.as_ref()),
             ("ready_at", item.ready_at.as_ref()),
             ("soft_due", item.soft_due.as_ref()),
@@ -2482,13 +2511,27 @@ fn validate_update_operation(auth: &AuthContext, operation: &UpdateOperation) ->
             }
             validate_correction_value(field, operation_correct_value(operation)?)?;
         }
-        UpdateOperation::Complete { completed_via, .. } => {
+        UpdateOperation::Complete {
+            completed_via,
+            completed_at,
+            ..
+        } => {
             canonical_completed_via(auth, completed_via)?;
+            if completed_at.is_some_and(|at| at > Utc::now()) {
+                return Err(ApiError::invalid("completed_at cannot be in the future"));
+            }
         }
-        UpdateOperation::Snooze { until, days, .. } => {
-            if until.is_some() == days.is_some() {
+        UpdateOperation::Snooze {
+            until,
+            days,
+            tomorrow,
+            ..
+        } => {
+            if usize::from(until.is_some()) + usize::from(days.is_some()) + usize::from(*tomorrow)
+                != 1
+            {
                 return Err(ApiError::invalid(
-                    "snooze requires exactly one of until or days",
+                    "snooze requires exactly one of until, days, or tomorrow:true",
                 ));
             }
             if days.is_some_and(|value| value == 0 || value > 3650) {
@@ -2564,6 +2607,7 @@ fn operation_correct_value(operation: &UpdateOperation) -> ApiResult<&Value> {
 
 fn validate_correction_value(field: &str, value: &Value) -> ApiResult<()> {
     const FIELDS: &[&str] = &[
+        "consequence",
         "title",
         "notes",
         "project",
@@ -2582,6 +2626,11 @@ fn validate_correction_value(field: &str, value: &Value) -> ApiResult<()> {
         )));
     }
     match field {
+        "consequence" => {
+            if !value.is_null() {
+                crate::task_timing::Consequence::parse(value).map_err(ApiError::invalid)?;
+            }
+        }
         "title" => {
             if value.as_str().map(str::trim).is_none_or(|value| {
                 value.is_empty() || value.len() > 500 || has_forbidden_control(value, false)
@@ -2727,6 +2776,9 @@ fn validate_correction_value(field: &str, value: &Value) -> ApiResult<()> {
             }
         }
         "recurrence" => {
+            if !value.is_null() {
+                crate::task_timing::NativeRecurrence::parse(value).map_err(ApiError::invalid)?;
+            }
             if !value.is_null() && (!value.is_object() || json_has_forbidden_control(value, false))
             {
                 return Err(ApiError::invalid("recurrence must be null or an object"));
@@ -2920,6 +2972,13 @@ pub(crate) async fn update_task(
     validate_action_state(&request.operation, &current_status)?;
     let now = Utc::now();
     let mut metadata: Value = row.get("metadata");
+    let previous_ready_at = row
+        .get::<Value, _>("task")
+        .get("ready_at")
+        .and_then(|cell| cell.get("value"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let mut deferral_warning: Option<String> = None;
     let mut content: String = row.get("content");
     let source = canonical_public_source(&auth, update_operation_source(&request.operation))?;
     let mut corrected_value_override = None;
@@ -3068,7 +3127,11 @@ pub(crate) async fn update_task(
                 reason.as_deref().unwrap_or("explicit task correction"),
             )
         }
-        UpdateOperation::Complete { completed_via, .. } => {
+        UpdateOperation::Complete {
+            completed_via,
+            completed_at,
+            ..
+        } => {
             let completed_via = canonical_completed_via(&auth, completed_via)?;
             record_task_completion(
                 &mut metadata,
@@ -3077,6 +3140,9 @@ pub(crate) async fn update_task(
                 &completed_via,
                 now,
             )?;
+            if let Some(at) = completed_at {
+                direct_task_object_mut(&mut metadata)?.insert("done_at".into(), json!(at));
+            }
             ("complete", "explicit completion")
         }
         UpdateOperation::Reopen { .. } => {
@@ -3114,10 +3180,54 @@ pub(crate) async fn update_task(
             }
             ("reopen", "explicit reopen")
         }
-        UpdateOperation::Snooze { until, days, .. } => {
-            let ready_at = until.unwrap_or_else(|| now + Duration::days(i64::from(days.unwrap())));
+        UpdateOperation::Snooze {
+            until,
+            days,
+            tomorrow,
+            ..
+        } => {
+            let ready_at = if *tomorrow {
+                let settings = sqlx::query(
+                    "SELECT timezone,quiet_hours_end FROM brunn.task_settings WHERE user_id=$1",
+                )
+                .bind(auth.user_id.0)
+                .fetch_one(&mut *tx)
+                .await?;
+                let timezone = settings
+                    .get::<String, _>("timezone")
+                    .parse::<Tz>()
+                    .map_err(|_| ApiError::Internal("invalid task timezone".into()))?;
+                let date = now
+                    .with_timezone(&timezone)
+                    .date_naive()
+                    .succ_opt()
+                    .ok_or_else(|| ApiError::invalid("tomorrow is out of range"))?;
+                crate::task_guard::resolve_local(
+                    timezone,
+                    date.and_time(settings.get("quiet_hours_end")),
+                )?
+            } else {
+                until.unwrap_or_else(|| now + Duration::days(i64::from(days.unwrap())))
+            };
             if ready_at <= now {
                 return Err(ApiError::invalid("snooze target must be in the future"));
+            }
+            let (_, timezone) = owner_local_date_in_tx(&mut tx, auth.user_id.0, now).await?;
+            let task = direct_task_object_mut(&mut metadata)?;
+            let timing = timing_from_values(
+                owned_value(task, "consequence")?.as_ref(),
+                owned_value(task, "recurrence")?.as_ref(),
+                date_value(task, "soft_due")?,
+                timezone
+                    .parse::<Tz>()
+                    .map_err(|_| ApiError::Internal("invalid task timezone".into()))?,
+            )?;
+            if timestamp_value(task, "hard_due")?.is_some_and(|due| due <= ready_at)
+                || timing
+                    .as_ref()
+                    .is_some_and(|timing| timing.attention(ready_at).serious)
+            {
+                deferral_warning = Some("Deferred, but the real deadline or serious consequence comes before it returns. That constraint has not moved.".into());
             }
             let existing = effective_metadata(&metadata)
                 .get("task")
@@ -3391,14 +3501,26 @@ pub(crate) async fn update_task(
     )
     .await?;
     let next_occurrence = if action == "complete" {
-        materialize_next_todoist_occurrence_in_tx(
+        let native = materialize_next_native_occurrence_in_tx(
             &mut tx,
             auth.user_id.0,
             auth.credential_id.0,
             task_id,
             now,
         )
-        .await?
+        .await?;
+        if native.is_some() {
+            native
+        } else {
+            materialize_next_todoist_occurrence_in_tx(
+                &mut tx,
+                auth.user_id.0,
+                auth.credential_id.0,
+                task_id,
+                now,
+            )
+            .await?
+        }
     } else {
         None
     };
@@ -3443,6 +3565,8 @@ pub(crate) async fn update_task(
         "correction_ref": correction_ref,
         "done_today_count": done_today_count,
         "next_occurrence_task_ref":next_occurrence,
+        "deferral_warning":deferral_warning,
+        "previous_ready_at":previous_ready_at,
         "replayed": false,
     });
     finalize_receipt(
@@ -3557,7 +3681,7 @@ SELECT task.task_id,task.entry_id,task.entry_version,task.title,task.status,
        task.required_contexts,task.project_slug,task.parked,task.today_pin,
        task.triaged_at,task.created_at,task.provenance,task.source_timestamps,
        project.interest_override,project.interest_set_at,project.last_activity_at,
-       task.estimate_minutes,task.today_since
+       task.estimate_minutes,task.today_since,task.consequence,task.recurrence
 FROM brunn.task_index AS task
 LEFT JOIN brunn.task_projects AS project
   ON project.user_id=task.user_id AND project.slug=task.project_slug
@@ -3565,9 +3689,8 @@ WHERE task.user_id=$1 AND task.status IN ('open','waiting')
   AND ($2::boolean OR task.status='open')
   AND ($3::boolean OR NOT task.parked)
   AND task.created_at <= $4::timestamptz
-  AND (task.ready_at IS NULL OR task.ready_at <= $4::timestamptz)
   AND ($5::text IS NULL OR task.project_slug=$5::text)
-  AND task.required_contexts <@ $6::text[]
+  AND (task.required_contexts <@ $6::text[] OR task.hard_due <= $4::timestamptz + interval '24 hours' OR task.consequence IS NOT NULL)
 ORDER BY task.created_at,task.task_id
 "#;
 
@@ -3580,7 +3703,7 @@ SELECT task.task_id,task.entry_id,task.entry_version,task.title,task.status,
        task.required_contexts,task.project_slug,task.parked,task.today_pin,
        task.triaged_at,task.created_at,task.provenance,task.source_timestamps,
        project.interest_override,project.interest_set_at,project.last_activity_at,
-       task.estimate_minutes,task.today_since
+       task.estimate_minutes,task.today_since,task.consequence,task.recurrence
 FROM brunn.task_index AS task
 LEFT JOIN brunn.task_projects AS project
   ON project.user_id=task.user_id AND project.slug=task.project_slug
@@ -3601,7 +3724,7 @@ SELECT task.task_id,task.entry_id,task.entry_version,task.title,task.status,
        task.triaged_at,task.done_at,task.dropped_at,task.created_at,
        task.provenance,task.source_timestamps,
        project.interest_override,project.interest_set_at,project.last_activity_at,
-       task.estimate_minutes,task.today_since
+       task.estimate_minutes,task.today_since,task.consequence,task.recurrence
 FROM brunn.task_index AS task
 LEFT JOIN brunn.task_projects AS project
   ON project.user_id=task.user_id AND project.slug=task.project_slug
@@ -3677,6 +3800,8 @@ fn candidate_view(query: &CandidateQuery) -> ApiResult<TaskView> {
     match query.view.as_deref().unwrap_or("next") {
         "urgent" => Ok(TaskView::Urgent),
         "next" => Ok(TaskView::Next),
+        "available" => Ok(TaskView::Available),
+        "timing" => Ok(TaskView::Timing),
         "quick" => Ok(TaskView::Quick),
         "today" => Ok(TaskView::Today),
         "triage" => Ok(TaskView::Triage),
@@ -3818,6 +3943,7 @@ fn snapshot_from_projection_row(
     row: &sqlx::postgres::PgRow,
     as_of: DateTime<Utc>,
     include_terminal_history: bool,
+    timezone: Tz,
 ) -> ApiResult<TaskSnapshot> {
     // The deliberate-all query is latency-gated while decoding up to 2,000
     // rows. PgRow's string index performs a hash-table lookup for every field;
@@ -3895,6 +4021,12 @@ fn snapshot_from_projection_row(
         String::new()
     };
     Ok(TaskSnapshot {
+        timing: timing_from_values(
+            row.get::<Option<Value>, _>("consequence").as_ref(),
+            row.get::<Option<Value>, _>("recurrence").as_ref(),
+            row.get("soft_due"),
+            timezone,
+        )?,
         id: projection_get!(Uuid, "task_id", 0),
         title: projection_get!(String, "title", 3),
         status: task_status(&status)?,
@@ -3965,6 +4097,33 @@ fn snapshot_from_projection_row(
     })
 }
 
+pub(crate) fn timing_from_values(
+    consequence: Option<&Value>,
+    recurrence: Option<&Value>,
+    due_on: Option<NaiveDate>,
+    timezone: Tz,
+) -> ApiResult<Option<crate::task_timing::TaskTiming>> {
+    let consequence = consequence
+        .filter(|v| !v.is_null())
+        .map(crate::task_timing::Consequence::parse)
+        .transpose()
+        .map_err(ApiError::invalid)?;
+    let recurrence = recurrence
+        .filter(|v| !v.is_null())
+        .map(crate::task_timing::NativeRecurrence::parse)
+        .transpose()
+        .map_err(ApiError::invalid)?
+        .flatten();
+    Ok(
+        (consequence.is_some() || recurrence.is_some()).then_some(crate::task_timing::TaskTiming {
+            consequence,
+            recurrence,
+            due_on,
+            timezone,
+        }),
+    )
+}
+
 fn ranked_item_json(
     ranked: &task_engine::RankedTask,
     details: &HashMap<Uuid, &sqlx::postgres::PgRow>,
@@ -3980,6 +4139,22 @@ fn ranked_item_json_from_row(
     row: &sqlx::postgres::PgRow,
 ) -> ApiResult<Value> {
     let entry_id: Uuid = row.get("entry_id");
+    let mut markers = ranked.provenance_markers.clone();
+    let sources: Value = row.get("provenance");
+    if ranked
+        .timing
+        .as_ref()
+        .is_some_and(|timing| timing.needs_attention)
+    {
+        for field in ["consequence", "recurrence"] {
+            if let Some(source) = sources.get(field).and_then(Value::as_str)
+                && source != "owner"
+                && !markers.iter().any(|item| item == source)
+            {
+                markers.push(source.to_owned());
+            }
+        }
+    }
     Ok(json!({
         "task_ref": ranked.id,
         "entry_ref": format!("entry:{entry_id}"),
@@ -3992,8 +4167,13 @@ fn ranked_item_json_from_row(
         "today_since": row.get::<Option<NaiveDate>,_>("today_since"),
         "tier": ranked.tier,
         "reason": ranked.reason,
-        "provenance_markers": ranked.provenance_markers,
+        "provenance_markers": markers,
         "pinned": ranked.pinned,
+        "timing": ranked.timing,
+        "must_show": ranked.must_show,
+        "hard_due": row.get::<Option<DateTime<Utc>>,_>("hard_due"),
+        "hard_due_source": sources.get("hard_due").and_then(Value::as_str),
+        "ready_at": row.get::<Option<DateTime<Utc>>,_>("ready_at"),
     }))
 }
 
@@ -4020,6 +4200,7 @@ pub(crate) async fn task_candidates(
     auth.require(Capability::TaskRead)?;
     let query = parse_candidate_query(raw.as_deref())?;
     let view = candidate_view(&query)?;
+    let paged = matches!(view, TaskView::All | TaskView::Timing);
     if view == TaskView::Urgent && query.limit.is_some() {
         return Err(ApiError::invalid(
             "view=urgent is unbounded and does not accept limit",
@@ -4031,16 +4212,16 @@ pub(crate) async fn task_candidates(
         ));
     }
     let limit = query.limit.unwrap_or(match view {
-        TaskView::Next | TaskView::Urgent => 5,
+        TaskView::Next | TaskView::Available | TaskView::Urgent => 5,
         TaskView::Triage | TaskView::Quick => 10,
-        TaskView::Today | TaskView::All => 25,
+        TaskView::Today | TaskView::All | TaskView::Timing => 25,
     });
     if limit == 0 || limit > 25 || (view == TaskView::Triage && limit > 10) {
         return Err(ApiError::invalid(
             "limit must be 1..25 (and at most 10 for triage)",
         ));
     }
-    if view != TaskView::All && query.cursor.is_some() {
+    if !paged && query.cursor.is_some() {
         return Err(ApiError::invalid(
             "cursor is supported only with deliberate view=all",
         ));
@@ -4055,7 +4236,7 @@ pub(crate) async fn task_candidates(
     let include_waiting = query.include_waiting.unwrap_or(false)
         || (view == TaskView::All && all_status == AllStatusFilter::Waiting);
     let include_parked = query.include_parked.unwrap_or(false);
-    let mut rows = if view == TaskView::All {
+    let mut rows = if paged {
         sqlx::query(TASK_ALL_PROJECTION_SQL)
             .bind(auth.user_id.0)
             .bind(as_of)
@@ -4090,7 +4271,7 @@ pub(crate) async fn task_candidates(
             rows.retain(|row| projection_source_matches(&row.get::<Value, _>(21), source));
         }
     }
-    let bounded_backlog_total = if view == TaskView::All {
+    let bounded_backlog_total = if paged {
         None
     } else {
         Some(
@@ -4105,7 +4286,7 @@ pub(crate) async fn task_candidates(
         )
     };
     let settings = sqlx::query(
-        "SELECT hard_lead_days,soft_window_days FROM brunn.task_settings WHERE user_id=$1",
+        "SELECT hard_lead_days,soft_window_days,timezone FROM brunn.task_settings WHERE user_id=$1",
     )
     .bind(auth.user_id.0)
     .fetch_one(&mut *tx)
@@ -4115,14 +4296,18 @@ pub(crate) async fn task_candidates(
         soft_due_window_days: settings.get::<i32, _>("soft_window_days").into(),
     };
     let mut snapshots = Vec::with_capacity(rows.len());
-    let index_details = view != TaskView::All || query.cursor.is_some();
+    let timezone = settings
+        .get::<String, _>("timezone")
+        .parse::<Tz>()
+        .map_err(|_| ApiError::Internal("invalid task timezone".into()))?;
+    let index_details = !paged || query.cursor.is_some();
     let mut details = if index_details {
         HashMap::with_capacity(rows.len())
     } else {
         HashMap::new()
     };
     for row in &rows {
-        let snapshot = snapshot_from_projection_row(row, as_of, view == TaskView::All)?;
+        let snapshot = snapshot_from_projection_row(row, as_of, paged, timezone)?;
         if index_details {
             details.insert(snapshot.id, row);
         }
@@ -4137,33 +4322,32 @@ pub(crate) async fn task_candidates(
         include_parked,
         as_of,
     };
-    let (selected, next_cursor, next_remaining, backlog_total, urgent_total) =
-        if view == TaskView::All {
-            let (page, next_cursor) = task_engine::rank_all_tasks_page(
-                &snapshots,
-                &engine_request,
-                &engine_settings,
-                query.cursor,
-            )
-            .ok_or_else(|| ApiError::invalid("candidate cursor is not in the result set"))?;
-            (
-                page.items,
-                next_cursor,
-                page.next_remaining,
-                page.backlog_total as i64,
-                page.urgent_total,
-            )
-        } else {
-            let ranked = task_engine::rank_tasks(&snapshots, &engine_request, &engine_settings);
-            (
-                ranked.items,
-                None,
-                ranked.next_remaining,
-                bounded_backlog_total.expect("bounded backlog count is present"),
-                ranked.urgent_total,
-            )
-        };
-    let items = if view == TaskView::All && !index_details {
+    let (selected, next_cursor, next_remaining, backlog_total, urgent_total) = if paged {
+        let (page, next_cursor) = task_engine::rank_all_tasks_page(
+            &snapshots,
+            &engine_request,
+            &engine_settings,
+            query.cursor,
+        )
+        .ok_or_else(|| ApiError::invalid("candidate cursor is not in the result set"))?;
+        (
+            page.items,
+            next_cursor,
+            page.next_remaining,
+            page.backlog_total as i64,
+            page.urgent_total,
+        )
+    } else {
+        let ranked = task_engine::rank_tasks(&snapshots, &engine_request, &engine_settings);
+        (
+            ranked.items,
+            None,
+            ranked.next_remaining,
+            bounded_backlog_total.expect("bounded backlog count is present"),
+            ranked.urgent_total,
+        )
+    };
+    let items = if paged && !index_details {
         selected
             .iter()
             .map(|item| {
@@ -4187,6 +4371,8 @@ pub(crate) async fn task_candidates(
         "view": match view {
             TaskView::Urgent => "urgent",
             TaskView::Next => "next",
+            TaskView::Available => "available",
+            TaskView::Timing => "timing",
             TaskView::Quick => "quick",
             TaskView::Today => "today",
             TaskView::Triage => "triage",
@@ -5708,7 +5894,7 @@ SELECT task.task_id,task.entry_id,task.entry_version,task.title,task.status,
        task.cost_amount_cents,task.cost_period,task.cost_flag,task.cost_since,
        task.required_contexts,task.project_slug,task.parked,task.today_pin,
        task.triaged_at,task.created_at,task.updated_at,task.waiting_on,
-       task.provenance,task.source_timestamps,task.estimate_minutes,task.today_since,
+       task.provenance,task.source_timestamps,task.estimate_minutes,task.today_since,task.consequence,task.recurrence,
        project.interest_override,project.interest_set_at,project.last_activity_at
 FROM brunn.task_index AS task
 JOIN brunn.task_projects AS project
@@ -5757,14 +5943,18 @@ pub(crate) async fn project_state(
     .into_iter()
     .collect::<BTreeSet<_>>();
     let settings = sqlx::query(
-        "SELECT hard_lead_days,soft_window_days FROM brunn.task_settings WHERE user_id=$1",
+        "SELECT hard_lead_days,soft_window_days,timezone FROM brunn.task_settings WHERE user_id=$1",
     )
     .bind(auth.user_id.0)
     .fetch_one(&mut *tx)
     .await?;
+    let timezone = settings
+        .get::<String, _>("timezone")
+        .parse::<Tz>()
+        .map_err(|_| ApiError::Internal("invalid task timezone".into()))?;
     let snapshots = rows
         .iter()
-        .map(|row| snapshot_from_projection_row(row, as_of, false))
+        .map(|row| snapshot_from_projection_row(row, as_of, false, timezone))
         .collect::<ApiResult<Vec<_>>>()?;
     let ranked = task_engine::rank_tasks(
         &snapshots,
@@ -7001,6 +7191,114 @@ async fn record_todoist_external_ref_in_tx(
 }
 
 #[doc(hidden)]
+async fn materialize_next_native_occurrence_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    credential_id: Uuid,
+    completed_task_id: Uuid,
+    now: DateTime<Utc>,
+) -> ApiResult<Option<Uuid>> {
+    let row = fetch_task_row(tx, user_id, completed_task_id, true)
+        .await?
+        .ok_or_else(|| ApiError::not_found("task_not_found", &completed_task_id.to_string()))?;
+    let metadata: Value = row.get("metadata");
+    let task = effective_metadata(&metadata)
+        .get("task")
+        .and_then(Value::as_object)
+        .ok_or_else(|| ApiError::invalid("task metadata is invalid"))?;
+    let Some(rule) = owned_value(task, "recurrence")?
+        .as_ref()
+        .map(crate::task_timing::NativeRecurrence::parse)
+        .transpose()
+        .map_err(ApiError::invalid)?
+        .flatten()
+    else {
+        return Ok(None);
+    };
+    if let Some(existing) = sqlx::query_scalar::<_, Uuid>(
+        "SELECT task_id FROM brunn.task_index WHERE user_id=$1 AND task->'provenance'->>'recurrence_previous_task_ref'=$2"
+    ).bind(user_id).bind(completed_task_id.to_string()).fetch_optional(&mut **tx).await? {
+        return Ok(Some(existing));
+    }
+    let completed_at = direct_timestamp(task, "done_at")?
+        .ok_or_else(|| ApiError::invalid("native recurrence requires actual completion"))?;
+    let due_on = rule
+        .next_due(date_value(task, "soft_due")?, completed_at)
+        .ok_or_else(|| ApiError::invalid("next routine date is out of range"))?;
+    let ready_at =
+        crate::task_guard::resolve_local(rule.timezone, due_on.and_time(NaiveTime::MIN))?;
+    let next_task_id = Uuid::now_v7();
+    let mut next_metadata = metadata.clone();
+    let next_task = direct_task_object_mut(&mut next_metadata)?;
+    next_task.insert("id".into(), json!(next_task_id));
+    // Keep the rule, notes, original capture and source attribution. One-off
+    // constraints must be reconsidered, not blindly copied into every cycle.
+    for field in [
+        "done_at",
+        "dropped_at",
+        "completed_via",
+        "dropped_reason",
+        "today_pin",
+        "today_since",
+        "waiting_on",
+        "hard_due",
+        "hard_due_lead_days",
+        "cost_of_delay",
+        "external_refs",
+    ] {
+        next_task.remove(field);
+    }
+    for (field, value) in [
+        ("status", json!("open")),
+        ("soft_due", json!(due_on)),
+        ("ready_at", json!(ready_at)),
+        ("snooze_count", json!(0)),
+        ("parked", json!(false)),
+    ] {
+        next_task.insert(
+            field.into(),
+            json!({"value":value,"source":"derived","set_at":now,"note":"native recurrence"}),
+        );
+    }
+    if let Some(cell) = next_task
+        .get_mut("consequence")
+        .and_then(Value::as_object_mut)
+        && cell
+            .get("value")
+            .and_then(|consequence| consequence.get("timing").and_then(|v| v.get("kind")))
+            .and_then(Value::as_str)
+            == Some("window")
+    {
+        cell.get_mut("value")
+            .and_then(Value::as_object_mut)
+            .expect("validated consequence")
+            .remove("timing");
+        cell.insert("source".into(), json!("derived"));
+        cell.insert("set_at".into(), json!(now));
+        cell.insert("note".into(), json!(format!("Consequence retained from {completed_task_id}; its one-off window does not repeat. Timing needs review.")));
+    }
+    let provenance = next_task
+        .entry("provenance")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or_else(|| ApiError::invalid("task provenance is invalid"))?;
+    provenance.insert("created_at".into(), json!(now));
+    provenance.insert(
+        "recurrence_previous_task_ref".into(),
+        json!(completed_task_id),
+    );
+    provenance.insert("recurrence_completed_at".into(), json!(completed_at));
+    let content = row.get::<String, _>("content");
+    let prepared = simple_core::prepare_task_markdown_for_update(
+        format!("{TASK_ENTRY_PREFIX}{next_task_id}.md"),
+        content,
+        next_metadata,
+        0,
+    )?;
+    simple_core::upsert_markdown_in_tx(tx, user_id, Some(credential_id), prepared).await?;
+    Ok(Some(next_task_id))
+}
+
 pub async fn materialize_next_todoist_occurrence_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
@@ -8511,6 +8809,8 @@ mod tests {
     fn public_strings_and_portable_numeric_ranges_fail_closed() {
         let writer = auth(&["task.write"]);
         let capture = CaptureItem {
+            consequence: None,
+            recurrence: None,
             client_ref: Some("bad\0ref".to_owned()),
             raw_text: "valid title".to_owned(),
             captured_from: None,

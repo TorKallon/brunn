@@ -282,6 +282,24 @@ const costOfDelay = z.union([
   }).strict(),
 ]);
 
+const taskConsequence = z.object({
+  description: printableUtf8String(1_000),
+  severity: z.enum(["ordinary", "serious"]),
+  timing: z.union([
+    z.object({ kind: z.literal("window"), starts_on: localDate, ends_on: localDate.nullable().optional() }).strict(),
+    z.object({ kind: z.literal("after_due"), days: z.number().int().min(0).max(3_650) }).strict(),
+  ]).optional(),
+}).strict();
+
+const nativeTaskRecurrence = z.object({
+  kind: z.literal("native"),
+  mode: z.enum(["calendar", "after_completion"]),
+  every_days: z.number().int().min(1).max(3_650),
+  timezone: z.string().min(1).max(100),
+  anchor_on: localDate.optional(),
+}).strict().refine(rule => rule.mode === "calendar" ? rule.anchor_on !== undefined : rule.anchor_on === undefined,
+  "calendar requires anchor_on; after_completion uses the actual completion date");
+
 const taskCaptureItem = z.object({
   client_ref: printableUtf8String(200).optional().describe(
     "Caller-local correlation value echoed in the capture result; not a task identifier.",
@@ -297,6 +315,8 @@ const taskCaptureItem = z.object({
   hard_due: sourcedTaskCell(rfc3339Timestamp.nullable()).optional(),
   hard_due_lead_days: sourcedTaskCell(z.number().int().min(0).max(3_650).nullable()).optional(),
   cost_of_delay: sourcedTaskCell(costOfDelay.nullable()).optional(),
+  consequence: sourcedTaskCell(taskConsequence.nullable()).optional(),
+  recurrence: sourcedTaskCell(nativeTaskRecurrence.nullable()).optional(),
   required_contexts: sourcedTaskCell(contextList).optional(),
   estimate_minutes: sourcedTaskCell(z.number().int().min(1).max(10_080).nullable()).optional(),
   today: z.boolean().optional().describe(
@@ -327,6 +347,7 @@ const taskUpdateOperation = z.union([
       "hard_due",
       "hard_due_lead_days",
       "cost_of_delay",
+      "consequence",
       "estimate_minutes",
       "recurrence",
     ]),
@@ -343,8 +364,14 @@ const taskUpdateOperation = z.union([
     type: z.literal("complete"),
     source: taskWriteSource,
     completed_via: taskCompletedVia,
+    completed_at: rfc3339Timestamp.optional().describe("Actual completion time only when the owner reports a past completion. Omit for now; never substitute the old due date. Native after-completion recurrence uses this local date."),
   }).strict(),
   z.object({ type: z.literal("reopen"), source: taskWriteSource }).strict(),
+  z.object({
+    type: z.literal("snooze"),
+    tomorrow: z.literal(true),
+    source: taskWriteSource,
+  }).strict(),
   z.object({
     type: z.literal("snooze"),
     until: rfc3339Timestamp,
@@ -944,6 +971,7 @@ registerJsonTool(
   + "charges, or lost value may make a date hard; and infer evidenced cost or an obvious estimate. Source "
   + "every enrichment, never overwrite an owner value, and preserve the original sentence. Ask at most one "
   + "clarifying question, only for consequential hard/soft ambiguity. This tool never returns the backlog."
+  + " Keep desired soft_due separate from actual hard_due. consequence records a supported description, ordinary/serious severity and optional risk window or explicit tolerance after soft_due; no dollar amount is required. Unknown timing is not harmless or a scheduled reminder. Never invent care cadence, failure windows or ownership. Native recurrence uses kind:native, mode:calendar/after_completion, every_days and an IANA timezone; only calendar requires anchor_on. Current occurrence due date is soft_due. Actual completion creates one successor; snoozing does not start a cycle."
   + ORIENTATION_POINTER,
   {
     idempotency_key: taskIdempotencyKey,
@@ -961,9 +989,10 @@ registerJsonTool(
   + "valid only with view=all. Quick returns visible tasks with estimate_minutes of five or less, ten by "
   + "default and at most 25; today returns the owner's Today list (today_since set), oldest first, ignoring contexts. as_of "
   + "exists for deterministic testing; otherwise omit it."
+  + " Available gives nonurgent work its own five slots without changing legacy next. Timing is a paginated deliberate view of timing-sensitive tasks, including future/deferred/unknown timing. timing and must_show explain consequence/routine attention; never hide must_show items behind a preview cap."
   + ORIENTATION_POINTER,
   {
-    view: z.enum(["next", "urgent", "triage", "quick", "today", "all"]).default("next"),
+    view: z.enum(["next", "available", "timing", "urgent", "triage", "quick", "today", "all"]).default("next"),
     limit: z.number().int().min(1).max(25).optional().describe(
       "Omit for service defaults (next five, triage ten). Omit for urgent so every tier-1/2 item returns.",
     ),
@@ -1038,14 +1067,15 @@ registerJsonTool(
   "task.update",
   "Apply exactly one sourced correction or action to one task with optimistic concurrency. Actions are "
   + "complete, reopen, snooze, drop, wait_on, unpark, pin_today, unpin, add_today, sweep, confirm_hard, "
-  + "and downgrade_to_soft. add_today puts a task on the owner's persisting Today list; sweep moves it back "
+  + "and downgrade_to_soft. Snooze accepts exactly one of until, days, or tomorrow:true. Tomorrow is the next local morning (quiet-hours end), never a rolling 24 hours; it preserves real deadlines and consequences and returns an inline deferral_warning for conflicts. Repeated snoozes do not park tasks. Undo by correcting ready_at to previous_ready_at with the returned current version. "
+  + "add_today puts a task on the owner's persisting Today list; sweep moves it back "
   + "to the queue. Every operation requires source; complete also requires completed_via and returns "
   + "done_today_count. When the owner asks to mark finished work done, agents should use complete, "
   + "including on owner-created or reopened tasks, with source and completed_via both agent:<id>. "
   + "The owner's confirmation is sufficient; no separate approval flow is needed. Read the current "
   + "task/version first and verify the returned done status. Completion records finished work, not "
   + "permission to execute it. For recurring tasks, complete the occurrence, not the whole series; "
-  + "next_occurrence_task_ref identifies any successor. Replay an ambiguous result with the identical "
+  + "next_occurrence_task_ref identifies any successor. Supply completed_at only when the owner gives an actual past completion time; otherwise completion is now. Native after-completion recurrence anchors to that actual completion, not the planned date. Replay an ambiguous result with the identical "
   + "idempotency_key and payload."
   + ORIENTATION_POINTER,
   {

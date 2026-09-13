@@ -978,6 +978,7 @@ fn validate_publish_for_access(request: &PublishRequest, access: PublishAccess) 
     validate_text(&request.event_key, 200, "event_key")?;
     if request.event_key.starts_with("task-deadline:")
         || request.event_key.starts_with("task-cost:")
+        || request.event_key.starts_with("task-timing:")
         || request.event_key.starts_with("location-heartbeat:")
     {
         return Err(ApiError::invalid(
@@ -1728,6 +1729,19 @@ pub async fn process_next_on_pool(
     let Some(delivery) = claim_delivery(pool).await? else {
         return Ok(expired);
     };
+    if delivery.kind == "task_guard"
+        && !crate::task_guard::notification_is_current(
+            pool,
+            delivery.user_id,
+            delivery.notification_id,
+            Utc::now(),
+        )
+        .await?
+    {
+        sqlx::query("UPDATE brunn.notification_deliveries SET state='suppressed',lease_expires_at=NULL,last_error_code='task_changed',updated_at=clock_timestamp() WHERE id=$1 AND state='running' AND attempt_count=$2")
+            .bind(delivery.id).bind(delivery.budget_attempt_count).execute(pool).await?;
+        return Ok(true);
+    }
     let token_key = decode_notification_token_key(encoded_key)?;
     let token_aad = device_token_aad(
         delivery.user_id,

@@ -513,6 +513,8 @@ enum SampleData {
             title: candidate.title,
             status: candidate.status,
             task: AgentTaskDocument(
+                consequence: nil,
+                recurrence: nil,
                 id: candidate.taskRef,
                 title: candidate.title,
                 status: AgentTaskSourcedValue(value: candidate.status.rawValue, source: "derived", setAt: now, note: nil),

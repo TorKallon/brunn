@@ -24,6 +24,7 @@ export function candidate(
     reason: index === 1 ? "hard deadline in 2 days (est.)" : "ready since Aug 20",
     provenance_markers: index === 1 ? ["agent:codex"] : [],
     pinned: false,
+    hard_due: index === 1 ? "2026-08-29T11:00:00Z" : null,
     ...overrides,
   };
 }

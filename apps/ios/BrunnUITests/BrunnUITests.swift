@@ -555,6 +555,34 @@ final class BrunnUITests: XCTestCase {
     }
 
     @MainActor
+    func testTaskTimingNavigationAndNextHierarchy() {
+        let app = launchDemo()
+        openTasks(in: app)
+        let next = element("task-next-card", in: app)
+        XCTAssertTrue(next.waitForExistence(timeout: 5))
+        let quick = element("task-quick", in: app)
+        XCTAssertLessThan(next.frame.minY, quick.frame.minY)
+        let timing = element("task-timing-open", in: app)
+        XCTAssertTrue(timing.isHittable)
+        timing.tap()
+        XCTAssertTrue(app.navigationBars["Timing-sensitive"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Upcoming, deferred, and timing to clarify. Unknown timing does not schedule a reminder."].exists)
+        app.buttons["Done"].tap()
+        let row = element("task-row-019f8800-0000-7000-8000-000000000003", in: app)
+        scroll(row, intoViewIn: app)
+        row.tap()
+        XCTAssertTrue(element("task-detail", in: app).waitForExistence(timeout: 3))
+        let editor = app.buttons["Timing and recurrence"]
+        scroll(editor, intoViewIn: app)
+        XCTAssertTrue(editor.exists)
+        editor.tap()
+        let save = app.buttons["Save intended date"]
+        scroll(save, intoViewIn: app)
+        XCTAssertTrue(save.isHittable)
+        keepScreenshot(named: "task-timing-editor", from: app)
+    }
+
+    @MainActor
     func testTaskDeletionRequiresConfirmationAndDoesNotCompleteTask() {
         let app = launchDemo()
         openTasks(in: app)

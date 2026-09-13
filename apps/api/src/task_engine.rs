@@ -53,6 +53,9 @@ pub enum TaskStatus {
 pub enum TaskView {
     Urgent,
     Next,
+    /// Nonurgent work with its own budget; legacy Next retains its contract.
+    Available,
+    Timing,
     Quick,
     Today,
     Triage,
@@ -64,6 +67,7 @@ pub const QUICK_TASK_MAX_MINUTES: i32 = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskSnapshot {
+    pub timing: Option<crate::task_timing::TaskTiming>,
     pub id: Uuid,
     pub title: String,
     pub status: TaskStatus,
@@ -116,6 +120,8 @@ impl Default for EngineSettings {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RankedTask {
+    pub timing: Option<crate::task_timing::TimingAttention>,
+    pub must_show: bool,
     pub id: Uuid,
     pub title: String,
     pub tier: u8,
@@ -148,11 +154,16 @@ pub fn rank_tasks(
     let mut evaluated = tasks
         .iter()
         .filter(|task| match request.view {
-            TaskView::Today => is_on_today_list(task),
-            TaskView::Quick => is_visible(task, request) && is_quick(task),
-            TaskView::Urgent | TaskView::Next | TaskView::Triage | TaskView::All => {
-                is_visible(task, request)
+            TaskView::Today => is_on_today_list(task, request.as_of),
+            TaskView::Timing => {
+                is_timing_sensitive(task) && is_deliberate_all_visible(task, request)
             }
+            TaskView::Quick => is_visible(task, request) && is_quick(task),
+            TaskView::Urgent
+            | TaskView::Next
+            | TaskView::Available
+            | TaskView::Triage
+            | TaskView::All => is_visible(task, request),
         })
         .map(|task| evaluate(task, request.as_of, settings))
         .collect::<Vec<_>>();
@@ -164,6 +175,9 @@ pub fn rank_tasks(
     }
 
     let urgent_total = evaluated.iter().filter(|item| item.tier <= 2).count();
+    if request.view == TaskView::Available {
+        evaluated.retain(|item| item.tier > 2);
+    }
     let next_limit = request.limit.min(MAX_NEXT_LIMIT);
     let next_remaining = evaluated.len().saturating_sub(next_limit);
 
@@ -172,9 +186,11 @@ pub fn rank_tasks(
             .into_iter()
             .filter(|item| item.tier <= 2)
             .collect(),
-        TaskView::Next | TaskView::Quick | TaskView::Today => {
-            evaluated.into_iter().take(next_limit).collect()
-        }
+        TaskView::Next
+        | TaskView::Available
+        | TaskView::Timing
+        | TaskView::Quick
+        | TaskView::Today => evaluated.into_iter().take(next_limit).collect(),
         TaskView::Triage => {
             let mut triage = evaluated
                 .into_iter()
@@ -271,6 +287,7 @@ fn evaluate_all_sorted<'a>(
 ) -> Vec<EvaluatedTask<'a>> {
     let mut evaluated = tasks
         .iter()
+        .filter(|task| request.view != TaskView::Timing || is_timing_sensitive(task))
         .filter(|task| is_deliberate_all_visible(task, request))
         .map(|task| evaluate_for_deliberate_all(task, request.as_of, settings))
         .collect::<Vec<_>>();
@@ -285,12 +302,30 @@ fn is_deliberate_all_visible(task: &TaskSnapshot, request: &CandidateRequest) ->
 
 pub fn snooze_transition(current_count: u32) -> (u32, bool) {
     let next_count = current_count.saturating_add(1);
-    (next_count, next_count >= 3)
+    (next_count, false)
+}
+
+fn is_timing_sensitive(task: &TaskSnapshot) -> bool {
+    matches!(task.status, TaskStatus::Open | TaskStatus::Waiting)
+        && (task.timing.is_some() || task.hard_due.is_some() || task.cost_of_delay.is_some())
+}
+
+fn must_show(task: &TaskSnapshot, as_of: DateTime<Utc>) -> bool {
+    task.hard_due
+        .as_ref()
+        .is_some_and(|due| due.value <= as_of + chrono::Duration::hours(24))
+        || task
+            .timing
+            .as_ref()
+            .is_some_and(|timing| timing.attention(as_of).serious)
 }
 
 fn is_visible(task: &TaskSnapshot, request: &CandidateRequest) -> bool {
     if !matches!(task.status, TaskStatus::Open | TaskStatus::Waiting) {
         return false;
+    }
+    if request.view == TaskView::Urgent && !task.parked && must_show(task, request.as_of) {
+        return true;
     }
 
     let waiting = task.waiting || task.status == TaskStatus::Waiting;
@@ -321,13 +356,20 @@ fn is_quick(task: &TaskSnapshot) -> bool {
         .is_some_and(|minutes| minutes <= QUICK_TASK_MAX_MINUTES)
 }
 
-/// The owner placed the task deliberately, so contexts and ready_at do not
-/// apply; only leaving the open state or parking removes it.
-fn is_on_today_list(task: &TaskSnapshot) -> bool {
-    task.status == TaskStatus::Open && !task.parked && task.today_since.is_some()
+/// Context does not erase deliberate membership; an intentional deferral hides
+/// it until resurfacing without sweeping the owner's Today list.
+fn is_on_today_list(task: &TaskSnapshot, as_of: DateTime<Utc>) -> bool {
+    task.status == TaskStatus::Open
+        && !task.parked
+        && task.today_since.is_some()
+        && task
+            .ready_at
+            .as_ref()
+            .is_none_or(|ready| ready.value <= as_of)
 }
 
 struct EvaluatedTask<'a> {
+    as_of: DateTime<Utc>,
     task: &'a TaskSnapshot,
     tier: u8,
     reason: Cow<'static, str>,
@@ -339,6 +381,12 @@ struct EvaluatedTask<'a> {
 impl EvaluatedTask<'_> {
     fn into_public(self) -> RankedTask {
         RankedTask {
+            timing: self
+                .task
+                .timing
+                .as_ref()
+                .map(|timing| timing.attention(self.as_of)),
+            must_show: must_show(self.task, self.as_of),
             id: self.task.id,
             title: self.task.title.clone(),
             tier: self.tier,
@@ -350,6 +398,9 @@ impl EvaluatedTask<'_> {
 }
 
 enum TierOrder {
+    Timing {
+        due: Option<NaiveDate>,
+    },
     Hard {
         due: DateTime<Utc>,
     },
@@ -386,6 +437,7 @@ fn evaluate_for_deliberate_all<'a>(
     let mut provenance_markers = Vec::new();
     add_marker(&mut provenance_markers, &task.status_source);
     EvaluatedTask {
+        as_of,
         task,
         tier,
         reason: Cow::Borrowed(reason),
@@ -412,6 +464,7 @@ fn evaluate<'a>(
     }
 
     EvaluatedTask {
+        as_of,
         task,
         tier,
         reason,
@@ -426,6 +479,19 @@ fn pressure(
     as_of: DateTime<Utc>,
     settings: &EngineSettings,
 ) -> (u8, Cow<'static, str>, Vec<String>, TierOrder) {
+    if let Some(timing) = &task.timing {
+        let attention = timing.attention(as_of);
+        if attention.needs_attention && attention.serious {
+            return (
+                1,
+                attention.reason.into(),
+                vec![],
+                TierOrder::Timing {
+                    due: attention.risk_on,
+                },
+            );
+        }
+    }
     if let Some(hard_due) = task.hard_due.as_ref() {
         let lead_days = task
             .hard_due_lead_days
@@ -451,6 +517,19 @@ fn pressure(
         }
     }
 
+    if let Some(timing) = &task.timing {
+        let attention = timing.attention(as_of);
+        if attention.needs_attention {
+            return (
+                2,
+                attention.reason.into(),
+                vec![],
+                TierOrder::Timing {
+                    due: attention.risk_on.or(attention.due_on),
+                },
+            );
+        }
+    }
     if let Some(cost) = task.cost_of_delay.as_ref() {
         match &cost.value {
             CostOfDelay::Rate {
@@ -606,6 +685,9 @@ fn compare_tier_order(left: &TierOrder, right: &TierOrder) -> Ordering {
         (TierOrder::FlagCost { since: left }, TierOrder::FlagCost { since: right }) => {
             left.cmp(right)
         }
+        (TierOrder::Timing { due: left }, TierOrder::Timing { due: right }) => left.cmp(right),
+        (TierOrder::Timing { .. }, _) => Ordering::Less,
+        (_, TierOrder::Timing { .. }) => Ordering::Greater,
         (TierOrder::Soft { due: left }, TierOrder::Soft { due: right }) => left.cmp(right),
         (
             TierOrder::Hot {
@@ -723,6 +805,7 @@ mod tests {
 
     fn task(id: u128, title: &str, created_day: u32) -> TaskSnapshot {
         TaskSnapshot {
+            timing: None,
             id: Uuid::from_u128(id),
             title: title.to_owned(),
             status: TaskStatus::Open,
@@ -1365,10 +1448,10 @@ mod tests {
                 vec!["earlier", "older-later", "newer-later"],
             ),
             (
-                "today ignores contexts and ready_at",
+                "today ignores contexts but honors intentional deferral",
                 vec![not_ready, task(7, "not-on-today", 1)],
                 request(TaskView::Today, as_of, 25),
-                vec!["not-ready"],
+                vec![],
             ),
             (
                 "today excludes parked and waiting even when requested",
@@ -1389,8 +1472,8 @@ mod tests {
     }
 
     #[test]
-    fn snooze_count_saturates_and_never_unparks_after_three() {
-        assert_eq!(snooze_transition(2), (3, true));
-        assert_eq!(snooze_transition(u32::MAX), (u32::MAX, true));
+    fn snooze_count_saturates_without_automatic_parking() {
+        assert_eq!(snooze_transition(2), (3, false));
+        assert_eq!(snooze_transition(u32::MAX), (u32::MAX, false));
     }
 }

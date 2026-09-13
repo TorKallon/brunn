@@ -130,6 +130,162 @@ async fn indexed_today_since(pool: &PgPool, user_id: Uuid, task_ref: &str) -> Op
 }
 
 #[tokio::test]
+async fn native_routine_capture_deferral_completion_and_replay_are_one_coherent_flow() {
+    use chrono::{Duration, Utc};
+    let Some(pool) = connect_test_pool().await else {
+        return;
+    };
+    let app = test_router().await;
+    let (user, owner, reader) = owner_with_reader(&pool).await;
+    sqlx::query("UPDATE brunn.task_settings SET timezone='America/Los_Angeles',quiet_hours_end='08:00' WHERE user_id=$1")
+        .bind(user).execute(&pool).await.unwrap();
+    let intended = (Utc::now() - Duration::days(7)).date_naive();
+    let raw =
+        "Care routine, every 14 days after actual completion; plants can be lost if care slips";
+    let (status, capture) = call(&app, &owner, Method::POST, "/v1/workspace/tasks/capture", Some(json!({
+        "idempotency_key":"native-capture", "items":[{"raw_text":raw,"today":true,
+        "soft_due":{"value":intended,"source":"owner"},
+        "consequence":{"value":{"description":"Plants can be lost","severity":"serious","timing":{"kind":"after_due","days":2}},"source":"owner"},
+        "recurrence":{"value":{"kind":"native","mode":"after_completion","every_days":14,"timezone":"UTC"},"source":"owner"}}]
+    }))).await;
+    assert!(status.is_success(), "{capture}");
+    let id = capture["data"]["items"][0]["task_ref"].as_str().unwrap();
+    let path = format!("/v1/workspace/tasks/{id}");
+    let (_, timing) = call(
+        &app,
+        &reader,
+        Method::GET,
+        "/v1/workspace/tasks/candidates?view=timing",
+        None,
+    )
+    .await;
+    assert_eq!(timing["data"]["items"][0]["timing"]["serious"], true);
+    for version in 1..=3 {
+        let (status, result) = call(&app, &owner, Method::PATCH, &path, Some(json!({"expected_version":version,
+            "idempotency_key":format!("defer-{version}"),"operation":{"type":"snooze","source":"owner","tomorrow":true}}))).await;
+        assert!(status.is_success(), "{result}");
+        assert_eq!(result["data"]["task"]["task"]["parked"]["value"], false);
+        assert_eq!(
+            result["data"]["task"]["task"]["soft_due"]["value"],
+            intended.to_string()
+        );
+        assert!(result["data"]["deferral_warning"].is_string());
+        let ready = result["data"]["task"]["task"]["ready_at"]["value"]
+            .as_str()
+            .unwrap()
+            .parse::<chrono::DateTime<Utc>>()
+            .unwrap();
+        assert_eq!(
+            ready
+                .with_timezone(&chrono_tz::America::Los_Angeles)
+                .time()
+                .to_string(),
+            "08:00:00"
+        );
+    }
+    let (_, today) = call(
+        &app,
+        &reader,
+        Method::GET,
+        "/v1/workspace/tasks/candidates?view=today",
+        None,
+    )
+    .await;
+    assert!(
+        titles(&today).is_empty(),
+        "deferral hides, but does not sweep Today"
+    );
+    assert!(indexed_today_since(&pool, user, id).await.is_some());
+    let completed = Utc::now() - Duration::days(1);
+    let body = json!({"expected_version":4,"idempotency_key":"native-done","operation":{"type":"complete","source":"owner","completed_via":"ios","completed_at":completed}});
+    let (status, done) = call(&app, &owner, Method::PATCH, &path, Some(body.clone())).await;
+    assert!(status.is_success(), "{done}");
+    let next_id = done["data"]["next_occurrence_task_ref"].as_str().unwrap();
+    let (status, replay) = call(&app, &owner, Method::PATCH, &path, Some(body)).await;
+    assert!(status.is_success());
+    assert_eq!(replay["data"]["next_occurrence_task_ref"], next_id);
+    let (_, next) = call(
+        &app,
+        &reader,
+        Method::GET,
+        &format!("/v1/workspace/tasks/{next_id}"),
+        None,
+    )
+    .await;
+    assert_eq!(
+        next["data"]["task"]["task"]["soft_due"]["value"],
+        (completed + Duration::days(14)).date_naive().to_string()
+    );
+    assert_eq!(next["data"]["task"]["task"]["provenance"]["raw_text"], raw);
+    assert_eq!(
+        next["data"]["task"]["task"]["provenance"]["recurrence_previous_task_ref"],
+        id
+    );
+    let (_, reopened) = call(&app, &owner, Method::PATCH, &path, Some(json!({"expected_version":5,"idempotency_key":"native-reopen","operation":{"type":"reopen","source":"owner"}}))).await;
+    assert_eq!(reopened["data"]["task"]["version"], 6);
+    let (_, redone) = call(&app, &owner, Method::PATCH, &path, Some(json!({"expected_version":6,"idempotency_key":"native-redone","operation":{"type":"complete","source":"owner","completed_via":"ios"}}))).await;
+    assert_eq!(redone["data"]["next_occurrence_task_ref"], next_id);
+}
+
+#[tokio::test]
+async fn timing_unknown_and_nonurgent_budget_remain_honest() {
+    let Some(pool) = connect_test_pool().await else {
+        return;
+    };
+    let app = test_router().await;
+    let (_, owner, reader) = owner_with_reader(&pool).await;
+    let mut items = (0..5)
+        .map(|n| json!({"raw_text":format!("ordinary {n}")}))
+        .collect::<Vec<_>>();
+    items.push(json!({"raw_text":"Unknown risk", "consequence":{"value":{"description":"Meaningful loss","severity":"serious"},"source":"owner"}}));
+    items.push(json!({"raw_text":"Real deadline","hard_due":{"value":"2026-01-01T12:00:00Z","source":"owner"}}));
+    let (_, capture) = call(
+        &app,
+        &owner,
+        Method::POST,
+        "/v1/workspace/tasks/capture",
+        Some(json!({"idempotency_key":"timing-budget","items":items})),
+    )
+    .await;
+    assert!(capture["data"]["items"].is_array(), "{capture}");
+    let (_, available) = call(
+        &app,
+        &reader,
+        Method::GET,
+        "/v1/workspace/tasks/candidates?view=available&limit=5",
+        None,
+    )
+    .await;
+    assert_eq!(titles(&available).len(), 5);
+    assert!(!titles(&available).contains(&"Real deadline"));
+    let (_, urgent) = call(
+        &app,
+        &reader,
+        Method::GET,
+        "/v1/workspace/tasks/candidates?view=urgent",
+        None,
+    )
+    .await;
+    assert_eq!(titles(&urgent), vec!["Real deadline"]);
+    let (_, timing) = call(
+        &app,
+        &reader,
+        Method::GET,
+        "/v1/workspace/tasks/candidates?view=timing",
+        None,
+    )
+    .await;
+    let unknown = timing["data"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["title"] == "Unknown risk")
+        .unwrap();
+    assert_eq!(unknown["timing"]["timing_unknown"], true);
+    assert_eq!(unknown["timing"]["needs_attention"], false);
+}
+
+#[tokio::test]
 async fn agent_completes_owner_tasks_and_reopened_tasks_without_overriding_owner_details() {
     let Some(pool) = connect_test_pool().await else {
         return;

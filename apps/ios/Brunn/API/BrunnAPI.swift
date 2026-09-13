@@ -387,9 +387,11 @@ public actor BrunnAPI {
     public func taskCandidates(
         view: AgentTaskView,
         limit: Int? = nil,
-        contextsAvailable: [String] = []
+        contextsAvailable: [String] = [],
+        cursor: String? = nil
     ) async throws -> WorkspaceEnvelope<AgentTaskCandidatesData> {
         var queryItems = [URLQueryItem(name: "view", value: view.rawValue)]
+        if let cursor { queryItems.append(URLQueryItem(name: "cursor", value: cursor)) }
         if let limit {
             queryItems.append(URLQueryItem(name: "limit", value: String(min(max(limit, 1), 25))))
         }

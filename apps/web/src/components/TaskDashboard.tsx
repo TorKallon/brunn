@@ -17,6 +17,7 @@ import type { TaskCandidate } from "../lib/types";
 import { newOperationId } from "../lib/workspace";
 import { ErrorState, LoadingState, ProjectStatusDot } from "./StateViews";
 import { TaskRow } from "./TaskRow";
+import { TaskDeferralFeedback } from "./TaskDeferralFeedback";
 
 const DEFAULT_WEB_CONTEXTS = ["online"];
 
@@ -27,6 +28,8 @@ export function TaskDashboard() {
   const canWrite = useCapability("task.write");
   const [nextLimit, setNextLimit] = useState(5);
   const [doneExpanded, setDoneExpanded] = useState(false);
+  const [urgentExpanded, setUrgentExpanded] = useState(false);
+  const [quickExpanded, setQuickExpanded] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const contextsQuery = useQuery({
@@ -49,15 +52,25 @@ export function TaskDashboard() {
     refetchInterval: 60_000,
   });
   const nextQuery = useQuery({
-    queryKey: ["task-candidates", "next", nextLimit, contextKey],
+    queryKey: ["task-candidates", "available", nextLimit, contextKey],
     queryFn: () =>
       api.taskCandidates({
-        view: "next",
+        view: "available",
         limit: nextLimit,
         contexts_available: availableContexts,
       }),
     enabled: canRead,
     refetchInterval: 60_000,
+  });
+  const quickQuery = useQuery({
+    queryKey: ["task-candidates", "quick", contextKey],
+    queryFn: () => api.taskCandidates({ view: "quick", limit: 25, contexts_available: availableContexts }),
+    enabled: canRead, refetchInterval: 60_000,
+  });
+  const todayQuery = useQuery({
+    queryKey: ["task-candidates", "today"],
+    queryFn: () => api.taskCandidates({ view: "today", limit: 25 }),
+    enabled: canRead, refetchInterval: 60_000,
   });
   const doneQuery = useQuery({
     queryKey: ["task-done", "today"],
@@ -84,7 +97,7 @@ export function TaskDashboard() {
         response.data.action === "complete"
           ? `Task complete${count === null || count === undefined ? "" : ` · ${count} done today`}`
           : response.data.action === "snooze"
-            ? "Task snoozed"
+            ? null // The deferral feedback below owns its message and Undo action.
             : response.data.action === "confirm_hard"
               ? "Hard deadline confirmed"
               : response.data.action === "drop"
@@ -105,12 +118,18 @@ export function TaskDashboard() {
   const visibleTasks = selectDashboardTasks(urgentItems, nextItems, nextLimit);
   const urgent = visibleTasks.urgent;
   const next = visibleTasks.next;
+  const urgentPreview = urgent.filter((item, index) => urgentExpanded || index < 3 || item.must_show);
+  const higherRefs = new Set([...urgent, ...next].map(item => item.task_ref));
+  const today = (todayQuery.data?.data.items ?? []).filter(item => !higherRefs.has(item.task_ref));
+  const placedRefs = new Set([...higherRefs, ...today.map(item => item.task_ref)]);
+  const quick = (quickQuery.data?.data.items ?? []).filter(item => !placedRefs.has(item.task_ref));
   const done = (doneQuery.data?.data.items ?? []).slice(0, 5);
   const projects = (projectsQuery.data?.data.projects ?? []).slice(0, 5);
   const taskError =
     contextsQuery.error ??
     urgentQuery.error ??
     nextQuery.error ??
+    quickQuery.error ?? todayQuery.error ??
     doneQuery.error ??
     projectsQuery.error;
 
@@ -125,6 +144,7 @@ export function TaskDashboard() {
       </div>
 
       <TaskCapture canWrite={canWrite} />
+      <Link className="button secondary" to="/tasks" search={{ timing: true }}>Timing-sensitive</Link>
       {feedback ? (
         <p className="task-feedback" role="status">
           <CheckCircle2 size={16} aria-hidden="true" />
@@ -134,6 +154,7 @@ export function TaskDashboard() {
       {actionMutation.isError ? (
         <ErrorState error={actionMutation.error} title="Task action failed" />
       ) : null}
+      <TaskDeferralFeedback key={`${actionMutation.data?.data.task.task_ref}:${actionMutation.data?.data.task.version}`} data={actionMutation.data?.data} />
       {contextsQuery.isPending || urgentQuery.isPending || nextQuery.isPending ? (
         <LoadingState label="Loading today’s tasks" />
       ) : null}
@@ -152,16 +173,16 @@ export function TaskDashboard() {
         </p>
       ) : null}
       {urgent.length ? (
-        <section className="task-card task-card-urgent" aria-label="Urgent tasks">
+        <section className="task-card task-card-urgent" aria-label="Needs attention">
           <header>
             <div>
-              <span>Urgent</span>
+              <span>Needs attention</span>
               <strong>{urgentQuery.data?.data.urgent_total ?? urgent.length}</strong>
             </div>
-            <small>Hard deadlines and active cost only</small>
+            <small>Deadlines, real consequences and due routines</small>
           </header>
           <div className="task-list">
-            {urgent.map((item) => (
+            {urgentPreview.map((item) => (
               <TaskRow
                 key={item.task_ref}
                 item={item}
@@ -171,16 +192,16 @@ export function TaskDashboard() {
               />
             ))}
           </div>
-          {(urgentQuery.data?.data.urgent_total ?? 0) > urgent.length ? (
-            <p className="task-card-note">
-              {(urgentQuery.data?.data.urgent_total ?? 0) - urgent.length} more urgent
-              task(s) held behind Show all.
-            </p>
+          {urgent.length > urgentPreview.length || urgentExpanded ? (
+            <button className="button secondary" type="button" onClick={() => setUrgentExpanded(!urgentExpanded)}>
+              {urgentExpanded ? "Show less" : `Show all ${urgent.length}`}
+            </button>
           ) : null}
         </section>
       ) : null}
 
       <div className="task-dashboard-grid">
+        <div>
         <section className="task-card task-card-next" aria-label="Next tasks">
           <header>
             <div>
@@ -221,7 +242,17 @@ export function TaskDashboard() {
             <span>{nextQuery.data?.data.backlog_total ?? 0} tasks held out of view</span>
           </footer>
         </section>
-
+        {today.length ? <section className="task-card" aria-label="Today tasks">
+          <header><span>Today</span><small>Your list · tasks shown above carry a Today badge</small></header>
+          {today.map(item => <TaskRow key={item.task_ref} item={item} canWrite={canWrite} pending={actionMutation.isPending} onAction={(task, action) => actionMutation.mutate({ item: task, action })} />)}
+        </section> : null}
+        <section className="task-card" aria-label="Quick tasks">
+          <header><span>Quick</span><small>Five minutes or less</small></header>
+          {quick.slice(0, quickExpanded ? 25 : 3).map(item => <TaskRow key={item.task_ref} item={item} canWrite={canWrite} pending={actionMutation.isPending} onAction={(task, action) => actionMutation.mutate({ item: task, action })} />)}
+          {quick.length === 0 ? <p className="task-card-empty">No other quick tasks are ready.</p> : null}
+          {quick.length > 3 ? <button className="button secondary" type="button" onClick={() => setQuickExpanded(!quickExpanded)}>{quickExpanded ? "Show less" : "More quick tasks"}</button> : null}
+        </section>
+        </div>
         <div className="task-dashboard-side">
           <section className="task-card task-card-done" aria-label="Done today">
             <header>
@@ -324,6 +355,7 @@ function TaskCapture({ canWrite }: { canWrite: boolean }) {
       </button>
       {!canWrite ? <span>View-only task access</span> : null}
       {mutation.isError ? <span className="field-error">Capture failed</span> : null}
+      {mutation.isSuccess && mutation.data.data.items[0] ? <span role="status">Captured. Timing is not set. <Link to="/tasks/$taskRef" params={{ taskRef: mutation.data.data.items[0].task_ref }}>Add timing or recurrence</Link></span> : null}
     </form>
   );
 }
@@ -336,29 +368,11 @@ function selectDashboardTasks(
   const urgent = uniqueTasks(urgentItems);
   const urgentRefs = new Set(urgent.map((item) => item.task_ref));
   const next = uniqueTasks(nextItems).filter((item) => !urgentRefs.has(item.task_ref));
-  const combined = [...urgent, ...next];
-  const selected =
-    limit === 5
-      ? selectDefaultDashboardTasks(combined)
-      : combined.slice(0, Math.min(limit, 10));
-  const selectedRefs = new Set(selected.map((item) => item.task_ref));
   return {
-    urgent: urgent.filter((item) => selectedRefs.has(item.task_ref)),
-    next: next.filter((item) => selectedRefs.has(item.task_ref)),
-    hidden: selected.length < combined.length,
+    urgent,
+    next: next.slice(0, limit),
+    hidden: next.length > limit,
   };
-}
-
-function selectDefaultDashboardTasks(items: TaskCandidate[]): TaskCandidate[] {
-  const pinnedRefs = new Set(
-    items.filter((item) => item.pinned).slice(0, 2).map((item) => item.task_ref),
-  );
-  const unpinnedRefs = new Set(
-    items.filter((item) => !item.pinned).slice(0, 5).map((item) => item.task_ref),
-  );
-  return items.filter(
-    (item) => pinnedRefs.has(item.task_ref) || unpinnedRefs.has(item.task_ref),
-  );
 }
 
 function uniqueTasks(items: TaskCandidate[]): TaskCandidate[] {

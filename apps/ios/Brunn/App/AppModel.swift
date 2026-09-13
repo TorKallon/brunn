@@ -120,6 +120,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var taskNextRemaining = 0
     @Published private(set) var taskBacklogTotal = 0
     @Published private(set) var taskMessage: String?
+    @Published private(set) var taskDeferralUndo: AgentTaskUpdateData?
+    @Published private(set) var lastCapturedTaskRef: String?
+    @Published private(set) var timingTasks: [AgentTaskCandidate] = []
+    @Published private(set) var timingNextCursor: String?
+    @Published private(set) var isLoadingTaskTiming = false
     @Published private(set) var isRefreshingTasks = false
     @Published private(set) var mutatingTaskRefs: Set<String> = []
     @Published var presentedTask: AgentTaskDetail?
@@ -159,6 +164,7 @@ final class AppModel: ObservableObject {
     private let documentLoader: DocumentLoader
     private var documentLoadTask: Task<PublishedDocument, Error>?
     private var documentGeneration: UInt64 = 0
+    private var taskTimingGeneration: UInt64 = 0
     private let notificationListLoader: NotificationListLoader
     private let notificationDetailLoader: NotificationDetailLoader
     private let notificationReceiptWriter: NotificationReceiptWriter
@@ -455,6 +461,7 @@ final class AppModel: ObservableObject {
     }
 
     func enterDemo() {
+        clearTaskSurfacePresentation()
         invalidateDashboardContext()
         messagingBearerState.token = nil
         messagingController?.deactivate()
@@ -602,6 +609,12 @@ final class AppModel: ObservableObject {
         taskNextRemaining = 0
         taskBacklogTotal = 0
         taskMessage = nil
+        taskDeferralUndo = nil
+        taskTimingGeneration &+= 1
+        isLoadingTaskTiming = false
+        lastCapturedTaskRef = nil
+        timingTasks = []
+        timingNextCursor = nil
         mutatingTaskRefs = []
         presentedTask = nil
         alerts = []
@@ -1126,12 +1139,13 @@ final class AppModel: ObservableObject {
                 contextsAvailable: selected
             )
             async let nextResponse = api.taskCandidates(
-                view: .next,
+                view: .available,
                 limit: 17,
                 contextsAvailable: selected
             )
             async let quickResponse = api.taskCandidates(
                 view: .quick,
+                limit: 25,
                 contextsAvailable: selected
             )
             async let todayResponse = api.taskCandidates(
@@ -1184,7 +1198,7 @@ final class AppModel: ObservableObject {
         let oldQuick = quickTasks
         let oldToday = todayTasks
         switch operation {
-        case .complete, .drop, .snooze, .snoozeUntil, .waitOn:
+        case .complete, .drop, .tomorrow, .snooze, .snoozeUntil, .waitOn:
             urgentTasks.removeAll { $0.taskRef == candidate.taskRef }
             nextTasks.removeAll { $0.taskRef == candidate.taskRef }
             quickTasks.removeAll { $0.taskRef == candidate.taskRef }
@@ -1234,6 +1248,10 @@ final class AppModel: ObservableObject {
             }
             taskMessage = nil
             await refreshTaskSurface()
+            if response.action == "snooze" {
+                taskDeferralUndo = response
+                taskMessage = response.deferralWarning ?? "Deferred. Underlying dates have not moved."
+            }
             return true
         } catch let error as BrunnAPIError {
             urgentTasks = oldUrgent
@@ -1304,9 +1322,11 @@ final class AppModel: ObservableObject {
             guard let bearerToken = deviceTaskBearer() else {
                 throw BrunnAPIError.notConnected
             }
-            _ = try await api.captureTask(request: request, bearerToken: bearerToken)
+            let captured = try await api.captureTask(request: request, bearerToken: bearerToken)
             taskMessage = nil
             await refreshTaskSurface()
+            taskMessage = "Captured. Timing is not set — tap the task to add timing or recurrence."
+            lastCapturedTaskRef = captured.items.first?.taskRef
             return true
         } catch {
             todayTasks.removeAll { $0.taskRef == placeholder.taskRef }
@@ -1341,6 +1361,38 @@ final class AppModel: ObservableObject {
             taskMessage = nil
         } catch {
             taskMessage = "The linked task could not be loaded. \(error.localizedDescription)"
+        }
+    }
+
+    func loadTimingTasks(reset: Bool = true) async {
+        guard !isLoadingTaskTiming else { return }
+        if isDemo { timingTasks = urgentTasks; return }
+        guard connectionValidated else { return }
+        let accountID = user?.id
+        let generation = taskTimingGeneration
+        isLoadingTaskTiming = true
+        defer { if generation == taskTimingGeneration { isLoadingTaskTiming = false } }
+        do {
+            let response = try await api.taskCandidates(view: .timing, limit: 25, cursor: reset ? nil : timingNextCursor)
+            guard generation == taskTimingGeneration, user?.id == accountID, connectionValidated else { return }
+            var seen = Set<String>()
+            timingTasks = (reset ? response.data.items : timingTasks + response.data.items).filter { seen.insert($0.taskRef).inserted }
+            timingNextCursor = response.data.nextCursor
+            taskMessage = nil
+        } catch {
+            guard generation == taskTimingGeneration, user?.id == accountID, connectionValidated else { return }
+            taskMessage = "Timing-sensitive tasks could not load. Try again."
+        }
+    }
+
+    func undoTaskDeferral() async {
+        guard let undo = taskDeferralUndo else { return }
+        let candidate = AgentTaskCandidate(taskRef: undo.task.taskRef, entryRef: undo.task.entryRef,
+            version: undo.task.version, title: undo.task.title, tier: 5, reason: "Undo deferral")
+        if await performTaskAction(candidate, operation: .correct(field: "ready_at",
+            value: undo.previousReadyAt.map(AgentTaskCorrectionValue.string) ?? .null, note: "Undo deferral")) {
+            taskDeferralUndo = nil
+            taskMessage = "Deferral undone."
         }
     }
 
@@ -2155,6 +2207,12 @@ final class AppModel: ObservableObject {
     }
 
     private func clearTaskSurfacePresentation() {
+        taskTimingGeneration &+= 1
+        isLoadingTaskTiming = false
+        taskDeferralUndo = nil
+        lastCapturedTaskRef = nil
+        timingTasks = []
+        timingNextCursor = nil
         tasks = []
         urgentTasks = []
         nextTasks = []

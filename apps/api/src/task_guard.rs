@@ -44,6 +44,7 @@ struct GuardCandidate {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum EventKind {
+    Timing,
     HardDeadline { inferred: bool },
     CostSet,
     CostWeekly,
@@ -128,7 +129,7 @@ async fn run_on_pool_inner(
     as_of: DateTime<Utc>,
     delivery_enabled: bool,
 ) -> ApiResult<TaskGuardRunReport> {
-    let candidates = load_candidates(pool, as_of).await?;
+    let candidates = load_candidates(pool, as_of, None, None).await?;
     let mut report = TaskGuardRunReport {
         as_of,
         evaluated_tasks: candidates.len(),
@@ -187,6 +188,35 @@ async fn run_on_pool_inner(
     Ok(report)
 }
 
+/// Recheck immediately before APNs delivery. A quiet-hours queue must not send
+/// an obsolete reminder after completion, deferral or a timing correction.
+#[doc(hidden)]
+pub async fn notification_is_current(
+    pool: &PgPool,
+    user_id: Uuid,
+    notification_id: Uuid,
+    as_of: DateTime<Utc>,
+) -> ApiResult<bool> {
+    let row = sqlx::query("SELECT event_key,target->>'task_ref' AS task_ref FROM brunn.notifications WHERE user_id=$1 AND id=$2")
+        .bind(user_id).bind(notification_id).fetch_one(pool).await?;
+    let task_id = row
+        .get::<String, _>("task_ref")
+        .parse::<Uuid>()
+        .map_err(|_| ApiError::Internal("invalid guard task reference".into()))?;
+    let key: String = row.get("event_key");
+    for candidate in load_candidates(pool, as_of, Some(user_id), Some(task_id)).await? {
+        if events_for_candidate(&candidate, as_of)?
+            .iter()
+            .any(|event| event.event_key == key)
+        {
+            // Task pushes are generic and open the current task, not the old
+            // inbox snapshot. A harmless rename must not lose a deadline band.
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn guard_error_code(error: &ApiError) -> &'static str {
     match error {
         ApiError::Public { code, .. } => code,
@@ -224,7 +254,12 @@ async fn record_guard_outcome(
     Ok(())
 }
 
-async fn load_candidates(pool: &PgPool, as_of: DateTime<Utc>) -> ApiResult<Vec<GuardCandidate>> {
+async fn load_candidates(
+    pool: &PgPool,
+    as_of: DateTime<Utc>,
+    user_id: Option<Uuid>,
+    task_id: Option<Uuid>,
+) -> ApiResult<Vec<GuardCandidate>> {
     let rows = sqlx::query(
         r#"
         SELECT task.user_id,task.task_id,task.title,task.hard_due,
@@ -241,14 +276,19 @@ async fn load_candidates(pool: &PgPool, as_of: DateTime<Utc>) -> ApiResult<Vec<G
         JOIN brunn.task_settings AS settings ON settings.user_id=task.user_id
         WHERE account.account_status='active'
           AND task.status IN ('open','waiting')
+          AND NOT task.parked
+          AND ($2::uuid IS NULL OR task.user_id=$2)
+          AND ($3::uuid IS NULL OR task.task_id=$3)
           AND task.created_at <= $1
           AND (task.hard_due IS NOT NULL
                OR task.cost_amount_cents IS NOT NULL
-               OR task.cost_flag)
+               OR task.cost_flag OR task.consequence IS NOT NULL OR task.recurrence->>'kind'='native')
         ORDER BY task.user_id,task.task_id
         "#,
     )
     .bind(as_of)
+    .bind(user_id)
+    .bind(task_id)
     .fetch_all(pool)
     .await?;
 
@@ -291,7 +331,61 @@ fn events_for_candidate(
     as_of: DateTime<Utc>,
 ) -> ApiResult<Vec<GuardEvent>> {
     let mut events = Vec::new();
+    let ready_at = field_cell(candidate, "ready_at")
+        .and_then(|v| v.get("value"))
+        .and_then(Value::as_str)
+        .and_then(|v| DateTime::parse_from_rfc3339(v).ok())
+        .map(|v| v.with_timezone(&Utc));
+    let deferred = ready_at.is_some_and(|ready| ready > as_of);
+    let task_value = |field| field_cell(candidate, field).and_then(|cell| cell.get("value"));
+    let due_on = task_value("soft_due")
+        .and_then(Value::as_str)
+        .and_then(|v| NaiveDate::parse_from_str(v, "%Y-%m-%d").ok());
+    let timing = crate::task_service::timing_from_values(
+        task_value("consequence"),
+        task_value("recurrence"),
+        due_on,
+        candidate.settings.timezone,
+    )?;
+    if !deferred
+        && task_value("status").and_then(Value::as_str) != Some("waiting")
+        && let Some(timing) = timing
+    {
+        let attention = timing.attention(as_of);
+        let today = as_of.with_timezone(&timing.timezone()).date_naive();
+        let scheduled_at = resolve_local(
+            timing.timezone(),
+            today.and_time(candidate.settings.due_day_local_time),
+        )?;
+        if attention.needs_attention && scheduled_at <= as_of {
+            use sha2::{Digest, Sha256};
+            let key_material = serde_json::to_vec(&serde_json::json!([
+                candidate.title,
+                timing.consequence,
+                timing.recurrence,
+                due_on
+            ]))?;
+            let digest = format!("{:x}", Sha256::digest(key_material));
+            events.push(GuardEvent {
+                event_key: format!(
+                    "task-timing:{}:{today}:{}",
+                    candidate.task_id,
+                    &digest[..16]
+                ),
+                scheduled_at,
+                expires_at: scheduled_at + chrono::Duration::days(1),
+                title: "Task needs attention".into(),
+                body: format!("{} — {}", candidate.title, attention.reason),
+                delivery_available_at: delivery_available_at(as_of, &candidate.settings, false)?,
+                kind: EventKind::Timing,
+            });
+        }
+    }
     if let Some(due) = candidate.hard_due {
+        // Deferral suppresses routine nudges, not an imminent real cutoff.
+        if deferred && due > as_of + chrono::Duration::hours(24) {
+            return Ok(events);
+        }
         let source = field_source(candidate, "hard_due").unwrap_or("derived");
         let field_set_at = field_set_at(candidate, "hard_due").unwrap_or(candidate.created_at);
         if field_set_at <= as_of {
@@ -357,7 +451,7 @@ fn events_for_candidate(
         }
     }
 
-    if candidate.cost_of_delay {
+    if candidate.cost_of_delay && !deferred {
         let set_at = field_set_at(candidate, "cost_of_delay").unwrap_or(candidate.created_at);
         if set_at <= as_of {
             let delivery_available_at = delivery_available_at(as_of, &candidate.settings, false)?;
@@ -483,7 +577,10 @@ pub(crate) fn delivery_available_at_without_override(
     resolve_local(timezone, end_date.and_time(end))
 }
 
-fn resolve_local(timezone: Tz, local: chrono::NaiveDateTime) -> ApiResult<DateTime<Utc>> {
+pub(crate) fn resolve_local(
+    timezone: Tz,
+    local: chrono::NaiveDateTime,
+) -> ApiResult<DateTime<Utc>> {
     let resolved = match timezone.from_local_datetime(&local) {
         LocalResult::Single(value) => value,
         LocalResult::Ambiguous(first, second) => first.min(second),
@@ -545,6 +642,84 @@ mod tests {
                 quiet_override_within_hours: 24,
             },
         }
+    }
+
+    #[test]
+    fn routine_reminders_share_attention_and_follow_deferral_and_meaningful_changes() {
+        let mut task = candidate("owner");
+        task.hard_due = None;
+        task.task = json!({
+            "status":{"value":"open"},
+            "soft_due":{"value":"2026-08-27"},
+            "recurrence":{"value":{"kind":"native","mode":"after_completion","every_days":14,"timezone":"UTC"}}
+        });
+        assert!(
+            events_for_candidate(&task, instant(26, 12))
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            events_for_candidate(&task, instant(27, 6))
+                .unwrap()
+                .is_empty()
+        );
+        let first = events_for_candidate(&task, instant(27, 12)).unwrap();
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].kind, EventKind::Timing);
+        let key = first[0].event_key.clone();
+        task.task["notes"] = json!({"value":"Unrelated correction"});
+        assert_eq!(
+            events_for_candidate(&task, instant(27, 13)).unwrap()[0].event_key,
+            key
+        );
+        task.task["ready_at"] = json!({"value":instant(28, 7)});
+        assert!(
+            events_for_candidate(&task, instant(27, 13))
+                .unwrap()
+                .is_empty()
+        );
+        let next_day = events_for_candidate(&task, instant(28, 7)).unwrap();
+        assert_eq!(next_day.len(), 1);
+        assert_ne!(next_day[0].event_key, key);
+        task.task["ready_at"] = json!({"value":null});
+        task.task["soft_due"] = json!({"value":"2026-09-10"});
+        assert!(
+            events_for_candidate(&task, instant(27, 13))
+                .unwrap()
+                .is_empty()
+        );
+        task.task["soft_due"] = json!({"value":"2026-08-27"});
+        task.task["status"] = json!({"value":"waiting"});
+        assert!(
+            events_for_candidate(&task, instant(27, 13))
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn unknown_risk_is_not_a_reminder_and_imminent_cutoff_survives_deferral() {
+        let mut task = candidate("owner");
+        task.task["consequence"] =
+            json!({"value":{"description":"Meaningful loss","severity":"serious"}});
+        task.task["ready_at"] = json!({"value":instant(28, 7)});
+        assert!(
+            events_for_candidate(&task, instant(20, 12))
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            !events_for_candidate(&task, instant(27, 7))
+                .unwrap()
+                .is_empty()
+        );
+        task.hard_due = None;
+        task.task["ready_at"] = json!({"value":null});
+        assert!(
+            events_for_candidate(&task, instant(27, 7))
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

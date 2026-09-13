@@ -166,6 +166,8 @@ test("both MCP profiles expose the exact public task surface with safe annotatio
       assert.equal(candidateProperties?.context?.pattern, "^[a-z0-9]+(?:-[a-z0-9]+)*$");
       assert.deepEqual(candidateProperties?.view?.enum, [
         "next",
+        "available",
+        "timing",
         "urgent",
         "triage",
         "quick",
@@ -198,6 +200,41 @@ test("both MCP profiles expose the exact public task surface with safe annotatio
       await close();
     }
   }
+});
+
+test("native timing capture, actual completion, Tomorrow and timing views pass through without guessing", async () => {
+  const calls: RecordedCall[] = [];
+  const { client, close } = await connectedPair(calls, { surface: "remote" });
+  try {
+    const consequence = { description: "Loss of plants", severity: "serious", timing: { kind: "after_due", days: 2 } };
+    const recurrence = { kind: "native", mode: "after_completion", every_days: 14, timezone: "America/Los_Angeles" };
+    await callOk(client, "task.capture", { idempotency_key: "native-timing", items: [{ raw_text: "Original capture", consequence: { value: consequence, source: "agent:aether" }, recurrence: { value: recurrence, source: "agent:aether" } }] });
+    const captured = JSON.parse(calls.at(-1)?.body ?? "{}");
+    assert.deepEqual(captured.items[0].consequence.value, consequence);
+    assert.deepEqual(captured.items[0].recurrence.value, recurrence);
+    assert.equal(captured.items[0].soft_due, undefined, "unknown current due date stays unknown");
+    for (const operation of [
+      { type: "snooze", source: "agent:aether", tomorrow: true },
+      { type: "complete", source: "agent:aether", completed_via: "agent:aether", completed_at: asOf },
+    ]) {
+      await callOk(client, "task.update", { task_ref: taskRef, expected_version: 1, idempotency_key: `timing-${operation.type}`, operation });
+      assert.deepEqual(JSON.parse(calls.at(-1)?.body ?? "{}").operation, operation);
+    }
+    for (const view of ["available", "timing"]) {
+      await callOk(client, "task.candidates", { view });
+      assert.equal(new URL(calls.at(-1)!.url).searchParams.get("view"), view);
+    }
+    const before = calls.length;
+    for (const recurrence of [
+      { kind: "native", mode: "calendar", every_days: 14, timezone: "UTC" },
+      { kind: "native", mode: "after_completion", every_days: 0, timezone: "UTC" },
+      { kind: "native", mode: "after_completion", every_days: 14, timezone: "UTC", anchor_on: "2026-09-01" },
+    ]) {
+      const rejected = await client.callTool({ name: "task.capture", arguments: { idempotency_key: "bad-rule", items: [{ raw_text: "Invalid rule", recurrence: { value: recurrence, source: "agent:aether" } }] } });
+      assert.equal(rejected.isError, true);
+    }
+    assert.equal(calls.length, before, "invalid rules never reach the API");
+  } finally { await close(); }
 });
 
 test("task tools preserve exact methods, paths, repeated candidate contexts, and bodies", async () => {

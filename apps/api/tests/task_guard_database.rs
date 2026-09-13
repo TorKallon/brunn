@@ -609,6 +609,68 @@ async fn task_guard_time_travel_dedupes_routes_and_delays_inferred_quiet_deliver
 }
 
 #[tokio::test]
+async fn delivery_recheck_uses_current_task_and_suppresses_completion_and_deferral() {
+    let _guard = SCHEDULER_FIXTURE.lock().await;
+    let Some(pool) = connect_test_pool().await else {
+        return;
+    };
+    let owner = insert_owner(&pool, "current-delivery").await;
+    let now = Utc::now();
+    let task_id = insert_task(
+        &pool,
+        &owner,
+        "Original title",
+        now + chrono::Duration::days(2),
+        None,
+        "owner",
+        None,
+        now - chrono::Duration::days(8),
+    )
+    .await;
+    let report = task_guard::run_on_pool(&pool, now, false).await.unwrap();
+    let event = report
+        .events
+        .iter()
+        .find(|event| event.task_id == task_id)
+        .unwrap();
+    let notification_id = Uuid::parse_str(
+        event
+            .notification_ref
+            .as_ref()
+            .unwrap()
+            .trim_start_matches("notification:"),
+    )
+    .unwrap();
+    let current =
+        || task_guard::notification_is_current(&pool, owner.user_id, notification_id, now);
+    assert!(current().await.unwrap());
+    sqlx::query(
+        "UPDATE brunn.task_index SET title='Current title' WHERE user_id=$1 AND task_id=$2",
+    )
+    .bind(owner.user_id)
+    .bind(task_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(
+        current().await.unwrap(),
+        "a rename does not invalidate a generic reminder opening the current task"
+    );
+    sqlx::query("UPDATE brunn.task_index SET task=jsonb_set(task,'{ready_at}',$3) WHERE user_id=$1 AND task_id=$2")
+        .bind(owner.user_id).bind(task_id).bind(json!({"value":now + chrono::Duration::days(3),"source":"owner"})).execute(&pool).await.unwrap();
+    assert!(
+        !current().await.unwrap(),
+        "deferred non-imminent deadline is quiet"
+    );
+    sqlx::query("UPDATE brunn.task_index SET task=task-'ready_at',status='done' WHERE user_id=$1 AND task_id=$2")
+        .bind(owner.user_id).bind(task_id).execute(&pool).await.unwrap();
+    assert!(
+        !current().await.unwrap(),
+        "completed tasks cannot produce a queued alert"
+    );
+}
+
+#[tokio::test]
 async fn task_guard_state_is_seeded_content_free_and_rls_isolated() {
     let _scheduler = SCHEDULER_FIXTURE.lock().await;
     let Some(pool) = connect_test_pool().await else {

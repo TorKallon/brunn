@@ -97,11 +97,16 @@ export interface MeData {
 }
 
 export type TaskStatus = "open" | "waiting" | "done" | "dropped";
-export type TaskView = "urgent" | "next" | "quick" | "today" | "triage" | "all";
+export type TaskView = "urgent" | "next" | "available" | "timing" | "quick" | "today" | "triage" | "all";
 export type TaskDateTypeFilter = "all" | "hard" | "cost" | "soft" | "none";
 export type TaskSourceFilter = "all" | "owner" | "agent" | "derived" | "todoist";
 
 export interface TaskCandidate {
+  hard_due_source?: string | null;
+  must_show?: boolean;
+  hard_due?: string | null;
+  ready_at?: string | null;
+  timing?: { needs_attention: boolean; serious: boolean; timing_unknown: boolean; risk_on?: string | null; due_on?: string | null; reason: string } | null;
   task_ref: string;
   entry_ref: string;
   version: number;
@@ -178,6 +183,8 @@ export interface TaskDetailData {
 }
 
 export interface TaskUpdateData {
+  deferral_warning?: string | null;
+  previous_ready_at?: string | null;
   task: TaskDetail;
   action: string;
   correction_ref?: string | null;

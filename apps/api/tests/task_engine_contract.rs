@@ -25,6 +25,7 @@ fn source<T>(value: T, source: &str) -> Sourced<T> {
 
 fn task(title: &str, created_day: u32) -> TaskSnapshot {
     TaskSnapshot {
+        timing: None,
         id: Uuid::now_v7(),
         title: title.to_owned(),
         status: TaskStatus::Open,
@@ -271,9 +272,9 @@ fn triage_and_time_travel_are_stable() {
 }
 
 #[test]
-fn third_snooze_parks_without_losing_the_task() {
+fn repeated_snoozes_do_not_silently_park_tasks() {
     assert_eq!(snooze_transition(0), (1, false));
     assert_eq!(snooze_transition(1), (2, false));
-    assert_eq!(snooze_transition(2), (3, true));
-    assert_eq!(snooze_transition(3), (4, true));
+    assert_eq!(snooze_transition(2), (3, false));
+    assert_eq!(snooze_transition(3), (4, false));
 }

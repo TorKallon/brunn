@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, ListFilter } from "lucide-react";
 import { useState } from "react";
+import { useSearch, useNavigate } from "@tanstack/react-router";
 import { Page, PageHeader } from "../components/Page";
 import { EmptyState, ErrorState, LoadingState } from "../components/StateViews";
 import { TaskRow } from "../components/TaskRow";
+import { TaskDeferralFeedback } from "../components/TaskDeferralFeedback";
 import { useApi } from "../lib/auth";
 import { useCapability } from "../lib/current";
 import { taskQuickOperation, type TaskQuickAction } from "../lib/taskOperations";
@@ -19,6 +21,8 @@ type StatusFilter = "all" | TaskStatus;
 
 export function TasksPage() {
   const api = useApi();
+  const { timing: timingOnly } = useSearch({ from: "/authenticated/tasks" });
+  const navigate = useNavigate({ from: "/tasks" });
   const queryClient = useQueryClient();
   const canWrite = useCapability("task.write");
   const [status, setStatus] = useState<StatusFilter>("all");
@@ -43,6 +47,7 @@ export function TasksPage() {
     queryKey: [
       "task-candidates",
       "all",
+      timingOnly,
       cursor,
       status,
       project,
@@ -53,7 +58,10 @@ export function TasksPage() {
       source,
     ],
     queryFn: () =>
-      api.taskCandidates({
+      api.taskCandidates(timingOnly ? {
+        view: "timing", limit: 25, cursor, project: project || undefined,
+        include_waiting: includeWaiting, include_parked: includeParked,
+      } : {
         view: "all",
         limit: 25,
         deliberate_all: true,
@@ -96,9 +104,13 @@ export function TasksPage() {
       />
       <fieldset className="task-filter-panel">
         <legend>Task filters</legend>
+        <label><input type="checkbox" checked={timingOnly ?? false} onChange={event => {
+          resetPages(); void navigate({ search: { timing: event.target.checked || undefined } });
+        }} />Timing-sensitive · including upcoming and timing to clarify</label>
         <label>
           <span>Status</span>
           <select
+            disabled={timingOnly}
             value={status}
             onChange={(event) => {
               setStatus(event.target.value as StatusFilter);
@@ -130,6 +142,7 @@ export function TasksPage() {
         <label>
           <span>Context</span>
           <select
+            disabled={timingOnly}
             value={context}
             onChange={(event) => {
               setContext(event.target.value);
@@ -147,6 +160,7 @@ export function TasksPage() {
         <label>
           <span>Date type</span>
           <select
+            disabled={timingOnly}
             value={dateType}
             onChange={(event) => {
               setDateType(event.target.value as TaskDateTypeFilter);
@@ -163,6 +177,7 @@ export function TasksPage() {
         <label>
           <span>Source</span>
           <select
+            disabled={timingOnly}
             value={source}
             onChange={(event) => {
               setSource(event.target.value as TaskSourceFilter);
@@ -204,6 +219,7 @@ export function TasksPage() {
         <p className="task-feedback" role="status">Task deleted from active lists. Its history is retained here.</p>
       ) : null}
 
+      <TaskDeferralFeedback key={`${actionMutation.data?.data.task.task_ref}:${actionMutation.data?.data.task.version}`} data={actionMutation.data?.data} />
       <p className="task-list-summary" role="status">
         Page {pageCursors.length + 1} · {query.data?.data.backlog_total ?? 0} matching
         tasks · {query.data?.data.next_remaining ?? 0} after this page

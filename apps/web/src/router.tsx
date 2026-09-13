@@ -129,6 +129,7 @@ const dashboardRoute = createRoute({
 const tasksRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/tasks",
+  validateSearch: (search: Record<string, unknown>): { timing?: boolean } => ({ timing: search.timing === true || search.timing === "true" ? true : undefined }),
   component: TasksPage,
 });
 const agentsRoute = createRoute({
